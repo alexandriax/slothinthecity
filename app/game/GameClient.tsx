@@ -117,10 +117,10 @@ export function GameClient() {
     const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:"high-performance"}); renderer.setPixelRatio(Math.min(devicePixelRatio,1.65));renderer.setSize(innerWidth,innerHeight);renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.05;renderer.outputColorSpace=THREE.SRGBColorSpace;host.appendChild(renderer.domElement);
     const hemi=new THREE.HemisphereLight("#dfe9c9","#253225",1.55);scene.add(hemi);const sun=new THREE.DirectionalLight("#ffdfad",3.3);sun.position.set(-45,85,26);sun.castShadow=true;sun.shadow.mapSize.set(qualityTier()>0.75?2048:1024,qualityTier()>0.75?2048:1024);sun.shadow.camera.left=sun.shadow.camera.bottom=-90;sun.shadow.camera.right=sun.shadow.camera.top=90;scene.add(sun);
     const world=buildWorld(scene,qualityTier()); const clock=new THREE.Clock(), keys=new Set<string>(), velocity=new THREE.Vector3(), player=START.clone();player.y=terrainY(player.x,player.z)+1.65;camera.position.copy(player);
-    let yaw=-.35,pitch=-.05,energy=100,alert=5,lastHud=0,gameTime=0; const armMat=new THREE.MeshStandardMaterial({color:"#604b38",roughness:1});
-    const arms=new THREE.Group();for(const s of [-1,1]){const arm=new THREE.Mesh(new THREE.CapsuleGeometry(.12,.72,5,7),armMat);arm.rotation.z=s*.22;arm.rotation.x=-.45;arm.position.set(s*.44,-.42,-.62);arms.add(arm);for(let c=0;c<3;c++){const claw=new THREE.Mesh(new THREE.ConeGeometry(.022,.18,6),new THREE.MeshStandardMaterial({color:"#d4cbb5",roughness:.55}));claw.rotation.x=-Math.PI/2;claw.position.set(s*(.38+c*.055),-.72,-.96);arms.add(claw)}}camera.add(arms);scene.add(camera);
+    let yaw=-.35,pitch=-.05,energy=100,alert=5,lastHud=0,gameTime=0; const armMat=new THREE.MeshStandardMaterial({color:"#604b38",roughness:1,flatShading:true});
+    const arms=new THREE.Group();for(const s of [-1,1]){const arm=new THREE.Mesh(new THREE.CapsuleGeometry(.065,.3,5,7),armMat);arm.rotation.z=s*.32;arm.rotation.x=-.42;arm.position.set(s*.18,-.31,-.7);arms.add(arm);for(let c=0;c<3;c++){const claw=new THREE.Mesh(new THREE.ConeGeometry(.018,.12,6),new THREE.MeshStandardMaterial({color:"#d4cbb5",roughness:.55}));claw.rotation.x=Math.PI/2;claw.position.set(s*(.14+c*.028),-.11,-.8);arms.add(claw)}}camera.add(arms);scene.add(camera);
     let dragging=false,lastTouchX=0,lastTouchY=0;
-    const requestLock=()=>{if(phaseRef.current!=="playing")return;const lock=renderer.domElement.requestPointerLock();lock?.catch(()=>undefined)};
+    const requestLock=()=>{if(phaseRef.current!=="playing"||new URLSearchParams(location.search).has("qa"))return;const lock=renderer.domElement.requestPointerLock();lock?.catch(()=>undefined)};
     const pointer=(e:PointerEvent)=>{if(e.pointerType==="touch"){dragging=true;lastTouchX=e.clientX;lastTouchY=e.clientY;renderer.domElement.setPointerCapture(e.pointerId)}else requestLock()};
     const pointerMove=(e:PointerEvent)=>{if(dragging&&e.pointerType==="touch"){yaw-=(e.clientX-lastTouchX)*.006;pitch=Math.max(-1.3,Math.min(1.2,pitch-(e.clientY-lastTouchY)*.005));lastTouchX=e.clientX;lastTouchY=e.clientY}};
     const pointerUp=()=>{dragging=false};
@@ -148,12 +148,12 @@ export function GameClient() {
   },[]);
 
   const audioRef=useRef<ReturnType<typeof startAudio>|null>(null);
-  const safeLock=()=>{const lock=mount.current?.querySelector("canvas")?.requestPointerLock();lock?.catch(()=>undefined)};
+  const safeLock=()=>{if(new URLSearchParams(location.search).has("qa"))return;const lock=mount.current?.querySelector("canvas")?.requestPointerLock();lock?.catch(()=>undefined)};
   const begin=useCallback(()=>{if(!audioRef.current)audioRef.current=startAudio();setPhase("playing");setTimeout(safeLock,30)},[]);
   const resume=()=>{setPhase("playing");safeLock()};
   useEffect(()=>{if(audioRef.current)audioRef.current.master.gain.value=muted?0:.13},[muted]);
   useEffect(()=>()=>{if(audioRef.current){clearInterval(audioRef.current.interval);audioRef.current.ctx.close().catch(()=>undefined);audioRef.current=null}},[]);
-  const mobileKey=(code:string,down:boolean)=>window.dispatchEvent(new KeyboardEvent(down?"keydown":"keyup",{code}));
+  const mobileKey=(code:string,down:boolean)=>document.dispatchEvent(new KeyboardEvent(down?"keydown":"keyup",{code,bubbles:true}));
 
   return <main className="game-shell" data-game-state={phase}>
     <div ref={mount} className="viewport" aria-label="3D game viewport" />
