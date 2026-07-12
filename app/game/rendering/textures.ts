@@ -9,6 +9,7 @@ export type GameTextures = {
   fern: THREE.Texture;
   gravel: THREE.CanvasTexture;
   stone: THREE.CanvasTexture;
+  moss: THREE.CanvasTexture;
   waterNormal: THREE.CanvasTexture;
 };
 
@@ -17,11 +18,11 @@ function seeded(seed: number) {
   return () => ((value = Math.imul(value ^ (value >>> 15), 1 | value), value ^= value + Math.imul(value ^ (value >>> 7), 61 | value), ((value ^ (value >>> 14)) >>> 0) / 4294967296));
 }
 
-function detailTexture(kind: "gravel" | "stone" | "water") {
+function detailTexture(kind: "gravel" | "stone" | "moss" | "water") {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 512;
   const context = canvas.getContext("2d")!;
-  const random = seeded(kind === "gravel" ? 802 : kind === "stone" ? 431 : 971);
+  const random = seeded(kind === "gravel" ? 802 : kind === "stone" ? 431 : kind === "moss" ? 619 : 971);
   const image = context.createImageData(512, 512);
   for (let y = 0; y < 512; y++) {
     for (let x = 0; x < 512; x++) {
@@ -32,6 +33,12 @@ function detailTexture(kind: "gravel" | "stone" | "water") {
         image.data[index] = 112 + wave * 28;
         image.data[index + 1] = 126 + noise * 10;
         image.data[index + 2] = 235;
+      } else if (kind === "moss") {
+        const clump = THREE.MathUtils.clamp(.48 + Math.sin(x * .047 + Math.sin(y * .023) * 3.2) * .24 + Math.sin(y * .071 - x * .014) * .18 + (noise - .5) * .42, 0, 1);
+        image.data[index] = 54 + clump * 62;
+        image.data[index + 1] = 72 + clump * 96;
+        image.data[index + 2] = 35 + clump * 45;
+        image.data[index + 3] = clump > .43 ? 150 + clump * 105 : clump > .34 ? 58 : 0;
       } else if (kind === "stone") {
         const value = 140 + noise * 38 + Math.sin(x * .018) * 8;
         image.data[index] = value + 11; image.data[index + 1] = value + 5; image.data[index + 2] = value - 5;
@@ -39,7 +46,7 @@ function detailTexture(kind: "gravel" | "stone" | "water") {
         const value = 92 + noise * 62 + wave * 16;
         image.data[index] = value + 18; image.data[index + 1] = value + 10; image.data[index + 2] = value - 4;
       }
-      image.data[index + 3] = 255;
+      if (kind !== "moss") image.data[index + 3] = 255;
     }
   }
   context.putImageData(image, 0, 0);
@@ -75,6 +82,7 @@ export function loadGameTextures(renderer: THREE.WebGLRenderer, onReady: () => v
   fern.repeat.set(1, 1);
   const gravel = detailTexture("gravel"); gravel.repeat.set(2, 28); gravel.anisotropy = anisotropy;
   const stone = detailTexture("stone"); stone.repeat.set(3, 3); stone.anisotropy = anisotropy;
+  const moss = detailTexture("moss"); moss.repeat.set(2, 14); moss.anisotropy = anisotropy;
   const waterNormal = detailTexture("water"); waterNormal.repeat.set(8, 8); waterNormal.anisotropy = anisotropy;
-  return { ground, bark, fur, foliage, foliageBranch, fern, gravel, stone, waterNormal };
+  return { ground, bark, fur, foliage, foliageBranch, fern, gravel, stone, moss, waterNormal };
 }

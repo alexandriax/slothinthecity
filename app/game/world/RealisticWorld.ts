@@ -11,6 +11,27 @@ export const BUDS = [
 export const START = new THREE.Vector3(-43, 0, 54);
 export const GOAL = new THREE.Vector3(-10, 0, -78);
 
+// Hand-authored crown lines give the procedural forest a legible aerial
+// structure.  The junctions are deliberately shared so a sloth entering at
+// the western start can reach every route without touching the ground.
+const CANOPY_CORRIDOR_LAYOUT = [
+  {
+    id: "ramble-spine",
+    name: "Ramble spine",
+    points: [[-55, 52], [-57, 43], [-55, 34], [-51, 25], [-46, 17], [-40, 10], [-34, 2], [-29, -7], [-25, -16], [-22, -25], [-19, -34], [-17, -43], [-18, -52], [-22, -61], [-26, -70], [-23, -75]],
+  },
+  {
+    id: "north-crown-loop",
+    name: "North crown loop",
+    points: [[-55, 52], [-63, 58], [-71, 62], [-79, 58], [-84, 50], [-85, 41], [-82, 32], [-76, 25], [-68, 21], [-59, 20], [-51, 25]],
+  },
+  {
+    id: "east-ridge",
+    name: "East ridge",
+    points: [[-51, 25], [-43, 29], [-35, 32], [-29, 43], [-20, 43], [-11, 44], [-2, 44], [7, 43], [16, 41], [25, 38], [34, 34], [43, 29], [51, 22]],
+  },
+] as const;
+
 export type ClimbableTree = {
   x: number;
   z: number;
@@ -39,6 +60,30 @@ export type BranchRoute = {
   adjacentRouteIds: number[];
   crossTreeRouteIds: number[];
   belowRouteIds: number[];
+  /** Best routes when locomotion reaches this route's end. */
+  forwardRouteIds: number[];
+  /** Best routes when locomotion reaches this route's start. */
+  backwardRouteIds: number[];
+  /** Destination tree for a crown-spanning route; null for ordinary limbs. */
+  destinationTreeIndex: number | null;
+  /** Hand-authored natural navigation line, or null for ambient branches. */
+  corridorId: string | null;
+  corridorOrder: number;
+};
+
+export type CanopyCorridor = {
+  id: string;
+  name: string;
+  treeIndices: number[];
+  routeIds: number[];
+};
+
+export type CanopyNetworkStats = {
+  corridorCount: number;
+  accessibleCorridorCount: number;
+  corridorRouteCount: number;
+  connectedTreeCount: number;
+  longestCorridorTrees: number;
 };
 
 export type WorldObstacle =
@@ -64,6 +109,8 @@ export type RealisticWorld = {
   trees: ClimbableTree[];
   branches: BranchRoute[];
   branchNodes: BranchNode[];
+  canopyCorridors: CanopyCorridor[];
+  canopyNetworkStats: CanopyNetworkStats;
   obstacles: WorldObstacle[];
   bridgeSurface: BridgeSurface;
   animate(time: number, player: THREE.Vector3, scent: boolean, collected: Set<number>): void;
@@ -222,16 +269,105 @@ function buildBranchGraph(routes: BranchRoute[], nodes: BranchNode[]) {
   }
 }
 
+function connectRoutes(routes: BranchRoute[], nodes: BranchNode[], firstId: number, secondId: number) {
+  const first = routes[firstId], second = routes[secondId];
+  if (!first || !second || firstId === secondId) return;
+  if (!first.crossTreeRouteIds.includes(secondId)) first.crossTreeRouteIds.push(secondId);
+  if (!second.crossTreeRouteIds.includes(firstId)) second.crossTreeRouteIds.push(firstId);
+  const endpointPairs: Array<[number, number, number]> = [
+    [first.startNodeId, second.startNodeId, first.start.distanceToSquared(second.start)],
+    [first.startNodeId, second.endNodeId, first.start.distanceToSquared(second.end)],
+    [first.endNodeId, second.startNodeId, first.end.distanceToSquared(second.start)],
+    [first.endNodeId, second.endNodeId, first.end.distanceToSquared(second.end)],
+  ];
+  endpointPairs.sort((a, b) => a[2] - b[2]);
+  const [firstNodeId, secondNodeId] = endpointPairs[0];
+  if (!nodes[firstNodeId].neighborNodeIds.includes(secondNodeId)) nodes[firstNodeId].neighborNodeIds.push(secondNodeId);
+  if (!nodes[secondNodeId].neighborNodeIds.includes(firstNodeId)) nodes[secondNodeId].neighborNodeIds.push(firstNodeId);
+}
+
+function routeEndpointScore(source: BranchRoute, target: BranchRoute, forward: boolean) {
+  const endpoint = forward ? source.end : source.start;
+  const startGap = endpoint.distanceTo(target.start), endGap = endpoint.distanceTo(target.end);
+  const targetDirection = (startGap <= endGap ? target.end.clone().sub(target.start) : target.start.clone().sub(target.end)).normalize();
+  const travelDirection = (forward ? source.end.clone().sub(source.start) : source.start.clone().sub(source.end)).normalize();
+  return Math.min(startGap, endGap) * 1.7 - travelDirection.dot(targetDirection) * 2.4;
+}
+
+function finalizeCanopyNetwork(corridors: CanopyCorridor[], routes: BranchRoute[], nodes: BranchNode[], trees: ClimbableTree[]) {
+  const corridorRoutesFromTree = new Map<number, number[]>();
+  for (const corridor of corridors) for (const routeId of corridor.routeIds) {
+    const route = routes[routeId], ids = corridorRoutesFromTree.get(route.treeIndex) ?? [];
+    ids.push(routeId); corridorRoutesFromTree.set(route.treeIndex, ids);
+  }
+
+  // A route grown from tree A ends at tree B.  Explicitly wire that endpoint
+  // to every authored limb leaving B so junctions survive the ambient graph's
+  // nearest-six pruning even in extremely dense crowns.
+  for (const corridor of corridors) for (let index = 0; index < corridor.routeIds.length; index++) {
+    const route = routes[corridor.routeIds[index]];
+    for (const nextRouteId of corridorRoutesFromTree.get(route.destinationTreeIndex ?? -1) ?? []) connectRoutes(routes, nodes, route.id, nextRouteId);
+    const previousRouteId = corridor.routeIds[index - 1], nextRouteId = corridor.routeIds[index + 1];
+    if (previousRouteId !== undefined) connectRoutes(routes, nodes, route.id, previousRouteId);
+    if (nextRouteId !== undefined) connectRoutes(routes, nodes, route.id, nextRouteId);
+  }
+
+  for (const route of routes) {
+    const candidates = [...new Set([...route.crossTreeRouteIds, ...route.adjacentRouteIds])];
+    route.forwardRouteIds = candidates.slice().sort((a, b) => routeEndpointScore(route, routes[a], true) - routeEndpointScore(route, routes[b], true)).slice(0, 8);
+    route.backwardRouteIds = candidates.slice().sort((a, b) => routeEndpointScore(route, routes[a], false) - routeEndpointScore(route, routes[b], false)).slice(0, 8);
+  }
+  for (const corridor of corridors) for (let index = 0; index < corridor.routeIds.length; index++) {
+    const route = routes[corridor.routeIds[index]], previousRouteId = corridor.routeIds[index - 1], nextRouteId = corridor.routeIds[index + 1];
+    if (previousRouteId !== undefined) route.backwardRouteIds = [previousRouteId, ...route.backwardRouteIds.filter((id) => id !== previousRouteId)];
+    if (nextRouteId !== undefined) route.forwardRouteIds = [nextRouteId, ...route.forwardRouteIds.filter((id) => id !== nextRouteId)];
+  }
+
+  if (corridors.length < 3) throw new Error("Canopy network requires at least three authored corridors.");
+  for (const corridor of corridors) {
+    if (corridor.treeIndices.length < 8 || corridor.routeIds.length !== corridor.treeIndices.length - 1) throw new Error(`Canopy corridor ${corridor.id} is incomplete.`);
+    for (let index = 1; index < corridor.routeIds.length; index++) {
+      const previous = routes[corridor.routeIds[index - 1]], current = routes[corridor.routeIds[index]];
+      if (!previous.crossTreeRouteIds.includes(current.id)) throw new Error(`Canopy corridor ${corridor.id} breaks between routes ${previous.id} and ${current.id}.`);
+    }
+  }
+
+  const accessibleRouteIds = corridors.flatMap((corridor) => {
+    const firstTree = trees[corridor.treeIndices[0]], surfaceDistance = Math.hypot(firstTree.x - START.x, firstTree.z - START.z) - firstTree.radius;
+    return surfaceDistance < 15 ? corridor.routeIds.slice(0, 1) : [];
+  });
+  const reachable = new Set<number>(), frontier = [...accessibleRouteIds];
+  while (frontier.length) {
+    const routeId = frontier.pop()!;
+    if (reachable.has(routeId)) continue;
+    reachable.add(routeId);
+    const route = routes[routeId];
+    for (const neighbor of [...route.adjacentRouteIds, ...route.crossTreeRouteIds]) if (!reachable.has(neighbor)) frontier.push(neighbor);
+  }
+  const accessibleCorridorCount = corridors.filter((corridor) => corridor.routeIds.every((routeId) => reachable.has(routeId))).length;
+  if (accessibleCorridorCount !== corridors.length) throw new Error(`Only ${accessibleCorridorCount} of ${corridors.length} canopy corridors are reachable from the start grove.`);
+  const connectedTrees = new Set<number>();
+  for (const corridor of corridors) for (const treeIndex of corridor.treeIndices) if (corridor.routeIds.some((routeId) => reachable.has(routeId))) connectedTrees.add(treeIndex);
+  return {
+    corridorCount: corridors.length,
+    accessibleCorridorCount,
+    corridorRouteCount: corridors.reduce((total, corridor) => total + corridor.routeIds.length, 0),
+    connectedTreeCount: connectedTrees.size,
+    longestCorridorTrees: Math.max(...corridors.map((corridor) => corridor.treeIndices.length)),
+  } satisfies CanopyNetworkStats;
+}
+
 function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number, trailCurve: THREE.CatmullRomCurve3) {
   const random = seeded(7331);
   const treeCount = Math.round(120 + 240 * THREE.MathUtils.clamp(quality, .45, 1));
   const trees: ClimbableTree[] = [];
   const branchRoutes: BranchRoute[] = [], branchNodes: BranchNode[] = [];
-  const heroPositions: Array<[number, number]> = [
-    [-55, 52], [-38, 65], [-39, 42], [-57, 68], [-32, 52], [-34, 30],
-    [-22, 22], [-13, 10], [1, 7], [17, 6], [27, -12], [25, -25],
-    [19, -38], [1, -39], [-2, -51], [-21, -55], [-28, -70],
-  ];
+  const heroPositions: Array<[number, number]> = [];
+  const heroPositionKeys = new Set<string>();
+  for (const corridor of CANOPY_CORRIDOR_LAYOUT) for (const point of corridor.points) {
+    const key = `${point[0]}:${point[1]}`;
+    if (!heroPositionKeys.has(key)) { heroPositionKeys.add(key); heroPositions.push([point[0], point[1]]); }
+  }
   const trailSamples = Array.from({ length: 81 }, (_, index) => trailCurve.getPoint(index / 80));
   const trunkGeometry = new THREE.CylinderGeometry(.2, 1, 1, 18, 8);
   const branchGeometry = new THREE.CylinderGeometry(.36, 1, 1, 12, 3);
@@ -293,7 +429,11 @@ function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number, t
         { id: startNodeId, treeIndex: tree, position: start.clone(), routeIds: [routeId], neighborNodeIds: [endNodeId] },
         { id: endNodeId, treeIndex: tree, position: end.clone(), routeIds: [routeId], neighborNodeIds: [startNodeId] },
       );
-      branchRoutes.push({ id: routeId, treeIndex: tree, startNodeId, endNodeId, start: start.clone(), end: end.clone(), radius: primaryRadius, adjacentRouteIds: [], crossTreeRouteIds: [], belowRouteIds: [] });
+      branchRoutes.push({
+        id: routeId, treeIndex: tree, startNodeId, endNodeId, start: start.clone(), end: end.clone(), radius: primaryRadius,
+        adjacentRouteIds: [], crossTreeRouteIds: [], belowRouteIds: [], forwardRouteIds: [], backwardRouteIds: [],
+        destinationTreeIndex: null, corridorId: null, corridorOrder: -1,
+      });
       foliageAnchors.push(end.clone());
       const limbCluster = start.clone().lerp(end, .56 + random() * .12); limbCluster.y += .28 + random() * .42; foliageAnchors.push(limbCluster);
 
@@ -360,9 +500,71 @@ function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number, t
     tree++;
   }
   if (tree !== treeCount) throw new Error(`Unable to place realistic forest: placed ${tree} of ${treeCount} trees.`);
+
+  const corridorLinkCount = CANOPY_CORRIDOR_LAYOUT.reduce((total, corridor) => total + corridor.points.length - 1, 0);
+  const corridorBranches = new THREE.InstancedMesh(branchGeometry, barkMaterial, corridorLinkCount * 2);
+  const corridorMossMaterial = new THREE.MeshStandardMaterial({ map: textures.moss, bumpMap: textures.moss, bumpScale: .045, color: "#b1c995", emissive: "#2f4825", emissiveMap: textures.moss, emissiveIntensity: .36, roughness: 1, transparent: true, opacity: .94, alphaTest: .27 });
+  const corridorMossGeometry = new THREE.CylinderGeometry(.42, 1, 1, 10, 2);
+  const corridorMoss = new THREE.InstancedMesh(corridorMossGeometry, corridorMossMaterial, corridorLinkCount * 4);
+  const treeIndexByPosition = new Map(trees.map((placedTree, index) => [`${placedTree.x}:${placedTree.z}`, index]));
+  const canopyCorridors: CanopyCorridor[] = [];
+  const corridorStart = new THREE.Vector3(), corridorEnd = new THREE.Vector3(), corridorMidpoint = new THREE.Vector3(), corridorDirection = new THREE.Vector3();
+  const sourceTip = new THREE.Vector3(), destinationTip = new THREE.Vector3(), mossStart = new THREE.Vector3(), mossEnd = new THREE.Vector3();
+  let corridorLimbInstance = 0, corridorMossInstance = 0;
+  for (const corridor of CANOPY_CORRIDOR_LAYOUT) {
+    const treeIndices = corridor.points.map((point) => {
+      const treeIndex = treeIndexByPosition.get(`${point[0]}:${point[1]}`);
+      if (treeIndex === undefined) throw new Error(`Canopy anchor ${point[0]},${point[1]} was not placed.`);
+      return treeIndex;
+    });
+    const routeIds: number[] = [];
+    for (let index = 0; index < treeIndices.length - 1; index++) {
+      const sourceTreeIndex = treeIndices[index], destinationTreeIndex = treeIndices[index + 1];
+      const sourceTree = trees[sourceTreeIndex], destinationTree = trees[destinationTreeIndex];
+      const sourceY = Math.min(sourceTree.baseY + sourceTree.height * .76, Math.max(sourceTree.canopyY + .52, sourceTree.baseY + sourceTree.height * .58));
+      const destinationY = Math.min(destinationTree.baseY + destinationTree.height * .76, Math.max(destinationTree.canopyY + .52, destinationTree.baseY + destinationTree.height * .58));
+      corridorStart.set(sourceTree.x, sourceY, sourceTree.z); corridorEnd.set(destinationTree.x, destinationY, destinationTree.z);
+      const routeId = branchRoutes.length, startNodeId = branchNodes.length, endNodeId = startNodeId + 1;
+      const corridorRadius = Math.max(.24, Math.min(sourceTree.radius, destinationTree.radius) * .48);
+      branchNodes.push(
+        { id: startNodeId, treeIndex: sourceTreeIndex, position: corridorStart.clone(), routeIds: [routeId], neighborNodeIds: [endNodeId] },
+        { id: endNodeId, treeIndex: destinationTreeIndex, position: corridorEnd.clone(), routeIds: [routeId], neighborNodeIds: [startNodeId] },
+      );
+      branchRoutes.push({
+        id: routeId, treeIndex: sourceTreeIndex, startNodeId, endNodeId, start: corridorStart.clone(), end: corridorEnd.clone(), radius: corridorRadius,
+        adjacentRouteIds: [], crossTreeRouteIds: [], belowRouteIds: [], forwardRouteIds: [], backwardRouteIds: [],
+        destinationTreeIndex, corridorId: corridor.id, corridorOrder: index,
+      });
+      routeIds.push(routeId);
+
+      corridorDirection.copy(corridorEnd).sub(corridorStart).normalize();
+      corridorMidpoint.copy(corridorStart).add(corridorEnd).multiplyScalar(.5);
+      sourceTip.copy(corridorMidpoint).addScaledVector(corridorDirection, .58);
+      destinationTip.copy(corridorMidpoint).addScaledVector(corridorDirection, -.58);
+      alignCylinder(dummy, corridorStart, sourceTip, corridorRadius); corridorBranches.setMatrixAt(corridorLimbInstance++, dummy.matrix);
+      mossStart.lerpVectors(corridorStart, sourceTip, .18).add(new THREE.Vector3(0, corridorRadius * .72, 0));
+      mossEnd.lerpVectors(corridorStart, sourceTip, .9).add(new THREE.Vector3(0, corridorRadius * .72, 0));
+      alignCylinder(dummy, mossStart, mossEnd, .082 + corridorRadius * .06); corridorMoss.setMatrixAt(corridorMossInstance++, dummy.matrix);
+      mossStart.lerpVectors(corridorStart, sourceTip, .22).add(new THREE.Vector3(0, -corridorRadius * 1.02, 0));
+      mossEnd.lerpVectors(corridorStart, sourceTip, .94).add(new THREE.Vector3(0, -corridorRadius * 1.02, 0));
+      alignCylinder(dummy, mossStart, mossEnd, .034 + corridorRadius * .025); corridorMoss.setMatrixAt(corridorMossInstance++, dummy.matrix);
+      alignCylinder(dummy, corridorEnd, destinationTip, corridorRadius * .94); corridorBranches.setMatrixAt(corridorLimbInstance++, dummy.matrix);
+      mossStart.lerpVectors(corridorEnd, destinationTip, .18).add(new THREE.Vector3(0, corridorRadius * .68, 0));
+      mossEnd.lerpVectors(corridorEnd, destinationTip, .9).add(new THREE.Vector3(0, corridorRadius * .68, 0));
+      alignCylinder(dummy, mossStart, mossEnd, .078 + corridorRadius * .055); corridorMoss.setMatrixAt(corridorMossInstance++, dummy.matrix);
+      mossStart.lerpVectors(corridorEnd, destinationTip, .22).add(new THREE.Vector3(0, -corridorRadius * .98, 0));
+      mossEnd.lerpVectors(corridorEnd, destinationTip, .94).add(new THREE.Vector3(0, -corridorRadius * .98, 0));
+      alignCylinder(dummy, mossStart, mossEnd, .032 + corridorRadius * .024); corridorMoss.setMatrixAt(corridorMossInstance++, dummy.matrix);
+    }
+    canopyCorridors.push({ id: corridor.id, name: corridor.name, treeIndices, routeIds });
+  }
+
   buildBranchGraph(branchRoutes, branchNodes);
+  const canopyNetworkStats = finalizeCanopyNetwork(canopyCorridors, branchRoutes, branchNodes, trees);
   trunks.instanceMatrix.needsUpdate = branches.instanceMatrix.needsUpdate = leaves.instanceMatrix.needsUpdate = true; if (leaves.instanceColor) leaves.instanceColor.needsUpdate = true;
-  scene.add(trunks, branches, leaves);
+  corridorBranches.instanceMatrix.needsUpdate = corridorMoss.instanceMatrix.needsUpdate = true;
+  corridorBranches.castShadow = corridorBranches.receiveShadow = true; corridorMoss.receiveShadow = true;
+  scene.add(trunks, branches, leaves, corridorBranches, corridorMoss);
 
   // Understory detail: rocks, shrubs, and fallen bark-covered logs in a handful of draw calls.
   const scatterCount = Math.round(360 * quality);
@@ -416,7 +618,7 @@ function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number, t
     const log = new THREE.Mesh(new THREE.CylinderGeometry(.24 + random() * .18, .34 + random() * .2, 3 + random() * 3, 12), barkMaterial);
     log.rotation.set(Math.PI / 2 + (random() - .5) * .15, random() * Math.PI, 0); log.position.set(random() * 160 - 80, 0, random() * 160 - 80); log.position.y = terrainY(log.position.x, log.position.z) + .3; log.castShadow = log.receiveShadow = true; scene.add(log);
   }
-  return { trees, branchRoutes, branchNodes };
+  return { trees, branchRoutes, branchNodes, canopyCorridors, canopyNetworkStats };
 }
 
 function archedBridgeGeometry(length: number, width: number, segments = 36) {
@@ -563,7 +765,7 @@ export function buildRealisticWorld(scene: THREE.Scene, textures: GameTextures, 
   const trailCurve = new THREE.CatmullRomCurve3(trailPoints);
   const trail = new THREE.Mesh(trailRibbon(trailCurve), new THREE.MeshStandardMaterial({ map: textures.gravel, bumpMap: textures.gravel, bumpScale: .09, color: "#a59678", roughness: .98 })); trail.receiveShadow = true; scene.add(trail);
 
-  const { trees, branchRoutes: branches, branchNodes } = addTrees(scene, textures, quality, trailCurve);
+  const { trees, branchRoutes: branches, branchNodes, canopyCorridors, canopyNetworkStats } = addTrees(scene, textures, quality, trailCurve);
   const { obstacles, bridgeSurface } = addLandmarks(scene, textures, trailCurve);
   const lakeMaterial = new THREE.MeshPhysicalMaterial({ color: "#345d59", normalMap: textures.waterNormal, normalScale: new THREE.Vector2(.32, .32), roughness: .16, metalness: .08, transmission: .08, transparent: true, opacity: .9, clearcoat: .72, clearcoatRoughness: .18, envMapIntensity: 1.4 });
   const lake = new THREE.Mesh(new THREE.CircleGeometry(25, 96), lakeMaterial); lake.rotation.x = -Math.PI / 2; lake.position.set(34, terrainY(34, -43) + .82, -43); lake.receiveShadow = true; scene.add(lake);
@@ -591,7 +793,7 @@ export function buildRealisticWorld(scene: THREE.Scene, textures: GameTextures, 
   const { hawk, wings: hawkWings } = createHawk(); scene.add(hawk);
 
   return {
-    buds, rings, hawk, lake, trailCurve, trees, branches, branchNodes, obstacles, bridgeSurface,
+    buds, rings, hawk, lake, trailCurve, trees, branches, branchNodes, canopyCorridors, canopyNetworkStats, obstacles, bridgeSurface,
     animate(time, player, scent, collected) {
       textures.waterNormal.offset.set(time * .008, time * -.011);
       hawk.position.set(player.x + Math.cos(time * .42) * 24, 18 + Math.sin(time * .7) * 2, player.z + Math.sin(time * .42) * 24);
