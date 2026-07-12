@@ -5,6 +5,7 @@ type MobileHudProps = {
   buds: number;
   driving: boolean;
   energy: number;
+  goalDistance: number;
   hawkPhase: "PATROL" | "WATCHING" | "DIVING" | "SNATCHED" | "RECOVERING";
   motion: string;
   showMotion: boolean;
@@ -36,7 +37,7 @@ export function MobileHud(props: MobileHudProps) {
   const state = motionLabel(props);
   return <div className="mobile-hud" aria-label="Game status">
     <div className="mobile-telemetry">
-      <div className="mobile-objective"><span>{props.buds >= 5 ? "GATE" : "FORAGE"}</span><strong>{props.buds >= 5 ? "SOUTH" : `${props.buds}/5`}</strong></div>
+      <div className="mobile-objective"><span>{props.buds >= 5 ? "GATE" : "FORAGE"}</span><strong>{props.buds >= 5 ? `${Math.round(props.goalDistance)}M` : `${props.buds}/5`}</strong></div>
       <div className="mobile-energy">
         <span>ENERGY <b>{Math.round(props.energy)}</b></span>
         <div className="mobile-bar" role="progressbar" aria-label="Energy" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(props.energy)}><i style={{ width: `${props.energy}%` }}/></div>
