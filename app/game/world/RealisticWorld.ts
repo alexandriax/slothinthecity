@@ -154,22 +154,7 @@ function buildBranchGraph(routes: BranchRoute[], nodes: BranchNode[]) {
   const crossCandidates: Array<Array<{ id: number; score: number }>> = routes.map(() => []);
   const belowCandidates: Array<Array<{ id: number; score: number }>> = routes.map(() => []);
   const reachSq = 2.65 * 2.65;
-  const cellSize = 8, cells = new Map<string, number[]>();
-  for (const route of routes) {
-    const minCellX = Math.floor((Math.min(route.start.x, route.end.x) - 3.2) / cellSize), maxCellX = Math.floor((Math.max(route.start.x, route.end.x) + 3.2) / cellSize);
-    const minCellZ = Math.floor((Math.min(route.start.z, route.end.z) - 3.2) / cellSize), maxCellZ = Math.floor((Math.max(route.start.z, route.end.z) + 3.2) / cellSize);
-    for (let cellX = minCellX; cellX <= maxCellX; cellX++) for (let cellZ = minCellZ; cellZ <= maxCellZ; cellZ++) {
-      const key = `${cellX}:${cellZ}`, ids = cells.get(key) ?? [];
-      ids.push(route.id); cells.set(key, ids);
-    }
-  }
-  const nearbyPairs = new Set<number>(), routeCount = routes.length;
-  for (const ids of cells.values()) for (let firstIndex = 0; firstIndex < ids.length; firstIndex++) for (let secondIndex = firstIndex + 1; secondIndex < ids.length; secondIndex++) {
-    const first = Math.min(ids[firstIndex], ids[secondIndex]), second = Math.max(ids[firstIndex], ids[secondIndex]);
-    nearbyPairs.add(first * routeCount + second);
-  }
-  for (const pair of nearbyPairs) {
-    const first = Math.floor(pair / routeCount), second = pair % routeCount;
+  const evaluatePair = (first: number, second: number) => {
     const routeA = routes[first], routeB = routes[second];
     if (routeA.treeIndex !== routeB.treeIndex) {
       const gapSq = Math.min(
@@ -186,6 +171,30 @@ function buildBranchGraph(routes: BranchRoute[], nodes: BranchNode[]) {
     const aToB = branchDropScore(routeA, routeB), bToA = branchDropScore(routeB, routeA);
     if (Number.isFinite(aToB)) belowCandidates[first].push({ id: second, score: aToB });
     if (Number.isFinite(bToA)) belowCandidates[second].push({ id: first, score: bToA });
+  };
+  const cellSize = 5, cells = new Map<string, number[]>();
+  const spatial = routes.map((route) => ({
+    x: (route.start.x + route.end.x) * .5,
+    z: (route.start.z + route.end.z) * .5,
+    halfLength: Math.hypot(route.end.x - route.start.x, route.end.z - route.start.z) * .5,
+  }));
+  const maxHalfLength = Math.max(...spatial.map((entry) => entry.halfLength));
+  for (const route of routes) {
+    const entry = spatial[route.id], key = `${Math.floor(entry.x / cellSize)}:${Math.floor(entry.z / cellSize)}`, ids = cells.get(key) ?? [];
+    ids.push(route.id); cells.set(key, ids);
+  }
+  for (let first = 0; first < routes.length; first++) {
+    const entryA = spatial[first], searchRadius = Math.ceil((entryA.halfLength + maxHalfLength + 3.2) / cellSize);
+    const centerCellX = Math.floor(entryA.x / cellSize), centerCellZ = Math.floor(entryA.z / cellSize);
+    for (let offsetX = -searchRadius; offsetX <= searchRadius; offsetX++) for (let offsetZ = -searchRadius; offsetZ <= searchRadius; offsetZ++) {
+      const ids = cells.get(`${centerCellX + offsetX}:${centerCellZ + offsetZ}`);
+      if (!ids) continue;
+      for (const second of ids) {
+        if (second <= first) continue;
+        const entryB = spatial[second], threshold = entryA.halfLength + entryB.halfLength + 3.2;
+        if ((entryA.x - entryB.x) ** 2 + (entryA.z - entryB.z) ** 2 <= threshold * threshold) evaluatePair(first, second);
+      }
+    }
   }
 
   for (const route of routes) {
@@ -224,22 +233,29 @@ function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number, t
     [19, -38], [1, -39], [-2, -51], [-21, -55], [-28, -70],
   ];
   const trailSamples = Array.from({ length: 81 }, (_, index) => trailCurve.getPoint(index / 80));
-  const trunkGeometry = new THREE.CylinderGeometry(.72, 1, 1, 18, 8);
+  const trunkGeometry = new THREE.CylinderGeometry(.2, 1, 1, 18, 8);
   const branchGeometry = new THREE.CylinderGeometry(.36, 1, 1, 12, 3);
   const barkMaterial = new THREE.MeshStandardMaterial({ map: textures.bark, bumpMap: textures.bark, bumpScale: .11, color: "#afa18e", roughness: .95 });
   const trunks = new THREE.InstancedMesh(trunkGeometry, barkMaterial, treeCount);
-  const primaryBranches = quality > .86 ? 7 : 5;
-  const secondaryPerPrimary = quality > .86 ? 2 : 1;
-  const branchesPerTree = primaryBranches * (1 + secondaryPerPrimary);
+  const primaryBranches = quality > .86 ? 8 : 6;
+  const secondaryPerPrimary = 2, tertiaryPerSecondary = quality > .86 ? 1 : 0, terminalForks = 3;
+  const branchesPerTree = primaryBranches * (1 + secondaryPerPrimary + secondaryPerPrimary * tertiaryPerSecondary) + terminalForks;
   const branches = new THREE.InstancedMesh(branchGeometry, barkMaterial, treeCount * branchesPerTree);
   const foliageMaterial = new THREE.MeshStandardMaterial({ map: textures.foliageBranch, alphaTest: .38, side: THREE.DoubleSide, roughness: .78, metalness: 0, color: "#d8e0c6" });
   const shrubMaterial = new THREE.MeshStandardMaterial({ map: textures.foliage, alphaTest: .38, side: THREE.DoubleSide, roughness: .8, color: "#d2dbc2" });
   const leafGeometry = new THREE.PlaneGeometry(1, 1, 2, 2);
-  const foliageClustersPerTree = primaryBranches * secondaryPerPrimary + primaryBranches + 3;
-  const cardsPerCluster = quality > .86 ? 3 : 2;
+  const crownClusters = quality > .86 ? 8 : 6;
+  const foliageClustersPerTree = primaryBranches * 2 + primaryBranches * secondaryPerPrimary * (1 + tertiaryPerSecondary) + terminalForks + crownClusters;
+  const cardsPerCluster = 2;
   const leaves = new THREE.InstancedMesh(leafGeometry, foliageMaterial, treeCount * foliageClustersPerTree * cardsPerCluster);
-  trunks.castShadow = trunks.receiveShadow = true; branches.castShadow = true; leaves.castShadow = quality > .94;
-  const dummy = new THREE.Object3D(), start = new THREE.Vector3(), end = new THREE.Vector3(), secondaryStart = new THREE.Vector3(), secondaryEnd = new THREE.Vector3();
+  trunks.castShadow = trunks.receiveShadow = true; branches.castShadow = true; leaves.castShadow = quality > .97;
+  const treeArchetypes = [
+    { crownStart: .37, spread: 1.14, rise: .085, asymmetry: .12 },
+    { crownStart: .42, spread: .84, rise: .17, asymmetry: .06 },
+    { crownStart: .35, spread: 1.02, rise: .12, asymmetry: .52 },
+  ];
+  const dummy = new THREE.Object3D(), start = new THREE.Vector3(), end = new THREE.Vector3(), secondaryStart = new THREE.Vector3(), secondaryEnd = new THREE.Vector3(), tertiaryStart = new THREE.Vector3(), tertiaryEnd = new THREE.Vector3();
+  const leafTint = new THREE.Color();
   let tree = 0, hero = 0, attempts = 0;
   while (tree < treeCount && attempts < treeCount * 80) {
     const forced = hero < heroPositions.length ? heroPositions[hero++] : undefined;
@@ -254,20 +270,23 @@ function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number, t
       || Math.hypot(x, z) < 8
       || trees.some((other) => Math.hypot(x - other.x, z - other.z) < radius + other.radius + 1.55);
     if (blocked) continue;
-    const baseY = terrainY(x, z), canopyY = baseY + height * (.57 + random() * .05);
-    dummy.position.set(x, baseY + height / 2, z); dummy.rotation.set(0, random() * Math.PI * 2, 0); dummy.scale.set(radius, height, radius); dummy.updateMatrix(); trunks.setMatrixAt(tree, dummy.matrix);
+    const archetype = treeArchetypes[Math.floor(random() * treeArchetypes.length)];
+    const baseY = terrainY(x, z), canopyY = baseY + height * (archetype.crownStart + .03);
+    const visibleTrunkHeight = height * (.78 + random() * .075);
+    dummy.position.set(x, baseY + visibleTrunkHeight / 2, z); dummy.rotation.set(0, random() * Math.PI * 2, 0); dummy.scale.set(radius, visibleTrunkHeight, radius); dummy.updateMatrix(); trunks.setMatrixAt(tree, dummy.matrix);
     trees.push({ x, z, baseY, height, radius: radius * 1.08, canopyY });
 
     const foliageAnchors: THREE.Vector3[] = [];
     let branchInstance = tree * branchesPerTree;
     const crownRotation = random() * Math.PI * 2;
     for (let branch = 0; branch < primaryBranches; branch++) {
-      const angle = crownRotation + branch / primaryBranches * Math.PI * 2 + (random() - .5) * .5;
-      const level = .48 + branch / Math.max(1, primaryBranches - 1) * .28 + random() * .055;
-      const length = 2.8 + random() * 2.9;
+      const normalizedBranch = branch / Math.max(1, primaryBranches - 1);
+      const angle = crownRotation + branch / primaryBranches * Math.PI * 2 + Math.sin(branch * 1.73) * archetype.asymmetry + (random() - .5) * .42;
+      const level = archetype.crownStart + normalizedBranch * .3 + random() * .045;
+      const length = (2.7 + random() * 2.55) * archetype.spread * (1 - normalizedBranch * .12);
       start.set(x, baseY + height * level, z);
-      end.set(x + Math.cos(angle) * length, baseY + height * Math.min(.94, level + .1 + random() * .13), z + Math.sin(angle) * length);
-      const primaryRadius = radius * (.38 + random() * .1);
+      end.set(x + Math.cos(angle) * length, baseY + height * Math.min(.9, level + archetype.rise + random() * .075), z + Math.sin(angle) * length);
+      const primaryRadius = radius * (.43 - normalizedBranch * .07 + random() * .065);
       alignCylinder(dummy, start, end, primaryRadius); branches.setMatrixAt(branchInstance++, dummy.matrix);
       const routeId = branchRoutes.length, startNodeId = branchNodes.length, endNodeId = startNodeId + 1;
       branchNodes.push(
@@ -276,44 +295,73 @@ function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number, t
       );
       branchRoutes.push({ id: routeId, treeIndex: tree, startNodeId, endNodeId, start: start.clone(), end: end.clone(), radius: primaryRadius, adjacentRouteIds: [], crossTreeRouteIds: [], belowRouteIds: [] });
       foliageAnchors.push(end.clone());
+      const limbCluster = start.clone().lerp(end, .56 + random() * .12); limbCluster.y += .28 + random() * .42; foliageAnchors.push(limbCluster);
 
       for (let secondary = 0; secondary < secondaryPerPrimary; secondary++) {
-        secondaryStart.copy(start).lerp(end, .5 + random() * .22);
-        const fan = (secondary - (secondaryPerPrimary - 1) / 2) * .72 + (random() - .5) * .32;
+        secondaryStart.copy(start).lerp(end, .43 + secondary * .17 + random() * .09);
+        const fan = (secondary - (secondaryPerPrimary - 1) / 2) * (.78 + random() * .24) + (random() - .5) * .25;
         const secondaryAngle = angle + fan;
-        const secondaryLength = 1.65 + random() * 2.15;
+        const secondaryLength = (1.75 + random() * 1.85) * (.88 + archetype.spread * .16);
         secondaryEnd.set(
           secondaryStart.x + Math.cos(secondaryAngle) * secondaryLength,
-          secondaryStart.y + .7 + random() * 1.55,
+          Math.min(baseY + height * .96, secondaryStart.y + .55 + random() * 1.35),
           secondaryStart.z + Math.sin(secondaryAngle) * secondaryLength,
         );
-        alignCylinder(dummy, secondaryStart, secondaryEnd, radius * (.2 + random() * .075)); branches.setMatrixAt(branchInstance++, dummy.matrix);
+        const secondaryRadius = primaryRadius * (.43 + random() * .13);
+        alignCylinder(dummy, secondaryStart, secondaryEnd, secondaryRadius); branches.setMatrixAt(branchInstance++, dummy.matrix);
         foliageAnchors.push(secondaryEnd.clone());
+
+        if (tertiaryPerSecondary) {
+          tertiaryStart.copy(secondaryStart).lerp(secondaryEnd, .55 + random() * .16);
+          const tertiaryAngle = secondaryAngle + (secondary === 0 ? -1 : 1) * (.42 + random() * .38);
+          const tertiaryLength = 1.15 + random() * 1.45;
+          tertiaryEnd.set(
+            tertiaryStart.x + Math.cos(tertiaryAngle) * tertiaryLength,
+            Math.min(baseY + height, tertiaryStart.y + .35 + random() * .9),
+            tertiaryStart.z + Math.sin(tertiaryAngle) * tertiaryLength,
+          );
+          alignCylinder(dummy, tertiaryStart, tertiaryEnd, secondaryRadius * (.42 + random() * .1)); branches.setMatrixAt(branchInstance++, dummy.matrix);
+          foliageAnchors.push(tertiaryEnd.clone());
+        }
       }
     }
-    for (let crown = 0; crown < 3; crown++) {
-      const crownAngle = crownRotation + crown / 3 * Math.PI * 2;
+
+    for (let fork = 0; fork < terminalForks; fork++) {
+      const forkAngle = crownRotation + fork / terminalForks * Math.PI * 2 + (random() - .5) * .34;
+      start.set(x, baseY + height * (.62 + fork * .035), z);
+      const forkLength = (1.35 + random() * 1.1) * archetype.spread;
+      end.set(x + Math.cos(forkAngle) * forkLength, baseY + height * (.89 + random() * .095), z + Math.sin(forkAngle) * forkLength);
+      alignCylinder(dummy, start, end, radius * (.19 + random() * .055)); branches.setMatrixAt(branchInstance++, dummy.matrix);
+      foliageAnchors.push(end.clone());
+    }
+
+    for (let crown = 0; crown < crownClusters; crown++) {
+      const crownAngle = crownRotation + crown / crownClusters * Math.PI * 2 + (random() - .5) * .5;
+      const orbit = crown < 2 ? random() * .65 : (1.05 + random() * 2.25) * archetype.spread;
       foliageAnchors.push(new THREE.Vector3(
-        x + Math.cos(crownAngle) * (crown === 0 ? .25 : 1.3 + random()),
-        baseY + height * (.86 + random() * .12),
-        z + Math.sin(crownAngle) * (crown === 0 ? .25 : 1.3 + random()),
+        x + Math.cos(crownAngle) * orbit,
+        baseY + height * (.7 + random() * .285),
+        z + Math.sin(crownAngle) * orbit,
       ));
     }
     for (let cluster = 0; cluster < foliageClustersPerTree; cluster++) {
       const clusterPosition = foliageAnchors[cluster];
       const angle = Math.atan2(clusterPosition.z - z, clusterPosition.x - x);
-      const scale = 2.75 + random() * 2.25;
+      const scale = (2.45 + random() * 1.85) * (.94 + archetype.spread * .08);
       for (let card = 0; card < cardsPerCluster; card++) {
         dummy.position.set(clusterPosition.x + (random() - .5) * .55, clusterPosition.y + (random() - .5) * .5, clusterPosition.z + (random() - .5) * .55);
         dummy.rotation.set((random() - .5) * .16, angle + card * Math.PI / cardsPerCluster, (random() - .5) * .12);
-        dummy.scale.set(scale, scale * (.42 + random() * .14), 1); dummy.updateMatrix(); leaves.setMatrixAt((tree * foliageClustersPerTree + cluster) * cardsPerCluster + card, dummy.matrix);
+        dummy.scale.set(scale, scale * (.46 + random() * .14), 1); dummy.updateMatrix();
+        const leafIndex = (tree * foliageClustersPerTree + cluster) * cardsPerCluster + card;
+        leaves.setMatrixAt(leafIndex, dummy.matrix);
+        leafTint.setHSL(.245 + (random() - .5) * .035, .2 + random() * .13, .72 + random() * .14); leaves.setColorAt(leafIndex, leafTint);
       }
     }
     tree++;
   }
   if (tree !== treeCount) throw new Error(`Unable to place realistic forest: placed ${tree} of ${treeCount} trees.`);
   buildBranchGraph(branchRoutes, branchNodes);
-  trunks.instanceMatrix.needsUpdate = branches.instanceMatrix.needsUpdate = leaves.instanceMatrix.needsUpdate = true;
+  trunks.instanceMatrix.needsUpdate = branches.instanceMatrix.needsUpdate = leaves.instanceMatrix.needsUpdate = true; if (leaves.instanceColor) leaves.instanceColor.needsUpdate = true;
   scene.add(trunks, branches, leaves);
 
   // Understory detail: rocks, shrubs, and fallen bark-covered logs in a handful of draw calls.
