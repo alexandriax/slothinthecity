@@ -19,10 +19,11 @@ test("server-renders the branded game shell", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
   assert.match(html, /<title>SLOTH \/ PARK — A Central Park Survival Adventure<\/title>/i);
-  assert.match(html, /NORTHWOOD FIELD STUDIES/);
-  assert.match(html, /Enter Central Park/);
+  assert.match(html, /THE RAMBLE · CENTRAL PARK/);
+  assert.match(html, /PREPARING THE PARK|ENTER THE RAMBLE/);
   assert.match(html, /data-game-state="intro"/);
   assert.match(html, /3D game viewport/);
+  assert.match(html, /game\/splash\.webp/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });
 
