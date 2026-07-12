@@ -381,7 +381,7 @@ export function GameClient() {
         let moving = false, cartNearby = false, groundTreeTarget: ClimbableTree | null = null, branchTarget: { route: BranchRoute; amount: number; point: THREE.Vector3; score: number } | null = null, lowerTarget: { route: BranchRoute; amount: number; point: THREE.Vector3; score: number } | null = null, traversalSpeed = 0;
 
         cart.getWorldEntryPosition(cartEntry);
-        cartNearby = !drivingCart && !climbingTree && !branchRoute && !transfer && !controlledDescent && !swimming && player.distanceTo(cartEntry) < 4.1;
+        cartNearby = !drivingCart && !climbingTree && !branchRoute && !transfer && !controlledDescent && !swimming && Math.hypot(player.x - cartEntry.x, player.z - cartEntry.z) < 4.1;
         // Keep the interaction shown by the HUD and the interaction that fires
         // on E identical when a forage pickup sits beside the parked cart.
         if (actionRequested && hawkEvent?.kind !== "SNATCH" && !drivingCart && collectNearby()) actionRequested = false;
