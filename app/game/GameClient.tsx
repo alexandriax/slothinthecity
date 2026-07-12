@@ -7,6 +7,7 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { MobileHud } from "./mobile/MobileHud";
 import { TouchControls } from "./mobile/TouchControls";
 import { createSlothRig } from "./player/SlothRig";
 import { loadGameTextures } from "./rendering/textures";
@@ -407,7 +408,7 @@ export function GameClient() {
         } else if (actionRequested && hawkEvent?.kind !== "SNATCH" && cartNearby) {
           drivingCart = true; branchRoute = null; climbingTree = null; transfer = null; controlledDescent = false; dropVelocity = 0; swimming = false;
           cart.stop(); vehicleLookYaw = 0; pitch = -.055; velocity.set(0, 0, 0); actionRequested = false;
-          showToast("Field cart engaged — W / S drive · A / D steer · Space brake · E exit", 3600);
+          showToast(hasTouchInput() ? "Driving · left stick steers · Brake holds · Exit leaves cart" : "Field cart engaged — W / S drive · A / D steer · Space brake · E exit", 3600);
         }
 
         if (actionRequested && hawkEvent?.kind !== "SNATCH" && !drivingCart && !transfer && !climbingTree && !branchRoute && !controlledDescent && dropVelocity === 0) {
@@ -691,7 +692,7 @@ export function GameClient() {
     // Pointer Lock without a physical mouse; it must never strand the intro in
     // its transparent exiting state.
     resetViewportScroll(); setExiting(true); setPhase("playing");
-    showToast(hasTouchInput() ? "Left stick moves · drag the right side to look · tap Drive / Grab / Use to interact" : "E drives the marked field cart · hold W to follow ring-marked canopy routes", 5600);
+    showToast(hasTouchInput() ? "Left stick moves · drag right to look · tap action to interact" : "E drives the marked field cart · hold W to follow ring-marked canopy routes", 5200);
     requestAnimationFrame(resetViewportScroll); window.setTimeout(() => setExiting(false), 850);
     try { if (!audioRef.current) audioRef.current = startAudio(); } catch { audioRef.current = null; }
     safeLock();
@@ -709,15 +710,18 @@ export function GameClient() {
   return <main className="game-shell" data-game-state={phase} data-touch-capable={touchCapable ? "true" : "false"} data-motion={hud.motion} data-energy={hud.energy.toFixed(1)} data-threat={hud.alert.toFixed(1)} data-hawk-phase={hud.hawkPhase} data-swimming={hud.swimming ? "true" : "false"} data-driving={hud.driving ? "true" : "false"} data-speed={hud.speed.toFixed(2)} data-position={`${hud.x.toFixed(2)},${hud.z.toFixed(2)}`} data-altitude={hud.y.toFixed(2)} data-branch={hud.branchId} data-branch-progress={hud.branchProgress.toFixed(3)}>
     <div ref={mount} className="viewport" aria-label="3D game viewport" />
     <div className="world-grade"/><div className="world-vignette"/><div className="grain"/>
-    {phase !== "intro" && <div className="hud" aria-live="polite">
+    {phase !== "intro" && <div className="hud desktop-hud">
       <section className="mission"><div className="eyebrow">Current objective</div><h2>{hud.objective}</h2><p>{hud.buds} / 5 tender buds foraged</p></section>
       <div className="compass"><div className="eyebrow">The Ramble · 6:42 PM</div><div className="compass-line"><span>W</span><span className="active">{hud.heading}</span><span>E</span></div></div>
       <div className="status"><div className="eyebrow">Hawk status · {Math.round(hud.alert)}%</div><strong>{hud.threat}</strong></div>
       <div className="meters"><div className={`motion-state ${hud.motion === "PATH BLOCKED" || hud.motion === "HAWK DIVE" || hud.motion === "SNATCHED" ? "warning" : ""}`}><span>{hud.motion}</span><small>{hud.hint}</small></div><div className="meter-row"><span>Energy</span><div className="meter-track"><div className="meter-fill" style={{ width: `${hud.energy}%` }}/></div><span>{Math.round(hud.energy)}</span></div><div className="meter-row"><span>Threat</span><div className="meter-track"><div className="meter-fill alert" style={{ width: `${hud.alert}%` }}/></div><span>{Math.round(hud.alert)}</span></div></div>
-      <div className={`crosshair ${hud.promptKey === "E" ? "targeted" : hud.promptKey === "CTRL" ? "drop-targeted" : ""}`}/>{hud.prompt && <div className="interaction">{hud.promptKey && <span className="key">{hud.promptKey}</span>}{hud.prompt}</div>}
+      {hud.prompt && <div className="interaction">{hud.promptKey && <span className="key">{hud.promptKey}</span>}{hud.prompt}</div>}
       <div className="controls-strip">{hud.driving ? <><span>W / S Drive</span><span>A / D Steer</span><span>Space Brake</span><span>E Exit</span></> : <><span>W / S Move / Auto-flow</span><span>Shift Hold Grip</span><span>E Interact</span><span>Ctrl / Space Descend</span></>}<span>P Pause</span><span>C Scent</span><span>M {muted ? "Unmute" : "Mute"}</span></div>
-      <div className={`scent-overlay ${scent ? "on" : ""}`}/>{toast && <div className="toast">{toast}</div>}
     </div>}
+    {phase !== "intro" && <MobileHud alert={hud.alert} buds={hud.buds} driving={hud.driving} energy={hud.energy} hawkPhase={hud.hawkPhase} motion={hud.motion} showMotion={!toast} speed={hud.speed} swimming={hud.swimming}/>}
+    {phase !== "intro" && <div className={`crosshair ${hud.promptKey === "E" ? "targeted" : hud.promptKey === "CTRL" ? "drop-targeted" : ""}`}/>}
+    {phase !== "intro" && <div className="sr-only" role="status" aria-live="assertive" aria-atomic="true">{hud.hawkPhase === "DIVING" ? "Hawk diving. Find cover." : hud.hawkPhase === "SNATCHED" ? "The hawk caught you." : hud.motion === "PATH BLOCKED" ? "Path blocked. Choose another route." : ""}</div>}
+    <div className={`scent-overlay ${scent ? "on" : ""}`}/>{toast && <div className="toast" role="status" aria-live="polite">{toast}</div>}
     {phase === "playing" && pointerLockAvailable && !mouseCaptured && <button className="mouse-resume" onClick={safeLock}><span>Mouse free</span>Click to look</button>}
     {(phase === "intro" || exiting) && <section className={`screen intro-screen ${exiting ? "exiting" : ""}`}>
       <Image className="intro-art" src="/game/splash.webp" alt="" aria-hidden="true" fill priority sizes="100vw" unoptimized/>
