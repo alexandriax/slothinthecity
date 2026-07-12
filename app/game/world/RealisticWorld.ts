@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { Sky } from "three/addons/objects/Sky.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import type { GameTextures } from "../rendering/textures";
+import { BOW_BRIDGE_TARGET, SUBWAY_TARGET, ZOO_TARGET } from "./CampaignLandmarks";
 
 export const BUDS = [
   new THREE.Vector3(-12, 0, 14), new THREE.Vector3(17, 0, -4),
@@ -9,7 +10,7 @@ export const BUDS = [
   new THREE.Vector3(-24, 0, -58), new THREE.Vector3(-45, 0, -28),
 ];
 export const START = new THREE.Vector3(-43, 0, 54);
-export const GOAL = new THREE.Vector3(-10, 0, -78);
+export const GOAL = BOW_BRIDGE_TARGET;
 
 // Hand-authored crown lines give the procedural forest a legible aerial
 // structure.  The junctions are deliberately shared so a sloth entering at
@@ -369,6 +370,7 @@ function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number, t
     if (!heroPositionKeys.has(key)) { heroPositionKeys.add(key); heroPositions.push([point[0], point[1]]); }
   }
   const trailSamples = Array.from({ length: 81 }, (_, index) => trailCurve.getPoint(index / 80));
+  const campaignTrailSamples = [BOW_BRIDGE_TARGET, new THREE.Vector3(45, 0, -69), ZOO_TARGET, SUBWAY_TARGET];
   const trunkGeometry = new THREE.CylinderGeometry(.2, 1, 1, 18, 8);
   const branchGeometry = new THREE.CylinderGeometry(.36, 1, 1, 12, 3);
   const barkMaterial = new THREE.MeshStandardMaterial({ map: textures.bark, bumpMap: textures.bark, bumpScale: .11, color: "#afa18e", roughness: .95 });
@@ -398,11 +400,14 @@ function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number, t
     const x = forced ? forced[0] : random() * 220 - 110, z = forced ? forced[1] : random() * 220 - 110;
     attempts++;
     const height = 8.5 + random() * 7.5, radius = .38 + random() * .34;
-    const trailDistance = distanceToTrail(x, z, trailSamples);
+    const trailDistance = distanceToTrail(x, z, trailSamples), campaignTrailDistance = distanceToTrail(x, z, campaignTrailSamples);
     const blocked = Math.hypot(x - 34, z + 43) < 32 + radius
       || Math.hypot(x - START.x, z - START.z) < 9.5 + radius
-      || Math.hypot(x - GOAL.x, z - GOAL.z) < 8 + radius
+      || Math.hypot(x - BOW_BRIDGE_TARGET.x, z - BOW_BRIDGE_TARGET.z) < 10 + radius
+      || Math.hypot(x - ZOO_TARGET.x, z - ZOO_TARGET.z) < 9 + radius
+      || Math.hypot(x - SUBWAY_TARGET.x, z - SUBWAY_TARGET.z) < 8 + radius
       || trailDistance < 3.15 + radius
+      || campaignTrailDistance < 3.3 + radius
       || Math.hypot(x, z) < 8
       || trees.some((other) => Math.hypot(x - other.x, z - other.z) < radius + other.radius + 1.55);
     if (blocked) continue;
@@ -690,40 +695,12 @@ function addLandmarks(scene: THREE.Scene, textures: GameTextures, trailCurve: TH
     obstacles.push({ id: `bridge-pier-${end}-${side}`, kind: "circle", x: world.x, z: world.z, radius: 1.08, minY: bridge.position.y - .45, maxY: bridge.position.y + 2.1 });
   }
 
-  const gate = new THREE.Group();
-  for (const x of [-3.8, 3.8]) { const pillar = new THREE.Mesh(new RoundedBoxGeometry(1.3, 5, 1.3, 4, .12), stoneMaterial); pillar.position.set(x, 2.5, 0); pillar.castShadow = pillar.receiveShadow = true; gate.add(pillar); }
-  const arch = new THREE.Mesh(new THREE.TorusGeometry(3.8, .64, 16, 48, Math.PI), stoneMaterial); arch.rotation.z = Math.PI; arch.position.y = 4.5; arch.castShadow = true; gate.add(arch);
-  gate.position.set(GOAL.x, terrainY(GOAL.x, GOAL.z), GOAL.z); scene.add(gate);
-  for (const x of [-3.8, 3.8]) obstacles.push({ id: `gate-pillar-${x}`, kind: "circle", x: GOAL.x + x, z: GOAL.z, radius: .78, minY: gate.position.y, maxY: gate.position.y + 5 });
-
-  // A quiet, diegetic destination marker appears once the foraging objective
-  // is complete. It is deliberately built from a handful of unlit meshes so
-  // it reads through the canopy without adding a dynamic light or particles.
-  const beaconCoreMaterial = new THREE.MeshBasicMaterial({ color: "#f4ffd0", transparent: true, opacity: 0, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending });
-  const beaconGlowMaterial = new THREE.MeshBasicMaterial({ color: "#cce978", transparent: true, opacity: 0, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending });
-  const beaconHaloMaterial = new THREE.MeshBasicMaterial({ color: "#dcef91", transparent: true, opacity: 0, depthWrite: false, toneMapped: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
-  const beaconBeamMaterial = new THREE.MeshBasicMaterial({ color: "#c7e978", transparent: true, opacity: 0, depthWrite: false, toneMapped: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
-  const goalBeacon = new THREE.Group();
-  const beaconCore = new THREE.Mesh(new THREE.IcosahedronGeometry(.34, 2), beaconCoreMaterial);
-  const beaconGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(.62, 2), beaconGlowMaterial);
-  const beaconHalo = new THREE.Mesh(new THREE.TorusGeometry(.92, .026, 8, 48), beaconHaloMaterial);
-  const beaconOrbit = new THREE.Mesh(new THREE.TorusGeometry(1.2, .018, 8, 48), beaconHaloMaterial);
-  const beaconBeam = new THREE.Mesh(new THREE.CylinderGeometry(.1, .62, 6.4, 16, 1, true), beaconBeamMaterial);
-  beaconOrbit.rotation.x = Math.PI / 2;
-  beaconOrbit.rotation.z = -.24;
-  beaconBeam.position.y = -3.35;
-  goalBeacon.add(beaconBeam, beaconGlow, beaconCore, beaconHalo, beaconOrbit);
-  goalBeacon.position.set(GOAL.x, gate.position.y + 7.25, GOAL.z);
-  goalBeacon.visible = false;
-  goalBeacon.renderOrder = 3;
-  scene.add(goalBeacon);
-
   for (let i = 0; i < 18; i++) {
     const point = trailCurve.getPoint(i / 17), side = i % 2 ? 3.15 : -3.15;
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(.065, .105, 4, 12), iron); pole.position.set(point.x, point.y + 2, point.z + side); pole.castShadow = true; scene.add(pole);
     const lantern = new THREE.Mesh(new THREE.SphereGeometry(.22, 16, 12), new THREE.MeshStandardMaterial({ color: "#f6dc9b", emissive: "#ffcb6b", emissiveIntensity: 1.8, roughness: .18 })); lantern.position.copy(pole.position).add(new THREE.Vector3(0, 2, 0)); scene.add(lantern);
   }
-  return { obstacles, bridgeSurface, goalBeacon, beaconCore, beaconGlow, beaconHalo, beaconOrbit, beaconBeam, beaconCoreMaterial, beaconGlowMaterial, beaconHaloMaterial, beaconBeamMaterial };
+  return { obstacles, bridgeSurface };
 }
 
 function createHawk() {
@@ -788,7 +765,7 @@ export function buildRealisticWorld(scene: THREE.Scene, textures: GameTextures, 
   const trail = new THREE.Mesh(trailRibbon(trailCurve), new THREE.MeshStandardMaterial({ map: textures.gravel, bumpMap: textures.gravel, bumpScale: .09, color: "#a59678", roughness: .98 })); trail.receiveShadow = true; scene.add(trail);
 
   const { trees, branchRoutes: branches, branchNodes, canopyCorridors, canopyNetworkStats } = addTrees(scene, textures, quality, trailCurve);
-  const { obstacles, bridgeSurface, goalBeacon, beaconCore, beaconGlow, beaconHalo, beaconOrbit, beaconBeam, beaconCoreMaterial, beaconGlowMaterial, beaconHaloMaterial, beaconBeamMaterial } = addLandmarks(scene, textures, trailCurve);
+  const { obstacles, bridgeSurface } = addLandmarks(scene, textures, trailCurve);
   const lakeMaterial = new THREE.MeshPhysicalMaterial({ color: "#345d59", normalMap: textures.waterNormal, normalScale: new THREE.Vector2(.32, .32), roughness: .16, metalness: .08, transmission: .08, transparent: true, opacity: .9, clearcoat: .72, clearcoatRoughness: .18, envMapIntensity: 1.4 });
   const lake = new THREE.Mesh(new THREE.CircleGeometry(25, 96), lakeMaterial); lake.rotation.x = -Math.PI / 2; lake.position.set(34, terrainY(34, -43) + .82, -43); lake.receiveShadow = true; scene.add(lake);
   // Shoreline breaks the mathematically perfect circle.
@@ -824,22 +801,6 @@ export function buildRealisticWorld(scene: THREE.Scene, textures: GameTextures, 
       hawkWings.forEach((wing) => { wing.rotation.z = wing.userData.side * flap; });
       buds.forEach((bud, index) => { if (!bud.visible) return; bud.rotation.y += .008; bud.position.y = bud.userData.anchorY + Math.sin(time * 2 + index) * .1; });
       rings.forEach((ring, index) => { (ring.material as THREE.MeshBasicMaterial).opacity = scent && !collected.has(index) ? .48 : 0; ring.scale.setScalar(1 + (time * .6 + index * .17) % 2.5); });
-      goalBeacon.visible = collected.size >= 5;
-      if (goalBeacon.visible) {
-        const pulse = .5 + Math.sin(time * 2.15) * .5;
-        const scentStrength = scent ? 1 : 0;
-        beaconCore.scale.setScalar(.9 + pulse * .2 + scentStrength * .08);
-        beaconGlow.scale.setScalar(.94 + pulse * .16 + scentStrength * .18);
-        beaconHalo.scale.setScalar(.97 + pulse * .09 + scentStrength * .08);
-        beaconOrbit.scale.setScalar(.99 + (1 - pulse) * .06 + scentStrength * .1);
-        beaconHalo.rotation.z = time * .22;
-        beaconOrbit.rotation.y = time * -.18;
-        beaconBeam.scale.set(1 + pulse * .08 + scentStrength * .16, 1, 1 + pulse * .08 + scentStrength * .16);
-        beaconCoreMaterial.opacity = .7 + pulse * .2 + scentStrength * .1;
-        beaconGlowMaterial.opacity = .1 + pulse * .08 + scentStrength * .16;
-        beaconHaloMaterial.opacity = .2 + pulse * .1 + scentStrength * .22;
-        beaconBeamMaterial.opacity = .035 + pulse * .025 + scentStrength * .075;
-      }
     },
   };
 }

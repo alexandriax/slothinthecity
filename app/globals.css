@@ -172,3 +172,395 @@ button { font: inherit; }
 @media(max-height:500px) and (orientation:landscape) and (max-width:900px), (max-height:500px) and (orientation:landscape) and (pointer:coarse){.toast{top:max(48px,calc(env(safe-area-inset-top) + 43px))}.game-shell[data-buds="5"] .toast{top:max(82px,calc(env(safe-area-inset-top) + 77px))}}
 @media(max-height:500px) and (orientation:landscape){.game-shell[data-touch-capable="true"] .toast{top:max(48px,calc(env(safe-area-inset-top) + 43px))}.game-shell[data-touch-capable="true"][data-buds="5"] .toast{top:max(82px,calc(env(safe-area-inset-top) + 77px))}}
 @media(prefers-reduced-motion:reduce){.grain,.game-shell[data-hawk-phase="DIVING"] .world-vignette{animation:none}.meter-fill,.scent-overlay,.primary{transition:none}}
+
+/* Subway campaign — enamel wayfinding, fluorescent platform light, and route-color telemetry. */
+.subway-shell {
+  --transit-accent:#fccc0a;
+  --transit-accent-rgb:252,204,10;
+  --transit-ink:#f7f3e8;
+  --transit-glass:rgba(9,12,12,.88);
+  --transit-line:rgba(255,255,255,.16);
+  background:#090d0d;
+}
+.subway-shell[data-station="LEXINGTON"] {
+  --transit-accent:#00933c;
+  --transit-accent-rgb:0,147,60;
+}
+.subway-shell[data-station="WEST_FARMS"] {
+  --transit-accent:#8bc79e;
+  --transit-accent-rgb:139,199,158;
+}
+.subway-shell .world-grade {
+  opacity:.92;
+  background:
+    linear-gradient(90deg,transparent 0 16%,rgba(208,226,211,.045) 16.2% 16.45%,transparent 16.7% 83.3%,rgba(208,226,211,.04) 83.55% 83.8%,transparent 84%),
+    radial-gradient(ellipse at 50% 5%,rgba(222,236,218,.17),transparent 42%),
+    linear-gradient(180deg,rgba(17,37,31,.04),rgba(0,5,5,.32));
+  mix-blend-mode:screen;
+}
+.subway-shell .world-vignette {
+  box-shadow:inset 0 0 15vw 2vw rgba(0,0,0,.7),inset 0 -18vh 18vh -12vh rgba(0,0,0,.7);
+}
+.subway-shell .grain { opacity:.032; mix-blend-mode:soft-light; }
+.subway-shell .eyebrow {
+  color:rgba(247,243,232,.58);
+  font-family:"Helvetica Neue",Arial,sans-serif;
+  font-size:9px;
+  font-weight:760;
+  letter-spacing:.24em;
+}
+.subway-shell .mission,
+.subway-shell .compass,
+.subway-shell .status,
+.subway-shell .meters {
+  border:1px solid var(--transit-line);
+  border-radius:1px;
+  background:linear-gradient(135deg,rgba(6,9,9,.93),rgba(11,17,16,.76));
+  box-shadow:0 18px 48px rgba(0,0,0,.34),inset 0 1px rgba(255,255,255,.045);
+  backdrop-filter:blur(18px) saturate(.88);
+}
+.subway-shell .mission {
+  width:min(430px,62vw);
+  padding:17px 20px 16px 23px;
+  border-left:4px solid var(--transit-accent);
+}
+.subway-shell .mission:before {
+  content:"";
+  position:absolute;
+  top:0;
+  right:0;
+  width:76px;
+  height:3px;
+  background:var(--transit-accent);
+  box-shadow:0 0 20px rgba(var(--transit-accent-rgb),.28);
+}
+.subway-shell .mission:after {
+  background:linear-gradient(90deg,rgba(var(--transit-accent-rgb),.62),transparent 76%);
+}
+.subway-shell .mission h2 {
+  margin:8px 0 7px;
+  color:var(--transit-ink);
+  font-family:"Helvetica Neue",Arial,sans-serif;
+  font-size:clamp(19px,1.75vw,26px);
+  font-weight:560;
+  letter-spacing:-.025em;
+  line-height:1.12;
+}
+.subway-shell .mission p {
+  color:rgba(247,243,232,.56);
+  font-size:10px;
+  font-weight:650;
+  letter-spacing:.17em;
+  text-transform:uppercase;
+}
+.subway-shell .compass {
+  width:280px;
+  padding:10px 16px 12px;
+  border-top:3px solid var(--transit-accent);
+}
+.subway-shell .compass:before,
+.subway-shell .compass:after {
+  position:absolute;
+  top:35px;
+  display:grid;
+  place-items:center;
+  width:24px;
+  height:24px;
+  border-radius:50%;
+  color:#111;
+  background:var(--transit-accent);
+  font-size:10px;
+  font-weight:850;
+  text-shadow:none;
+}
+.subway-shell .compass:before { content:"N"; left:16px; }
+.subway-shell .compass:after { content:"R"; right:16px; }
+.subway-shell[data-station="LEXINGTON"] .compass:before,
+.subway-shell[data-station="LEXINGTON"] .compass:after { content:"5"; }
+.subway-shell[data-station="WEST_FARMS"] .compass:before { content:"2"; }
+.subway-shell[data-station="WEST_FARMS"] .compass:after { content:"5"; }
+.subway-shell .compass-line {
+  min-height:24px;
+  align-items:center;
+  margin-top:8px;
+  gap:28px;
+  color:rgba(247,243,232,.32);
+}
+.subway-shell .compass-line .active {
+  max-width:150px;
+  overflow:hidden;
+  color:var(--transit-accent);
+  font-size:9px;
+  font-weight:800;
+  letter-spacing:.16em;
+  text-overflow:ellipsis;
+  text-transform:uppercase;
+  transform:none;
+  white-space:nowrap;
+}
+.subway-shell .status {
+  min-width:210px;
+  padding:12px 15px 13px;
+  border-right:3px solid var(--transit-accent);
+}
+.subway-shell .status strong {
+  margin-top:6px;
+  color:var(--transit-accent);
+  font-family:"Helvetica Neue",Arial,sans-serif;
+  font-size:14px;
+  font-weight:760;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.subway-shell .meters {
+  width:310px;
+  gap:11px;
+  padding:15px 17px 16px;
+  border-bottom:3px solid var(--transit-accent);
+}
+.subway-shell .motion-state { border-bottom-color:var(--transit-line); }
+.subway-shell .motion-state span { color:var(--transit-accent); }
+.subway-shell .motion-state small { color:rgba(247,243,232,.48); }
+.subway-shell .meter-row { grid-template-columns:50px 1fr 42px; }
+.subway-shell .meter-track { height:4px; background:rgba(255,255,255,.12); }
+.subway-shell .meter-fill {
+  background:var(--transit-accent);
+  box-shadow:0 0 14px rgba(var(--transit-accent-rgb),.58);
+}
+.subway-shell .interaction {
+  min-width:300px;
+  padding:11px 18px;
+  border-color:rgba(var(--transit-accent-rgb),.52);
+  border-bottom:3px solid var(--transit-accent);
+  background:rgba(5,8,8,.9);
+  box-shadow:0 18px 48px rgba(0,0,0,.42),0 0 30px rgba(var(--transit-accent-rgb),.08);
+  color:var(--transit-ink);
+  font-weight:740;
+}
+.subway-shell .interaction .key {
+  border:0;
+  border-radius:50%;
+  color:#111;
+  background:var(--transit-accent);
+  font-weight:900;
+  text-shadow:none;
+}
+.subway-shell .controls-strip {
+  border-color:var(--transit-line);
+  background:rgba(6,9,9,.78);
+  box-shadow:0 14px 38px rgba(0,0,0,.28);
+  color:rgba(247,243,232,.52);
+}
+.subway-shell .controls-strip span { border-right-color:var(--transit-line); }
+.subway-shell .goal-wayfinder {
+  top:max(100px,calc(env(safe-area-inset-top) + 76px));
+  min-width:218px;
+  height:44px;
+  border-color:rgba(var(--transit-accent-rgb),.36);
+  border-radius:2px;
+  background:rgba(5,8,8,.9);
+  box-shadow:0 16px 38px rgba(0,0,0,.38),inset 0 -2px var(--transit-accent);
+}
+.subway-shell .goal-wayfinder-arrow {
+  border-color:rgba(var(--transit-accent-rgb),.5);
+  border-radius:2px;
+  background:rgba(var(--transit-accent-rgb),.1);
+  box-shadow:none;
+}
+.subway-shell .goal-wayfinder-arrow i {
+  background:var(--transit-accent);
+  filter:drop-shadow(0 0 6px rgba(var(--transit-accent-rgb),.66));
+}
+.subway-shell .goal-wayfinder-copy b { color:var(--transit-ink); font-size:9px; }
+.subway-shell .goal-wayfinder-copy small { color:var(--transit-accent); }
+.subway-shell .crosshair:before,
+.subway-shell .crosshair:after { background:rgba(247,243,232,.74); }
+.subway-shell .crosshair.targeted:before,
+.subway-shell .crosshair.targeted:after {
+  background:var(--transit-accent);
+  box-shadow:0 0 9px rgba(var(--transit-accent-rgb),.86);
+}
+.subway-shell .toast {
+  top:22%;
+  padding:12px 19px 13px;
+  border-color:rgba(var(--transit-accent-rgb),.35);
+  border-top:0;
+  border-left:3px solid var(--transit-accent);
+  border-radius:1px;
+  color:var(--transit-ink);
+  background:rgba(5,8,8,.92);
+  box-shadow:0 18px 54px rgba(0,0,0,.46);
+  font-family:"Helvetica Neue",Arial,sans-serif;
+  font-size:11px;
+  font-weight:620;
+  letter-spacing:.035em;
+}
+.subway-shell[data-station="RIDING"] .goal-wayfinder,
+.subway-shell[data-station="RIDING"] .crosshair { opacity:0; }
+.subway-shell[data-station="RIDING"] .world-grade {
+  background:linear-gradient(90deg,transparent,rgba(var(--transit-accent-rgb),.06) 45% 55%,transparent),linear-gradient(180deg,rgba(255,255,255,.035),rgba(0,0,0,.32));
+}
+
+.subway-shell .finale-screen {
+  background:
+    linear-gradient(90deg,rgba(4,11,8,.86) 0%,rgba(5,14,10,.58) 38%,rgba(5,14,10,.12) 72%),
+    linear-gradient(0deg,rgba(3,9,6,.46),transparent 55%);
+}
+.subway-shell .finale-screen:before {
+  background:
+    repeating-linear-gradient(90deg,transparent 0 79px,rgba(255,255,255,.018) 80px),
+    radial-gradient(circle at 78% 28%,rgba(193,230,150,.2),transparent 30%),
+    linear-gradient(135deg,transparent 55%,rgba(0,0,0,.45));
+}
+.subway-shell .finale-screen .pause-card {
+  position:absolute;
+  top:50%;
+  left:clamp(28px,7vw,112px);
+  width:min(570px,calc(100% - 56px));
+  padding:clamp(32px,4.6vw,58px);
+  overflow:hidden;
+  border-color:rgba(224,239,210,.24);
+  border-left:4px solid #b9dc83;
+  background:linear-gradient(135deg,rgba(5,15,10,.94),rgba(8,22,15,.8));
+  box-shadow:0 34px 90px rgba(0,0,0,.46),inset 0 1px rgba(255,255,255,.05);
+  backdrop-filter:blur(22px) saturate(1.06);
+  transform:translateY(-50%);
+}
+.subway-shell .finale-screen .pause-card:before {
+  content:"05";
+  position:absolute;
+  top:-26px;
+  right:15px;
+  color:rgba(185,220,131,.075);
+  font-size:150px;
+  font-weight:900;
+  letter-spacing:-.08em;
+  line-height:1;
+}
+.subway-shell .finale-screen .pause-card:after {
+  content:"WEST FARMS SQ \2192  BRONX ZOO";
+  position:absolute;
+  left:0;
+  right:0;
+  bottom:0;
+  padding:8px 22px;
+  color:#0c160e;
+  background:#b9dc83;
+  font-size:8px;
+  font-weight:850;
+  letter-spacing:.18em;
+  text-align:right;
+}
+.subway-shell .finale-screen .eyebrow { color:#b9dc83; }
+.subway-shell .finale-screen h2 {
+  position:relative;
+  margin:12px 0 18px;
+  color:#f6f2e6;
+  font-size:clamp(42px,5vw,68px);
+  letter-spacing:-.045em;
+  line-height:.95;
+}
+.subway-shell .finale-screen p {
+  position:relative;
+  max-width:450px;
+  margin:0;
+  color:rgba(246,242,230,.68);
+  font-size:14px;
+  line-height:1.75;
+}
+.subway-shell .finale-screen .actions { position:relative; margin:30px 0 12px; }
+.subway-shell .finale-screen .primary {
+  color:#0b130c;
+  background:#b9dc83;
+  box-shadow:0 12px 34px rgba(70,106,53,.22);
+}
+
+@media(min-width:901px) and (max-width:1180px) {
+  .subway-shell .mission { width:320px; }
+  .subway-shell .mission h2 { font-size:18px; }
+  .subway-shell .compass { width:238px; }
+  .subway-shell .status { min-width:180px; max-width:220px; }
+  .subway-shell .meters { width:280px; }
+}
+
+@media(max-width:900px), (pointer:coarse) {
+  .subway-shell .mobile-telemetry {
+    border-color:rgba(255,255,255,.14);
+    border-left:3px solid var(--transit-accent);
+    border-radius:2px;
+    background:rgba(5,8,8,.9);
+    box-shadow:0 12px 30px rgba(0,0,0,.34),inset 0 -2px rgba(var(--transit-accent-rgb),.72);
+  }
+  .subway-shell .mobile-objective strong,
+  .subway-shell .mobile-threat strong { color:var(--transit-accent); }
+  .subway-shell .mobile-energy { border-color:rgba(255,255,255,.1); }
+  .subway-shell .mobile-bar i { background:var(--transit-accent); box-shadow:0 0 9px rgba(var(--transit-accent-rgb),.72); }
+  .subway-shell .mobile-motion {
+    border-color:rgba(var(--transit-accent-rgb),.3);
+    border-radius:2px;
+    background:rgba(5,8,8,.86);
+    color:var(--transit-ink);
+  }
+  .subway-shell .goal-wayfinder {
+    top:max(64px,calc(env(safe-area-inset-top) + 56px));
+    min-width:178px;
+    height:34px;
+    border-radius:2px;
+  }
+  .subway-shell .goal-wayfinder-arrow { width:25px; height:25px; }
+  .subway-shell .toast,
+  .subway-shell[data-buds="5"] .toast {
+    top:max(104px,calc(env(safe-area-inset-top) + 96px));
+    padding:8px 11px 9px;
+    border-left:3px solid var(--transit-accent);
+    border-radius:2px;
+    font-size:9px;
+    line-height:1.35;
+  }
+  .subway-shell .touch-toggle { color:rgba(247,243,232,.62); }
+  .subway-shell .touch-stick,
+  .subway-shell .touch-action {
+    border-color:rgba(var(--transit-accent-rgb),.46);
+    background:radial-gradient(circle,rgba(var(--transit-accent-rgb),.1),rgba(5,8,8,.5) 68%);
+  }
+  .subway-shell .touch-stick span { border-color:rgba(var(--transit-accent-rgb),.64); background:rgba(7,12,11,.82); }
+  .subway-shell .touch-action { color:var(--transit-accent); }
+  .subway-shell .finale-screen {
+    align-items:end;
+    background:linear-gradient(0deg,rgba(4,12,8,.96),rgba(4,12,8,.42) 62%,rgba(4,12,8,.12));
+  }
+  .subway-shell .finale-screen .pause-card {
+    position:relative;
+    top:auto;
+    left:auto;
+    width:calc(100% - 24px);
+    margin:0 12px max(12px,env(safe-area-inset-bottom));
+    padding:28px 24px 38px;
+    transform:none;
+  }
+  .subway-shell .finale-screen .pause-card:before { top:-8px; right:13px; font-size:96px; }
+  .subway-shell .finale-screen h2 { margin:9px 0 13px; font-size:clamp(35px,11vw,52px); }
+  .subway-shell .finale-screen p { font-size:12px; line-height:1.58; }
+  .subway-shell .finale-screen .actions { margin-top:20px; }
+  .subway-shell .finale-screen .primary { width:100%; min-width:0; }
+}
+
+@media(max-height:500px) and (orientation:landscape) {
+  .subway-shell .goal-wayfinder { top:max(48px,calc(env(safe-area-inset-top) + 43px)); }
+  .subway-shell .toast,
+  .subway-shell[data-buds="5"] .toast { top:max(82px,calc(env(safe-area-inset-top) + 77px)); }
+  .subway-shell .finale-screen .pause-card {
+    left:max(14px,env(safe-area-inset-left));
+    width:min(500px,62vw);
+    margin:0;
+    padding:24px 28px 32px;
+  }
+  .subway-shell .finale-screen h2 { font-size:34px; }
+  .subway-shell .finale-screen p { font-size:11px; line-height:1.5; }
+  .subway-shell .finale-screen .actions { margin-top:14px; }
+  .subway-shell .finale-screen .primary { min-width:210px; padding:12px 18px; }
+}
+
+@media(prefers-reduced-motion:reduce) {
+  .subway-shell .goal-wayfinder-arrow { transition:none; }
+}
