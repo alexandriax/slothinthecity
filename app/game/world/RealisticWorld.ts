@@ -130,6 +130,26 @@ function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number) {
   }
   ferns.instanceMatrix.needsUpdate = true;
   scene.add(shrubs, ferns, rocks);
+
+  // Thousands of cheap, individually tinted leaves break up the ground plane at eye level.
+  const litterCount = Math.round(1500 * quality);
+  const leafShape = new THREE.Shape();
+  leafShape.moveTo(0, -.12); leafShape.quadraticCurveTo(.09, -.025, 0, .14); leafShape.quadraticCurveTo(-.09, -.025, 0, -.12);
+  const litterMaterial = new THREE.MeshStandardMaterial({ vertexColors:true, color:"#b5a989", roughness:1, side:THREE.DoubleSide });
+  const litter = new THREE.InstancedMesh(new THREE.ShapeGeometry(leafShape), litterMaterial, litterCount);
+  const litterPalette = [new THREE.Color("#51442d"),new THREE.Color("#6e5830"),new THREE.Color("#38422b"),new THREE.Color("#8a6b39"),new THREE.Color("#433725")];
+  for (let i = 0; i < litterCount; i++) {
+    let x = random() * 214 - 107, z = random() * 214 - 107;
+    if (i < 280) { x = -43 + (random() - .5) * 34; z = 54 + (random() - .5) * 32; }
+    if (Math.hypot(x - 34, z + 43) < 27.5) { i--; continue; }
+    const scale = .48 + random() * 1.05;
+    dummy.position.set(x, terrainY(x,z) + .035 + random() * .018, z);
+    dummy.rotation.set(-Math.PI / 2 + (random() - .5) * .16, random() * Math.PI * 2, (random() - .5) * .12);
+    dummy.scale.set(scale * (.72 + random() * .45),scale,scale); dummy.updateMatrix(); litter.setMatrixAt(i,dummy.matrix);
+    const tint = litterPalette[Math.floor(random() * litterPalette.length)].clone().offsetHSL((random() - .5) * .025,0,(random() - .5) * .06);
+    litter.setColorAt(i,tint);
+  }
+  litter.instanceMatrix.needsUpdate = true; if (litter.instanceColor) litter.instanceColor.needsUpdate = true; litter.receiveShadow = true; scene.add(litter);
   for (let i = 0; i < 12; i++) {
     const log = new THREE.Mesh(new THREE.CylinderGeometry(.24 + random() * .18, .34 + random() * .2, 3 + random() * 3, 12), barkMaterial);
     log.rotation.set(Math.PI / 2 + (random() - .5) * .15, random() * Math.PI, 0); log.position.set(random() * 160 - 80, 0, random() * 160 - 80); log.position.y = terrainY(log.position.x, log.position.z) + .3; log.castShadow = log.receiveShadow = true; scene.add(log);
