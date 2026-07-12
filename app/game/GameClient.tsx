@@ -63,7 +63,8 @@ export function GameClient() {
       const gtao = new GTAOPass(scene, camera, innerWidth, innerHeight); gtao.blendIntensity = .58; composer.addPass(gtao); composer.addPass(new OutputPass());
     }
 
-    const clock = new THREE.Clock(), keys = new Set<string>(), velocity = new THREE.Vector3(), player = START.clone();
+    const timer = new THREE.Timer(); timer.connect(document);
+    const keys = new Set<string>(), velocity = new THREE.Vector3(), player = START.clone();
     player.y = terrainY(player.x, player.z) + 1.48; camera.position.copy(player);
     const sloth = createSlothRig(textures.fur); sloth.root.scale.setScalar(innerWidth < 760 ? .54 : .78); camera.add(sloth.root); scene.add(camera);
     let yaw = -.35, pitch = -.04, energy = 100, alert = 5, lastHud = 0, gameTime = 0, dragging = false, lastTouchX = 0, lastTouchY = 0;
@@ -88,8 +89,8 @@ export function GameClient() {
 
     let raf = 0;
     function nearestTreeShade(position: THREE.Vector3) { const anchors = [[-43, 54], [-30, 35], [-12, 14], [17, -4], [8, -48], [-24, -58], [-10, -78]]; return Math.min(...anchors.map(anchor => Math.hypot(position.x - anchor[0], position.z - anchor[1]))); }
-    function frame() {
-      raf = requestAnimationFrame(frame); const delta = Math.min(clock.getDelta(), .05); gameTime += delta;
+    function frame(timestamp?: number) {
+      raf = requestAnimationFrame(frame); timer.update(timestamp); const delta = Math.min(timer.getDelta(), .05); gameTime += delta;
       if (phaseRef.current === "playing") {
         const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)), right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)), wish = new THREE.Vector3();
         if (keys.has("KeyW") || keys.has("ArrowUp")) wish.add(forward); if (keys.has("KeyS") || keys.has("ArrowDown")) wish.sub(forward); if (keys.has("KeyD") || keys.has("ArrowRight")) wish.add(right); if (keys.has("KeyA") || keys.has("ArrowLeft")) wish.sub(right);
@@ -114,7 +115,7 @@ export function GameClient() {
     return () => {
       disposed = true; cancelAnimationFrame(raf); renderer.domElement.removeEventListener("pointerdown", pointer); renderer.domElement.removeEventListener("pointermove", pointerMove); renderer.domElement.removeEventListener("pointerup", pointerUp);
       document.removeEventListener("mousemove", mouse); document.removeEventListener("keydown", keyDown); document.removeEventListener("keyup", keyUp); removeEventListener("resize", resize);
-      composer?.dispose(); renderer.dispose(); if (host.contains(renderer.domElement)) host.removeChild(renderer.domElement);
+      timer.dispose(); composer?.dispose(); renderer.dispose(); if (host.contains(renderer.domElement)) host.removeChild(renderer.domElement);
     };
   }, []);
 
