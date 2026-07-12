@@ -30,6 +30,7 @@ function startAudio() {
 }
 
 function qualityTier() {
+  if (new URLSearchParams(location.search).has("qa")) return .66;
   if (matchMedia("(prefers-reduced-motion: reduce)").matches || innerWidth < 760) return .66;
   return (navigator.hardwareConcurrency ?? 4) >= 8 ? 1 : .8;
 }
@@ -66,6 +67,9 @@ export function GameClient() {
 
     const timer = new THREE.Timer(); timer.connect(document);
     const keys = new Set<string>(), velocity = new THREE.Vector3(), player = START.clone();
+    const qaInput = location.hostname === "localhost" ? new URLSearchParams(location.search).get("qa") : null;
+    if (qaInput === "autowalk" || qaInput === "autogrip") keys.add("KeyW");
+    if (qaInput === "autogrip") keys.add("ShiftLeft");
     player.y = terrainY(player.x, player.z) + 1.48; camera.position.copy(player);
     const sloth = createSlothRig(textures.fur); sloth.root.scale.setScalar(innerWidth < 760 ? .54 : .78); camera.add(sloth.root); scene.add(camera);
     let yaw = -.35, pitch = -.04, energy = 100, alert = 5, lastHud = 0, gameTime = 0, dragging = false, lastTouchX = 0, lastTouchY = 0, blocked = false;
