@@ -101,7 +101,7 @@ button { font: inherit; }
 @keyframes floatIn{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}
 .mobile-controls { display:none; position:absolute; inset:0; z-index:11; pointer-events:none; }
 .mobile-controls button { pointer-events:auto; position:absolute; width:64px; height:64px; border-radius:50%; border:1px solid rgba(255,255,255,.24); background:rgba(6,15,11,.46); color:var(--ink); text-transform:uppercase; font-size:9px; letter-spacing:.1em; }
-.mobile-controls .move{left:22px;bottom:120px}.mobile-controls .grip{right:22px;bottom:34px}.mobile-controls .reach{right:96px;bottom:118px}.mobile-controls .sense{right:22px;bottom:190px}
+.mobile-controls .move{left:22px;bottom:120px}.mobile-controls .grip{right:22px;bottom:34px}.mobile-controls .reach{right:96px;bottom:118px}.mobile-controls .down{right:22px;bottom:190px}.mobile-controls .sense{right:96px;bottom:262px}
 
 @media(max-width:760px){
   .screen-content{grid-template-columns:1fr;align-items:center}.briefing{display:none}.field-note{display:none}.mission{left:max(14px,env(safe-area-inset-left));top:max(14px,env(safe-area-inset-top));width:min(62vw,330px);padding:12px 13px}.mission p{display:none}.mission h2{font-size:17px}.meters{left:max(14px,env(safe-area-inset-left));bottom:max(14px,env(safe-area-inset-bottom));width:min(220px,57vw);padding:11px 12px}.motion-state small{font-size:8px}.controls-strip{display:none}.status{right:max(14px,env(safe-area-inset-right));top:max(14px,env(safe-area-inset-top));min-width:100px;padding:9px 10px}.status strong{font-size:18px}.compass{display:none}.hero-copy{margin-top:28px}.mobile-controls{display:block}.hero-title{font-size:20vw}.screen{background:rgba(3,10,8,.9)}
