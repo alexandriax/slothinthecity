@@ -20,6 +20,41 @@ export type ClimbableTree = {
   canopyY: number;
 };
 
+export type BranchNode = {
+  id: number;
+  treeIndex: number;
+  position: THREE.Vector3;
+  routeIds: number[];
+  neighborNodeIds: number[];
+};
+
+export type BranchRoute = {
+  id: number;
+  treeIndex: number;
+  startNodeId: number;
+  endNodeId: number;
+  start: THREE.Vector3;
+  end: THREE.Vector3;
+  radius: number;
+  adjacentRouteIds: number[];
+  crossTreeRouteIds: number[];
+  belowRouteIds: number[];
+};
+
+export type WorldObstacle =
+  | { id: string; kind: "circle"; x: number; z: number; radius: number; minY: number; maxY: number }
+  | { id: string; kind: "aabb"; minX: number; maxX: number; minZ: number; maxZ: number; minY: number; maxY: number };
+
+export type BridgeSurface = {
+  x: number;
+  z: number;
+  y: number;
+  yaw: number;
+  length: number;
+  width: number;
+  archHeight: number;
+};
+
 export type RealisticWorld = {
   buds: THREE.Group[];
   rings: THREE.Mesh[];
@@ -27,6 +62,10 @@ export type RealisticWorld = {
   lake: THREE.Mesh;
   trailCurve: THREE.CatmullRomCurve3;
   trees: ClimbableTree[];
+  branches: BranchRoute[];
+  branchNodes: BranchNode[];
+  obstacles: WorldObstacle[];
+  bridgeSurface: BridgeSurface;
   animate(time: number, player: THREE.Vector3, scent: boolean, collected: Set<number>): void;
 };
 
@@ -80,10 +119,105 @@ function distanceToTrail(x: number, z: number, samples: THREE.Vector3[]) {
   return Math.sqrt(nearestSq);
 }
 
+function pointToSegmentDistanceSq(point: THREE.Vector3, start: THREE.Vector3, end: THREE.Vector3) {
+  const segmentX = end.x - start.x, segmentY = end.y - start.y, segmentZ = end.z - start.z;
+  const lengthSq = segmentX * segmentX + segmentY * segmentY + segmentZ * segmentZ;
+  const amount = THREE.MathUtils.clamp(((point.x - start.x) * segmentX + (point.y - start.y) * segmentY + (point.z - start.z) * segmentZ) / lengthSq, 0, 1);
+  const offsetX = point.x - (start.x + segmentX * amount), offsetY = point.y - (start.y + segmentY * amount), offsetZ = point.z - (start.z + segmentZ * amount);
+  return offsetX * offsetX + offsetY * offsetY + offsetZ * offsetZ;
+}
+
+function branchDropScore(source: BranchRoute, target: BranchRoute) {
+  const sourceX = (source.start.x + source.end.x) * .5, sourceY = (source.start.y + source.end.y) * .5, sourceZ = (source.start.z + source.end.z) * .5;
+  const targetX = target.end.x - target.start.x, targetZ = target.end.z - target.start.z;
+  const lengthSq = targetX * targetX + targetZ * targetZ;
+  const amount = THREE.MathUtils.clamp(((sourceX - target.start.x) * targetX + (sourceZ - target.start.z) * targetZ) / lengthSq, 0, 1);
+  const landingX = target.start.x + targetX * amount, landingY = THREE.MathUtils.lerp(target.start.y, target.end.y, amount), landingZ = target.start.z + targetZ * amount;
+  const horizontal = Math.hypot(sourceX - landingX, sourceZ - landingZ), drop = sourceY - landingY;
+  return horizontal < 3.1 && drop > .55 && drop < 7.5 ? horizontal + drop * .16 : Infinity;
+}
+
+function buildBranchGraph(routes: BranchRoute[], nodes: BranchNode[]) {
+  const routeIdsByTree = new Map<number, number[]>();
+  for (const route of routes) {
+    const ids = routeIdsByTree.get(route.treeIndex) ?? [];
+    ids.push(route.id); routeIdsByTree.set(route.treeIndex, ids);
+  }
+  for (const ids of routeIdsByTree.values()) {
+    for (const routeId of ids) {
+      routes[routeId].adjacentRouteIds = ids.filter((candidate) => candidate !== routeId);
+      const startNode = nodes[routes[routeId].startNodeId];
+      startNode.neighborNodeIds = [routes[routeId].endNodeId, ...ids.filter((candidate) => candidate !== routeId).map((candidate) => routes[candidate].startNodeId)];
+    }
+  }
+
+  const crossCandidates: Array<Array<{ id: number; score: number }>> = routes.map(() => []);
+  const belowCandidates: Array<Array<{ id: number; score: number }>> = routes.map(() => []);
+  const reachSq = 2.65 * 2.65;
+  const cellSize = 8, cells = new Map<string, number[]>();
+  for (const route of routes) {
+    const minCellX = Math.floor((Math.min(route.start.x, route.end.x) - 3.2) / cellSize), maxCellX = Math.floor((Math.max(route.start.x, route.end.x) + 3.2) / cellSize);
+    const minCellZ = Math.floor((Math.min(route.start.z, route.end.z) - 3.2) / cellSize), maxCellZ = Math.floor((Math.max(route.start.z, route.end.z) + 3.2) / cellSize);
+    for (let cellX = minCellX; cellX <= maxCellX; cellX++) for (let cellZ = minCellZ; cellZ <= maxCellZ; cellZ++) {
+      const key = `${cellX}:${cellZ}`, ids = cells.get(key) ?? [];
+      ids.push(route.id); cells.set(key, ids);
+    }
+  }
+  const nearbyPairs = new Set<number>(), routeCount = routes.length;
+  for (const ids of cells.values()) for (let firstIndex = 0; firstIndex < ids.length; firstIndex++) for (let secondIndex = firstIndex + 1; secondIndex < ids.length; secondIndex++) {
+    const first = Math.min(ids[firstIndex], ids[secondIndex]), second = Math.max(ids[firstIndex], ids[secondIndex]);
+    nearbyPairs.add(first * routeCount + second);
+  }
+  for (const pair of nearbyPairs) {
+    const first = Math.floor(pair / routeCount), second = pair % routeCount;
+    const routeA = routes[first], routeB = routes[second];
+    if (routeA.treeIndex !== routeB.treeIndex) {
+      const gapSq = Math.min(
+        pointToSegmentDistanceSq(routeA.start, routeB.start, routeB.end),
+        pointToSegmentDistanceSq(routeA.end, routeB.start, routeB.end),
+        pointToSegmentDistanceSq(routeB.start, routeA.start, routeA.end),
+        pointToSegmentDistanceSq(routeB.end, routeA.start, routeA.end),
+      );
+      if (gapSq < reachSq) {
+        crossCandidates[first].push({ id: second, score: gapSq });
+        crossCandidates[second].push({ id: first, score: gapSq });
+      }
+    }
+    const aToB = branchDropScore(routeA, routeB), bToA = branchDropScore(routeB, routeA);
+    if (Number.isFinite(aToB)) belowCandidates[first].push({ id: second, score: aToB });
+    if (Number.isFinite(bToA)) belowCandidates[second].push({ id: first, score: bToA });
+  }
+
+  for (const route of routes) {
+    route.crossTreeRouteIds = crossCandidates[route.id].sort((a, b) => a.score - b.score).slice(0, 6).map((candidate) => candidate.id);
+    route.belowRouteIds = belowCandidates[route.id].sort((a, b) => a.score - b.score).slice(0, 4).map((candidate) => candidate.id);
+  }
+  for (const route of routes) for (const neighborRouteId of route.crossTreeRouteIds) {
+    const neighbor = routes[neighborRouteId];
+    if (!neighbor.crossTreeRouteIds.includes(route.id)) neighbor.crossTreeRouteIds.push(route.id);
+  }
+  for (const route of routes) {
+    for (const neighborRouteId of route.crossTreeRouteIds) {
+      const neighbor = routes[neighborRouteId];
+      const endpointPairs: Array<[number, number, number]> = [
+        [route.startNodeId, neighbor.startNodeId, route.start.distanceToSquared(neighbor.start)],
+        [route.startNodeId, neighbor.endNodeId, route.start.distanceToSquared(neighbor.end)],
+        [route.endNodeId, neighbor.startNodeId, route.end.distanceToSquared(neighbor.start)],
+        [route.endNodeId, neighbor.endNodeId, route.end.distanceToSquared(neighbor.end)],
+      ];
+      endpointPairs.sort((a, b) => a[2] - b[2]);
+      const [fromNodeId, toNodeId] = endpointPairs[0];
+      if (!nodes[fromNodeId].neighborNodeIds.includes(toNodeId)) nodes[fromNodeId].neighborNodeIds.push(toNodeId);
+      if (!nodes[toNodeId].neighborNodeIds.includes(fromNodeId)) nodes[toNodeId].neighborNodeIds.push(fromNodeId);
+    }
+  }
+}
+
 function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number, trailCurve: THREE.CatmullRomCurve3) {
   const random = seeded(7331);
   const treeCount = Math.round(120 + 240 * THREE.MathUtils.clamp(quality, .45, 1));
   const trees: ClimbableTree[] = [];
+  const branchRoutes: BranchRoute[] = [], branchNodes: BranchNode[] = [];
   const heroPositions: Array<[number, number]> = [
     [-55, 52], [-38, 65], [-39, 42], [-57, 68], [-32, 52], [-34, 30],
     [-22, 22], [-13, 10], [1, 7], [17, 6], [27, -12], [25, -25],
@@ -133,7 +267,14 @@ function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number, t
       const length = 2.8 + random() * 2.9;
       start.set(x, baseY + height * level, z);
       end.set(x + Math.cos(angle) * length, baseY + height * Math.min(.94, level + .1 + random() * .13), z + Math.sin(angle) * length);
-      alignCylinder(dummy, start, end, radius * (.38 + random() * .1)); branches.setMatrixAt(branchInstance++, dummy.matrix);
+      const primaryRadius = radius * (.38 + random() * .1);
+      alignCylinder(dummy, start, end, primaryRadius); branches.setMatrixAt(branchInstance++, dummy.matrix);
+      const routeId = branchRoutes.length, startNodeId = branchNodes.length, endNodeId = startNodeId + 1;
+      branchNodes.push(
+        { id: startNodeId, treeIndex: tree, position: start.clone(), routeIds: [routeId], neighborNodeIds: [endNodeId] },
+        { id: endNodeId, treeIndex: tree, position: end.clone(), routeIds: [routeId], neighborNodeIds: [startNodeId] },
+      );
+      branchRoutes.push({ id: routeId, treeIndex: tree, startNodeId, endNodeId, start: start.clone(), end: end.clone(), radius: primaryRadius, adjacentRouteIds: [], crossTreeRouteIds: [], belowRouteIds: [] });
       foliageAnchors.push(end.clone());
 
       for (let secondary = 0; secondary < secondaryPerPrimary; secondary++) {
@@ -171,6 +312,7 @@ function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number, t
     tree++;
   }
   if (tree !== treeCount) throw new Error(`Unable to place realistic forest: placed ${tree} of ${treeCount} trees.`);
+  buildBranchGraph(branchRoutes, branchNodes);
   trunks.instanceMatrix.needsUpdate = branches.instanceMatrix.needsUpdate = leaves.instanceMatrix.needsUpdate = true;
   scene.add(trunks, branches, leaves);
 
@@ -226,32 +368,129 @@ function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number, t
     const log = new THREE.Mesh(new THREE.CylinderGeometry(.24 + random() * .18, .34 + random() * .2, 3 + random() * 3, 12), barkMaterial);
     log.rotation.set(Math.PI / 2 + (random() - .5) * .15, random() * Math.PI, 0); log.position.set(random() * 160 - 80, 0, random() * 160 - 80); log.position.y = terrainY(log.position.x, log.position.z) + .3; log.castShadow = log.receiveShadow = true; scene.add(log);
   }
-  return trees;
+  return { trees, branchRoutes, branchNodes };
+}
+
+function archedBridgeGeometry(length: number, width: number, segments = 36) {
+  const positions: number[] = [], uvs: number[] = [], indices: number[] = [];
+  for (let index = 0; index <= segments; index++) {
+    const amount = index / segments, x = (amount - .5) * length;
+    const top = .38 + Math.sin(amount * Math.PI) * 1.2, bottom = top - .5;
+    positions.push(x, top, -width / 2, x, top, width / 2, x, bottom, -width / 2, x, bottom, width / 2);
+    uvs.push(amount * 8, 0, amount * 8, 1, amount * 8, 0, amount * 8, 1);
+    if (index < segments) {
+      const offset = index * 4, next = offset + 4;
+      indices.push(offset, next, offset + 1, offset + 1, next, next + 1);
+      indices.push(offset + 2, offset + 3, next + 2, offset + 3, next + 3, next + 2);
+      indices.push(offset, offset + 2, next, offset + 2, next + 2, next);
+      indices.push(offset + 1, next + 1, offset + 3, offset + 3, next + 1, next + 3);
+    }
+  }
+  indices.push(0, 1, 2, 1, 3, 2);
+  const last = segments * 4; indices.push(last, last + 2, last + 1, last + 1, last + 2, last + 3);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices); geometry.computeVertexNormals(); return geometry;
 }
 
 function addLandmarks(scene: THREE.Scene, textures: GameTextures, trailCurve: THREE.CatmullRomCurve3) {
+  const obstacles: WorldObstacle[] = [];
   const stoneMaterial = new THREE.MeshStandardMaterial({ map: textures.stone, bumpMap: textures.stone, bumpScale: .07, color: "#b9ad92", roughness: .82 });
   const iron = new THREE.MeshStandardMaterial({ color: "#17221d", roughness: .35, metalness: .78 });
+  const bridgeWood = new THREE.MeshStandardMaterial({ map: textures.bark, bumpMap: textures.bark, bumpScale: .045, color: "#8b765b", roughness: .9 });
   const bridge = new THREE.Group();
-  const deck = new THREE.Mesh(new RoundedBoxGeometry(18, .75, 4, 5, .22), stoneMaterial); deck.position.y = 1.5; deck.castShadow = deck.receiveShadow = true; bridge.add(deck);
-  for (const side of [-1, 1]) for (let x = -8; x <= 8; x += 1.15) {
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(.055, .07, 1.25, 10), iron); post.position.set(x, 2.45, side * 1.72); bridge.add(post);
+  const bridgeLength = 24, bridgeWidth = 5.2, bridgeSegments = 36;
+  const deck = new THREE.Mesh(archedBridgeGeometry(bridgeLength, bridgeWidth, bridgeSegments), bridgeWood); deck.castShadow = deck.receiveShadow = true; bridge.add(deck);
+  const bridgePostGeometry = new THREE.CylinderGeometry(.075, .095, 1, 10, 2);
+  const postCount = 13, bridgePosts = new THREE.InstancedMesh(bridgePostGeometry, iron, postCount * 2);
+  const braceGeometry = new THREE.CylinderGeometry(.042, .042, 1, 8, 1), braces = new THREE.InstancedMesh(braceGeometry, iron, (postCount - 1) * 2);
+  const bridgeDummy = new THREE.Object3D(), postStart = new THREE.Vector3(), postEnd = new THREE.Vector3();
+  for (const side of [-1, 1]) for (let index = 0; index < postCount; index++) {
+    const amount = index / (postCount - 1), x = (amount - .5) * bridgeLength * .92;
+    const deckY = .38 + Math.sin(amount * Math.PI) * 1.2;
+    postStart.set(x, deckY, side * bridgeWidth * .48); postEnd.set(x, deckY + 1.35, side * bridgeWidth * .48);
+    alignCylinder(bridgeDummy, postStart, postEnd, 1); bridgePosts.setMatrixAt((side === -1 ? 0 : postCount) + index, bridgeDummy.matrix);
+    if (index < postCount - 1) {
+      const nextAmount = (index + 1) / (postCount - 1), nextX = (nextAmount - .5) * bridgeLength * .92;
+      const nextY = .38 + Math.sin(nextAmount * Math.PI) * 1.2;
+      postStart.set(x, deckY + .22, side * bridgeWidth * .48); postEnd.set(nextX, nextY + 1.08, side * bridgeWidth * .48);
+      alignCylinder(bridgeDummy, postStart, postEnd, 1); braces.setMatrixAt((side === -1 ? 0 : postCount - 1) + index, bridgeDummy.matrix);
+    }
   }
+  bridgePosts.instanceMatrix.needsUpdate = braces.instanceMatrix.needsUpdate = true; bridgePosts.castShadow = braces.castShadow = true; bridge.add(bridgePosts, braces);
   for (const side of [-1, 1]) {
-    const rail = new THREE.Mesh(new THREE.CylinderGeometry(.075, .075, 17, 10), iron); rail.rotation.z = Math.PI / 2; rail.position.set(0, 3.02, side * 1.72); bridge.add(rail);
+    const railPoints = Array.from({ length: 25 }, (_, index) => {
+      const amount = index / 24;
+      return new THREE.Vector3((amount - .5) * bridgeLength * .92, 1.73 + Math.sin(amount * Math.PI) * 1.2, side * bridgeWidth * .48);
+    });
+    const rail = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(railPoints), 48, .085, 8, false), iron); rail.castShadow = true; bridge.add(rail);
+    const stoneArch = new THREE.Mesh(new THREE.TorusGeometry(1, .075, 12, 48, Math.PI), stoneMaterial); stoneArch.position.set(0, -.13, side * bridgeWidth * .5); stoneArch.scale.set(6.3, 1.45, 1); stoneArch.castShadow = true; bridge.add(stoneArch);
   }
-  bridge.position.set(18, terrainY(18, -4), -4); bridge.rotation.y = -.45; scene.add(bridge);
+  for (const side of [-1, 1]) for (const end of [-1, 1]) {
+    const pier = new THREE.Mesh(new RoundedBoxGeometry(1.75, 2.8, 1.75, 4, .16), stoneMaterial);
+    pier.position.set(end * bridgeLength * .47, .58, side * bridgeWidth * .49); pier.castShadow = pier.receiveShadow = true; bridge.add(pier);
+  }
+  const bridgePoint = trailCurve.getPoint(.5), bridgeTangent = trailCurve.getTangent(.5).normalize();
+  const bridgeYaw = Math.atan2(-bridgeTangent.z, bridgeTangent.x);
+  bridge.position.copy(bridgePoint); bridge.position.y = terrainY(bridgePoint.x, bridgePoint.z) + .06; bridge.rotation.y = bridgeYaw; bridge.updateMatrixWorld(true); scene.add(bridge);
+  const bridgeSurface: BridgeSurface = { x: bridge.position.x, z: bridge.position.z, y: bridge.position.y + .38, yaw: bridgeYaw, length: bridgeLength, width: bridgeWidth, archHeight: 1.2 };
+  for (const side of [-1, 1]) for (const end of [-1, 1]) {
+    const world = bridge.localToWorld(new THREE.Vector3(end * bridgeLength * .47, 0, side * bridgeWidth * .49));
+    obstacles.push({ id: `bridge-pier-${end}-${side}`, kind: "circle", x: world.x, z: world.z, radius: 1.08, minY: bridge.position.y - .45, maxY: bridge.position.y + 2.1 });
+  }
 
   const gate = new THREE.Group();
   for (const x of [-3.8, 3.8]) { const pillar = new THREE.Mesh(new RoundedBoxGeometry(1.3, 5, 1.3, 4, .12), stoneMaterial); pillar.position.set(x, 2.5, 0); pillar.castShadow = pillar.receiveShadow = true; gate.add(pillar); }
   const arch = new THREE.Mesh(new THREE.TorusGeometry(3.8, .64, 16, 48, Math.PI), stoneMaterial); arch.rotation.z = Math.PI; arch.position.y = 4.5; arch.castShadow = true; gate.add(arch);
   gate.position.set(GOAL.x, terrainY(GOAL.x, GOAL.z), GOAL.z); scene.add(gate);
+  for (const x of [-3.8, 3.8]) obstacles.push({ id: `gate-pillar-${x}`, kind: "circle", x: GOAL.x + x, z: GOAL.z, radius: .78, minY: gate.position.y, maxY: gate.position.y + 5 });
 
   for (let i = 0; i < 18; i++) {
     const point = trailCurve.getPoint(i / 17), side = i % 2 ? 3.15 : -3.15;
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(.065, .105, 4, 12), iron); pole.position.set(point.x, point.y + 2, point.z + side); pole.castShadow = true; scene.add(pole);
     const lantern = new THREE.Mesh(new THREE.SphereGeometry(.22, 16, 12), new THREE.MeshStandardMaterial({ color: "#f6dc9b", emissive: "#ffcb6b", emissiveIntensity: 1.8, roughness: .18 })); lantern.position.copy(pole.position).add(new THREE.Vector3(0, 2, 0)); scene.add(lantern);
   }
+  return { obstacles, bridgeSurface };
+}
+
+function createHawk() {
+  const hawk = new THREE.Group(), wings: THREE.Group[] = [];
+  const upper = new THREE.MeshStandardMaterial({ color: "#3a2a1e", roughness: .88, side: THREE.DoubleSide });
+  const darkFeather = new THREE.MeshStandardMaterial({ color: "#211915", roughness: .92, side: THREE.DoubleSide });
+  const chest = new THREE.MeshStandardMaterial({ color: "#8b6a45", roughness: .9 });
+  const tailColor = new THREE.MeshStandardMaterial({ color: "#8f3f25", roughness: .9, side: THREE.DoubleSide });
+  const beakMaterial = new THREE.MeshStandardMaterial({ color: "#d3a34e", roughness: .62 });
+
+  const body = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), upper); body.scale.set(.38, .34, 1.08); body.position.z = .02; body.castShadow = true; hawk.add(body);
+  const breast = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), chest); breast.scale.set(.31, .275, .7); breast.position.set(0, -.16, -.18); hawk.add(breast);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(.3, 20, 14), upper); head.scale.set(1, .88, 1.08); head.position.set(0, .06, -1.02); head.castShadow = true; hawk.add(head);
+  const brow = new THREE.Mesh(new THREE.SphereGeometry(.18, 16, 10), darkFeather); brow.scale.set(1.25, .42, .78); brow.position.set(0, .19, -1.19); hawk.add(brow);
+  const beak = new THREE.Mesh(new THREE.ConeGeometry(.12, .34, 12), beakMaterial); beak.rotation.x = -Math.PI / 2; beak.position.set(0, -.015, -1.34); hawk.add(beak);
+  const eyeMaterial = new THREE.MeshBasicMaterial({ color: "#f2bd43" }), pupilMaterial = new THREE.MeshBasicMaterial({ color: "#050403" });
+  for (const side of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(.042, 10, 8), eyeMaterial); eye.position.set(side * .205, .09, -1.23); hawk.add(eye);
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(.024, 8, 6), pupilMaterial); pupil.position.set(side * .225, .09, -1.258); hawk.add(pupil);
+  }
+
+  const tailShape = new THREE.Shape();
+  tailShape.moveTo(-.26, .05); tailShape.lineTo(-.62, -1.45); tailShape.lineTo(-.18, -1.27); tailShape.lineTo(0, -1.62); tailShape.lineTo(.18, -1.27); tailShape.lineTo(.62, -1.45); tailShape.lineTo(.26, .05); tailShape.closePath();
+  const tail = new THREE.Mesh(new THREE.ShapeGeometry(tailShape, 8), tailColor); tail.rotation.x = -Math.PI / 2; tail.position.set(0, -.025, .8); tail.castShadow = true; hawk.add(tail);
+
+  for (const side of [-1, 1]) {
+    const wingRoot = new THREE.Group(); wingRoot.scale.x = side; wingRoot.userData.side = side;
+    const wingShape = new THREE.Shape();
+    wingShape.moveTo(.05, .04);
+    wingShape.bezierCurveTo(.8, -.22, 2.15, -.48, 4.25, -.72);
+    wingShape.lineTo(3.72, -.36); wingShape.lineTo(4.12, -.18); wingShape.lineTo(3.48, -.04);
+    wingShape.lineTo(3.86, .18); wingShape.lineTo(3.12, .2); wingShape.lineTo(3.38, .46);
+    wingShape.lineTo(2.55, .37); wingShape.lineTo(2.68, .67);
+    wingShape.bezierCurveTo(1.55, .48, .68, .3, .05, .04); wingShape.closePath();
+    const wing = new THREE.Mesh(new THREE.ShapeGeometry(wingShape, 12), darkFeather); wing.rotation.x = -Math.PI / 2; wing.castShadow = true; wingRoot.add(wing);
+    const covert = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 10), upper); covert.scale.set(1.5, .11, .48); covert.position.set(1.18, .045, .02); covert.rotation.y = -.12; covert.castShadow = true; wingRoot.add(covert);
+    hawk.add(wingRoot); wings.push(wingRoot);
+  }
+  hawk.scale.setScalar(.82); return { hawk, wings };
 }
 
 function addSky(scene: THREE.Scene) {
@@ -276,7 +515,8 @@ export function buildRealisticWorld(scene: THREE.Scene, textures: GameTextures, 
   const trailCurve = new THREE.CatmullRomCurve3(trailPoints);
   const trail = new THREE.Mesh(trailRibbon(trailCurve), new THREE.MeshStandardMaterial({ map: textures.gravel, bumpMap: textures.gravel, bumpScale: .09, color: "#a59678", roughness: .98 })); trail.receiveShadow = true; scene.add(trail);
 
-  const trees = addTrees(scene, textures, quality, trailCurve); addLandmarks(scene, textures, trailCurve);
+  const { trees, branchRoutes: branches, branchNodes } = addTrees(scene, textures, quality, trailCurve);
+  const { obstacles, bridgeSurface } = addLandmarks(scene, textures, trailCurve);
   const lakeMaterial = new THREE.MeshPhysicalMaterial({ color: "#345d59", normalMap: textures.waterNormal, normalScale: new THREE.Vector2(.32, .32), roughness: .16, metalness: .08, transmission: .08, transparent: true, opacity: .9, clearcoat: .72, clearcoatRoughness: .18, envMapIntensity: 1.4 });
   const lake = new THREE.Mesh(new THREE.CircleGeometry(25, 96), lakeMaterial); lake.rotation.x = -Math.PI / 2; lake.position.set(34, terrainY(34, -43) + .82, -43); lake.receiveShadow = true; scene.add(lake);
   // Shoreline breaks the mathematically perfect circle.
@@ -300,15 +540,16 @@ export function buildRealisticWorld(scene: THREE.Scene, textures: GameTextures, 
     const ring = new THREE.Mesh(new THREE.TorusGeometry(1.15, .028, 8, 48), new THREE.MeshBasicMaterial({ color: "#d9ef8b", transparent: true, opacity: 0 })); ring.rotation.x = Math.PI / 2; ring.position.copy(point).add(new THREE.Vector3(0, .2, 0)); scene.add(ring); rings.push(ring);
   });
 
-  const hawk = new THREE.Group(), hawkMaterial = new THREE.MeshStandardMaterial({ color: "#30241c", roughness: .82, side: THREE.DoubleSide });
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(.22, 1.15, 6, 12), hawkMaterial); body.rotation.z = Math.PI / 2; hawk.add(body);
-  for (const side of [-1, 1]) { const wingShape = new THREE.Shape(); wingShape.moveTo(0, 0); wingShape.bezierCurveTo(.5, side * .4, 1.8, side * 1.35, 3.25, side * 1.1); wingShape.bezierCurveTo(2.1, side * .3, 1.05, side * .02, 0, 0); const wing = new THREE.Mesh(new THREE.ShapeGeometry(wingShape), hawkMaterial); wing.rotation.x = -Math.PI / 2; hawk.add(wing); } scene.add(hawk);
+  const { hawk, wings: hawkWings } = createHawk(); scene.add(hawk);
 
   return {
-    buds, rings, hawk, lake, trailCurve, trees,
+    buds, rings, hawk, lake, trailCurve, trees, branches, branchNodes, obstacles, bridgeSurface,
     animate(time, player, scent, collected) {
       textures.waterNormal.offset.set(time * .008, time * -.011);
-      hawk.position.set(player.x + Math.cos(time * .42) * 24, 18 + Math.sin(time * .7) * 2, player.z + Math.sin(time * .42) * 24); hawk.rotation.y = -time * .42;
+      hawk.position.set(player.x + Math.cos(time * .42) * 24, 18 + Math.sin(time * .7) * 2, player.z + Math.sin(time * .42) * 24);
+      hawk.rotation.set(0, Math.PI - time * .42, Math.sin(time * .42) * .06);
+      const flap = .025 + Math.sin(time * 3.1) * .09;
+      hawkWings.forEach((wing) => { wing.rotation.z = wing.userData.side * flap; });
       buds.forEach((bud, index) => { if (!bud.visible) return; bud.rotation.y += .008; bud.position.y = bud.userData.anchorY + Math.sin(time * 2 + index) * .1; });
       rings.forEach((ring, index) => { (ring.material as THREE.MeshBasicMaterial).opacity = scent && !collected.has(index) ? .48 : 0; ring.scale.setScalar(1 + (time * .6 + index * .17) % 2.5); });
     },
