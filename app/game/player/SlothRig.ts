@@ -117,6 +117,7 @@ function addFurShell(parent: THREE.Object3D, mesh: THREE.Mesh, fringe: THREE.Mat
   const shell = new THREE.Mesh(mesh.geometry, fringe);
   shell.scale.set(1.045, 1, 1.045);
   shell.castShadow = true;
+  shell.frustumCulled = false;
   shell.renderOrder = 21;
   parent.add(shell);
 }
@@ -127,6 +128,7 @@ function addEllipsoidShell(parent: THREE.Object3D, mesh: THREE.Mesh, fringe: THR
   shell.rotation.copy(mesh.rotation);
   shell.scale.copy(mesh.scale).multiplyScalar(1.045);
   shell.castShadow = true;
+  shell.frustumCulled = false;
   shell.renderOrder = 21;
   parent.add(shell);
 }
@@ -137,71 +139,48 @@ function clawColor(t: number, target: THREE.Color) {
 }
 
 function hookedClawGeometry(length: number, lateralDrift: number, hookBias: number) {
-  // The hand is seen from above in first person, so the hook travels down the
-  // frame while curling through depth instead of presenting as an upright arch.
+  // A readable C/J profile lives in screen space while the latter half rolls
+  // forward through depth. This preserves the hook silhouette without making
+  // the claws look like flat crescents pasted onto the paw.
   const curve = new THREE.CubicBezierCurve3(
-    new THREE.Vector3(0, .003, -.002),
-    new THREE.Vector3(lateralDrift * .15, -length * .11, -length * .16),
-    new THREE.Vector3(lateralDrift * .62, -length * .62, -length * (.48 + hookBias)),
-    new THREE.Vector3(lateralDrift, -length * .94, -length * (.2 + hookBias * .35)),
+    new THREE.Vector3(0, 0, .006),
+    new THREE.Vector3(lateralDrift * .14, length * .58, -length * .1),
+    new THREE.Vector3(lateralDrift * .68, length * .48, -length * (.5 + hookBias)),
+    new THREE.Vector3(lateralDrift, -length * .24, -length * (.82 + hookBias * .24)),
   );
   return sweptGeometry(
     curve,
-    44,
-    18,
-    (t) => .0165 * Math.pow(Math.max(0, 1 - t), .7) + .00025,
-    .46,
+    56,
+    24,
+    (t) => {
+      const rootFlare = Math.exp(-t * 11) * .003;
+      return .0155 * Math.pow(Math.max(0, 1 - t), .68) + rootFlare + .0002;
+    },
+    .38,
     clawColor,
   );
 }
 
-function makeDigit(
+function makeClaw(
   index: number,
   side: number,
-  fur: THREE.Material,
   keratin: THREE.Material,
 ) {
-  const digit = new THREE.Group();
+  const clawJoint = new THREE.Group();
   const outer = Math.abs(index);
-  const length = .073 - outer * .006 + index * side * .002;
-  const lateralBend = index * .003 + side * (index === 0 ? .0015 : 0);
-  const end = new THREE.Vector3(lateralBend, length, -.010 - outer * .003);
-  const digitMesh = furSegment(
-    end,
-    new THREE.Vector3(lateralBend * .18, length * .34, -.002),
-    new THREE.Vector3(lateralBend * .68, length * .74, -.009),
-    .022,
-    .014,
-    fur,
-    26,
-  );
-  digit.add(digitMesh);
-
-  const fingertip = new THREE.Mesh(new THREE.SphereGeometry(1, 28, 20), fur);
-  fingertip.scale.set(.015, .020, .013);
-  fingertip.position.copy(end);
-  fingertip.castShadow = true;
-  digit.add(fingertip);
-
-  const clawRoot = new THREE.Group();
-  clawRoot.position.copy(end).add(new THREE.Vector3(0, .010, -.003));
-  clawRoot.rotation.z = -index * .025 + side * .008;
-  clawRoot.rotation.y = side * (.11 + outer * .025);
-  const clawLength = .145 - outer * .009 + index * side * .002;
+  clawJoint.rotation.z = -index * .055 + side * .009;
+  clawJoint.rotation.y = side * (.13 + outer * .035);
+  clawJoint.rotation.x = outer * -.035;
+  const clawLength = .19 - outer * .014 + index * side * .004;
   const claw = new THREE.Mesh(
-    hookedClawGeometry(clawLength, index * .011 - side * .006, outer * .035),
+    hookedClawGeometry(clawLength, index * .014 - side * .006, outer * .026),
     keratin,
   );
   claw.castShadow = true;
   claw.receiveShadow = true;
-  clawRoot.add(claw);
-  digit.add(clawRoot);
-
-  // A restrained fan reads as three parallel sloth digits, not a human hand.
-  digit.rotation.z = -index * .055 + side * (index === 0 ? .006 : 0);
-  digit.rotation.x = outer * -.014;
-  digit.userData.clawRoot = clawRoot;
-  return digit;
+  claw.frustumCulled = false;
+  clawJoint.add(claw);
+  return clawJoint;
 }
 
 function makeArm(
@@ -222,13 +201,15 @@ function makeArm(
     fur,
     40,
   );
+  upperArm.frustumCulled = false;
   addFurShell(shoulder, upperArm, fringe);
 
   const elbow = new THREE.Group();
   elbow.position.copy(upperEnd);
   const elbowMass = new THREE.Mesh(new THREE.SphereGeometry(1, 34, 24), fur);
-  elbowMass.scale.set(.12, .13, .098);
+  elbowMass.scale.set(.116, .16, .096);
   elbowMass.castShadow = true;
+  elbowMass.frustumCulled = false;
   elbow.add(elbowMass);
   shoulder.add(elbow);
 
@@ -242,6 +223,7 @@ function makeArm(
     fur,
     42,
   );
+  forearm.frustumCulled = false;
   addFurShell(elbow, forearm, fringe);
 
   const wrist = new THREE.Group();
@@ -251,31 +233,39 @@ function makeArm(
   elbow.add(wrist);
 
   const wristMass = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 24), fur);
-  wristMass.scale.set(.082, .088, .064);
+  wristMass.position.set(0, .024, -.004);
+  wristMass.scale.set(.074, .124, .057);
   wristMass.castShadow = true;
+  wristMass.frustumCulled = false;
   wrist.add(wristMass);
+  addEllipsoidShell(wrist, wristMass, fringe);
 
-  // Bradypus has a narrow, hairy autopodium with partially fused digital bases.
+  // The splash silhouette reads as a compact fur-covered paw. The three distal
+  // phalanges are buried in this mass; only their keratin hooks should show.
   const palm = new THREE.Mesh(new THREE.SphereGeometry(1, 40, 30), palmFur);
-  palm.position.set(-side * .012, .052, -.012);
-  palm.scale.set(.079, .088, .057);
+  palm.position.set(-side * .014, .105, -.016);
+  palm.scale.set(.073, .135, .053);
   palm.castShadow = true;
   palm.receiveShadow = true;
+  palm.frustumCulled = false;
   wrist.add(palm);
   addEllipsoidShell(wrist, palm, fringe);
 
   const digitWeb = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 22), palmFur);
-  digitWeb.position.set(-side * .018, .091, -.021);
-  digitWeb.scale.set(.085, .034, .045);
+  digitWeb.position.set(-side * .02, .176, -.025);
+  digitWeb.scale.set(.078, .052, .046);
   digitWeb.castShadow = true;
+  digitWeb.frustumCulled = false;
   wrist.add(digitWeb);
 
   const digits: THREE.Group[] = [];
   for (let index = -1; index <= 1; index++) {
-    const finger = makeDigit(index, side, fur, keratin);
-    finger.position.set(-side * .019 + index * .027, .086 - Math.abs(index) * .003, -.020 + (index === 0 ? -.006 : 0));
-    wrist.add(finger);
-    digits.push(finger);
+    const claw = makeClaw(index, side, keratin);
+    // Roots overlap the fur cap so the hooks emerge from the paw rather than
+    // appearing glued onto a visible set of human-like fingers.
+    claw.position.set(-side * .022 + index * .027, .182 - Math.abs(index) * .007, -.033 + (index === 0 ? -.008 : 0));
+    wrist.add(claw);
+    digits.push(claw);
   }
 
   // The broad placement leaves negative space between the hands and lets the
@@ -289,36 +279,43 @@ function makeArm(
 export function createSlothRig(furTexture: THREE.Texture): SlothRig {
   const root = new THREE.Group();
   root.renderOrder = 20;
+  // Match the first animated frame so entering play cannot introduce a large
+  // camera-space drop. GameClient already handles arm placement and scaling.
+  root.position.set(0, .012, -.02);
 
   const fur = new THREE.MeshPhysicalMaterial({
     map: furTexture,
     bumpMap: furTexture,
-    bumpScale: .027,
-    color: "#d8d2c5",
+    bumpScale: .032,
+    color: "#d7d2c8",
     roughness: .93,
     sheen: .9,
-    sheenColor: new THREE.Color("#8c7557"),
+    sheenColor: new THREE.Color("#8d8373"),
     sheenRoughness: .78,
+    emissive: new THREE.Color("#27231d"),
+    emissiveIntensity: .11,
   });
   const palmFur = new THREE.MeshPhysicalMaterial({
     map: furTexture,
     bumpMap: furTexture,
     bumpScale: .018,
-    color: "#c9bfad",
+    color: "#cac3b7",
     roughness: .96,
     sheen: .65,
-    sheenColor: new THREE.Color("#77634a"),
+    sheenColor: new THREE.Color("#716653"),
     sheenRoughness: .85,
+    emissive: new THREE.Color("#25211c"),
+    emissiveIntensity: .12,
   });
   const fringe = new THREE.MeshPhysicalMaterial({
     map: furTexture,
     alphaMap: furTexture,
     bumpMap: furTexture,
     bumpScale: .012,
-    color: "#ded7c8",
+    color: "#ddd5c7",
     roughness: .98,
     sheen: .9,
-    sheenColor: new THREE.Color("#9d8b6f"),
+    sheenColor: new THREE.Color("#938670"),
     sheenRoughness: .9,
     alphaTest: .3,
     transparent: true,
@@ -326,7 +323,7 @@ export function createSlothRig(furTexture: THREE.Texture): SlothRig {
     depthWrite: false,
   });
   const keratin = new THREE.MeshPhysicalMaterial({
-    color: "#fff8e9",
+    color: "#fff9e9",
     vertexColors: true,
     roughness: .4,
     clearcoat: .16,
@@ -360,19 +357,23 @@ export function createSlothRig(furTexture: THREE.Texture): SlothRig {
       rightJoints.elbow.rotation.x = -.018 + gait * .018 * stride - grip * .034;
       leftJoints.wrist.rotation.x = -.025 + gait * .014 * stride - grip * .065;
       rightJoints.wrist.rotation.x = -.025 - gait * .014 * stride - grip * .065;
-      leftJoints.wrist.rotation.z = .34 + breath * .004;
-      rightJoints.wrist.rotation.z = -.34 - breath * .004;
+      const leftLayout = left.userData.layoutZ ?? -.34;
+      const rightLayout = right.userData.layoutZ ?? .34;
+      leftJoints.wrist.rotation.z = -leftLayout * .72 + breath * .004;
+      rightJoints.wrist.rotation.z = -rightLayout * .72 - breath * .004;
 
       for (let index = 0; index < 3; index++) {
         const phase = time * 1.15 + index * .72;
         const leftDigit = leftJoints.digits[index];
         const rightDigit = rightJoints.digits[index];
-        leftDigit.rotation.x = Math.abs(index - 1) * -.014 - grip * (.026 + index * .004) + Math.sin(phase) * .003;
-        rightDigit.rotation.x = Math.abs(index - 1) * -.014 - grip * (.032 - index * .004) + Math.sin(phase + .8) * .003;
+        leftDigit.rotation.x = Math.abs(index - 1) * -.035 - grip * (.018 + index * .003) + Math.sin(phase) * .0025;
+        rightDigit.rotation.x = Math.abs(index - 1) * -.035 - grip * (.022 - index * .003) + Math.sin(phase + .8) * .0025;
       }
 
-      root.position.y = -.265 + breath * .006 + Math.sin(time * 5.15) * .006 * stride;
-      root.position.z = gripping ? -.012 : 0;
+      // Keep the viewmodel anchored to the camera. Motion is deliberately
+      // millimetric; locomotion and climbing must never push the paws offscreen.
+      root.position.y = .012 + breath * .004 + Math.sin(time * 5.15) * .004 * stride;
+      root.position.z = -.02 - grip * .004;
     },
   };
 }
