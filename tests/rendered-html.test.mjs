@@ -18,6 +18,7 @@ test("server-renders the branded game shell", async () => {
   assert.match(html, /data-game-state="intro"/);
   assert.match(html, /3D game viewport/);
   assert.match(html, /game\/splash\.webp/);
+  assert.match(html, /viewport-fit=cover/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });
 
@@ -32,7 +33,21 @@ test("removes the disposable starter and keeps the game browser-safe", async () 
   assert.match(layout, /first-person Central Park survival adventure/i);
   assert.match(game, /^"use client";/);
   assert.match(game, /requestPointerLock/);
+  assert.match(game, /typeof canvas\.requestPointerLock !== "function"/);
+  assert.match(game, /requestPointerLockSafely/);
   assert.match(game, /prefers-reduced-motion/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
   await assert.rejects(access(new URL("../app/_sites-preview/SkeletonPreview.tsx", import.meta.url)));
+});
+
+test("mobile entry cannot be stranded by unavailable Pointer Lock", async () => {
+  const game = await readFile(new URL("../app/game/GameClient.tsx", import.meta.url), "utf8");
+  const beginStart = game.indexOf("const begin = useCallback");
+  const beginEnd = game.indexOf("const resume", beginStart);
+  assert.ok(beginStart >= 0 && beginEnd > beginStart);
+  const begin = game.slice(beginStart, beginEnd);
+  assert.ok(begin.indexOf('setPhase("playing")') < begin.indexOf("safeLock()"));
+  assert.match(begin, /try \{ if \(!audioRef\.current\)/);
+  assert.match(game, /phase === "intro" \|\| exiting/);
+  assert.match(game, /data-touch-capable/);
 });

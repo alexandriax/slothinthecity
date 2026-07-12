@@ -45,12 +45,27 @@ function renderPixelRatio(tier: number) {
   return Math.max(.72, Math.min(devicePixelRatio, tier > .85 ? 1.5 : 1.1, budgetRatio));
 }
 
+function hasTouchInput() {
+  return typeof window !== "undefined" && ((navigator.maxTouchPoints ?? 0) > 0 || "ontouchstart" in window || matchMedia("(pointer: coarse)").matches);
+}
+
+function requestPointerLockSafely(canvas: HTMLCanvasElement | null) {
+  if (!canvas || typeof canvas.requestPointerLock !== "function") return;
+  try { Promise.resolve(canvas.requestPointerLock()).catch(() => undefined); } catch { /* Pointer Lock is optional on mobile/WebKit. */ }
+}
+
+function exitPointerLockSafely() {
+  if (typeof document.exitPointerLock !== "function") return;
+  try { Promise.resolve(document.exitPointerLock()).catch(() => undefined); } catch { /* Ignore unsupported or denied exits. */ }
+}
+
 export function GameClient() {
   const mount = useRef<HTMLDivElement>(null), phaseRef = useRef<Phase>("intro"), collected = useRef(new Set<number>()), scentRef = useRef(false), toastTimerRef = useRef<number | null>(null);
   const [phase, setPhaseState] = useState<Phase>("intro"), [ready, setReady] = useState(false), [exiting, setExiting] = useState(false);
   const [muted, setMuted] = useState(false), [scent, setScent] = useState(false), [toast, setToast] = useState("");
   const [mouseCaptured, setMouseCaptured] = useState(false);
-  const [pointerLockAvailable] = useState(() => typeof window !== "undefined" && matchMedia("(pointer: fine)").matches && !new URLSearchParams(location.search).has("qa"));
+  const [touchCapable, setTouchCapable] = useState(false);
+  const [pointerLockAvailable] = useState(() => typeof window !== "undefined" && !hasTouchInput() && typeof HTMLCanvasElement.prototype.requestPointerLock === "function" && matchMedia("(pointer: fine)").matches && !new URLSearchParams(location.search).has("qa"));
   const [hud, setHud] = useState<HudState>({ energy: 100, alert: 6, buds: 0, objective: "Follow the old bridle trail", prompt: "", promptKey: "", heading: "N", motion: "ON GROUND", hint: "E climbs a nearby trunk · W / S moves · Shift grips", threat: "PATROL DISTANT", hawkPhase: "PATROL", swimming: false, driving: false, speed: 0, x: START.x, y: 0, z: START.z, branchId: -1, branchProgress: 0, arboreal: false });
   const setPhase = (next: Phase) => { phaseRef.current = next; setPhaseState(next); };
   const showToast = useCallback((message: string, duration = 2600) => {
@@ -114,8 +129,8 @@ export function GameClient() {
     let drivingCart = false, vehicleLookYaw = 0, cartWasBlocked = false;
     const cartEntry = new THREE.Vector3(), cartCamera = new THREE.Vector3(), cartQuaternion = new THREE.Quaternion(), cartPrevious = new THREE.Vector3();
 
-    const requestLock = () => { if (phaseRef.current !== "playing" || new URLSearchParams(location.search).has("qa")) return; renderer.domElement.requestPointerLock()?.catch(() => undefined); };
-    const pointer = (event: PointerEvent) => { if (event.pointerType === "touch") { dragging = true; lastTouchX = event.clientX; lastTouchY = event.clientY; renderer.domElement.setPointerCapture(event.pointerId); } else requestLock(); };
+    const requestLock = () => { if (phaseRef.current !== "playing" || new URLSearchParams(location.search).has("qa")) return; requestPointerLockSafely(renderer.domElement); };
+    const pointer = (event: PointerEvent) => { if (event.pointerType === "touch") { dragging = true; lastTouchX = event.clientX; lastTouchY = event.clientY; try { renderer.domElement.setPointerCapture?.(event.pointerId); } catch {} } else requestLock(); };
     const applyLook = (dx: number, dy: number, xScale: number, yScale: number) => {
       if (drivingCart) vehicleLookYaw = THREE.MathUtils.clamp(vehicleLookYaw - dx * xScale, -1.5, 1.5);
       else yaw -= dx * xScale;
@@ -138,7 +153,7 @@ export function GameClient() {
     };
     const keyDown = (event: KeyboardEvent) => {
       if (event.code === "KeyP" && !event.repeat) {
-        if (phaseRef.current === "playing") { setPhase("paused"); document.exitPointerLock(); }
+        if (phaseRef.current === "playing") { setPhase("paused"); exitPointerLockSafely(); }
         else if (phaseRef.current === "paused") { setPhase("playing"); requestLock(); }
         return;
       }
@@ -625,7 +640,7 @@ export function GameClient() {
           world.hawk.lookAt(player); world.hawk.rotateY(Math.PI); camera.rotation.z = Math.sin(gameTime * 32) * .028;
         }
         sun.position.set(player.x - 35, player.y + 68, player.z + 25); sun.target.position.set(player.x, player.y, player.z - 8); sun.target.updateMatrixWorld();
-        if (collected.current.size >= 5 && player.distanceTo(GOAL) < 7) { setPhase("complete"); document.exitPointerLock(); }
+        if (collected.current.size >= 5 && player.distanceTo(GOAL) < 7) { setPhase("complete"); exitPointerLockSafely(); }
         if (gameTime - lastHud > .12) {
           lastHud = gameTime; let prompt = "", promptKey = "";
           world.buds.forEach(bud => { if (bud.visible && bud.position.distanceTo(player) < 3.2) { prompt = "FORAGE TENDER BUD"; promptKey = "E"; } });
@@ -660,20 +675,38 @@ export function GameClient() {
   }, [showToast]);
 
   const audioRef = useRef<ReturnType<typeof startAudio> | null>(null);
-  const safeLock = () => { if (new URLSearchParams(location.search).has("qa")) return; mount.current?.querySelector("canvas")?.requestPointerLock()?.catch(() => undefined); };
+  const resetViewportScroll = useCallback(() => {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    const shell = mount.current?.closest<HTMLElement>(".game-shell");
+    if (shell) { shell.scrollTop = 0; shell.scrollLeft = 0; }
+    window.scrollTo(0, 0);
+  }, []);
+  const safeLock = useCallback(() => {
+    if (!pointerLockAvailable || phaseRef.current !== "playing" || new URLSearchParams(location.search).has("qa")) return;
+    requestPointerLockSafely(mount.current?.querySelector("canvas") ?? null);
+  }, [pointerLockAvailable]);
   const begin = useCallback(() => {
-    if (!ready || exiting) return; if (!audioRef.current) audioRef.current = startAudio(); setExiting(true); safeLock();
-    window.setTimeout(() => {
-      setPhase("playing"); setExiting(false); showToast("E drives the marked field cart · hold W to follow ring-marked canopy routes", 5200);
-    }, 850);
-  }, [ready, exiting, showToast]);
+    if (!ready || exiting) return;
+    // Enter gameplay before optional browser enhancements. iOS does not expose
+    // Pointer Lock without a physical mouse; it must never strand the intro in
+    // its transparent exiting state.
+    resetViewportScroll(); setExiting(true); setPhase("playing");
+    showToast(hasTouchInput() ? "Left stick moves · drag the right side to look · tap Drive / Grab / Use to interact" : "E drives the marked field cart · hold W to follow ring-marked canopy routes", 5600);
+    requestAnimationFrame(resetViewportScroll); window.setTimeout(() => setExiting(false), 850);
+    try { if (!audioRef.current) audioRef.current = startAudio(); } catch { audioRef.current = null; }
+    safeLock();
+  }, [ready, exiting, resetViewportScroll, safeLock, showToast]);
   const resume = () => { setPhase("playing"); safeLock(); };
   useEffect(() => { if (audioRef.current) audioRef.current.master.gain.value = muted ? 0 : .13; }, [muted]);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setTouchCapable(hasTouchInput()));
+    return () => cancelAnimationFrame(frame);
+  }, []);
   useEffect(() => () => {
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
     if (audioRef.current) { clearInterval(audioRef.current.interval); audioRef.current.context.close().catch(() => undefined); audioRef.current = null; }
   }, []);
-  return <main className="game-shell" data-game-state={phase} data-motion={hud.motion} data-energy={hud.energy.toFixed(1)} data-threat={hud.alert.toFixed(1)} data-hawk-phase={hud.hawkPhase} data-swimming={hud.swimming ? "true" : "false"} data-driving={hud.driving ? "true" : "false"} data-speed={hud.speed.toFixed(2)} data-position={`${hud.x.toFixed(2)},${hud.z.toFixed(2)}`} data-altitude={hud.y.toFixed(2)} data-branch={hud.branchId} data-branch-progress={hud.branchProgress.toFixed(3)}>
+  return <main className="game-shell" data-game-state={phase} data-touch-capable={touchCapable ? "true" : "false"} data-motion={hud.motion} data-energy={hud.energy.toFixed(1)} data-threat={hud.alert.toFixed(1)} data-hawk-phase={hud.hawkPhase} data-swimming={hud.swimming ? "true" : "false"} data-driving={hud.driving ? "true" : "false"} data-speed={hud.speed.toFixed(2)} data-position={`${hud.x.toFixed(2)},${hud.z.toFixed(2)}`} data-altitude={hud.y.toFixed(2)} data-branch={hud.branchId} data-branch-progress={hud.branchProgress.toFixed(3)}>
     <div ref={mount} className="viewport" aria-label="3D game viewport" />
     <div className="world-grade"/><div className="world-vignette"/><div className="grain"/>
     {phase !== "intro" && <div className="hud" aria-live="polite">
@@ -686,7 +719,7 @@ export function GameClient() {
       <div className={`scent-overlay ${scent ? "on" : ""}`}/>{toast && <div className="toast">{toast}</div>}
     </div>}
     {phase === "playing" && pointerLockAvailable && !mouseCaptured && <button className="mouse-resume" onClick={safeLock}><span>Mouse free</span>Click to look</button>}
-    {phase === "intro" && <section className={`screen intro-screen ${exiting ? "exiting" : ""}`}>
+    {(phase === "intro" || exiting) && <section className={`screen intro-screen ${exiting ? "exiting" : ""}`}>
       <Image className="intro-art" src="/game/splash.webp" alt="" aria-hidden="true" fill priority sizes="100vw" unoptimized/>
       <div className="intro-scrim"/><div className="intro-location">THE RAMBLE · CENTRAL PARK · 6:42 PM</div>
       <div className="intro-ui"><h1 className="sr-only">SLOTH / PARK</h1><div className="mobile-wordmark" aria-hidden="true">SLOTH <i>/</i> PARK</div>

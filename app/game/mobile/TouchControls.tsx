@@ -46,9 +46,11 @@ export function TouchControls({ arboreal, driving, prompt }: TouchControlsProps)
   };
   const actionLabel = driving ? "Exit" : prompt.includes("DRIVE") ? "Drive" : prompt.includes("FORAGE") ? "Forage" : prompt.includes("CLIMB") ? "Climb" : prompt.includes("REACH") || prompt.includes("BRANCH") || prompt.includes("GUIDE") ? "Grab" : "Use";
 
-  useEffect(() => () => {
-    for (const code of held.current) emitKey(code, false);
-    held.current.clear();
+  useEffect(() => {
+    const release = () => { for (const code of [...held.current]) emitKey(code, false); held.current.clear(); };
+    const visibility = () => { if (document.hidden) release(); };
+    window.addEventListener("blur", release); window.addEventListener("pagehide", release); document.addEventListener("visibilitychange", visibility);
+    return () => { window.removeEventListener("blur", release); window.removeEventListener("pagehide", release); document.removeEventListener("visibilitychange", visibility); release(); };
   }, []);
 
   return <div className={`touch-ui ${expanded ? "expanded" : "collapsed"}`}>
@@ -56,10 +58,10 @@ export function TouchControls({ arboreal, driving, prompt }: TouchControlsProps)
       {expanded ? "Hide controls" : "Touch controls"}
     </button>
     {expanded && <>
-      <div className="touch-stick" aria-label="Movement joystick" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); moveStick(event); }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) moveStick(event); }} onPointerUp={stopStick} onPointerCancel={stopStick}><span /></div>
-      <div className="touch-look" aria-label="Look area" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); lookPoint.current = { x: event.clientX, y: event.clientY }; }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) moveLook(event); }} onPointerUp={() => { lookPoint.current = null; }} onPointerCancel={() => { lookPoint.current = null; }}><span>Drag to look</span></div>
+      <div className="touch-stick" aria-label="Movement joystick" onPointerDown={(event) => { try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch {} moveStick(event); }} onPointerMove={(event) => { if (typeof event.currentTarget.hasPointerCapture !== "function" || event.currentTarget.hasPointerCapture(event.pointerId)) moveStick(event); }} onPointerUp={stopStick} onPointerCancel={stopStick} onLostPointerCapture={stopStick}><span /></div>
+      <div className="touch-look" aria-label="Look area" onPointerDown={(event) => { try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch {} lookPoint.current = { x: event.clientX, y: event.clientY }; }} onPointerMove={(event) => { if (typeof event.currentTarget.hasPointerCapture !== "function" || event.currentTarget.hasPointerCapture(event.pointerId)) moveLook(event); }} onPointerUp={() => { lookPoint.current = null; }} onPointerCancel={() => { lookPoint.current = null; }} onLostPointerCapture={() => { lookPoint.current = null; }}><span>Drag to look</span></div>
       <button className="touch-action" aria-label="Context action" onClick={() => { emitKey("KeyE", true); emitKey("KeyE", false); }}>{actionLabel}</button>
-      <button className="touch-grip" aria-label={driving ? "Hold cart brake" : "Hold grip"} onPointerDown={() => setHeld("ShiftLeft", true)} onPointerUp={() => setHeld("ShiftLeft", false)} onPointerCancel={() => setHeld("ShiftLeft", false)}>{driving ? "Brake" : "Grip"}</button>
+      <button className="touch-grip" aria-label={driving ? "Hold cart brake" : "Hold grip"} onPointerDown={() => setHeld("ShiftLeft", true)} onPointerUp={() => setHeld("ShiftLeft", false)} onPointerCancel={() => setHeld("ShiftLeft", false)} onLostPointerCapture={() => setHeld("ShiftLeft", false)}>{driving ? "Brake" : "Grip"}</button>
       {arboreal && <button className="touch-down" aria-label="Descend from canopy" onClick={() => { emitKey("ControlLeft", true); emitKey("ControlLeft", false); }}>Down</button>}
       <button className="touch-sense" aria-label="Toggle scent vision" onClick={() => { emitKey("KeyC", true); emitKey("KeyC", false); }}>Sense</button>
     </>}

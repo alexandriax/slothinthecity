@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -21,6 +21,13 @@ export const metadata: Metadata = {
     description: "A first-person Central Park survival adventure.",
     images: ["/og.png"],
   },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#07100d",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
