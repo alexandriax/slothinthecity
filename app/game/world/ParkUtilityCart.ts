@@ -228,8 +228,8 @@ function makePlateTexture() {
     context.textBaseline = "middle";
     context.font = "700 42px Arial, sans-serif";
     context.fillText("CENTRAL PARK", width / 2, 54);
-    context.font = "800 88px ui-monospace, monospace";
-    context.fillText("CP-017", width / 2, 143);
+    context.font = "800 82px ui-monospace, monospace";
+    context.fillText("SLTHPRK", width / 2, 143);
   });
 }
 
@@ -521,10 +521,24 @@ function buildCart(textures: GameTextures, quality: number): BuiltCart {
   addCargoTools(body, materials);
 
   for (const side of [-1, 1]) {
-    const label = new THREE.Mesh(new THREE.PlaneGeometry(.9, .39), materials.label);
-    label.name = "central-park-field-services-marking";
-    label.position.set(side * .756, .78, .89);
+    // Mount the service identity on a raised cargo-bed placard. The previous
+    // decal crossed the rear wheel's silhouette, obscuring its border and copy.
+    // This backing clears the complete fender arc while retaining the cart's
+    // enamel-and-black-metal field-services finish.
+    addRoundedBox(
+      body,
+      side < 0 ? "left-service-sign-backing" : "right-service-sign-backing",
+      [.04, .43, 1.01],
+      [side * .766, 1.055, 1.35],
+      materials.blackMetal,
+      .035,
+      4,
+    );
+    const label = new THREE.Mesh(new THREE.PlaneGeometry(.93, .4), materials.label);
+    label.name = side < 0 ? "left-central-park-field-services-marking" : "right-central-park-field-services-marking";
+    label.position.set(side * .791, 1.055, 1.35);
     label.rotation.y = side * Math.PI / 2;
+    label.renderOrder = 2;
     body.add(label);
   }
   const plate = new THREE.Mesh(new THREE.PlaneGeometry(.42, .18), materials.plate);
