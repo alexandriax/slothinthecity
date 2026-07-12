@@ -821,7 +821,13 @@ function ParkLevel({ onEnterSubway }: { onEnterSubway: () => void }) {
 }
 
 export function GameClient() {
-  const [level, setLevel] = useState<"park" | "subway">(() => typeof window !== "undefined" && ["subway", "subwayplatform", "lexington", "westfarms", "finale"].includes(new URLSearchParams(location.search).get("qa") ?? "") ? "subway" : "park");
+  const [level, setLevel] = useState<"park" | "subway">("park");
   const enterSubway = useCallback(() => setLevel("subway"), []);
+  useEffect(() => {
+    if (!["localhost", "127.0.0.1"].includes(location.hostname)) return;
+    if (!["subway", "subwayplatform", "lexington", "westfarms", "finale"].includes(new URLSearchParams(location.search).get("qa") ?? "")) return;
+    const frame = requestAnimationFrame(() => setLevel("subway"));
+    return () => cancelAnimationFrame(frame);
+  }, []);
   return level === "subway" ? <SubwayGame/> : <ParkLevel onEnterSubway={enterSubway}/>;
 }

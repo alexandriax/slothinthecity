@@ -133,7 +133,7 @@ function addAttendant(materials: { uniform: THREE.Material; skin: THREE.Material
 
 function addZoo(root: THREE.Group, heightAt: (x: number, z: number) => number, ownedTextures: THREE.Texture[]) {
   const gate = new THREE.Group(); gate.name = "central-park-zoo-entrance"; gate.position.set(ZOO_TARGET.x + 4, heightAt(ZOO_TARGET.x + 4, ZOO_TARGET.z - 4), ZOO_TARGET.z - 4); gate.rotation.y = -.28;
-  const brick = new THREE.MeshStandardMaterial({ color: "#9a8267", roughness: .92, bumpMap: undefined });
+  const brick = new THREE.MeshStandardMaterial({ color: "#9a8267", roughness: .92 });
   const iron = new THREE.MeshStandardMaterial({ color: "#151b18", metalness: .82, roughness: .3 });
   const cream = new THREE.MeshStandardMaterial({ color: "#d9cfb7", roughness: .7 });
   const zooTexture = signTexture("CENTRAL PARK ZOO", "WILDLIFE CONSERVATION · EAST 64TH", "#e5c46c"); ownedTextures.push(zooTexture);
