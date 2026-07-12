@@ -12,7 +12,7 @@ import { loadGameTextures } from "./rendering/textures";
 import { buildRealisticWorld, GOAL, START, terrainY, type BranchRoute, type ClimbableTree } from "./world/RealisticWorld";
 
 type Phase = "intro" | "playing" | "paused" | "complete";
-type MotionState = "READY" | "TRAVERSING" | "SEEKING TRUNK" | "GRIPPING" | "CLIMBING" | "ON BRANCH" | "REACHING" | "DROPPING" | "CAUGHT" | "RECOVERING" | "WINDED" | "PATH BLOCKED";
+type MotionState = "ON GROUND" | "CLIMBING" | "ON BRANCH" | "REACHING" | "LOWERING" | "DESCENDING" | "CAUGHT" | "PATH BLOCKED";
 type HudState = { energy: number; alert: number; buds: number; objective: string; prompt: string; promptKey: string; heading: string; motion: MotionState; hint: string; x: number; y: number; z: number; branchId: number; branchProgress: number; arboreal: boolean };
 
 function startAudio() {
@@ -45,7 +45,9 @@ export function GameClient() {
   const mount = useRef<HTMLDivElement>(null), phaseRef = useRef<Phase>("intro"), collected = useRef(new Set<number>()), scentRef = useRef(false);
   const [phase, setPhaseState] = useState<Phase>("intro"), [ready, setReady] = useState(false), [exiting, setExiting] = useState(false);
   const [muted, setMuted] = useState(false), [scent, setScent] = useState(false), [toast, setToast] = useState("");
-  const [hud, setHud] = useState<HudState>({ energy: 100, alert: 6, buds: 0, objective: "Follow the old bridle trail", prompt: "", promptKey: "", heading: "N", motion: "READY", hint: "Shift grips a nearby trunk · climb with W / S", x: START.x, y: 0, z: START.z, branchId: -1, branchProgress: 0, arboreal: false });
+  const [mouseCaptured, setMouseCaptured] = useState(false);
+  const [pointerLockAvailable] = useState(() => typeof window !== "undefined" && matchMedia("(pointer: fine)").matches && !new URLSearchParams(location.search).has("qa"));
+  const [hud, setHud] = useState<HudState>({ energy: 100, alert: 6, buds: 0, objective: "Follow the old bridle trail", prompt: "", promptKey: "", heading: "N", motion: "ON GROUND", hint: "E climbs a nearby trunk · W / S moves · Shift grips", x: START.x, y: 0, z: START.z, branchId: -1, branchProgress: 0, arboreal: false });
   const setPhase = (next: Phase) => { phaseRef.current = next; setPhaseState(next); };
 
   useEffect(() => {
@@ -60,6 +62,11 @@ export function GameClient() {
 
     const textures = loadGameTextures(renderer, () => { if (!disposed) setReady(true); });
     const world = buildRealisticWorld(scene, textures, tier);
+    const markerGeometry = new THREE.RingGeometry(.17, .25, 28);
+    const actionMarkerMaterial = new THREE.MeshBasicMaterial({ color: "#d9ef8b", transparent: true, opacity: .92, side: THREE.DoubleSide, depthTest: false });
+    const dropMarkerMaterial = new THREE.MeshBasicMaterial({ color: "#e6a85e", transparent: true, opacity: .78, side: THREE.DoubleSide, depthTest: false });
+    const actionMarker = new THREE.Mesh(markerGeometry, actionMarkerMaterial), dropMarker = new THREE.Mesh(markerGeometry, dropMarkerMaterial);
+    actionMarker.visible = dropMarker.visible = false; actionMarker.renderOrder = dropMarker.renderOrder = 100; scene.add(actionMarker, dropMarker);
     const hemisphere = new THREE.HemisphereLight("#dce3d2", "#3b3329", .62); scene.add(hemisphere);
     const sun = new THREE.DirectionalLight("#ffd49a", 2.65); sun.position.set(-35, 68, 25); sun.castShadow = true;
     sun.shadow.mapSize.set(tier > .85 ? 2048 : 1024, tier > .85 ? 2048 : 1024); sun.shadow.camera.left = sun.shadow.camera.bottom = -42; sun.shadow.camera.right = sun.shadow.camera.top = 42;
@@ -88,7 +95,7 @@ export function GameClient() {
     layoutSloth(); camera.add(sloth.root); scene.add(camera);
     let yaw = -.35, pitch = -.04, energy = 100, alert = 5, lastHud = 0, gameTime = 0, dragging = false, lastTouchX = 0, lastTouchY = 0;
     let blockedBy: "" | "WATER" | "TREE" | "LANDMARK" = "", climbingTree: ClimbableTree | null = null, climbAngle = 0, climbHeight = 1.48;
-    let branchRoute: BranchRoute | null = null, branchProgress = 0, gripRequested = false, actionRequested = false, dropRequested = false, gripHintUntil = 0, dropVelocity = 0, qaPrepared = false, qaStage = 0, caughtUntil = 0;
+    let branchRoute: BranchRoute | null = null, branchProgress = 0, actionRequested = false, dropRequested = false, gripHintUntil = 0, dropVelocity = 0, controlledDescent = false, descentIgnoreRouteId = -1, qaPrepared = false, qaStage = 0, caughtUntil = 0;
     let transfer: { from: THREE.Vector3; to: THREE.Vector3; route: BranchRoute; progress: number; started: number; duration: number; kind: "REACH" | "DROP" } | null = null;
 
     const requestLock = () => { if (phaseRef.current !== "playing" || new URLSearchParams(location.search).has("qa")) return; renderer.domElement.requestPointerLock()?.catch(() => undefined); };
@@ -107,20 +114,23 @@ export function GameClient() {
       return collectedBud;
     };
     const keyDown = (event: KeyboardEvent) => {
+      if (event.code === "KeyP" && !event.repeat) {
+        if (phaseRef.current === "playing") { setPhase("paused"); document.exitPointerLock(); }
+        else if (phaseRef.current === "paused") { setPhase("playing"); requestLock(); }
+        return;
+      }
       keys.add(event.code);
-      if ((event.code === "ShiftLeft" || event.code === "ShiftRight") && !event.repeat) gripRequested = true;
-      if ((event.code === "Space" || event.code === "KeyE") && !event.repeat) actionRequested = true;
-      if ((event.code === "ControlLeft" || event.code === "ControlRight" || event.code === "KeyQ") && !event.repeat) dropRequested = true;
-      if (event.code === "Escape" && phaseRef.current === "playing") setPhase("paused");
+      if (event.code === "KeyE" && !event.repeat) actionRequested = true;
+      if ((event.code === "ControlLeft" || event.code === "ControlRight" || event.code === "Space" || event.code === "KeyQ") && !event.repeat) { event.preventDefault(); dropRequested = true; }
       if (event.code === "KeyC") { scentRef.current = !scentRef.current; setScent(scentRef.current); }
       if (event.code === "KeyM") setMuted(value => !value);
     };
     const keyUp = (event: KeyboardEvent) => keys.delete(event.code);
-    const pauseOnFocusLoss = () => { keys.clear(); velocity.set(0, 0, 0); if (phaseRef.current === "playing" && !new URLSearchParams(location.search).has("qa")) setPhase("paused"); };
-    const pointerLockChanged = () => { if (document.pointerLockElement !== renderer.domElement) pauseOnFocusLoss(); };
+    const releaseInput = () => { keys.clear(); velocity.set(0, 0, 0); };
+    const pointerLockChanged = () => { const captured = document.pointerLockElement === renderer.domElement; setMouseCaptured(captured); if (!captured) releaseInput(); };
     renderer.domElement.addEventListener("pointerdown", pointer); renderer.domElement.addEventListener("pointermove", pointerMove); renderer.domElement.addEventListener("pointerup", pointerUp);
     document.addEventListener("mousemove", mouse); document.addEventListener("keydown", keyDown); document.addEventListener("keyup", keyUp);
-    document.addEventListener("pointerlockchange", pointerLockChanged); window.addEventListener("blur", pauseOnFocusLoss);
+    document.addEventListener("pointerlockchange", pointerLockChanged); window.addEventListener("blur", releaseInput);
     const resize = () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setPixelRatio(renderPixelRatio(tier)); renderer.setSize(innerWidth, innerHeight); composer?.setSize(innerWidth, innerHeight); layoutSloth(); };
     addEventListener("resize", resize);
 
@@ -156,7 +166,19 @@ export function GameClient() {
     }
     function branchFromTree(tree: ClimbableTree) {
       const treeIndex = world.trees.indexOf(tree), routes = world.branches.filter((route) => route.treeIndex === treeIndex);
-      return bestBranch(routes.map((route) => route.id), 4.8) ?? (routes[0] ? { route: routes[0], amount: .06, point: branchPose(routes[0], .06), score: 0 } : null);
+      const view = new THREE.Vector3(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch)).normalize();
+      let selected: { route: BranchRoute; amount: number; point: THREE.Vector3; score: number } | null = null;
+      for (const route of routes) {
+        // Offer a stable hold beyond the trunk collar. Route starts sit at the
+        // trunk centre and made the old target ring fill the whole viewport.
+        const amount = .24 + (route.id % 3) * .025, point = branchPose(route, amount);
+        const direction = point.clone().sub(player), distance = direction.length();
+        if (distance > 5.4) continue;
+        const facing = distance < .01 ? 1 : direction.normalize().dot(view);
+        const score = facing * 2.2 - distance * .16;
+        if (!selected || score > selected.score) selected = { route, amount, point, score };
+      }
+      return selected ?? (routes[0] ? { route: routes[0], amount: .26, point: branchPose(routes[0], .26), score: 0 } : null);
     }
     function groundHeight(x: number, z: number) {
       const bridge = world.bridgeSurface, dx = x - bridge.x, dz = z - bridge.z, cosine = Math.cos(bridge.yaw), sine = Math.sin(bridge.yaw);
@@ -166,9 +188,10 @@ export function GameClient() {
       }
       return terrainY(x, z) + 1.48;
     }
-    function catchFallingBranch(previousY: number) {
+    function catchFallingBranch(previousY: number, excludedRouteId = -1) {
       let caught: { route: BranchRoute; amount: number; height: number } | null = null;
       for (const route of world.branches) {
+        if (route.id === excludedRouteId) continue;
         const dx = route.end.x - route.start.x, dz = route.end.z - route.start.z, lengthSq = dx * dx + dz * dz;
         const amount = THREE.MathUtils.clamp(((player.x - route.start.x) * dx + (player.z - route.start.z) * dz) / Math.max(lengthSq, .001), 0, 1);
         const branchX = THREE.MathUtils.lerp(route.start.x, route.end.x, amount), branchZ = THREE.MathUtils.lerp(route.start.z, route.end.z, amount), branchY = THREE.MathUtils.lerp(route.start.y, route.end.y, amount) - .72;
@@ -176,7 +199,7 @@ export function GameClient() {
         if (horizontal <= route.radius + .82 && previousY >= branchY && player.y <= branchY + .08 && (!caught || branchY > caught.height)) caught = { route, amount, height: branchY };
       }
       if (!caught) return false;
-      branchRoute = caught.route; branchProgress = caught.amount; climbingTree = null; dropVelocity = 0; transfer = null; caughtUntil = gameTime + 1.4;
+      branchRoute = caught.route; branchProgress = caught.amount; climbingTree = null; dropVelocity = 0; controlledDescent = false; descentIgnoreRouteId = -1; transfer = null; caughtUntil = gameTime + 1.4;
       branchPose(caught.route, caught.amount, player); return true;
     }
     function resolveGroundCollisions(moving: boolean) {
@@ -227,6 +250,9 @@ export function GameClient() {
           if (qaInput === "autodrop") {
             const dropRoute = world.branches.find((route) => route.belowRouteIds.length > 0);
             if (dropRoute) { branchRoute = dropRoute; branchProgress = .5; branchPose(dropRoute, branchProgress, player); qaPrepared = true; qaStage = 1; }
+          } else if (qaInput === "autotransfer") {
+            const transferRoute = world.branches.find((route) => route.crossTreeRouteIds.length > 0);
+            if (transferRoute) { branchRoute = transferRoute; branchProgress = .62; branchPose(transferRoute, branchProgress, player); keys.add("KeyW"); qaPrepared = true; qaStage = 1; }
           } else if (qaInput === "bridgewalk") {
             const bridge = world.bridgeSurface, cosine = Math.cos(bridge.yaw), sine = Math.sin(bridge.yaw), localX = -bridge.length / 2 + .65;
             player.set(bridge.x + cosine * localX, bridge.y + 1.48, bridge.z - sine * localX); yaw = bridge.yaw - Math.PI / 2; keys.add("KeyW"); qaPrepared = true;
@@ -235,28 +261,34 @@ export function GameClient() {
           } else if (testTree) {
             const climbTest = ["autoclimb", "autobranch", "autotransfer"].includes(qaInput ?? "");
             player.set(testTree.x + testTree.radius + (climbTest ? .72 : 1.35), testTree.baseY + 1.48, testTree.z);
-            keys.add("KeyW"); yaw = Math.PI / 2; gripRequested = climbTest; qaPrepared = true;
+            keys.add("KeyW"); yaw = Math.PI / 2;
+            if (climbTest) {
+              climbingTree = testTree;
+              climbAngle = 0;
+              climbHeight = 1.48;
+            }
+            qaPrepared = true;
           }
         }
         const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)), right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)), wish = new THREE.Vector3();
         const forwardHeld = keys.has("KeyW") || keys.has("ArrowUp"), backHeld = keys.has("KeyS") || keys.has("ArrowDown"), leftHeld = keys.has("KeyA") || keys.has("ArrowLeft"), rightHeld = keys.has("KeyD") || keys.has("ArrowRight");
-        let moving = false, branchTarget: { route: BranchRoute; amount: number; point: THREE.Vector3; score: number } | null = null, lowerTarget: { route: BranchRoute; amount: number; point: THREE.Vector3; score: number } | null = null, traversalSpeed = 0;
+        const gripping = keys.has("ShiftLeft") || keys.has("ShiftRight");
+        let moving = false, groundTreeTarget: ClimbableTree | null = null, branchTarget: { route: BranchRoute; amount: number; point: THREE.Vector3; score: number } | null = null, lowerTarget: { route: BranchRoute; amount: number; point: THREE.Vector3; score: number } | null = null, traversalSpeed = 0;
 
         if (actionRequested && collectNearby()) actionRequested = false;
 
-        if (gripRequested) {
-          if (branchRoute) {
-            branchRoute = null; transfer = null; dropVelocity = -.35;
-          } else if (climbingTree) {
-            climbingTree = null; transfer = null; dropVelocity = player.y > terrainY(player.x, player.z) + 1.65 ? -.35 : 0;
-          } else {
-            const grippable = nearestTree(player, 1.35);
-            if (grippable) {
-              climbingTree = grippable; climbAngle = Math.atan2(player.z - grippable.z, player.x - grippable.x);
-              climbHeight = THREE.MathUtils.clamp(player.y - grippable.baseY, 1.48, grippable.height - .65); velocity.set(0, 0, 0); dropVelocity = 0;
-            } else gripHintUntil = gameTime + 2.2;
-          }
-          gripRequested = false;
+        if (actionRequested && !transfer && !climbingTree && !branchRoute && !controlledDescent && dropVelocity === 0) {
+          groundTreeTarget = nearestTree(player, 1.35);
+          if (groundTreeTarget) {
+            climbingTree = groundTreeTarget; climbAngle = Math.atan2(player.z - groundTreeTarget.z, player.x - groundTreeTarget.x);
+            climbHeight = THREE.MathUtils.clamp(player.y - groundTreeTarget.baseY, 1.48, groundTreeTarget.height - .65); velocity.set(0, 0, 0); dropVelocity = 0;
+          } else gripHintUntil = gameTime + 2.2;
+          actionRequested = false;
+        }
+
+        if (dropRequested && transfer) {
+          descentIgnoreRouteId = branchRoute?.id ?? transfer.route.id; transfer = null; branchRoute = null; climbingTree = null;
+          controlledDescent = true; dropVelocity = -.82;
         }
 
         if (transfer) {
@@ -268,22 +300,25 @@ export function GameClient() {
           }
         } else if (climbingTree) {
           const climbInput = (forwardHeld ? 1 : 0) - (backHeld ? 1 : 0), orbitInput = (rightHeld ? 1 : 0) - (leftHeld ? 1 : 0);
-          const climbSpeed = THREE.MathUtils.lerp(.72, 1.48, energy / 100);
+          const climbSpeed = THREE.MathUtils.lerp(.72, 1.48, energy / 100) * (gripping ? .62 : 1);
           climbHeight = THREE.MathUtils.clamp(climbHeight + climbInput * climbSpeed * delta, 1.48, climbingTree.height - .65);
-          climbAngle += orbitInput * .72 * delta; moving = climbInput !== 0 || orbitInput !== 0; traversalSpeed = moving ? climbSpeed : 0;
-          const gripRadius = climbingTree.radius + .56;
+          const orbitDelta = orbitInput * .72 * delta;
+          climbAngle += orbitDelta; yaw -= orbitDelta; moving = climbInput !== 0 || orbitInput !== 0; traversalSpeed = moving ? climbSpeed : 0;
+          // Give the camera enough room to read the trunk, hands and branch
+          // choices without clipping into a dark wall of bark.
+          const gripRadius = climbingTree.radius + 1.18;
           player.set(climbingTree.x + Math.cos(climbAngle) * gripRadius, climbingTree.baseY + climbHeight, climbingTree.z + Math.sin(climbAngle) * gripRadius);
           const inCanopy = player.y >= climbingTree.canopyY - .8; branchTarget = inCanopy ? branchFromTree(climbingTree) : null;
           if (["autobranch", "autotransfer", "autodrop"].includes(qaInput ?? "") && qaStage === 0 && branchTarget) { actionRequested = true; qaStage = 1; }
           if (actionRequested && branchTarget) transfer = { from: player.clone(), to: branchTarget.point.clone(), route: branchTarget.route, progress: branchTarget.amount, started: gameTime, duration: .82, kind: "REACH" };
-          if (dropRequested) { climbingTree = null; dropVelocity = -.35; }
-          energy = Math.max(0, energy - (moving ? 3.25 : .72) * delta);
+          if (dropRequested) { climbingTree = null; controlledDescent = true; descentIgnoreRouteId = -1; dropVelocity = -.82; }
+          energy = Math.max(0, energy - (moving ? (gripping ? 2.2 : 3.25) : gripping ? .3 : .72) * delta);
         } else if (branchRoute) {
           if (qaInput === "autodrop" && qaStage === 1 && branchRoute.belowRouteIds.length === 0) {
             const dropRoute = world.branches.find((route) => route.belowRouteIds.length > 0);
             if (dropRoute) { branchRoute = dropRoute; branchProgress = .56; branchPose(branchRoute, branchProgress, player); }
           }
-          const branchInput = (forwardHeld ? 1 : 0) - (backHeld ? 1 : 0), length = branchRoute.start.distanceTo(branchRoute.end), branchSpeed = THREE.MathUtils.lerp(.62, 1.14, energy / 100);
+          const branchInput = (forwardHeld ? 1 : 0) - (backHeld ? 1 : 0), length = branchRoute.start.distanceTo(branchRoute.end), branchSpeed = THREE.MathUtils.lerp(.62, 1.14, energy / 100) * (gripping ? .58 : 1);
           branchProgress = THREE.MathUtils.clamp(branchProgress + branchInput * branchSpeed * delta / Math.max(length, .1), 0, 1);
           branchPose(branchRoute, branchProgress, player); moving = branchInput !== 0; traversalSpeed = moving ? branchSpeed : 0;
           const candidateIds = [...branchRoute.crossTreeRouteIds, ...(branchProgress < .25 ? branchRoute.adjacentRouteIds : [])];
@@ -294,16 +329,19 @@ export function GameClient() {
           if (actionRequested && branchTarget) transfer = { from: player.clone(), to: branchTarget.point.clone(), route: branchTarget.route, progress: branchTarget.amount, started: gameTime, duration: branchTarget.route.treeIndex === branchRoute.treeIndex ? .68 : 1.05, kind: "REACH" };
           if (dropRequested) {
             if (lowerTarget) transfer = { from: player.clone(), to: lowerTarget.point.clone(), route: lowerTarget.route, progress: lowerTarget.amount, started: gameTime, duration: .78, kind: "DROP" };
-            else { branchRoute = null; dropVelocity = -.45; }
+            else { descentIgnoreRouteId = branchRoute.id; branchRoute = null; controlledDescent = true; dropVelocity = -.82; }
           } else if (branchProgress <= .001 && backHeld) {
             const tree = world.trees[branchRoute.treeIndex]; branchRoute = null; climbingTree = tree; climbHeight = THREE.MathUtils.clamp(player.y - tree.baseY, 1.48, tree.height - .65); climbAngle = Math.atan2(player.z - tree.z, player.x - tree.x);
           }
-          energy = Math.max(0, energy - (moving ? 1.35 : .38) * delta);
+          energy = Math.max(0, energy - (moving ? (gripping ? .92 : 1.35) : gripping ? .2 : .38) * delta);
         } else {
           const groundY = groundHeight(player.x, player.z);
           if (dropVelocity !== 0 || player.y > groundY + .04) {
-            const previousY = player.y; dropVelocity -= 6.2 * delta; player.y += dropVelocity * delta; velocity.multiplyScalar(.9);
-            if (!catchFallingBranch(previousY) && player.y <= groundY) { player.y = groundY; dropVelocity = 0; }
+            const previousY = player.y;
+            if (controlledDescent) dropVelocity = gripping ? -.72 : -1.15;
+            else dropVelocity -= 6.2 * delta;
+            player.y += dropVelocity * delta; velocity.multiplyScalar(.9);
+            if (!catchFallingBranch(previousY, controlledDescent ? descentIgnoreRouteId : -1) && player.y <= groundY) { player.y = groundY; dropVelocity = 0; controlledDescent = false; descentIgnoreRouteId = -1; }
           } else {
             if (forwardHeld) wish.add(forward); if (backHeld) wish.sub(forward); if (rightHeld) wish.add(right); if (leftHeld) wish.sub(right);
             moving = wish.lengthSq() > 0; const walkingSpeed = THREE.MathUtils.lerp(2.25, 3.05, energy / 100);
@@ -311,9 +349,26 @@ export function GameClient() {
             player.addScaledVector(velocity, delta); resolveGroundCollisions(moving);
             player.y = groundHeight(player.x, player.z) + Math.sin(gameTime * 5.5) * Math.min(.025, velocity.length() * .006); traversalSpeed = velocity.length();
             energy = Math.min(100, energy + (moving ? 2.4 : 8.5) * delta);
+            groundTreeTarget = nearestTree(player, 1.35);
           }
         }
         actionRequested = false; dropRequested = false; camera.position.copy(player); camera.rotation.set(pitch, yaw, 0);
+        actionMarker.visible = false; dropMarker.visible = false;
+        const pulse = 1 + Math.sin(gameTime * 4.2) * .09;
+        if (branchTarget) { actionMarker.visible = true; actionMarker.position.copy(branchTarget.point); }
+        else if (groundTreeTarget) {
+          const outward = new THREE.Vector3(player.x - groundTreeTarget.x, 0, player.z - groundTreeTarget.z).normalize().multiplyScalar(groundTreeTarget.radius + .08);
+          actionMarker.visible = true; actionMarker.position.set(groundTreeTarget.x + outward.x, groundTreeTarget.baseY + 2.15, groundTreeTarget.z + outward.z); actionMarker.scale.setScalar(1.35);
+        }
+        if (lowerTarget) { dropMarker.visible = true; dropMarker.position.copy(lowerTarget.point); }
+        for (const marker of [actionMarker, dropMarker]) if (marker.visible) {
+          marker.quaternion.copy(camera.quaternion);
+          // World-space rings otherwise balloon when a grip point is close.
+          // Scaling with distance keeps them a restrained, constant screen size.
+          const distance = marker.position.distanceTo(camera.position);
+          const angularScale = marker === actionMarker && groundTreeTarget && !branchTarget ? .075 : .06;
+          marker.scale.setScalar(THREE.MathUtils.clamp(distance * angularScale * pulse, .018, .92));
+        }
         const shadeTree = nearestTree(player), shadeDistance = shadeTree ? Math.max(0, Math.hypot(player.x - shadeTree.x, player.z - shadeTree.z) - shadeTree.radius) : 18;
         const exposed = Math.min(1, shadeDistance / 13); alert = Math.max(2, Math.min(100, alert + (exposed * 4.4 - (1 - exposed) * 5.5) * delta));
         sloth.animate(gameTime, traversalSpeed, Boolean(climbingTree || branchRoute || transfer)); world.animate(gameTime, player, scentRef.current, collected.current);
@@ -322,18 +377,19 @@ export function GameClient() {
         if (gameTime - lastHud > .12) {
           lastHud = gameTime; let prompt = "", promptKey = "";
           world.buds.forEach(bud => { if (bud.visible && bud.position.distanceTo(player) < 3.2) { prompt = "FORAGE TENDER BUD"; promptKey = "E"; } });
-          const nearbyTree = climbingTree || branchRoute ? null : nearestTree(player, 1.35);
-          if (!prompt && nearbyTree) { prompt = "GRIP TRUNK"; promptKey = "SHIFT"; }
-          if (climbingTree && !prompt) { prompt = branchTarget ? "STEP ONTO BRANCH" : "W / S CLIMB · A / D ORBIT · SHIFT RELEASE"; promptKey = branchTarget ? "E" : ""; }
+          const nearbyTree = climbingTree || branchRoute || controlledDescent ? null : (groundTreeTarget ?? nearestTree(player, 1.35));
+          if (!prompt && nearbyTree) { prompt = "CLIMB TRUNK"; promptKey = "E"; }
+          if (climbingTree && !prompt) { prompt = branchTarget ? "STEP ONTO BRANCH" : "W / S CLIMB · SHIFT GRIP · CTRL DESCEND"; promptKey = branchTarget ? "E" : ""; }
           if (branchRoute && !prompt) {
-            if (branchTarget) { prompt = branchTarget.route.treeIndex === branchRoute.treeIndex ? "TAKE THIS BRANCH" : "GRAB NEARBY TREE"; promptKey = "E"; }
+            if (branchTarget) { prompt = branchTarget.route.treeIndex === branchRoute.treeIndex ? "TAKE THIS BRANCH" : "REACH ACROSS"; promptKey = "E"; }
             else if (lowerTarget) { prompt = "DROP TO LOWER BRANCH"; promptKey = "CTRL"; }
-            else { prompt = "W / S MOVE ALONG BRANCH · CTRL DROP"; promptKey = ""; }
+            else { prompt = "LOWER SAFELY TO GROUND"; promptKey = "CTRL"; }
           }
+          if (controlledDescent && !prompt) { prompt = gripping ? "LOWERING WITH SECURE GRIP" : "HOLD SHIFT FOR A SLOWER DESCENT"; promptKey = gripping ? "" : "SHIFT"; }
           const head = ((yaw % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2), directions = ["N", "NW", "W", "SW", "S", "SE", "E", "NE"];
-          const motion: MotionState = gameTime < caughtUntil ? "CAUGHT" : transfer ? (transfer.kind === "DROP" ? "DROPPING" : "REACHING") : branchRoute ? (energy < 10 ? "WINDED" : "ON BRANCH") : climbingTree ? (moving ? (energy < 10 ? "WINDED" : "CLIMBING") : "GRIPPING") : dropVelocity < 0 ? "DROPPING" : blockedBy ? "PATH BLOCKED" : gameTime < gripHintUntil ? "SEEKING TRUNK" : moving ? "TRAVERSING" : energy < 99 ? "RECOVERING" : "READY";
-          const hint = gameTime < caughtUntil ? "Lower branch caught · grip secure" : transfer ? (transfer.kind === "DROP" ? "Dropping to a lower hold" : "Reaching hand-over-hand") : branchRoute ? "W / S crawl · E grabs a selected branch · Ctrl drops" : climbingTree ? (energy < 10 ? "Grip holds · climbing slows until you rest" : "W / S climb · E enters a branch · Shift releases") : blockedBy === "WATER" ? "Water begins here · move sideways along the shore" : blockedBy === "TREE" ? "Solid trunk · Shift to grip and climb" : blockedBy === "LANDMARK" ? "Solid bridge structure · use the deck or walk around" : gameTime < gripHintUntil ? "Move within arm’s reach of a trunk, then press Shift" : energy < 99 ? "Ground movement restores grip energy" : "Shift grips trunks · E grabs branches · Ctrl drops";
-          setHud({ energy, alert, buds: Math.min(collected.current.size, 5), objective: collected.current.size >= 5 ? "Reach the stone sanctuary gate" : "Forage five buds across trail and canopy", prompt, promptKey, heading: directions[Math.round(head / (Math.PI / 4)) % 8], motion, hint, x: player.x, y: player.y, z: player.z, branchId: branchRoute?.id ?? -1, branchProgress, arboreal: Boolean(climbingTree || branchRoute || transfer || dropVelocity < 0) });
+          const motion: MotionState = gameTime < caughtUntil ? "CAUGHT" : transfer ? (transfer.kind === "DROP" ? "LOWERING" : "REACHING") : branchRoute ? "ON BRANCH" : climbingTree ? "CLIMBING" : controlledDescent ? "DESCENDING" : blockedBy ? "PATH BLOCKED" : "ON GROUND";
+          const hint = gameTime < caughtUntil ? "Lower branch caught · grip secure" : transfer ? (transfer.kind === "DROP" ? "Lowering to the highlighted branch" : "Reaching hand-over-hand") : branchRoute ? "W / S crawl · E takes the highlighted branch · Ctrl or Space descends" : climbingTree ? (energy < 10 ? "Hold Shift to rest your grip · Ctrl descends" : "W / S climb · E enters a branch · Ctrl descends") : controlledDescent ? "A safe descent is active · Shift slows the lowering motion" : blockedBy === "WATER" ? "Water begins here · move sideways along the shore" : blockedBy === "TREE" ? "Solid trunk · face its marker and press E to climb" : blockedBy === "LANDMARK" ? "Solid bridge structure · use the deck or walk around" : gameTime < gripHintUntil ? "Move within arm’s reach of a marked trunk, then press E" : energy < 99 ? "Ground movement restores grip energy" : "E climbs marked trunks · Shift grips · Ctrl or Space descends";
+          setHud({ energy, alert, buds: Math.min(collected.current.size, 5), objective: collected.current.size >= 5 ? "Reach the stone sanctuary gate" : "Forage five buds across trail and canopy", prompt, promptKey, heading: directions[Math.round(head / (Math.PI / 4)) % 8], motion, hint, x: player.x, y: player.y, z: player.z, branchId: branchRoute?.id ?? -1, branchProgress, arboreal: Boolean(climbingTree || branchRoute || transfer || controlledDescent || dropVelocity < 0) });
         }
       } else world.animate(gameTime, player, scentRef.current, collected.current);
       if (composer) composer.render(); else renderer.render(scene, camera);
@@ -341,8 +397,8 @@ export function GameClient() {
     frame();
     return () => {
       disposed = true; cancelAnimationFrame(raf); renderer.domElement.removeEventListener("pointerdown", pointer); renderer.domElement.removeEventListener("pointermove", pointerMove); renderer.domElement.removeEventListener("pointerup", pointerUp);
-      document.removeEventListener("mousemove", mouse); document.removeEventListener("keydown", keyDown); document.removeEventListener("keyup", keyUp); document.removeEventListener("pointerlockchange", pointerLockChanged); window.removeEventListener("blur", pauseOnFocusLoss); removeEventListener("resize", resize);
-      timer.dispose(); composer?.dispose(); renderer.dispose(); if (host.contains(renderer.domElement)) host.removeChild(renderer.domElement);
+      document.removeEventListener("mousemove", mouse); document.removeEventListener("keydown", keyDown); document.removeEventListener("keyup", keyUp); document.removeEventListener("pointerlockchange", pointerLockChanged); window.removeEventListener("blur", releaseInput); removeEventListener("resize", resize);
+      markerGeometry.dispose(); actionMarkerMaterial.dispose(); dropMarkerMaterial.dispose(); timer.dispose(); composer?.dispose(); renderer.dispose(); if (host.contains(renderer.domElement)) host.removeChild(renderer.domElement);
     };
   }, []);
 
@@ -351,7 +407,7 @@ export function GameClient() {
   const begin = useCallback(() => {
     if (!ready || exiting) return; if (!audioRef.current) audioRef.current = startAudio(); setExiting(true); safeLock();
     window.setTimeout(() => {
-      setPhase("playing"); setExiting(false); setToast("Canopy route: Shift grips trunks · W / S moves · E grabs branches · Ctrl drops to a lower hold");
+      setPhase("playing"); setExiting(false); setToast("Canopy route: E climbs marked trunks · W / S moves · Shift grips · Ctrl or Space descends");
       window.setTimeout(() => setToast(""), 5200);
     }, 850);
   }, [ready, exiting]);
@@ -359,6 +415,7 @@ export function GameClient() {
   useEffect(() => { if (audioRef.current) audioRef.current.master.gain.value = muted ? 0 : .13; }, [muted]);
   useEffect(() => () => { if (audioRef.current) { clearInterval(audioRef.current.interval); audioRef.current.context.close().catch(() => undefined); audioRef.current = null; } }, []);
   const mobileKey = (code: string, down: boolean) => document.dispatchEvent(new KeyboardEvent(down ? "keydown" : "keyup", { code, bubbles: true }));
+  const mobileAction = hud.prompt.includes("FORAGE") ? "Forage" : hud.prompt.includes("CLIMB") ? "Climb" : hud.prompt.includes("STEP") || hud.prompt.includes("TAKE") ? "Transfer" : hud.prompt.includes("REACH") ? "Reach" : "Action";
 
   return <main className="game-shell" data-game-state={phase} data-motion={hud.motion} data-energy={Math.round(hud.energy)} data-position={`${hud.x.toFixed(2)},${hud.z.toFixed(2)}`} data-altitude={hud.y.toFixed(2)} data-branch={hud.branchId} data-branch-progress={hud.branchProgress.toFixed(3)}>
     <div ref={mount} className="viewport" aria-label="3D game viewport" />
@@ -367,11 +424,12 @@ export function GameClient() {
       <section className="mission"><div className="eyebrow">Current objective</div><h2>{hud.objective}</h2><p>{hud.buds} / 5 tender buds foraged</p></section>
       <div className="compass"><div className="eyebrow">The Ramble · 6:42 PM</div><div className="compass-line"><span>W</span><span className="active">{hud.heading}</span><span>E</span></div></div>
       <div className="status"><div className="eyebrow">Canopy cover</div><strong>{Math.max(0, 100 - Math.round(hud.alert))}%</strong></div>
-      <div className="meters"><div className={`motion-state ${hud.motion === "PATH BLOCKED" || hud.motion === "WINDED" ? "warning" : ""}`}><span>{hud.motion}</span><small>{hud.hint}</small></div><div className="meter-row"><span>Energy</span><div className="meter-track"><div className="meter-fill" style={{ width: `${hud.energy}%` }}/></div><span>{Math.round(hud.energy)}</span></div><div className="meter-row"><span>Threat</span><div className="meter-track"><div className="meter-fill alert" style={{ width: `${hud.alert}%` }}/></div><span>{Math.round(hud.alert)}</span></div></div>
-      <div className="crosshair"/>{hud.prompt && <div className="interaction">{hud.promptKey && <span className="key">{hud.promptKey}</span>}{hud.prompt}</div>}
-      <div className="controls-strip"><span>W / S Move / Climb</span><span>Shift Grip / Release</span><span>E Grab / Forage</span><span>Ctrl Drop</span><span>C Scent</span><span>M {muted ? "Unmute" : "Mute"}</span></div>
+      <div className="meters"><div className={`motion-state ${hud.motion === "PATH BLOCKED" ? "warning" : ""}`}><span>{hud.motion}</span><small>{hud.hint}</small></div><div className="meter-row"><span>Energy</span><div className="meter-track"><div className="meter-fill" style={{ width: `${hud.energy}%` }}/></div><span>{Math.round(hud.energy)}</span></div><div className="meter-row"><span>Threat</span><div className="meter-track"><div className="meter-fill alert" style={{ width: `${hud.alert}%` }}/></div><span>{Math.round(hud.alert)}</span></div></div>
+      <div className={`crosshair ${hud.promptKey === "E" ? "targeted" : hud.promptKey === "CTRL" ? "drop-targeted" : ""}`}/>{hud.prompt && <div className="interaction">{hud.promptKey && <span className="key">{hud.promptKey}</span>}{hud.prompt}</div>}
+      <div className="controls-strip"><span>W / S Move / Climb</span><span>Shift Hold Grip</span><span>E Interact / Transfer</span><span>Ctrl / Space Descend</span><span>P Pause</span><span>C Scent</span><span>M {muted ? "Unmute" : "Mute"}</span></div>
       <div className={`scent-overlay ${scent ? "on" : ""}`}/>{toast && <div className="toast">{toast}</div>}
     </div>}
+    {phase === "playing" && pointerLockAvailable && !mouseCaptured && <button className="mouse-resume" onClick={safeLock}><span>Mouse free</span>Click to look</button>}
     {phase === "intro" && <section className={`screen intro-screen ${exiting ? "exiting" : ""}`}>
       <Image className="intro-art" src="/game/splash.webp" alt="" aria-hidden="true" fill priority sizes="100vw" unoptimized/>
       <div className="intro-scrim"/><div className="intro-location">THE RAMBLE · CENTRAL PARK · 6:42 PM</div>
@@ -381,8 +439,8 @@ export function GameClient() {
         <small>Headphones recommended · Mouse + keyboard</small>
       </div>
     </section>}
-    {phase === "paused" && <section className="screen"><div className="pause-card"><div className="eyebrow">Field session paused</div><h2>Listen to the park.</h2><p>Your progress is safe. The hawk will keep circling, but the canopy is patient.</p><div className="actions"><button className="primary" onClick={resume}>Return to trail <b>→</b></button><button className="secondary" onClick={() => setMuted(value => !value)}>{muted ? "Enable sound" : "Mute sound"}</button></div></div></section>}
+    {phase === "paused" && <section className="screen"><div className="pause-card"><div className="eyebrow">Field session paused · P</div><h2>Listen to the park.</h2><p>Your progress is safe. The hawk will keep circling, but the canopy is patient.</p><div className="actions"><button className="primary" onClick={resume}>Return to trail <b>→</b></button><button className="secondary" onClick={() => setMuted(value => !value)}>{muted ? "Enable sound" : "Mute sound"}</button></div></div></section>}
     {phase === "complete" && <section className="screen"><div className="pause-card"><div className="eyebrow">Sanctuary reached</div><h2>You made the impossible crossing.</h2><p>Five buds, one old trail, and a city’s wildest mile. The wildlife team finds your trail at first light.</p><div className="actions"><button className="primary" onClick={() => location.reload()}>Begin again <b>↻</b></button></div></div></section>}
-    {phase === "playing" && <div className="mobile-controls"><button aria-label="Move forward or climb" className="move" onPointerDown={() => mobileKey("KeyW", true)} onPointerUp={() => mobileKey("KeyW", false)} onPointerCancel={() => mobileKey("KeyW", false)}>Move</button><button aria-label="Grip or release tree" className="grip" onClick={() => { mobileKey("ShiftLeft", true); mobileKey("ShiftLeft", false); }}>Grip</button><button aria-label="Grab branch or forage" className="reach" onClick={() => { mobileKey("KeyE", true); mobileKey("KeyE", false); }}>{hud.prompt.includes("FORAGE") ? "Forage" : hud.prompt.includes("BRANCH") || hud.prompt.includes("TREE") ? "Grab" : "Action"}</button>{hud.arboreal && <button aria-label="Drop to a lower branch" className="down" onClick={() => { mobileKey("ControlLeft", true); mobileKey("ControlLeft", false); }}>Down</button>}<button aria-label="Toggle scent vision" className="sense" onClick={() => mobileKey("KeyC", true)}>Sense</button></div>}
+    {phase === "playing" && <div className="mobile-controls"><button aria-label="Move forward or climb" className="move" onPointerDown={() => mobileKey("KeyW", true)} onPointerUp={() => mobileKey("KeyW", false)} onPointerCancel={() => mobileKey("KeyW", false)}>Move</button><button aria-label="Hold grip" className="grip" onPointerDown={() => mobileKey("ShiftLeft", true)} onPointerUp={() => mobileKey("ShiftLeft", false)} onPointerCancel={() => mobileKey("ShiftLeft", false)}>Grip</button><button aria-label="Context action" className="reach" onClick={() => { mobileKey("KeyE", true); mobileKey("KeyE", false); }}>{mobileAction}</button>{hud.arboreal && <button aria-label="Descend or drop to a lower branch" className="down" onClick={() => { mobileKey("ControlLeft", true); mobileKey("ControlLeft", false); }}>Down</button>}<button aria-label="Toggle scent vision" className="sense" onClick={() => mobileKey("KeyC", true)}>Sense</button></div>}
   </main>;
 }
