@@ -5,11 +5,20 @@ import type { GameTextures } from "../rendering/textures";
 
 export const BUDS = [
   new THREE.Vector3(-12, 0, 14), new THREE.Vector3(17, 0, -4),
-  new THREE.Vector3(38, 0, -26), new THREE.Vector3(8, 0, -48),
+  new THREE.Vector3(18, 0, -20), new THREE.Vector3(-1, 0, -47),
   new THREE.Vector3(-24, 0, -58), new THREE.Vector3(-45, 0, -28),
 ];
 export const START = new THREE.Vector3(-43, 0, 54);
 export const GOAL = new THREE.Vector3(-10, 0, -78);
+
+export type ClimbableTree = {
+  x: number;
+  z: number;
+  baseY: number;
+  height: number;
+  radius: number;
+  canopyY: number;
+};
 
 export type RealisticWorld = {
   buds: THREE.Group[];
@@ -17,6 +26,7 @@ export type RealisticWorld = {
   hawk: THREE.Group;
   lake: THREE.Mesh;
   trailCurve: THREE.CatmullRomCurve3;
+  trees: ClimbableTree[];
   animate(time: number, player: THREE.Vector3, scent: boolean, collected: Set<number>): void;
 };
 
@@ -57,48 +67,110 @@ function alignCylinder(object: THREE.Object3D, start: THREE.Vector3, end: THREE.
   object.scale.set(radius, length, radius); object.updateMatrix();
 }
 
-function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number) {
-  const random = seeded(7331), treeCount = Math.round(132 * quality);
-  const heroPositions: Array<[number, number]> = [[-51,54],[-36,59],[-43,44],[-54,66],[-31,47],[-25,35],[-17,26],[-10,17],[3,12],[15,1],[26,-7],[29,-20],[16,-31],[4,-43],[-5,-55],[-18,-63],[-25,-75]];
-  const trunkGeometry = new THREE.CylinderGeometry(.72, 1, 1, 14, 5);
-  const branchGeometry = new THREE.CylinderGeometry(.34, 1, 1, 9, 2);
+function distanceToTrail(x: number, z: number, samples: THREE.Vector3[]) {
+  let nearestSq = Infinity;
+  for (let index = 1; index < samples.length; index++) {
+    const start = samples[index - 1], end = samples[index];
+    const segmentX = end.x - start.x, segmentZ = end.z - start.z;
+    const lengthSq = segmentX * segmentX + segmentZ * segmentZ;
+    const amount = THREE.MathUtils.clamp(((x - start.x) * segmentX + (z - start.z) * segmentZ) / lengthSq, 0, 1);
+    const offsetX = x - (start.x + segmentX * amount), offsetZ = z - (start.z + segmentZ * amount);
+    nearestSq = Math.min(nearestSq, offsetX * offsetX + offsetZ * offsetZ);
+  }
+  return Math.sqrt(nearestSq);
+}
+
+function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number, trailCurve: THREE.CatmullRomCurve3) {
+  const random = seeded(7331);
+  const treeCount = Math.round(120 + 240 * THREE.MathUtils.clamp(quality, .45, 1));
+  const trees: ClimbableTree[] = [];
+  const heroPositions: Array<[number, number]> = [
+    [-55, 52], [-38, 65], [-39, 42], [-57, 68], [-32, 52], [-34, 30],
+    [-22, 22], [-13, 10], [1, 7], [17, 6], [27, -12], [25, -25],
+    [19, -38], [1, -39], [-2, -51], [-21, -55], [-28, -70],
+  ];
+  const trailSamples = Array.from({ length: 81 }, (_, index) => trailCurve.getPoint(index / 80));
+  const trunkGeometry = new THREE.CylinderGeometry(.72, 1, 1, 18, 8);
+  const branchGeometry = new THREE.CylinderGeometry(.36, 1, 1, 12, 3);
   const barkMaterial = new THREE.MeshStandardMaterial({ map: textures.bark, bumpMap: textures.bark, bumpScale: .11, color: "#afa18e", roughness: .95 });
   const trunks = new THREE.InstancedMesh(trunkGeometry, barkMaterial, treeCount);
-  const branchesPerTree = 5;
+  const primaryBranches = quality > .86 ? 7 : 5;
+  const secondaryPerPrimary = quality > .86 ? 2 : 1;
+  const branchesPerTree = primaryBranches * (1 + secondaryPerPrimary);
   const branches = new THREE.InstancedMesh(branchGeometry, barkMaterial, treeCount * branchesPerTree);
   const foliageMaterial = new THREE.MeshStandardMaterial({ map: textures.foliageBranch, alphaTest: .38, side: THREE.DoubleSide, roughness: .78, metalness: 0, color: "#d8e0c6" });
   const shrubMaterial = new THREE.MeshStandardMaterial({ map: textures.foliage, alphaTest: .38, side: THREE.DoubleSide, roughness: .8, color: "#d2dbc2" });
   const leafGeometry = new THREE.PlaneGeometry(1, 1, 2, 2);
-  const leavesPerTree = quality > .85 ? 16 : 11;
-  const leaves = new THREE.InstancedMesh(leafGeometry, foliageMaterial, treeCount * leavesPerTree * 2);
-  trunks.castShadow = trunks.receiveShadow = true; branches.castShadow = true; leaves.castShadow = false;
-  const dummy = new THREE.Object3D(), start = new THREE.Vector3(), end = new THREE.Vector3();
-  let tree = 0;
-  while (tree < treeCount) {
-    const forced = heroPositions[tree];
+  const foliageClustersPerTree = primaryBranches * secondaryPerPrimary + primaryBranches + 3;
+  const cardsPerCluster = quality > .86 ? 3 : 2;
+  const leaves = new THREE.InstancedMesh(leafGeometry, foliageMaterial, treeCount * foliageClustersPerTree * cardsPerCluster);
+  trunks.castShadow = trunks.receiveShadow = true; branches.castShadow = true; leaves.castShadow = quality > .94;
+  const dummy = new THREE.Object3D(), start = new THREE.Vector3(), end = new THREE.Vector3(), secondaryStart = new THREE.Vector3(), secondaryEnd = new THREE.Vector3();
+  let tree = 0, hero = 0, attempts = 0;
+  while (tree < treeCount && attempts < treeCount * 80) {
+    const forced = hero < heroPositions.length ? heroPositions[hero++] : undefined;
     const x = forced ? forced[0] : random() * 220 - 110, z = forced ? forced[1] : random() * 220 - 110;
-    if (!forced && (Math.hypot(x - 34, z + 43) < 34 || Math.hypot(x, z) < 9 || Math.hypot(x + 43, z - 54) < 7)) continue;
-    const baseY = terrainY(x, z), height = 7.5 + random() * 6, radius = .34 + random() * .26;
+    attempts++;
+    const height = 8.5 + random() * 7.5, radius = .38 + random() * .34;
+    const trailDistance = distanceToTrail(x, z, trailSamples);
+    const blocked = Math.hypot(x - 34, z + 43) < 32 + radius
+      || Math.hypot(x - START.x, z - START.z) < 9.5 + radius
+      || Math.hypot(x - GOAL.x, z - GOAL.z) < 8 + radius
+      || trailDistance < 3.15 + radius
+      || Math.hypot(x, z) < 8
+      || trees.some((other) => Math.hypot(x - other.x, z - other.z) < radius + other.radius + 1.55);
+    if (blocked) continue;
+    const baseY = terrainY(x, z), canopyY = baseY + height * (.57 + random() * .05);
     dummy.position.set(x, baseY + height / 2, z); dummy.rotation.set(0, random() * Math.PI * 2, 0); dummy.scale.set(radius, height, radius); dummy.updateMatrix(); trunks.setMatrixAt(tree, dummy.matrix);
-    for (let branch = 0; branch < branchesPerTree; branch++) {
-      const angle = random() * Math.PI * 2 + branch * 1.7, level = .48 + branch * .085 + random() * .08;
-      const length = 2.2 + random() * 2.8;
+    trees.push({ x, z, baseY, height, radius: radius * 1.08, canopyY });
+
+    const foliageAnchors: THREE.Vector3[] = [];
+    let branchInstance = tree * branchesPerTree;
+    const crownRotation = random() * Math.PI * 2;
+    for (let branch = 0; branch < primaryBranches; branch++) {
+      const angle = crownRotation + branch / primaryBranches * Math.PI * 2 + (random() - .5) * .5;
+      const level = .48 + branch / Math.max(1, primaryBranches - 1) * .28 + random() * .055;
+      const length = 2.8 + random() * 2.9;
       start.set(x, baseY + height * level, z);
-      end.set(x + Math.cos(angle) * length, baseY + height * (level + .12 + random() * .12), z + Math.sin(angle) * length);
-      alignCylinder(dummy, start, end, radius * (.48 - branch * .045)); branches.setMatrixAt(tree * branchesPerTree + branch, dummy.matrix);
+      end.set(x + Math.cos(angle) * length, baseY + height * Math.min(.94, level + .1 + random() * .13), z + Math.sin(angle) * length);
+      alignCylinder(dummy, start, end, radius * (.38 + random() * .1)); branches.setMatrixAt(branchInstance++, dummy.matrix);
+      foliageAnchors.push(end.clone());
+
+      for (let secondary = 0; secondary < secondaryPerPrimary; secondary++) {
+        secondaryStart.copy(start).lerp(end, .5 + random() * .22);
+        const fan = (secondary - (secondaryPerPrimary - 1) / 2) * .72 + (random() - .5) * .32;
+        const secondaryAngle = angle + fan;
+        const secondaryLength = 1.65 + random() * 2.15;
+        secondaryEnd.set(
+          secondaryStart.x + Math.cos(secondaryAngle) * secondaryLength,
+          secondaryStart.y + .7 + random() * 1.55,
+          secondaryStart.z + Math.sin(secondaryAngle) * secondaryLength,
+        );
+        alignCylinder(dummy, secondaryStart, secondaryEnd, radius * (.2 + random() * .075)); branches.setMatrixAt(branchInstance++, dummy.matrix);
+        foliageAnchors.push(secondaryEnd.clone());
+      }
     }
-    for (let cluster = 0; cluster < leavesPerTree; cluster++) {
-      const angle = cluster / leavesPerTree * Math.PI * 2 + random() * .45;
-      const orbit = cluster === 0 ? 0 : 1.2 + random() * 2.9;
-      const clusterPosition = new THREE.Vector3(x + Math.cos(angle) * orbit, baseY + height * (.61 + random() * .38), z + Math.sin(angle) * orbit);
-      const scale = 3.2 + random() * 2.8;
-      for (let card = 0; card < 2; card++) {
-        dummy.position.copy(clusterPosition); dummy.rotation.set((random() - .5) * .12, angle + card * Math.PI / 2, (random() - .5) * .08);
-        dummy.scale.set(scale, scale * (.42 + random() * .14), 1); dummy.updateMatrix(); leaves.setMatrixAt((tree * leavesPerTree + cluster) * 2 + card, dummy.matrix);
+    for (let crown = 0; crown < 3; crown++) {
+      const crownAngle = crownRotation + crown / 3 * Math.PI * 2;
+      foliageAnchors.push(new THREE.Vector3(
+        x + Math.cos(crownAngle) * (crown === 0 ? .25 : 1.3 + random()),
+        baseY + height * (.86 + random() * .12),
+        z + Math.sin(crownAngle) * (crown === 0 ? .25 : 1.3 + random()),
+      ));
+    }
+    for (let cluster = 0; cluster < foliageClustersPerTree; cluster++) {
+      const clusterPosition = foliageAnchors[cluster];
+      const angle = Math.atan2(clusterPosition.z - z, clusterPosition.x - x);
+      const scale = 2.75 + random() * 2.25;
+      for (let card = 0; card < cardsPerCluster; card++) {
+        dummy.position.set(clusterPosition.x + (random() - .5) * .55, clusterPosition.y + (random() - .5) * .5, clusterPosition.z + (random() - .5) * .55);
+        dummy.rotation.set((random() - .5) * .16, angle + card * Math.PI / cardsPerCluster, (random() - .5) * .12);
+        dummy.scale.set(scale, scale * (.42 + random() * .14), 1); dummy.updateMatrix(); leaves.setMatrixAt((tree * foliageClustersPerTree + cluster) * cardsPerCluster + card, dummy.matrix);
       }
     }
     tree++;
   }
+  if (tree !== treeCount) throw new Error(`Unable to place realistic forest: placed ${tree} of ${treeCount} trees.`);
   trunks.instanceMatrix.needsUpdate = branches.instanceMatrix.needsUpdate = leaves.instanceMatrix.needsUpdate = true;
   scene.add(trunks, branches, leaves);
 
@@ -154,6 +226,7 @@ function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number) {
     const log = new THREE.Mesh(new THREE.CylinderGeometry(.24 + random() * .18, .34 + random() * .2, 3 + random() * 3, 12), barkMaterial);
     log.rotation.set(Math.PI / 2 + (random() - .5) * .15, random() * Math.PI, 0); log.position.set(random() * 160 - 80, 0, random() * 160 - 80); log.position.y = terrainY(log.position.x, log.position.z) + .3; log.castShadow = log.receiveShadow = true; scene.add(log);
   }
+  return trees;
 }
 
 function addLandmarks(scene: THREE.Scene, textures: GameTextures, trailCurve: THREE.CatmullRomCurve3) {
@@ -203,7 +276,7 @@ export function buildRealisticWorld(scene: THREE.Scene, textures: GameTextures, 
   const trailCurve = new THREE.CatmullRomCurve3(trailPoints);
   const trail = new THREE.Mesh(trailRibbon(trailCurve), new THREE.MeshStandardMaterial({ map: textures.gravel, bumpMap: textures.gravel, bumpScale: .09, color: "#a59678", roughness: .98 })); trail.receiveShadow = true; scene.add(trail);
 
-  addTrees(scene, textures, quality); addLandmarks(scene, textures, trailCurve);
+  const trees = addTrees(scene, textures, quality, trailCurve); addLandmarks(scene, textures, trailCurve);
   const lakeMaterial = new THREE.MeshPhysicalMaterial({ color: "#345d59", normalMap: textures.waterNormal, normalScale: new THREE.Vector2(.32, .32), roughness: .16, metalness: .08, transmission: .08, transparent: true, opacity: .9, clearcoat: .72, clearcoatRoughness: .18, envMapIntensity: 1.4 });
   const lake = new THREE.Mesh(new THREE.CircleGeometry(25, 96), lakeMaterial); lake.rotation.x = -Math.PI / 2; lake.position.set(34, terrainY(34, -43) + .82, -43); lake.receiveShadow = true; scene.add(lake);
   // Shoreline breaks the mathematically perfect circle.
@@ -212,10 +285,18 @@ export function buildRealisticWorld(scene: THREE.Scene, textures: GameTextures, 
 
   const buds: THREE.Group[] = [], rings: THREE.Mesh[] = [];
   const budMaterial = new THREE.MeshPhysicalMaterial({ color: "#9ec55c", roughness: .65, clearcoat: .12 });
-  BUDS.forEach((point, index) => {
-    point.y = terrainY(point.x, point.z) + 1; const group = new THREE.Group();
+  const budPlacements = BUDS.map((point) => point.clone());
+  for (const index of [2, 4]) {
+    const point = budPlacements[index];
+    const hostTree = trees.reduce((nearest, tree) => Math.hypot(point.x - tree.x, point.z - tree.z) < Math.hypot(point.x - nearest.x, point.z - nearest.z) ? tree : nearest, trees[0]);
+    const outward = Math.atan2(point.z - hostTree.z, point.x - hostTree.x);
+    point.set(hostTree.x + Math.cos(outward) * (hostTree.radius + .72), hostTree.canopyY + .18, hostTree.z + Math.sin(outward) * (hostTree.radius + .72));
+  }
+  budPlacements.forEach((point, index) => {
+    if (point.y === 0) point.y = terrainY(point.x, point.z) + 1;
+    const group = new THREE.Group();
     for (let j = 0; j < 5; j++) { const leaf = new THREE.Mesh(new THREE.SphereGeometry(.22, 14, 9), budMaterial); leaf.scale.set(.48, 1, .24); leaf.rotation.z = j * 1.26; leaf.position.set(Math.cos(j * 1.25) * .24, Math.sin(j * .8) * .1, Math.sin(j * 1.25) * .24); group.add(leaf); }
-    group.position.copy(point); group.userData.index = index; scene.add(group); buds.push(group);
+    group.position.copy(point); group.userData.index = index; group.userData.anchorY = point.y; scene.add(group); buds.push(group);
     const ring = new THREE.Mesh(new THREE.TorusGeometry(1.15, .028, 8, 48), new THREE.MeshBasicMaterial({ color: "#d9ef8b", transparent: true, opacity: 0 })); ring.rotation.x = Math.PI / 2; ring.position.copy(point).add(new THREE.Vector3(0, .2, 0)); scene.add(ring); rings.push(ring);
   });
 
@@ -224,11 +305,11 @@ export function buildRealisticWorld(scene: THREE.Scene, textures: GameTextures, 
   for (const side of [-1, 1]) { const wingShape = new THREE.Shape(); wingShape.moveTo(0, 0); wingShape.bezierCurveTo(.5, side * .4, 1.8, side * 1.35, 3.25, side * 1.1); wingShape.bezierCurveTo(2.1, side * .3, 1.05, side * .02, 0, 0); const wing = new THREE.Mesh(new THREE.ShapeGeometry(wingShape), hawkMaterial); wing.rotation.x = -Math.PI / 2; hawk.add(wing); } scene.add(hawk);
 
   return {
-    buds, rings, hawk, lake, trailCurve,
+    buds, rings, hawk, lake, trailCurve, trees,
     animate(time, player, scent, collected) {
       textures.waterNormal.offset.set(time * .008, time * -.011);
       hawk.position.set(player.x + Math.cos(time * .42) * 24, 18 + Math.sin(time * .7) * 2, player.z + Math.sin(time * .42) * 24); hawk.rotation.y = -time * .42;
-      buds.forEach((bud, index) => { if (!bud.visible) return; bud.rotation.y += .008; bud.position.y = terrainY(bud.position.x, bud.position.z) + 1 + Math.sin(time * 2 + index) * .1; });
+      buds.forEach((bud, index) => { if (!bud.visible) return; bud.rotation.y += .008; bud.position.y = bud.userData.anchorY + Math.sin(time * 2 + index) * .1; });
       rings.forEach((ring, index) => { (ring.material as THREE.MeshBasicMaterial).opacity = scent && !collected.has(index) ? .48 : 0; ring.scale.setScalar(1 + (time * .6 + index * .17) % 2.5); });
     },
   };
