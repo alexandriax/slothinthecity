@@ -58,19 +58,128 @@ test("mobile entry cannot be stranded by unavailable Pointer Lock", async () => 
   assert.match(game, /data-touch-capable/);
 });
 
-test("completed foraging unlocks reliable sanctuary wayfinding", async () => {
-  const [game, mobileHud, wayfinder, world] = await Promise.all([
+test("foraging opens the Bow Bridge to zoo to subway campaign with adaptive wayfinding", async () => {
+  const [game, mobileHud, wayfinder, world, landmarks] = await Promise.all([
     readFile(new URL("../app/game/GameClient.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/game/mobile/MobileHud.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/game/GoalWayfinder.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/game/world/RealisticWorld.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/world/CampaignLandmarks.ts", import.meta.url), "utf8"),
   ]);
+
+  assert.match(game, /type ParkStage = "FORAGE" \| "BOW_BRIDGE" \| "ZOO" \| "SUBWAY_ENTRANCE"/);
+  assert.match(game, /collected\.current\.size >= 5\) parkStage = "BOW_BRIDGE"/);
+  assert.match(game, /parkStage === "BOW_BRIDGE"[\s\S]{0,800}parkStage = "ZOO"/);
+  assert.match(game, /Attendant: “There are no sloths here\.”/);
+  assert.match(game, /parkStage = "SUBWAY_ENTRANCE"/);
+  assert.match(game, /onEnterSubway\(\)/);
   assert.match(game, /<GoalWayfinder/);
   assert.match(game, /data-goal-distance/);
-  assert.match(game, /Math\.hypot\(player\.x - GOAL\.x, player\.z - GOAL\.z\) < 7/);
-  assert.match(game, /"gate", "gatecomplete"/);
-  assert.match(mobileHud, /goalDistance/);
-  assert.doesNotMatch(mobileHud, /"SOUTH"/);
-  assert.match(wayfinder, /Sanctuary gate/);
-  assert.match(world, /goalBeacon\.visible = collected\.size >= 5/);
+  assert.match(game, /active=\{hud\.targetActive\}/);
+  assert.match(game, /label=\{hud\.waypointLabel\}/);
+  assert.match(mobileHud, /objectiveShort/);
+  assert.match(mobileHud, /objectiveValue/);
+  assert.match(wayfinder, /aria-label=\{`\$\{label\}, \$\{meters\} meters away`\}/);
+  assert.match(world, /export const GOAL = BOW_BRIDGE_TARGET/);
+  assert.match(landmarks, /bow-bridge-and-lake-landing/);
+  assert.match(landmarks, /central-park-zoo-entrance/);
+  assert.match(landmarks, /5-av-59-st-subway-entrance/);
+  assert.doesNotMatch(game, /qaInput === "gate"|gatecomplete|Follow the marker to sanctuary/);
+  assert.doesNotMatch(wayfinder, /Sanctuary gate/);
+});
+
+test("The Lake supplies two driveable rowboats that are faster than swimming", async () => {
+  const [game, rowboat] = await Promise.all([
+    readFile(new URL("../app/game/GameClient.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/world/ParkRowboat.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.equal((game.match(/createParkRowboat\(textures/g) ?? []).length, 2);
+  assert.match(game, /name: "Bow Bridge rowboat 7", boatNumber: 7/);
+  assert.match(game, /name: "Bow Bridge rowboat 12", boatNumber: 12/);
+  assert.match(game, /activeBoat\.update\(/);
+  assert.match(game, /isBoatWater\(/);
+  assert.match(game, /Rowboat boarded/);
+  assert.match(game, /rowboats\.forEach\(\(?boat\)? => boat\.dispose\(\)\)/);
+  assert.match(rowboat, /interactionKind = "park-rowboat"/);
+  assert.match(rowboat, /interactionLabel = "Row across The Lake"/);
+  assert.match(rowboat, /readonly oars: \[ParkRowboatOar, ParkRowboatOar\]/);
+  const speed = Number(rowboat.match(/readonly maxForwardSpeed = ([\d.]+)/)?.[1]);
+  assert.ok(speed > 2.65, `expected rowboat speed to exceed walking speed, received ${speed}`);
+});
+
+test("field-services cart has the requested plate and wheel-clear side placards", async () => {
+  const cart = await readFile(new URL("../app/game/world/ParkUtilityCart.ts", import.meta.url), "utf8");
+
+  assert.match(cart, /context\.fillText\("SLTHPRK", width \/ 2, 143\)/);
+  assert.match(cart, /left-service-sign-backing/);
+  assert.match(cart, /right-service-sign-backing/);
+  assert.match(cart, /left-central-park-field-services-marking/);
+  assert.match(cart, /right-central-park-field-services-marking/);
+
+  const labelSize = cart.match(/const label = new THREE\.Mesh\(new THREE\.PlaneGeometry\(([\d.]+), ([\d.]+)\), materials\.label\)/);
+  const labelPosition = cart.match(/label\.position\.set\(side \* ([\d.]+), ([\d.]+), ([\d.]+)\)/);
+  const fender = cart.match(/new THREE\.TorusGeometry\(([\d.]+), ([\d.]+), 8, 24, Math\.PI\)[\s\S]{0,220}frontFender\.position\.set\(x, ([\d.]+), -1\.17\)/);
+  assert.ok(labelSize && labelPosition && fender, "expected measurable label and fender geometry");
+  const labelBottom = Number(labelPosition[2]) - Number(labelSize[2]) / 2;
+  const fenderTop = Number(fender[3]) + Number(fender[1]) + Number(fender[2]);
+  assert.ok(labelBottom > fenderTop, `service label bottom ${labelBottom} must clear fender top ${fenderTop}`);
+});
+
+test("subway service cycles every 30 seconds and presents route-correct trains", async () => {
+  const world = await readFile(new URL("../app/game/world/SubwayWorld.ts", import.meta.url), "utf8");
+
+  assert.match(world, /"FIFTH_AV", "LEXINGTON", "WEST_FARMS"/);
+  assert.match(world, /SUBWAY_TRAIN_INTERVAL_SECONDS = 30/);
+  assert.match(world, /const cycle = elapsed % SUBWAY_TRAIN_INTERVAL_SECONDS/);
+  assert.match(world, /cycle < 4[\s\S]{0,240}cycle < 16[\s\S]{0,240}cycle < 21/);
+  assert.match(world, /this\.doorsOpen = cycle >= 5 && cycle < 15/);
+  assert.match(world, /buildTrain\(textures, "N", "QUEENS-BOUND", true/);
+  assert.match(world, /const route = cycleNumber % 2 === 0 \? "N" : "R"/);
+  assert.match(world, /buildTrain\(textures, "W", "[^"]+", false/);
+  assert.match(world, /configureTrain\(this\.correctTrain, "5", "UPTOWN \/ BRONX", true/);
+  assert.match(world, /configureTrain\(this\.wrongTrain,[\s\S]{0,160}"DOWNTOWN[^"]*"[\s\S]{0,80}false/);
+  assert.match(world, /sloth-themed-subway-ad/);
+  assert.match(world, /subway-passenger/);
+  assert.match(world, /addStairs\(root, -5\.1[\s\S]{0,80}addStairs\(root, 5\.1/);
+  await Promise.all([
+    access(new URL("../public/game/ads/slow-superpower.webp", import.meta.url)),
+    access(new URL("../public/game/ads/branch-out.webp", import.meta.url)),
+  ]);
+});
+
+test("wrong trains restore the current station checkpoint and correct trains advance", async () => {
+  const subway = await readFile(new URL("../app/game/SubwayGame.tsx", import.meta.url), "utf8");
+  const checkpointStart = subway.indexOf("function checkpoint");
+  const finishRideStart = subway.indexOf("function finishRide");
+  const frameStart = subway.indexOf("function frame");
+  assert.ok(checkpointStart >= 0 && finishRideStart > checkpointStart && frameStart > finishRideStart);
+  const checkpoint = subway.slice(checkpointStart, finishRideStart);
+  const finishRide = subway.slice(finishRideStart, frameStart);
+
+  assert.match(checkpoint, /world\.setStation\(station\)/);
+  assert.match(checkpoint, /player\.copy\(world\.spawn\)/);
+  assert.match(checkpoint, /stationClock = 0/);
+  assert.match(checkpoint, /boarded = null/);
+  assert.match(finishRide, /if \(!boarded\.correct\) \{ checkpoint\(currentStation/);
+  assert.match(finishRide, /Wrong train — checkpoint restored/);
+  assert.match(finishRide, /checkpoint\("LEXINGTON"/);
+  assert.match(finishRide, /checkpoint\("WEST_FARMS"/);
+});
+
+test("West Farms north exit completes the mission at the Bronx Zoo", async () => {
+  const [subway, world] = await Promise.all([
+    readFile(new URL("../app/game/SubwayGame.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/world/SubwayWorld.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(world, /WEST FARMS SQ \/ E TREMONT AV/);
+  assert.match(world, /EXIT · BOSTON RD \/ E 178 ST/);
+  assert.match(world, /BRONX ZOO · ASIA GATE/);
+  assert.match(world, /this\.stationId === "WEST_FARMS"[\s\S]{0,140}this\.trainPhase = "AWAY"/);
+  assert.match(subway, /prompt = "EXIT TO BRONX ZOO"/);
+  assert.match(subway, /setTransitStage\("COMPLETE"\)/);
+  assert.match(subway, /bronxZooArrival\(scene, textures\)/);
+  assert.match(subway, /<div className="eyebrow">Bronx Zoo · Asia Gate<\/div>/);
+  assert.match(subway, /<h2>Mission complete\.<\/h2>/);
 });
