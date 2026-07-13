@@ -85,10 +85,10 @@ const CAR_HALF_WIDTH = 1.36;
 const CAR_HALF_LENGTH = 9.2;
 const DOOR_Z = [-5.85, 0, 5.85] as const;
 const PLAYER_EYE_Y = 1.48;
-const CRUISE_SECONDS = 9;
-const APPROACH_SECONDS = 3.5;
-const DWELL_SECONDS = 7.5;
-const DEPART_SECONDS = 3.2;
+const CRUISE_SECONDS = 4.6;
+const APPROACH_SECONDS = 2.2;
+const DWELL_SECONDS = 4.8;
+const DEPART_SECONDS = 2;
 
 function canvasTexture(width: number, height: number, draw: (context: CanvasRenderingContext2D, width: number, height: number) => void) {
   if (typeof document === "undefined") {
@@ -199,7 +199,7 @@ function addCylinderBetween(parent: THREE.Group, start: THREE.Vector3, end: THRE
  */
 export class TrainInteriorWorld {
   readonly root = new THREE.Group();
-  readonly spawn = new THREE.Vector3(0, PLAYER_EYE_Y, 6.9);
+  readonly spawn = new THREE.Vector3(-.42, PLAYER_EYE_Y, 8.28);
   readonly cameraOffset = new THREE.Vector3();
   readonly journey: TrainInteriorJourney;
   readonly quality: TrainInteriorQuality;
@@ -287,7 +287,7 @@ export class TrainInteriorWorld {
 
   private buildCrowd() {
     const count = this.quality === "desktop" ? 9 : 5;
-    const positions: [number, number][] = [[-.55, 6.2], [.5, 4.25], [-.48, 2.45], [.52, .85], [-.52, -1.6], [.55, -3.35], [-.48, -5.15], [.5, -7], [0, 7.7]];
+    const positions: [number, number][] = [[-.58, 5.65], [.5, 4.25], [-.48, 2.45], [.52, .85], [-.52, -1.6], [.55, -3.35], [-.48, -5.15], [.5, -7], [.72, 7.25]];
     for (let index = 0; index < count; index++) {
       const passenger = createPassenger(index, this.quality), [x, z] = positions[index]; passenger.base.set(x, 0, z); passenger.group.position.copy(passenger.base); passenger.group.rotation.y = index % 2 ? .1 : Math.PI + .1; this.passengers.push(passenger); this.root.add(passenger.group);
     }

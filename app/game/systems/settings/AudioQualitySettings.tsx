@@ -67,7 +67,7 @@ export function AudioQualitySettings({ audio, quality, className, defaultOpen = 
   const audioState = useSyncExternalStore(audio.subscribe, audio.getSnapshot, audio.getSnapshot);
   const qualityState = useSyncExternalStore(quality.subscribe, quality.getSnapshot, quality.getSnapshot);
 
-  return <div className={className} style={{ position: "relative", pointerEvents: "auto" }} data-active-quality={qualityState.activeLevel}>
+  return <div className={className} style={{ position: "relative", pointerEvents: "auto" }}>
     <button
       type="button"
       aria-controls={panelId}
