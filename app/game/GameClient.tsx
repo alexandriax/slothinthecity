@@ -75,10 +75,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
     // W always begins as walking while the driver's door remains within reach.
     const cartSpawn = new THREE.Vector3(-39.8, terrainY(-39.8, 51.1), 51.1);
     const cart = createParkUtilityCart(textures, { scene, position: cartSpawn, rotationY: -.35, quality: tier, name: "Central Park field-services cart" });
-    const rowboats = [
-      createParkRowboat(textures, { scene, position: new THREE.Vector3(25, world.lake.position.y - .16, -51), rotationY: -.62, quality: tier, name: "Bow Bridge rowboat 7", boatNumber: 7 }),
-      createParkRowboat(textures, { scene, position: new THREE.Vector3(30, world.lake.position.y - .16, -54), rotationY: -1.04, quality: tier, name: "Bow Bridge rowboat 12", boatNumber: 12 }),
-    ];
+    const rowboats = world.rowboatSpawns.map(spawn => createParkRowboat(textures, { scene, ...spawn, quality: tier }));
     const markerGeometry = new THREE.RingGeometry(.17, .25, 28);
     const actionMarkerMaterial = new THREE.MeshBasicMaterial({ color: "#d9ef8b", transparent: true, opacity: .92, side: THREE.DoubleSide, depthTest: false });
     const dropMarkerMaterial = new THREE.MeshBasicMaterial({ color: "#e6a85e", transparent: true, opacity: .78, side: THREE.DoubleSide, depthTest: false });
@@ -237,7 +234,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
       }
       return terrainY(x, z) + 1.48;
     }
-    const lakeRadius = 24.72, waterSurfaceY = world.lake.position.y;
+    const lakeRadius = world.lakeRadius, waterSurfaceY = world.lake.position.y;
     function isSwimmableWater(x: number, z: number) {
       // The mesh is a circle, but much of its outer edge sits beneath the
       // sculpted bank. Requiring terrain below the rendered water plane makes
@@ -245,7 +242,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
       return Math.hypot(x - world.lake.position.x, z - world.lake.position.z) <= lakeRadius && terrainY(x, z) <= waterSurfaceY + .08;
     }
     function isBoatWater(x: number, z: number) {
-      return isSwimmableWater(x, z) && Math.hypot(x - world.lake.position.x, z - world.lake.position.z) <= 23.8;
+      return isSwimmableWater(x, z) && Math.hypot(x - world.lake.position.x, z - world.lake.position.z) <= world.boatRadius;
     }
     const cartHullSamples = [[-.42, -1.42], [.42, -1.42], [-.42, 0], [.42, 0], [-.42, 1.42], [.42, 1.42]] as const;
     const cartPlayerHalfX = Math.max(Math.abs(cart.collisionBounds.min.x), Math.abs(cart.collisionBounds.max.x)) + .48;

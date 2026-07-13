@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { Sky } from "three/addons/objects/Sky.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import type { GameTextures } from "../rendering/textures";
-import { BOW_BRIDGE_TARGET, SUBWAY_TARGET, ZOO_TARGET } from "./CampaignLandmarks";
+import { BOW_BRIDGE_CENTER, BOW_BRIDGE_TARGET, SUBWAY_TARGET, ZOO_TARGET } from "./CampaignLandmarks";
 
 export const BUDS = [
   new THREE.Vector3(-12, 0, 14), new THREE.Vector3(17, 0, -4),
@@ -11,6 +11,15 @@ export const BUDS = [
 ];
 export const START = new THREE.Vector3(-43, 0, 54);
 export const GOAL = BOW_BRIDGE_TARGET;
+export const LAKE_SWIM_RADIUS = 33.2;
+export const LAKE_BOAT_RADIUS = 32.25;
+
+export type RowboatSpawn = {
+  position: THREE.Vector3;
+  rotationY: number;
+  boatNumber: number;
+  name: string;
+};
 
 // Hand-authored crown lines give the procedural forest a legible aerial
 // structure.  The junctions are deliberately shared so a sloth entering at
@@ -106,6 +115,9 @@ export type RealisticWorld = {
   rings: THREE.Mesh[];
   hawk: THREE.Group;
   lake: THREE.Mesh;
+  lakeRadius: number;
+  boatRadius: number;
+  rowboatSpawns: RowboatSpawn[];
   trailCurve: THREE.CatmullRomCurve3;
   trees: ClimbableTree[];
   branches: BranchRoute[];
@@ -124,8 +136,16 @@ function seeded(seed: number) {
 
 export function terrainY(x: number, z: number) {
   const roll = Math.sin(x * .037) * 1.5 + Math.cos(z * .042) * 1.1 + Math.sin((x + z) * .071) * .45;
-  const lake = Math.max(0, 1 - Math.hypot(x - 34, z + 43) / 27) * 3.6;
-  return roll - lake;
+  // The original radial depression only exposed a small puddle inside the
+  // nominal 25 m water mesh.  A broad, gently varied basin now keeps almost
+  // the entire gameplay radius submerged while preserving a dry Bow Bridge
+  // abutment and a believable bank rather than a hard circular crater.
+  const lakeDistance = Math.hypot(x - 34, z + 43);
+  const radialWeight = 1 - THREE.MathUtils.smoothstep(lakeDistance, 32.45, 38.2);
+  const bridgeBank = THREE.MathUtils.smoothstep(Math.hypot(x - BOW_BRIDGE_CENTER.x, z - BOW_BRIDGE_CENTER.z), 2.1, 6.2);
+  const basinWeight = radialWeight * bridgeBank;
+  const lakeBed = -2.72 + Math.sin(x * .19 - z * .11) * .07 + Math.cos((x + z) * .13) * .045;
+  return THREE.MathUtils.lerp(roll, Math.min(roll, lakeBed), basinWeight);
 }
 
 function trailRibbon(curve: THREE.CatmullRomCurve3) {
@@ -360,7 +380,10 @@ function finalizeCanopyNetwork(corridors: CanopyCorridor[], routes: BranchRoute[
 
 function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number, trailCurve: THREE.CatmullRomCurve3) {
   const random = seeded(7331);
-  const treeCount = Math.round(120 + 240 * THREE.MathUtils.clamp(quality, .45, 1));
+  // Extra density is delivered through the same instanced trunk/limb/leaf
+  // draw calls, so the Ramble reads as woodland without multiplying mobile
+  // draw calls. Low tiers receive a smaller proportional increase.
+  const treeCount = Math.round(142 + 268 * THREE.MathUtils.clamp(quality, .45, 1));
   const trees: ClimbableTree[] = [];
   const branchRoutes: BranchRoute[] = [], branchNodes: BranchNode[] = [];
   const heroPositions: Array<[number, number]> = [];
@@ -401,15 +424,15 @@ function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number, t
     attempts++;
     const height = 8.5 + random() * 7.5, radius = .38 + random() * .34;
     const trailDistance = distanceToTrail(x, z, trailSamples), campaignTrailDistance = distanceToTrail(x, z, campaignTrailSamples);
-    const blocked = Math.hypot(x - 34, z + 43) < 32 + radius
+    const blocked = Math.hypot(x - 34, z + 43) < 36 + radius
       || Math.hypot(x - START.x, z - START.z) < 9.5 + radius
       || Math.hypot(x - BOW_BRIDGE_TARGET.x, z - BOW_BRIDGE_TARGET.z) < 10 + radius
-      || Math.hypot(x - ZOO_TARGET.x, z - ZOO_TARGET.z) < 9 + radius
+      || Math.hypot(x - ZOO_TARGET.x, z - ZOO_TARGET.z) < 15 + radius
       || Math.hypot(x - SUBWAY_TARGET.x, z - SUBWAY_TARGET.z) < 8 + radius
       || trailDistance < 3.15 + radius
       || campaignTrailDistance < 3.3 + radius
       || Math.hypot(x, z) < 8
-      || trees.some((other) => Math.hypot(x - other.x, z - other.z) < radius + other.radius + 1.55);
+      || trees.some((other) => Math.hypot(x - other.x, z - other.z) < radius + other.radius + 1.28);
     if (blocked) continue;
     const archetype = treeArchetypes[Math.floor(random() * treeArchetypes.length)];
     const baseY = terrainY(x, z), canopyY = baseY + height * (archetype.crownStart + .03);
@@ -572,28 +595,33 @@ function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number, t
   scene.add(trunks, branches, leaves, corridorBranches, corridorMoss);
 
   // Understory detail: rocks, shrubs, and fallen bark-covered logs in a handful of draw calls.
-  const scatterCount = Math.round(360 * quality);
+  const scatterCount = Math.round(400 * quality);
   const shrubs = new THREE.InstancedMesh(leafGeometry, shrubMaterial, scatterCount * 2);
   const fernMaterial = new THREE.MeshStandardMaterial({ map: textures.fern, alphaTest: .34, side: THREE.DoubleSide, roughness: .84, color: "#c5d0b2" });
-  const fernCount = Math.round(720 * quality);
+  const fernCount = Math.round(820 * quality);
   const ferns = new THREE.InstancedMesh(leafGeometry, fernMaterial, fernCount * 2);
   const rockMaterial = new THREE.MeshStandardMaterial({ map: textures.stone, bumpMap: textures.stone, bumpScale: .1, color: "#777a69", roughness: .96 });
   const rocks = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(.55, 1), rockMaterial, Math.round(90 * quality));
-  const understoryAnchors: Array<[number,number]> = [[-47,51],[-39,50],[-49,59],[-36,53],[-31,41],[-27,34],[-18,22],[-5,16],[10,4],[16,-11],[-1,-50],[-17,-60]];
+  const understoryAnchors: Array<[number,number]> = [[-47,51],[-39,50],[-49,59],[-36,53],[-31,41],[-27,34],[-18,22],[-5,16],[10,4],[16,-11],[-1,-50],[-17,-60],[0,-43],[8,-66],[18,-75],[34,-78],[55,-71],[68,-43],[58,-18],[34,-8]];
   for (let i = 0; i < scatterCount; i++) {
     const anchor = understoryAnchors[i];
-    const x = anchor ? anchor[0] : random() * 210 - 105, z = anchor ? anchor[1] : random() * 210 - 105, scale = anchor ? .78 + random() * .35 : .32 + random() * .66;
+    let x = anchor ? anchor[0] : random() * 210 - 105, z = anchor ? anchor[1] : random() * 210 - 105;
+    while (!anchor && Math.hypot(x - 34, z + 43) < LAKE_SWIM_RADIUS + 1.5) { x = random() * 210 - 105; z = random() * 210 - 105; }
+    const scale = anchor ? .78 + random() * .35 : .32 + random() * .66;
     const y = terrainY(x, z) + scale * .48, angle = random() * Math.PI;
     for (let card = 0; card < 2; card++) { dummy.position.set(x, y, z); dummy.rotation.set((random() - .5) * .16, angle + card * Math.PI / 2, 0); dummy.scale.set(scale, scale * (.7 + random() * .45), 1); dummy.updateMatrix(); shrubs.setMatrixAt(i * 2 + card, dummy.matrix); }
   }
   for (let i = 0; i < rocks.count; i++) {
-    const x = random() * 200 - 100, z = random() * 200 - 100, scale = .35 + random() * 1.15;
+    let x = random() * 200 - 100, z = random() * 200 - 100;
+    while (Math.hypot(x - 34, z + 43) < LAKE_SWIM_RADIUS + .8) { x = random() * 200 - 100; z = random() * 200 - 100; }
+    const scale = .35 + random() * 1.15;
     dummy.position.set(x, terrainY(x, z) + scale * .22, z); dummy.rotation.set(random(), random() * Math.PI, random()); dummy.scale.set(scale, scale * (.45 + random() * .32), scale); dummy.updateMatrix(); rocks.setMatrixAt(i, dummy.matrix);
   }
   shrubs.instanceMatrix.needsUpdate = rocks.instanceMatrix.needsUpdate = true; rocks.castShadow = rocks.receiveShadow = true;
   for (let i = 0; i < fernCount; i++) {
     const anchor = understoryAnchors[i % understoryAnchors.length], clustered = i < understoryAnchors.length * 5;
-    const x = clustered ? anchor[0] + (random() - .5) * 7 : random() * 205 - 102.5, z = clustered ? anchor[1] + (random() - .5) * 7 : random() * 205 - 102.5;
+    let x = clustered ? anchor[0] + (random() - .5) * 7 : random() * 205 - 102.5, z = clustered ? anchor[1] + (random() - .5) * 7 : random() * 205 - 102.5;
+    while (!clustered && Math.hypot(x - 34, z + 43) < LAKE_SWIM_RADIUS + 1.2) { x = random() * 205 - 102.5; z = random() * 205 - 102.5; }
     const scale = .48 + random() * 1.08, y = terrainY(x, z) + scale * .5, angle = random() * Math.PI;
     for (let card = 0; card < 2; card++) { dummy.position.set(x, y, z); dummy.rotation.set(0, angle + card * Math.PI / 2, 0); dummy.scale.set(scale, scale * 1.2, 1); dummy.updateMatrix(); ferns.setMatrixAt(i * 2 + card, dummy.matrix); }
   }
@@ -610,7 +638,7 @@ function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number, t
   for (let i = 0; i < litterCount; i++) {
     let x = random() * 214 - 107, z = random() * 214 - 107;
     if (i < 280) { x = -43 + (random() - .5) * 34; z = 54 + (random() - .5) * 32; }
-    if (Math.hypot(x - 34, z + 43) < 27.5) { i--; continue; }
+    if (Math.hypot(x - 34, z + 43) < LAKE_SWIM_RADIUS + .65) { i--; continue; }
     const scale = .48 + random() * 1.05;
     dummy.position.set(x, terrainY(x,z) + .035 + random() * .018, z);
     dummy.rotation.set(-Math.PI / 2 + (random() - .5) * .16, random() * Math.PI * 2, (random() - .5) * .12);
@@ -621,7 +649,9 @@ function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number, t
   litter.instanceMatrix.needsUpdate = true; if (litter.instanceColor) litter.instanceColor.needsUpdate = true; litter.receiveShadow = true; scene.add(litter);
   for (let i = 0; i < 12; i++) {
     const log = new THREE.Mesh(new THREE.CylinderGeometry(.24 + random() * .18, .34 + random() * .2, 3 + random() * 3, 12), barkMaterial);
-    log.rotation.set(Math.PI / 2 + (random() - .5) * .15, random() * Math.PI, 0); log.position.set(random() * 160 - 80, 0, random() * 160 - 80); log.position.y = terrainY(log.position.x, log.position.z) + .3; log.castShadow = log.receiveShadow = true; scene.add(log);
+    let x = random() * 160 - 80, z = random() * 160 - 80;
+    while (Math.hypot(x - 34, z + 43) < LAKE_SWIM_RADIUS + 2) { x = random() * 160 - 80; z = random() * 160 - 80; }
+    log.rotation.set(Math.PI / 2 + (random() - .5) * .15, random() * Math.PI, 0); log.position.set(x, terrainY(x, z) + .3, z); log.castShadow = log.receiveShadow = true; scene.add(log);
   }
   return { trees, branchRoutes, branchNodes, canopyCorridors, canopyNetworkStats };
 }
@@ -750,6 +780,69 @@ function addSky(scene: THREE.Scene) {
   sky.material.uniforms.sunPosition.value.copy(sun);
 }
 
+function irregularShoreGeometry(innerRadius: number, outerRadius: number, segments = 128) {
+  const positions: number[] = [], uvs: number[] = [], indices: number[] = [];
+  for (let index = 0; index <= segments; index++) {
+    const amount = index / segments, angle = amount * Math.PI * 2;
+    const ripple = Math.sin(angle * 5 + .7) * .42 + Math.sin(angle * 11 - .4) * .2 + Math.sin(angle * 19) * .08;
+    const inner = innerRadius + ripple, outer = outerRadius + ripple * .48 + Math.sin(angle * 7) * .26;
+    for (const radius of [inner, outer]) {
+      positions.push(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
+      uvs.push(amount * 12, radius === inner ? 0 : 1);
+    }
+    if (index < segments) { const base = index * 2; indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3); }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices); geometry.computeVertexNormals(); return geometry;
+}
+
+function addLakeEcology(scene: THREE.Scene, textures: GameTextures, quality: number, lake: THREE.Mesh) {
+  const random = seeded(0x1a6e), dummy = new THREE.Object3D();
+  const shorePlantCount = Math.round(110 + quality * 115);
+  const shoreCard = new THREE.PlaneGeometry(1, 1, 2, 2);
+  const shorePlants = new THREE.InstancedMesh(shoreCard, new THREE.MeshStandardMaterial({
+    map: textures.fern, alphaMap: textures.fern, alphaTest: .3, side: THREE.DoubleSide, color: "#8c9d64", roughness: .9,
+  }), shorePlantCount * 2);
+  for (let index = 0; index < shorePlantCount; index++) {
+    let angle = random() * Math.PI * 2;
+    // Keep the bridge landing and both rowboat approaches visually open.
+    if (angle > 3.45 && angle < 4.05) angle += .72;
+    const radius = LAKE_SWIM_RADIUS - .2 + random() * 3.4, x = lake.position.x + Math.cos(angle) * radius, z = lake.position.z + Math.sin(angle) * radius;
+    const scale = .55 + random() * 1.05, y = Math.max(lake.position.y - .12, terrainY(x, z)) + scale * .46;
+    for (let card = 0; card < 2; card++) {
+      dummy.position.set(x, y, z); dummy.rotation.set(0, angle + card * Math.PI / 2, (random() - .5) * .1);
+      dummy.scale.set(scale * (.62 + random() * .28), scale, 1); dummy.updateMatrix(); shorePlants.setMatrixAt(index * 2 + card, dummy.matrix);
+    }
+  }
+  shorePlants.instanceMatrix.needsUpdate = true; shorePlants.name = "the-lake-instanced-shore-vegetation"; scene.add(shorePlants);
+
+  const lilyCount = Math.round(18 + quality * 30);
+  const lilyGeometry = new THREE.CircleGeometry(.44, quality > .8 ? 16 : 10);
+  const lilyMaterial = new THREE.MeshStandardMaterial({ map: textures.foliage, color: "#718d55", roughness: .76, side: THREE.DoubleSide });
+  const lilies = new THREE.InstancedMesh(lilyGeometry, lilyMaterial, lilyCount);
+  const lilyTint = new THREE.Color();
+  for (let index = 0; index < lilyCount; index++) {
+    const angle = random() * Math.PI * 2, radius = 8 + Math.sqrt(random()) * (LAKE_BOAT_RADIUS - 11);
+    dummy.position.set(lake.position.x + Math.cos(angle) * radius, lake.position.y + .025 + random() * .012, lake.position.z + Math.sin(angle) * radius);
+    dummy.rotation.set(-Math.PI / 2, random() * Math.PI * 2, 0); const scale = .48 + random() * .72; dummy.scale.set(scale * (1 + random() * .3), scale, scale); dummy.updateMatrix(); lilies.setMatrixAt(index, dummy.matrix);
+    lilyTint.setHSL(.24 + random() * .035, .29 + random() * .12, .36 + random() * .12); lilies.setColorAt(index, lilyTint);
+  }
+  lilies.instanceMatrix.needsUpdate = true; if (lilies.instanceColor) lilies.instanceColor.needsUpdate = true; lilies.name = "the-lake-lily-pads"; scene.add(lilies);
+
+  const stoneCount = Math.round(16 + quality * 20);
+  const shoreStones = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(.58, 1), new THREE.MeshStandardMaterial({
+    map: textures.stone, bumpMap: textures.stone, bumpScale: .08, color: "#777b6c", roughness: .96,
+  }), stoneCount);
+  for (let index = 0; index < stoneCount; index++) {
+    const angle = random() * Math.PI * 2, radius = LAKE_SWIM_RADIUS + random() * 2.8, scale = .35 + random() * .75;
+    const x = lake.position.x + Math.cos(angle) * radius, z = lake.position.z + Math.sin(angle) * radius;
+    dummy.position.set(x, Math.max(lake.position.y - .18, terrainY(x, z)) + scale * .18, z); dummy.rotation.set(random(), angle, random()); dummy.scale.set(scale, scale * (.38 + random() * .3), scale); dummy.updateMatrix(); shoreStones.setMatrixAt(index, dummy.matrix);
+  }
+  shoreStones.instanceMatrix.needsUpdate = true; shoreStones.castShadow = shoreStones.receiveShadow = true; shoreStones.name = "the-lake-shore-boulders"; scene.add(shoreStones);
+}
+
 export function buildRealisticWorld(scene: THREE.Scene, textures: GameTextures, quality: number): RealisticWorld {
   addSky(scene);
   const terrain = new THREE.PlaneGeometry(240, 240, 120, 120); terrain.rotateX(-Math.PI / 2);
@@ -766,11 +859,17 @@ export function buildRealisticWorld(scene: THREE.Scene, textures: GameTextures, 
 
   const { trees, branchRoutes: branches, branchNodes, canopyCorridors, canopyNetworkStats } = addTrees(scene, textures, quality, trailCurve);
   const { obstacles, bridgeSurface } = addLandmarks(scene, textures, trailCurve);
-  const lakeMaterial = new THREE.MeshPhysicalMaterial({ color: "#345d59", normalMap: textures.waterNormal, normalScale: new THREE.Vector2(.32, .32), roughness: .16, metalness: .08, transmission: .08, transparent: true, opacity: .9, clearcoat: .72, clearcoatRoughness: .18, envMapIntensity: 1.4 });
-  const lake = new THREE.Mesh(new THREE.CircleGeometry(25, 96), lakeMaterial); lake.rotation.x = -Math.PI / 2; lake.position.set(34, terrainY(34, -43) + .82, -43); lake.receiveShadow = true; scene.add(lake);
-  // Shoreline breaks the mathematically perfect circle.
+  const lakeMaterial = new THREE.MeshPhysicalMaterial({ color: "#315d58", normalMap: textures.waterNormal, normalScale: new THREE.Vector2(.38, .38), roughness: .12, metalness: .06, transmission: .12, transparent: true, opacity: .91, clearcoat: .86, clearcoatRoughness: .13, envMapIntensity: 1.6 });
+  const lake = new THREE.Mesh(new THREE.CircleGeometry(LAKE_SWIM_RADIUS + .35, quality > .72 ? 144 : 88), lakeMaterial); lake.name = "the-lake-playable-water"; lake.rotation.x = -Math.PI / 2; lake.position.set(34, terrainY(34, -43) + .82, -43); lake.receiveShadow = true; scene.add(lake);
+  // A hand-rippled bank silhouette avoids the old mathematically perfect ring.
   const shoreMaterial = new THREE.MeshStandardMaterial({ map: textures.ground, bumpMap: textures.ground, bumpScale: .1, color: "#545a42", roughness: 1 });
-  const shore = new THREE.Mesh(new THREE.RingGeometry(23.8, 27, 96), shoreMaterial); shore.rotation.x = -Math.PI / 2; shore.position.copy(lake.position).add(new THREE.Vector3(0, -.05, 0)); scene.add(shore);
+  const shore = new THREE.Mesh(irregularShoreGeometry(LAKE_SWIM_RADIUS - .1, LAKE_SWIM_RADIUS + 3.3, quality > .72 ? 144 : 88), shoreMaterial); shore.name = "the-lake-irregular-bank"; shore.position.copy(lake.position).add(new THREE.Vector3(0, -.045, 0)); shore.receiveShadow = true; scene.add(shore);
+  addLakeEcology(scene, textures, quality, lake);
+
+  const rowboatSpawns: RowboatSpawn[] = [
+    { position: new THREE.Vector3(24.2, lake.position.y - .16, -52.2), rotationY: -.5, boatNumber: 7, name: "Bow Bridge rowboat 7" },
+    { position: new THREE.Vector3(29.1, lake.position.y - .16, -55.4), rotationY: -.9, boatNumber: 12, name: "Bow Bridge rowboat 12" },
+  ];
 
   const buds: THREE.Group[] = [], rings: THREE.Mesh[] = [];
   const budMaterial = new THREE.MeshPhysicalMaterial({ color: "#9ec55c", roughness: .65, clearcoat: .12 });
@@ -792,7 +891,7 @@ export function buildRealisticWorld(scene: THREE.Scene, textures: GameTextures, 
   const { hawk, wings: hawkWings } = createHawk(); scene.add(hawk);
 
   return {
-    buds, rings, hawk, lake, trailCurve, trees, branches, branchNodes, canopyCorridors, canopyNetworkStats, obstacles, bridgeSurface,
+    buds, rings, hawk, lake, lakeRadius: LAKE_SWIM_RADIUS, boatRadius: LAKE_BOAT_RADIUS, rowboatSpawns, trailCurve, trees, branches, branchNodes, canopyCorridors, canopyNetworkStats, obstacles, bridgeSurface,
     animate(time, player, scent, collected) {
       textures.waterNormal.offset.set(time * .008, time * -.011);
       hawk.position.set(player.x + Math.cos(time * .42) * 24, 18 + Math.sin(time * .7) * 2, player.z + Math.sin(time * .42) * 24);
