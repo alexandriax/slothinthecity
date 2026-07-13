@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import type { GameTextures } from "../rendering/textures";
+import { createPremiumHuman, createPremiumSlothFriend } from "./PremiumCharacter";
 
 function canvasTexture(width: number, height: number, draw: (context: CanvasRenderingContext2D, width: number, height: number) => void) {
   if (typeof document === "undefined") {
@@ -46,34 +47,11 @@ function addTree(root: THREE.Group, materials: TreeMaterials, x: number, z: numb
   root.add(tree);
 }
 
-function addFriend(root: THREE.Group, textures: GameTextures, x: number, z: number, rotation: number, tint: string, pose: number) {
-  const friend = new THREE.Group(); friend.name = "waiting-sloth-friend"; friend.position.set(x, 0, z); friend.rotation.y = rotation; friend.userData.pose = pose;
-  const fur = new THREE.MeshStandardMaterial({ map: textures.fur, bumpMap: textures.fur, bumpScale: .085, color: tint, roughness: .94 });
-  const face = new THREE.MeshStandardMaterial({ color: "#b9aa8d", roughness: .92 }), dark = new THREE.MeshStandardMaterial({ color: "#191b18", roughness: .7 });
-  const ivory = new THREE.MeshStandardMaterial({ color: "#e8d6aa", roughness: .5 }), eyeGloss = new THREE.MeshPhysicalMaterial({ color: "#35261a", roughness: .12, clearcoat: 1 });
-  const body = setShadow(new THREE.Mesh(new THREE.CapsuleGeometry(.62, 1.18, 14, 26), fur)); body.position.y = 1.43; body.rotation.z = -.04 + pose * .025; friend.add(body);
-  const chest = new THREE.Mesh(new THREE.SphereGeometry(.52, 26, 18), fur); chest.scale.set(.92, 1.14, .7); chest.position.set(0, 1.68, -.36); friend.add(chest);
-  const head = setShadow(new THREE.Mesh(new THREE.SphereGeometry(.57, 32, 24), fur)); head.scale.set(1, .9, .9); head.position.set(0, 2.54, -.08); friend.add(head);
-  const mask = new THREE.Mesh(new THREE.SphereGeometry(.43, 30, 20, 0, Math.PI * 2, .18, Math.PI * .68), face); mask.scale.set(1.08, .87, .29); mask.position.set(0, 2.5, -.56); mask.rotation.x = -.09; friend.add(mask);
-  for (const side of [-1, 1]) {
-    const eyePatch = new THREE.Mesh(new THREE.SphereGeometry(.135, 18, 14), dark); eyePatch.scale.set(1.48, .72, .34); eyePatch.position.set(side * .205, 2.57, -.7); eyePatch.rotation.z = side * .32; friend.add(eyePatch);
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(.045, 16, 12), eyeGloss); eye.position.set(side * .205, 2.585, -.755); friend.add(eye);
-    const armRig = new THREE.Group(); armRig.name = side === (pose % 2 ? -1 : 1) ? "friend-wave-arm" : "friend-rest-arm"; armRig.position.set(side * .54, 1.82, -.04);
-    armRig.rotation.z = side * (armRig.name === "friend-wave-arm" ? -.92 : -.28); armRig.rotation.x = armRig.name === "friend-wave-arm" ? -.22 : .04;
-    const upper = setShadow(new THREE.Mesh(new THREE.CapsuleGeometry(.18, .72, 9, 19), fur)); upper.position.y = .18; armRig.add(upper);
-    const hand = setShadow(new THREE.Mesh(new THREE.SphereGeometry(.21, 20, 15), fur)); hand.scale.set(.85, 1.08, .7); hand.position.y = -.36; armRig.add(hand);
-    for (let claw = -1; claw <= 1; claw++) {
-      const talon = new THREE.Mesh(new THREE.ConeGeometry(.045, .42, 12), ivory); talon.position.set(claw * .085, -.67, -.055); talon.rotation.x = -.2; armRig.add(talon);
-    }
-    friend.add(armRig);
-    const foot = setShadow(new THREE.Mesh(new THREE.CapsuleGeometry(.2, .42, 8, 16), fur)); foot.position.set(side * .31, .32, -.14); foot.rotation.z = side * -.12; friend.add(foot);
-  }
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(.095, 18, 14), dark); nose.scale.set(1.25, .7, .72); nose.position.set(0, 2.39, -.79); friend.add(nose);
-  const smile = new THREE.Mesh(new THREE.TorusGeometry(.095, .014, 6, 22, Math.PI * .72), dark); smile.position.set(0, 2.31, -.78); smile.rotation.z = .44; friend.add(smile);
-  friend.scale.setScalar(.94); root.add(friend); return friend;
+function addFriend(root: THREE.Group, textures: GameTextures, ownedTextures: THREE.Texture[], quality: number, x: number, z: number, rotation: number, tint: string, pose: number) {
+  const result = createPremiumSlothFriend(textures, quality, pose, tint); result.root.position.set(x, 0, z); result.root.rotation.y = rotation; root.add(result.root); ownedTextures.push(...result.ownedTextures); return result.root;
 }
 
-function addStationExit(root: THREE.Group, stone: THREE.Material, iron: THREE.Material, green: THREE.Material) {
+function addStationExit(root: THREE.Group, textures: GameTextures, stone: THREE.Material, iron: THREE.Material, green: THREE.Material, ownedTextures: THREE.Texture[], quality: number) {
   const exit = new THREE.Group(); exit.name = "west-farms-station-exit-approach";
   for (let step = 0; step < 12; step++) {
     const stair = setShadow(new THREE.Mesh(new RoundedBoxGeometry(8.1, .13, .72, 2, .025), stone), false, true); stair.position.set(0, .08 + step * .085, 10.4 + step * .69); exit.add(stair);
@@ -85,13 +63,53 @@ function addStationExit(root: THREE.Group, stone: THREE.Material, iron: THREE.Ma
     const globePost = new THREE.Mesh(new THREE.CylinderGeometry(.075, .095, 2.2, 12), iron); globePost.position.set(side * 4.7, 1.1, 18.7); exit.add(globePost);
     const globe = new THREE.Mesh(new THREE.SphereGeometry(.26, 20, 14), green); globe.position.set(side * 4.7, 2.3, 18.7); exit.add(globe);
   }
+  const sidewalk = setShadow(new THREE.Mesh(new RoundedBoxGeometry(35, .16, 14, 6, .16), new THREE.MeshStandardMaterial({ map: textures.stone, bumpMap: textures.stone, bumpScale: .035, color: "#a9a69d", roughness: .92 })), false, true); sidewalk.position.set(0, .94, 23.2); exit.add(sidewalk);
+  const road = setShadow(new THREE.Mesh(new RoundedBoxGeometry(76, .12, 12, 5, .1), new THREE.MeshStandardMaterial({ map: textures.ground, bumpMap: textures.ground, bumpScale: .025, color: "#414640", roughness: .96 })), false, true); road.position.set(0, .83, 34.8); exit.add(road);
+  for (let stripe = -4; stripe <= 4; stripe++) { const crossing = new THREE.Mesh(new RoundedBoxGeometry(1.15, .035, 9.5, 2, .015), stone); crossing.position.set(stripe * 1.65, .91, 34.3); exit.add(crossing); }
+  const exitTexture = signTexture("WEST FARMS SQ", "2  ·  5   BRONX ZOO / BOSTON ROAD"); ownedTextures.push(exitTexture);
+  const canopy = setShadow(new THREE.Mesh(new RoundedBoxGeometry(10.3, .38, 5.2, 6, .12), iron)); canopy.position.set(0, 4.15, 19.5); exit.add(canopy);
+  const sign = new THREE.Mesh(new RoundedBoxGeometry(7.7, 1.28, .22, 5, .08), new THREE.MeshStandardMaterial({ map: exitTexture, roughness: .48 })); sign.position.set(0, 3.2, 20.2); exit.add(sign);
+  for (const x of [-4.35, 4.35]) for (const z of [18.2, 21.3]) { const post = new THREE.Mesh(new THREE.CylinderGeometry(.085, .11, 3.25, quality > .72 ? 14 : 9), iron); post.position.set(x, 2.5, z); exit.add(post); }
+  for (const x of [-14, 14]) {
+    const lampPost = new THREE.Mesh(new THREE.CylinderGeometry(.09, .12, 5.8, 12), iron); lampPost.position.set(x, 3.82, 24); exit.add(lampPost);
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(.31, 22, 14), green); lamp.position.set(x, 6.85, 24); exit.add(lamp);
+  }
+  const newsbox = new THREE.Mesh(new RoundedBoxGeometry(1.15, 1.55, .8, 5, .1), new THREE.MeshStandardMaterial({ map: exitTexture, roughness: .72 })); newsbox.position.set(7.2, 1.75, 24); newsbox.rotation.y = -.12; exit.add(newsbox);
   root.add(exit);
+}
+
+function addCampusBuilding(root: THREE.Group, textures: GameTextures, x: number, z: number, width: number, height: number, depth: number, style: "stone" | "brick" | "glass", quality: number) {
+  const building = new THREE.Group(); building.name = `bronx-zoo-${style}-pavilion`; building.position.set(x, 0, z);
+  const facade = new THREE.MeshStandardMaterial({ map: style === "stone" ? textures.stone : textures.ground, bumpMap: style === "stone" ? textures.stone : textures.ground, bumpScale: .05, color: style === "brick" ? "#9b725d" : style === "glass" ? "#708c82" : "#c1b79e", roughness: style === "glass" ? .32 : .9, metalness: style === "glass" ? .14 : 0 });
+  const trim = new THREE.MeshStandardMaterial({ map: textures.stone, bumpMap: textures.stone, bumpScale: .025, color: "#d8ceb4", roughness: .76 });
+  const roofMaterial = new THREE.MeshStandardMaterial({ map: textures.moss, bumpMap: textures.moss, bumpScale: .025, color: "#526e5d", roughness: .6, metalness: .38 });
+  const glassMaterial = new THREE.MeshPhysicalMaterial({ map: textures.stone, color: "#8fb3ad", transparent: true, opacity: .68, transmission: .15, roughness: .13, clearcoat: .8 });
+  const body = setShadow(new THREE.Mesh(new RoundedBoxGeometry(width, height, depth, quality > .72 ? 7 : 4, .18), facade), true, true); body.position.y = height / 2; building.add(body);
+  const base = new THREE.Mesh(new RoundedBoxGeometry(width + .4, .4, depth + .4, 4, .06), trim); base.position.y = .2; building.add(base);
+  const cornice = new THREE.Mesh(new RoundedBoxGeometry(width + .55, .42, depth + .55, 4, .07), trim); cornice.position.y = height - .18; building.add(cornice);
+  const windows = Math.max(3, Math.floor(width / 2.8));
+  for (let index = 0; index < windows; index++) { const window = new THREE.Mesh(new RoundedBoxGeometry(1.2, 1.9, .08, 4, .04), glassMaterial); window.position.set((index - (windows - 1) / 2) * (width - 2.1) / Math.max(1, windows - 1), height * .56, depth / 2 + .055); building.add(window); const sill = new THREE.Mesh(new RoundedBoxGeometry(1.42, .12, .2, 3, .025), trim); sill.position.set(window.position.x, height * .56 - 1.03, depth / 2 + .08); building.add(sill); }
+  if (style === "glass") for (const side of [-1, 1]) { const roof = new THREE.Mesh(new RoundedBoxGeometry(width * .72, .16, depth * .8, 3, .04), glassMaterial); roof.position.set(side * width * .19, height + 1.25, 0); roof.rotation.z = side * .34; building.add(roof); }
+  else { const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(width, depth) * .72, 2.7, 4), roofMaterial); roof.position.y = height + 1.22; roof.rotation.y = Math.PI / 4; roof.scale.z = depth / width; building.add(roof); }
+  root.add(building);
+}
+
+function addArrivalFountain(root: THREE.Group, textures: GameTextures, quality: number) {
+  const stone = new THREE.MeshStandardMaterial({ map: textures.stone, bumpMap: textures.stone, bumpScale: .04, color: "#bcb39d", roughness: .82 });
+  const water = new THREE.MeshPhysicalMaterial({ map: textures.waterNormal, normalMap: textures.waterNormal, normalScale: new THREE.Vector2(.25, .25), color: "#6faaa5", roughness: .18, transmission: .2, clearcoat: .8 });
+  const fountain = new THREE.Group(); fountain.name = "bronx-zoo-arrival-fountain"; fountain.position.set(-12, 0, -2);
+  const basin = new THREE.Mesh(new THREE.CylinderGeometry(4.1, 4.45, .75, quality > .72 ? 64 : 36), stone); basin.position.y = .36; fountain.add(basin);
+  const surface = new THREE.Mesh(new THREE.CylinderGeometry(3.72, 3.72, .12, quality > .72 ? 64 : 36), water); surface.position.y = .72; fountain.add(surface);
+  const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(.55, .82, 2.3, 24), stone); pedestal.position.y = 1.55; fountain.add(pedestal);
+  const globe = new THREE.Mesh(new THREE.SphereGeometry(.63, 28, 18), stone); globe.position.y = 2.9; fountain.add(globe);
+  for (let index = 0; index < (quality > .72 ? 8 : 4); index++) { const angle = index / (quality > .72 ? 8 : 4) * Math.PI * 2, curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(Math.cos(angle) * .55, 2.55, Math.sin(angle) * .55), new THREE.Vector3(Math.cos(angle) * 2.4, 3.65, Math.sin(angle) * 2.4), new THREE.Vector3(Math.cos(angle) * 3.3, .82, Math.sin(angle) * 3.3)); fountain.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 18, .026, 6, false), water)); }
+  root.add(fountain);
 }
 
 export class BronxZooWorld {
   readonly root = new THREE.Group();
-  readonly cameraPosition = new THREE.Vector3(0, 2.62, 20.4);
-  readonly cameraTarget = new THREE.Vector3(0, 3.45, -7.5);
+  readonly cameraPosition = new THREE.Vector3(0, 3.1, 21.2);
+  readonly cameraTarget = new THREE.Vector3(0, 3.8, -12);
   private ownedTextures: THREE.Texture[] = [];
 
   constructor(scene: THREE.Scene, textures: GameTextures, quality = 1) {
@@ -99,13 +117,13 @@ export class BronxZooWorld {
     const high = quality > .72;
     const skyFill = new THREE.HemisphereLight("#e9f4dc", "#32483a", 1.82), sunset = new THREE.DirectionalLight("#ffdda1", 2.78); sunset.position.set(-18, 30, 16); sunset.castShadow = high; sunset.shadow.mapSize.set(quality > .9 ? 2048 : 1024, quality > .9 ? 2048 : 1024); this.root.add(skyFill, sunset);
     const groundMaterial = new THREE.MeshStandardMaterial({ map: textures.ground, bumpMap: textures.ground, bumpScale: .08, color: "#768361", roughness: .96 });
-    const ground = setShadow(new THREE.Mesh(new THREE.PlaneGeometry(86, 68, 16, 12), groundMaterial), false, true); ground.rotation.x = -Math.PI / 2; ground.position.z = 5; this.root.add(ground);
+    const ground = setShadow(new THREE.Mesh(new THREE.PlaneGeometry(112, 94, 20, 16), groundMaterial), false, true); ground.rotation.x = -Math.PI / 2; ground.position.z = -2; this.root.add(ground);
     const pathMaterial = new THREE.MeshStandardMaterial({ map: textures.ground, bumpMap: textures.ground, bumpScale: .045, color: "#b9ae94", roughness: .93 });
-    const path = setShadow(new THREE.Mesh(new RoundedBoxGeometry(11.5, .11, 47, 5, .18), pathMaterial), false, true); path.position.set(0, .015, 3.5); this.root.add(path);
+    const path = setShadow(new THREE.Mesh(new RoundedBoxGeometry(18.5, .11, 57, 6, .22), pathMaterial), false, true); path.position.set(0, .015, 1.5); this.root.add(path);
     const stone = new THREE.MeshStandardMaterial({ map: textures.stone, bumpMap: textures.stone, bumpScale: .055, color: "#b8ad95", roughness: .89 });
-    const iron = new THREE.MeshStandardMaterial({ color: "#121b17", metalness: .84, roughness: .28 });
-    const green = new THREE.MeshPhysicalMaterial({ color: "#4f8857", emissive: "#8cc58a", emissiveIntensity: 1.35, roughness: .22, clearcoat: .68 });
-    addStationExit(this.root, stone, iron, green);
+    const iron = new THREE.MeshStandardMaterial({ map: textures.stone, bumpMap: textures.stone, bumpScale: .012, color: "#17211c", metalness: .82, roughness: .3 });
+    const green = new THREE.MeshPhysicalMaterial({ map: textures.stone, color: "#4f8857", emissive: "#8cc58a", emissiveIntensity: 1.35, roughness: .22, clearcoat: .68 });
+    addStationExit(this.root, textures, stone, iron, green, this.ownedTextures, quality);
 
     const gateZ = -8;
     for (const side of [-1, 1]) {
@@ -114,7 +132,7 @@ export class BronxZooWorld {
       const finial = new THREE.Mesh(new THREE.SphereGeometry(.48, 24, 16), stone); finial.position.set(side * 7.4, 9.42, gateZ); this.root.add(finial);
       const wall = setShadow(new THREE.Mesh(new RoundedBoxGeometry(12, 3.2, .9, 5, .12), stone), true, true); wall.position.set(side * 13.8, 1.6, gateZ); this.root.add(wall);
       for (let index = 0; index < 9; index++) { const bar = new THREE.Mesh(new THREE.CylinderGeometry(.055, .055, 4.9, 10), iron); bar.position.set(side * (8.8 + index * 1.25), 4.55, gateZ); this.root.add(bar); }
-      const lantern = new THREE.Mesh(new RoundedBoxGeometry(.52, .85, .52, 4, .05), new THREE.MeshPhysicalMaterial({ color: "#ffe8a7", emissive: "#ffd477", emissiveIntensity: 2.1, roughness: .22, transmission: .18 })); lantern.position.set(side * 6.45, 6.3, gateZ + .3); this.root.add(lantern);
+      const lantern = new THREE.Mesh(new RoundedBoxGeometry(.52, .85, .52, 4, .05), new THREE.MeshPhysicalMaterial({ map: textures.stone, color: "#ffe8a7", emissive: "#ffd477", emissiveIntensity: 2.1, roughness: .22, transmission: .18 })); lantern.position.set(side * 6.45, 6.3, gateZ + .3); this.root.add(lantern);
     }
     const arch = new THREE.Mesh(new THREE.TorusGeometry(7.4, .5, 20, high ? 96 : 64, Math.PI), iron); arch.position.set(0, 7.15, gateZ); this.root.add(arch);
     for (const side of [-1, 1]) for (let index = 0; index < 5; index++) {
@@ -124,9 +142,22 @@ export class BronxZooWorld {
     const texture = signTexture(); this.ownedTextures.push(texture);
     const sign = new THREE.Mesh(new RoundedBoxGeometry(9.3, 1.38, .3, 6, .1), new THREE.MeshBasicMaterial({ color: "#fff", map: texture, toneMapped: false })); sign.position.set(0, 8.3, gateZ); this.root.add(sign);
 
+    addCampusBuilding(this.root, textures, 0, -25, 26, 9.5, 12, "stone", quality);
+    addCampusBuilding(this.root, textures, -22, -23, 15, 8.2, 13, "glass", quality);
+    addCampusBuilding(this.root, textures, 22, -24, 16, 8.8, 13, "brick", quality);
+    if (high) { addCampusBuilding(this.root, textures, -34, -37, 13, 6.8, 10, "brick", quality); addCampusBuilding(this.root, textures, 34, -37, 14, 7.1, 10, "stone", quality); }
+    const entryCourt = setShadow(new THREE.Mesh(new RoundedBoxGeometry(47, .14, 28, 8, .24), pathMaterial), false, true); entryCourt.position.set(0, .01, -15.5); this.root.add(entryCourt);
+    addArrivalFountain(this.root, textures, quality);
+    for (const side of [-1, 1]) {
+      const ticket = new THREE.Group(); ticket.name = "bronx-zoo-ticket-and-member-pavilion"; ticket.position.set(side * 15.5, 0, -5.2);
+      const body = setShadow(new THREE.Mesh(new RoundedBoxGeometry(4.2, 3.7, 3.3, 6, .14), new THREE.MeshStandardMaterial({ map: textures.ground, bumpMap: textures.ground, bumpScale: .04, color: "#99735d", roughness: .88 })), true, true); body.position.y = 1.85; ticket.add(body);
+      const roof = new THREE.Mesh(new RoundedBoxGeometry(4.7, .35, 3.8, 4, .08), new THREE.MeshStandardMaterial({ map: textures.moss, bumpMap: textures.moss, bumpScale: .02, color: "#5a7564", metalness: .35, roughness: .58 })); roof.position.y = 3.78; ticket.add(roof);
+      const window = new THREE.Mesh(new RoundedBoxGeometry(2.7, 1.32, .06, 5, .04), new THREE.MeshPhysicalMaterial({ map: textures.stone, color: "#8eb4ae", roughness: .13, transmission: .16, transparent: true, opacity: .72 })); window.position.set(0, 2.2, 1.68); ticket.add(window); this.root.add(ticket);
+    }
+
     const wayfindingTexture = signTexture("ASIA GATE", "BRONX ZOO  ·  FRIENDS AHEAD"); this.ownedTextures.push(wayfindingTexture);
     const wayfinding = new THREE.Mesh(new RoundedBoxGeometry(4.5, 1.12, .18, 4, .07), new THREE.MeshStandardMaterial({ map: wayfindingTexture, roughness: .55 })); wayfinding.position.set(-7.1, 2.3, 4.1); wayfinding.rotation.y = .14; this.root.add(wayfinding);
-    const mapCase = new THREE.Mesh(new RoundedBoxGeometry(3.1, 2.65, .32, 5, .09), new THREE.MeshPhysicalMaterial({ color: "#304d3a", roughness: .32, clearcoat: .6 })); mapCase.position.set(7.25, 1.45, 3.2); mapCase.rotation.y = -.12; this.root.add(mapCase);
+    const mapCase = new THREE.Mesh(new RoundedBoxGeometry(3.1, 2.65, .32, 5, .09), new THREE.MeshPhysicalMaterial({ map: textures.stone, color: "#304d3a", roughness: .32, clearcoat: .6 })); mapCase.position.set(7.25, 1.45, 3.2); mapCase.rotation.y = -.12; this.root.add(mapCase);
     const mapGlass = new THREE.Mesh(new RoundedBoxGeometry(2.5, 1.95, .04, 4, .04), new THREE.MeshPhysicalMaterial({ map: wayfindingTexture, color: "#dce7c5", roughness: .16, clearcoat: .8 })); mapGlass.position.set(7.08, 1.55, 3.03); mapGlass.rotation.y = -.12; this.root.add(mapGlass);
 
     const treeMaterials: TreeMaterials = {
@@ -136,15 +167,17 @@ export class BronxZooWorld {
     const trees = [[-22, -7, 1.08], [-18, 4, .88], [-20, 15, .82], [20, -8, 1.1], [17, 3, .92], [21, 15, .8], [-28, 13, .95], [28, 8, .92]] as const;
     trees.slice(0, quality < .62 ? 6 : trees.length).forEach(([x, z, scale]) => addTree(this.root, treeMaterials, x, z, scale, quality));
 
-    const plantCount = Math.round(34 + quality * 46), plantGeometry = new THREE.IcosahedronGeometry(.52, 1);
-    const plants = new THREE.InstancedMesh(plantGeometry, new THREE.MeshStandardMaterial({ color: "#547345", roughness: .9 }), plantCount); const dummy = new THREE.Object3D();
-    for (let index = 0; index < plantCount; index++) { const side = index % 2 ? -1 : 1, z = -5 + index / plantCount * 31 + Math.sin(index * 2.1) * 1.6, scale = .45 + (index * 17 % 11) / 15; dummy.position.set(side * (7 + (index * 13 % 8) * .56), scale * .32, z); dummy.rotation.set(index * .1, index * 1.8, 0); dummy.scale.set(scale * 1.25, scale, scale); dummy.updateMatrix(); plants.setMatrixAt(index, dummy.matrix); }
+    const plantCount = Math.round(34 + quality * 46), plantGeometry = new THREE.IcosahedronGeometry(.52, quality > .75 ? 2 : 1);
+    const plants = new THREE.InstancedMesh(plantGeometry, new THREE.MeshStandardMaterial({ map: textures.foliage, alphaMap: textures.foliage, alphaTest: .18, color: "#648455", roughness: .9 }), plantCount); const dummy = new THREE.Object3D();
+    for (let index = 0; index < plantCount; index++) { const side = index % 2 ? -1 : 1, z = -8 + index / plantCount * 39 + Math.sin(index * 2.1) * 1.6, scale = .45 + (index * 17 % 11) / 15; dummy.position.set(side * (10 + (index * 13 % 10) * .62), scale * .32, z); dummy.rotation.set(index * .1, index * 1.8, 0); dummy.scale.set(scale * 1.25, scale, scale); dummy.updateMatrix(); plants.setMatrixAt(index, dummy.matrix); }
     plants.instanceMatrix.needsUpdate = true; plants.castShadow = high; this.root.add(plants);
 
-    addFriend(this.root, textures, -3.1, -2.5, Math.PI + .12, "#8d8068", 0);
-    addFriend(this.root, textures, 0, -3.65, Math.PI, "#756957", 1);
-    addFriend(this.root, textures, 3.05, -2.45, Math.PI - .12, "#9a886d", 2);
-    addFriend(this.root, textures, 5.25, -.5, Math.PI - .28, "#756b5c", 3);
+    addFriend(this.root, textures, this.ownedTextures, quality, -3.4, -2.2, Math.PI + .12, "#8d8068", 0);
+    addFriend(this.root, textures, this.ownedTextures, quality, .1, -3.35, Math.PI, "#756957", 1);
+    addFriend(this.root, textures, this.ownedTextures, quality, 3.55, -2.15, Math.PI - .12, "#9a886d", 2);
+    addFriend(this.root, textures, this.ownedTextures, quality, 6.7, -.15, Math.PI - .28, "#756b5c", 3);
+    const guestData = [[-8.2, 5.7, -.2, "#516d76", "#343a3c", "#b77e61"], [10.3, 5.3, .24, "#875a48", "#30383d", "#7b503d"], [14.2, -1.3, 2.7, "#667a4e", "#383438", "#cf9d78"]] as const;
+    guestData.slice(0, quality < .62 ? 1 : quality < .82 ? 2 : 3).forEach((data, index) => { const result = createPremiumHuman({ role: "visitor", quality, variant: index + 11, coat: data[3], trousers: data[4], skin: data[5], accessory: index === 1 ? "camera" : "backpack", pose: index === 1 ? "photographing" : "neutral" }); result.root.position.set(data[0], 0, data[1]); result.root.rotation.y = data[2]; this.root.add(result.root); this.ownedTextures.push(...result.ownedTextures); });
     const glow = new THREE.PointLight("#e5f3b9", 34, 23, 1.45); glow.position.set(0, 7.2, -3); this.root.add(glow);
   }
 
