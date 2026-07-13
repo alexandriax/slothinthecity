@@ -243,14 +243,14 @@ function createMaterials(textures: GameTextures) {
   const materials: CartMaterials = {
     paint: new THREE.MeshPhysicalMaterial({ map: paintTexture, color: "#d8e2d8", roughness: .31, metalness: .08, clearcoat: .8, clearcoatRoughness: .19 }),
     paintDark: new THREE.MeshStandardMaterial({ map: paintTexture, color: "#799387", roughness: .56, metalness: .16 }),
-    cream: new THREE.MeshPhysicalMaterial({ color: "#e9e0be", roughness: .42, clearcoat: .38, clearcoatRoughness: .32 }),
+    cream: new THREE.MeshPhysicalMaterial({ map: vinylTexture, bumpMap: vinylTexture, bumpScale: .012, color: "#fff5d6", roughness: .42, clearcoat: .38, clearcoatRoughness: .32 }),
     vinyl: new THREE.MeshPhysicalMaterial({ map: vinylTexture, bumpMap: vinylTexture, bumpScale: .025, color: "#fff9df", roughness: .62, clearcoat: .15 }),
     rubber: new THREE.MeshStandardMaterial({ map: rubberTexture, bumpMap: rubberTexture, bumpScale: .075, color: "#676762", roughness: .93 }),
-    blackMetal: new THREE.MeshStandardMaterial({ color: "#111715", roughness: .36, metalness: .76 }),
-    galvanized: new THREE.MeshStandardMaterial({ color: "#76817d", roughness: .48, metalness: .83 }),
-    chrome: new THREE.MeshPhysicalMaterial({ color: "#dfe7e4", roughness: .15, metalness: .95, clearcoat: .8 }),
+    blackMetal: new THREE.MeshStandardMaterial({ map: rubberTexture, bumpMap: rubberTexture, bumpScale: .018, color: "#353b38", roughness: .36, metalness: .76 }),
+    galvanized: new THREE.MeshStandardMaterial({ map: textures.stone, bumpMap: textures.stone, bumpScale: .025, color: "#8e9994", roughness: .48, metalness: .83 }),
+    chrome: new THREE.MeshPhysicalMaterial({ map: textures.stone, bumpMap: textures.stone, bumpScale: .009, color: "#edf4f1", roughness: .15, metalness: .95, clearcoat: .8 }),
     glass: new THREE.MeshPhysicalMaterial({ color: "#c9e0dc", roughness: .08, metalness: 0, transmission: .68, transparent: true, opacity: .32, thickness: .02, side: THREE.DoubleSide, depthWrite: false }),
-    ivory: new THREE.MeshStandardMaterial({ color: "#eee3bd", roughness: .58, metalness: 0 }),
+    ivory: new THREE.MeshStandardMaterial({ map: vinylTexture, bumpMap: vinylTexture, bumpScale: .01, color: "#fff4c9", roughness: .58, metalness: 0 }),
     darkGlass: new THREE.MeshPhysicalMaterial({ color: "#182320", roughness: .12, transmission: .18, transparent: true, opacity: .78, clearcoat: .55 }),
     timber: new THREE.MeshStandardMaterial({ map: textures.bark, bumpMap: textures.bark, bumpScale: .04, color: "#b89464", roughness: .87 }),
     headlight: new THREE.MeshStandardMaterial({ color: "#fff4c6", emissive: "#ffd67a", emissiveIntensity: 2.2, roughness: .16 }),
@@ -369,11 +369,10 @@ function buildWheel(
 function addSeat(body: THREE.Group, x: number, materials: CartMaterials) {
   const seat = new THREE.Group();
   seat.name = x < 0 ? "driver-seat" : "passenger-seat";
-  const cushion = addRoundedBox(seat, "seat-cushion", [.64, .16, .58], [x, .88, .15], materials.vinyl, .075, 5);
-  cushion.rotation.x = -.055;
+  addRoundedBox(seat, "seat-cushion", [.64, .16, .58], [x, .88, .15], materials.vinyl, .075, 5);
   const back = addRoundedBox(seat, "seat-back", [.64, .68, .14], [x, 1.22, .39], materials.vinyl, .07, 5);
-  back.rotation.x = -.12;
-  for (const seamX of [-.18, .18]) addRod(seat, "vinyl-seat-seam", new THREE.Vector3(x + seamX, .98, .325), new THREE.Vector3(x + seamX, 1.46, .267), .009, materials.ivory, 8);
+  back.rotation.set(0, 0, 0);
+  for (const seamX of [-.18, .18]) addRod(seat, "vinyl-seat-seam", new THREE.Vector3(x + seamX, .98, .318), new THREE.Vector3(x + seamX, 1.46, .318), .009, materials.ivory, 8);
   body.add(seat);
 }
 
@@ -386,7 +385,7 @@ function addCargoTools(body: THREE.Group, materials: CartMaterials) {
 
   const cone = new THREE.Group();
   cone.name = "folding-safety-cone";
-  const coneMaterial = new THREE.MeshStandardMaterial({ color: "#dd6f25", roughness: .58 });
+  const coneMaterial = materials.paint.clone(); coneMaterial.color.set("#e27b32"); coneMaterial.roughness = .58;
   const coneBody = new THREE.Mesh(new THREE.ConeGeometry(.17, .56, 20, 1, true), coneMaterial);
   coneBody.position.y = .33;
   cone.add(coneBody);
@@ -418,7 +417,10 @@ function addCargoTools(body: THREE.Group, materials: CartMaterials) {
       addRoundedBox(toolGroup, "rake-head", [.52, .055, .075], [0, 1.43, 0], materials.galvanized, .012, 2);
       for (let tine = -4; tine <= 4; tine++) addRod(toolGroup, "rake-tine", new THREE.Vector3(tine * .055, 1.4, 0), new THREE.Vector3(tine * .055, 1.23, .02), .009, materials.galvanized, 6);
     }
-    toolGroup.position.set(tool.x, .78, tool.z);
+    // Keep both tool heads below the canopy. Their formerly full-height dark
+    // silhouettes read as disconnected hovering disks behind the cart roof.
+    toolGroup.position.set(tool.x, .7, tool.z);
+    toolGroup.scale.y = .66;
     toolGroup.rotation.x = .08;
     cargo.add(toolGroup);
   }
