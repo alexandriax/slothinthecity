@@ -274,7 +274,7 @@ function addSubwayEntrance(root: THREE.Group, textures: GameTextures, heightAt: 
   const street = new THREE.MeshStandardMaterial({ map: textures.gravel, bumpMap: textures.gravel, bumpScale: .035, color: "#948b7d", roughness: .94 });
   const green = new THREE.MeshPhysicalMaterial({ map: textures.stone, color: "#69a271", emissive: "#7fd18a", emissiveIntensity: 1.3, roughness: .2, clearcoat: .7 });
   const subwayTexture = signTexture("SUBWAY", "5 AV / 59 ST   ·   N  R  W", "#f0c94c");
-  const directionTexture = signTexture("DOWNTOWN & BROOKLYN", "N  R  W  ·  ENTER AT 60TH STREET", "#f0c94c"); ownedTextures.push(subwayTexture, directionTexture);
+  const directionTexture = signTexture("QUEENS & ASTORIA", "N  R  ·  ENTER AT 60TH STREET", "#f0c94c"); ownedTextures.push(subwayTexture, directionTexture);
   const sidewalk = new THREE.Mesh(new RoundedBoxGeometry(18, .18, 15, 6, .14), street); sidewalk.position.set(0, -.06, 2.3); sidewalk.receiveShadow = true; entrance.add(sidewalk);
   const stairOpening = new THREE.Mesh(new RoundedBoxGeometry(6.8, .16, 10.7, 5, .08), iron); stairOpening.position.set(0, -.02, -4.55); entrance.add(stairOpening);
   const stairVoid = new THREE.Mesh(new RoundedBoxGeometry(5.75, .12, 9.8, 4, .07), new THREE.MeshStandardMaterial({ map: textures.stone, color: "#080c0b", roughness: .98 })); stairVoid.position.set(0, -.12, -4.55); entrance.add(stairVoid);

@@ -58,6 +58,8 @@ test("mobile entry cannot be stranded by unavailable Pointer Lock", async () => 
   assert.match(begin, /void audio\.unlock\(\)/);
   assert.match(game, /phase === "intro" \|\| exiting/);
   assert.match(game, /data-touch-capable/);
+  assert.match(game, /useState<"park" \| "subway">\("park"\)/);
+  assert.match(game, /requestAnimationFrame\(\(\) => setLevel\("subway"\)\)/);
 });
 
 test("foraging opens the Bow Bridge, island ticket, zoo, and subway campaign with adaptive wayfinding", async () => {
@@ -90,6 +92,7 @@ test("foraging opens the Bow Bridge, island ticket, zoo, and subway campaign wit
   assert.match(landmarks, /central-park-zoo-exterior-campus/);
   assert.match(landmarks, /5-av-59-st-full-stair-subway-entrance/);
   assert.match(landmarks, /subway-first-descending-step-trigger/);
+  assert.match(landmarks, /QUEENS & ASTORIA/);
   assert.doesNotMatch(game, /qaInput === "gate"|gatecomplete|Follow the marker to sanctuary/);
   assert.doesNotMatch(wayfinder, /Sanctuary gate/);
 });

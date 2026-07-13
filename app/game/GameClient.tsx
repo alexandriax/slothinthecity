@@ -386,8 +386,8 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
             world.buds.slice(0, 5).forEach((bud, index) => { collected.current.add(index); bud.visible = false; });
             alert = 5; nextHawkPassAt = Number.POSITIVE_INFINITY;
             if (qaInput === "rowboat") { parkStage = "LAKE_TICKET"; rowboats[0].getWorldEntryPosition(player); player.y = waterSurfaceY + .58; actionRequested = true; }
-            else if (qaInput === "bowbridge") { parkStage = "BOW_BRIDGE"; player.set(BOW_BRIDGE_TARGET.x - 4.5, groundHeight(BOW_BRIDGE_TARGET.x - 4.5, BOW_BRIDGE_TARGET.z + 4.5), BOW_BRIDGE_TARGET.z + 4.5); yaw = -2.35; }
-            else if (qaInput === "ticketisland") { parkStage = "LAKE_TICKET"; player.copy(world.ticketIslandLanding); player.y = groundHeight(player.x, player.z); yaw = Math.PI; }
+            else if (qaInput === "bowbridge") { parkStage = "BOW_BRIDGE"; player.set(BOW_BRIDGE_TARGET.x - 9, groundHeight(BOW_BRIDGE_TARGET.x - 9, BOW_BRIDGE_TARGET.z + 8), BOW_BRIDGE_TARGET.z + 8); yaw = -1.01; }
+            else if (qaInput === "ticketisland") { parkStage = "LAKE_TICKET"; player.copy(world.ticketIslandLanding); player.y = groundHeight(player.x, player.z); yaw = 0; }
             else if (qaInput === "zoo") { ticketCollected = true; world.setTicketCollected(true); parkStage = "ZOO"; campaign.attendant.getWorldPosition(player); player.x -= 3.6; player.y = groundHeight(player.x, player.z); yaw = -Math.PI / 2; }
             else { ticketCollected = true; world.setTicketCollected(true); parkStage = "SUBWAY_ENTRANCE"; player.set(SUBWAY_TARGET.x, groundHeight(SUBWAY_TARGET.x, SUBWAY_TARGET.z + 5), SUBWAY_TARGET.z + 5); yaw = 0; }
             qaPrepared = true;
@@ -824,6 +824,9 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
 }
 
 export function GameClient() {
+  // Keep the server and first client render identical. Local QA checkpoints
+  // switch worlds in the effect below, after hydration, so they never surface
+  // a recoverable React mismatch in development or automated screenshots.
   const [level, setLevel] = useState<"park" | "subway">("park");
   const [audio] = useState(() => createPremiumAudioDirector({ scene: "central-park" }));
   const [quality] = useState(() => createAdaptiveQualityManager());
