@@ -28,6 +28,7 @@ export const BOW_BRIDGE_BOAT_DOCK = new THREE.Vector3(-19.5, 0, -151.5);
 export const BOW_BRIDGE_SHORE_LANDING = new THREE.Vector3(-22.35, 0, -127.85);
 export const LAKE_SOUTHEAST_BOAT_DOCK = new THREE.Vector3(192, 0, -295);
 export const LAKE_SOUTHEAST_SHORE_LANDING = new THREE.Vector3(203.5, 0, -306.2);
+export const LAKE_SOUTHEAST_CART_TARGET = new THREE.Vector3(208, 0, -306.8);
 export const LAKE_INLET_CENTERLINE = [
   new THREE.Vector3(-40, 0, -113),
   new THREE.Vector3(-35, 0, -124),
@@ -500,11 +501,17 @@ function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number, t
     attempts++;
     const height = 8.5 + random() * 7.5, radius = .38 + random() * .34;
     const trailDistance = distanceToTrail(x, z, trailSamples), campaignTrailDistance = distanceToTrail(x, z, campaignTrailSamples);
-    const blocked = containsLakeWater(x, z, -radius - 2.2)
+    // Preserve a readable, dry bank around the entire lake and inlet.  A
+    // trunk technically outside the water mesh could still have its flared
+    // base and crown read as growing out of the lake, especially at dusk.
+    // Island sycamores are authored separately below and remain intentional.
+    const blocked = containsLakeWater(x, z, -radius - 6.5)
+      || Math.hypot(x - TICKET_ISLAND_TARGET.x, z - TICKET_ISLAND_TARGET.z) < TICKET_ISLAND_RADIUS + 4 + radius
       || Math.hypot(x - START.x, z - START.z) < 9.5 + radius
       || Math.hypot(x - BOW_BRIDGE_TARGET.x, z - BOW_BRIDGE_TARGET.z) < 10 + radius
       || Math.hypot(x - ZOO_TARGET.x, z - ZOO_TARGET.z) < 15 + radius
       || Math.hypot(x - SUBWAY_TARGET.x, z - SUBWAY_TARGET.z) < 8 + radius
+      || Math.hypot(x - LAKE_SOUTHEAST_CART_TARGET.x, z - LAKE_SOUTHEAST_CART_TARGET.z) < 7 + radius
       || trailDistance < 3.15 + radius
       || campaignTrailDistance < 3.3 + radius
       || Math.hypot(x, z) < 8
@@ -1033,8 +1040,9 @@ function addLakeEcology(scene: THREE.Scene, textures: GameTextures, quality: num
   const rimCrowns = new THREE.InstancedMesh(crownGeometry, crownMaterial, rimTreeCount * 4), crownTint = new THREE.Color();
   let placed = 0, attempts = 0;
   while (placed < rimTreeCount && attempts++ < rimTreeCount * 30) {
-    const angle = random() * Math.PI * 2, offset = 10 + random() * 29;
-    const x = lake.position.x + Math.cos(angle) * (THE_LAKE_RADII.x + offset), z = lake.position.z + Math.sin(angle) * (THE_LAKE_RADII.y + offset * .78);
+    const angle = random() * Math.PI * 2, offset = 16 + random() * 28;
+    const x = lake.position.x + Math.cos(angle) * (THE_LAKE_RADII.x + offset), z = lake.position.z + Math.sin(angle) * (THE_LAKE_RADII.y + offset);
+    if (containsLakeWater(x, z, -8)) continue;
     if ([BOW_BRIDGE_BOAT_DOCK, LAKE_SOUTHEAST_SHORE_LANDING].some((dock) => Math.hypot(x - dock.x, z - dock.z) < 18)) continue;
     const height = 8 + random() * 7, radius = .36 + random() * .35, baseY = terrainY(x, z);
     dummy.position.set(x, baseY + height * .42, z); dummy.rotation.set(0, random() * Math.PI * 2, (random() - .5) * .025); dummy.scale.set(radius, height * .84, radius); dummy.updateMatrix(); rimTrunks.setMatrixAt(placed, dummy.matrix);
@@ -1082,6 +1090,8 @@ export function buildRealisticWorld(scene: THREE.Scene, textures: GameTextures, 
   const rowboatSpawns: RowboatSpawn[] = [
     { position: new THREE.Vector3(-16.8, THE_LAKE_SURFACE_Y - .04, -154.4), rotationY: -.32, boatNumber: 7, name: "Bow Bridge rowboat 7" },
     { position: new THREE.Vector3(-22.5, THE_LAKE_SURFACE_Y - .04, -156.3), rotationY: -.18, boatNumber: 12, name: "Bow Bridge rowboat 12" },
+    { position: new THREE.Vector3(187.7, THE_LAKE_SURFACE_Y - .04, -290.8), rotationY: 2.34, boatNumber: 18, name: "Southeast shore rowboat 18" },
+    { position: new THREE.Vector3(197, THE_LAKE_SURFACE_Y - .04, -293), rotationY: 2.5, boatNumber: 23, name: "Southeast shore rowboat 23" },
   ];
 
   const buds: THREE.Group[] = [], rings: THREE.Mesh[] = [];

@@ -16,8 +16,8 @@ import { AudioQualitySettings, createAdaptiveQualityManager, createPremiumAudioD
 import { SubwayGame } from "./SubwayGame";
 import { BOW_BRIDGE_TARGET, createCampaignLandmarks, SUBWAY_TARGET, ZOO_TARGET } from "./world/CampaignLandmarks";
 import { createParkRowboat, ROWBOAT_ROOT_WATERLINE_OFFSET, type ParkRowboat } from "./world/ParkRowboat";
-import { createParkUtilityCart } from "./world/ParkUtilityCart";
-import { buildRealisticWorld, START, terrainY, type BranchRoute, type ClimbableTree } from "./world/RealisticWorld";
+import { createParkUtilityCart, type ParkUtilityCart } from "./world/ParkUtilityCart";
+import { buildRealisticWorld, LAKE_SOUTHEAST_CART_TARGET, START, terrainY, type BranchRoute, type ClimbableTree } from "./world/RealisticWorld";
 
 type Phase = "intro" | "playing" | "paused" | "complete";
 type ParkStage = "FORAGE" | "BOW_BRIDGE" | "LAKE_TICKET" | "ZOO" | "SUBWAY_ENTRANCE";
@@ -75,7 +75,13 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
     // Park beside the opening trail rather than across its first sightline, so
     // W always begins as walking while the driver's door remains within reach.
     const cartSpawn = new THREE.Vector3(-39.8, terrainY(-39.8, 51.1), 51.1);
-    const cart = createParkUtilityCart(textures, { scene, position: cartSpawn, rotationY: -.35, quality: tier, name: "Central Park field-services cart" });
+    const farShoreCartSpawn = LAKE_SOUTHEAST_CART_TARGET.clone();
+    farShoreCartSpawn.y = terrainY(farShoreCartSpawn.x, farShoreCartSpawn.z);
+    const carts = [
+      createParkUtilityCart(textures, { scene, position: cartSpawn, rotationY: -.35, quality: tier, name: "Ramble field-services cart" }),
+      createParkUtilityCart(textures, { scene, position: farShoreCartSpawn, rotationY: -2.28, quality: tier, name: "Southeast lake field-services cart" }),
+    ];
+    let cart: ParkUtilityCart = carts[0];
     const rowboats = world.rowboatSpawns.map(spawn => createParkRowboat(textures, { scene, ...spawn, quality: tier }));
     const markerGeometry = new THREE.RingGeometry(.17, .25, 28);
     const actionMarkerMaterial = new THREE.MeshBasicMaterial({ color: "#d9ef8b", transparent: true, opacity: .92, side: THREE.DoubleSide, depthTest: false });
@@ -105,6 +111,9 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
       sloth.left.position.x = portrait ? -.55 : -.94; sloth.right.position.x = portrait ? .55 : .94;
       sloth.left.position.y = sloth.right.position.y = portrait ? -.74 : -.86;
       sloth.left.rotation.z = portrait ? -.48 : -.74; sloth.right.rotation.z = portrait ? .48 : .74;
+      sloth.left.userData.layoutX = sloth.left.position.x; sloth.right.userData.layoutX = sloth.right.position.x;
+      sloth.left.userData.layoutY = sloth.left.position.y; sloth.right.userData.layoutY = sloth.right.position.y;
+      sloth.left.userData.layoutDepth = sloth.left.position.z; sloth.right.userData.layoutDepth = sloth.right.position.z;
       sloth.left.userData.layoutZ = sloth.left.rotation.z; sloth.right.userData.layoutZ = sloth.right.rotation.z;
     };
     layoutSloth(); camera.add(sloth.root); scene.add(camera);
@@ -263,6 +272,10 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
       if (x < -326 + radius || x > 486 - radius || z < -546 + radius || z > 266 - radius) return "OBSTACLE";
       if (isSwimmableWater(x, z)) return "WATER";
       for (const tree of world.trees) if (Math.hypot(x - tree.x, z - tree.z) < tree.radius + radius + .24) return "OBSTACLE";
+      for (const parkedCart of carts) {
+        if (parkedCart === cart) continue;
+        if (Math.hypot(x - parkedCart.root.position.x, z - parkedCart.root.position.z) < parkedCart.collisionRadius + radius + .18) return "OBSTACLE";
+      }
       for (const obstacle of world.obstacles) {
         if (obstacle.kind === "circle") {
           if (Math.hypot(x - obstacle.x, z - obstacle.z) < obstacle.radius + radius) return "OBSTACLE";
@@ -318,14 +331,15 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
         const inward = velocity.x * nx + velocity.z * nz;
         if (inward < 0) { velocity.x -= inward * nx; velocity.z -= inward * nz; blockedBy = moving ? "TREE" : blockedBy; }
       }
-      if (!drivingCart) {
-        const dx = player.x - cart.root.position.x, dz = player.z - cart.root.position.z, cosine = Math.cos(cart.root.rotation.y), sine = Math.sin(cart.root.rotation.y);
+      for (const parkedCart of carts) {
+        if (drivingCart && parkedCart === cart) continue;
+        const dx = player.x - parkedCart.root.position.x, dz = player.z - parkedCart.root.position.z, cosine = Math.cos(parkedCart.root.rotation.y), sine = Math.sin(parkedCart.root.rotation.y);
         let localX = cosine * dx - sine * dz, localZ = sine * dx + cosine * dz;
         if (Math.abs(localX) < cartPlayerHalfX && Math.abs(localZ) < cartPlayerHalfZ) {
           const pushAlongX = cartPlayerHalfX - Math.abs(localX) < cartPlayerHalfZ - Math.abs(localZ);
           const localNx = pushAlongX ? (localX >= 0 ? 1 : -1) : 0, localNz = pushAlongX ? 0 : (localZ >= 0 ? 1 : -1);
           if (pushAlongX) localX = localNx * cartPlayerHalfX; else localZ = localNz * cartPlayerHalfZ;
-          player.x = cart.root.position.x + cosine * localX + sine * localZ; player.z = cart.root.position.z - sine * localX + cosine * localZ;
+          player.x = parkedCart.root.position.x + cosine * localX + sine * localZ; player.z = parkedCart.root.position.z - sine * localX + cosine * localZ;
           const nx = cosine * localNx + sine * localNz, nz = -sine * localNx + cosine * localNz;
           const inward = velocity.x * nx + velocity.z * nz; if (inward < 0) { velocity.x -= inward * nx; velocity.z -= inward * nz; }
           blockedBy = moving ? "LANDMARK" : blockedBy;
@@ -388,7 +402,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
             if (qaInput === "rowboat") { parkStage = "LAKE_TICKET"; rowboats[0].getWorldEntryPosition(player); player.y = waterSurfaceY + .58; actionRequested = true; }
             else if (qaInput === "bowbridge") { parkStage = "BOW_BRIDGE"; player.set(BOW_BRIDGE_TARGET.x - 9, groundHeight(BOW_BRIDGE_TARGET.x - 9, BOW_BRIDGE_TARGET.z + 8), BOW_BRIDGE_TARGET.z + 8); yaw = -1.01; }
             else if (qaInput === "ticketisland") { parkStage = "LAKE_TICKET"; player.copy(world.ticketIslandLanding); player.y = groundHeight(player.x, player.z); yaw = 0; }
-            else if (qaInput === "zoo") { ticketCollected = true; world.setTicketCollected(true); parkStage = "ZOO"; campaign.attendant.getWorldPosition(player); player.x -= 3.6; player.y = groundHeight(player.x, player.z); yaw = -Math.PI / 2; }
+            else if (qaInput === "zoo") { ticketCollected = true; world.setTicketCollected(true); parkStage = "ZOO"; campaign.attendant.getWorldPosition(player); player.z += 3.6; player.y = groundHeight(player.x, player.z); yaw = 0; }
             else { ticketCollected = true; world.setTicketCollected(true); parkStage = "SUBWAY_ENTRANCE"; player.set(SUBWAY_TARGET.x, groundHeight(SUBWAY_TARGET.x, SUBWAY_TARGET.z + 5), SUBWAY_TARGET.z + 5); yaw = 0; }
             qaPrepared = true;
           } else if (qaInput === "hawk") {
@@ -415,10 +429,12 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
         const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)), right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)), wish = new THREE.Vector3();
         const forwardHeld = keys.has("KeyW") || keys.has("ArrowUp"), backHeld = keys.has("KeyS") || keys.has("ArrowDown"), leftHeld = keys.has("KeyA") || keys.has("ArrowLeft"), rightHeld = keys.has("KeyD") || keys.has("ArrowRight");
         const gripping = keys.has("ShiftLeft") || keys.has("ShiftRight");
-        let moving = false, cartNearby = false, nearbyBoat: ParkRowboat | null = null, groundTreeTarget: ClimbableTree | null = null, branchTarget: { route: BranchRoute; amount: number; point: THREE.Vector3; score: number } | null = null, lowerTarget: { route: BranchRoute; amount: number; point: THREE.Vector3; score: number } | null = null, traversalSpeed = 0;
+        let moving = false, cartNearby = false, nearbyCart: ParkUtilityCart | null = null, nearbyBoat: ParkRowboat | null = null, groundTreeTarget: ClimbableTree | null = null, branchTarget: { route: BranchRoute; amount: number; point: THREE.Vector3; score: number } | null = null, lowerTarget: { route: BranchRoute; amount: number; point: THREE.Vector3; score: number } | null = null, traversalSpeed = 0;
 
-        cart.getWorldEntryPosition(cartEntry);
-        cartNearby = !drivingCart && !activeBoat && !climbingTree && !branchRoute && !transfer && !controlledDescent && !swimming && Math.hypot(player.x - cartEntry.x, player.z - cartEntry.z) < 4.1;
+        if (!drivingCart && !activeBoat && !climbingTree && !branchRoute && !transfer && !controlledDescent && !swimming) for (const candidate of carts) {
+          candidate.getWorldEntryPosition(cartEntry);
+          if (Math.hypot(player.x - cartEntry.x, player.z - cartEntry.z) < 4.1) { nearbyCart = candidate; cartNearby = true; break; }
+        }
         if (!drivingCart && !activeBoat && !climbingTree && !branchRoute && !transfer && !controlledDescent) for (const boat of rowboats) {
           boat.getWorldEntryPosition(boatEntry); if (Math.hypot(player.x - boatEntry.x, player.z - boatEntry.z) < 5.3) { nearbyBoat = boat; break; }
         }
@@ -446,7 +462,8 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
           activeBoat = nearbyBoat; branchRoute = null; climbingTree = null; transfer = null; controlledDescent = false; dropVelocity = 0; swimming = false; wasSwimming = false;
           activeBoat.stop(); vehicleLookYaw = 0; pitch = -.045; velocity.set(0, 0, 0); actionRequested = false;
           showToast(hasTouchInput() ? "Rowboat boarded · left stick rows and steers · Exit returns to the water" : "Rowboat boarded — W / S row · A / D steer · E exits", 3600);
-        } else if (actionRequested && hawkEvent?.kind !== "SNATCH" && cartNearby) {
+        } else if (actionRequested && hawkEvent?.kind !== "SNATCH" && cartNearby && nearbyCart) {
+          cart = nearbyCart;
           drivingCart = true; branchRoute = null; climbingTree = null; transfer = null; controlledDescent = false; dropVelocity = 0; swimming = false;
           cart.stop(); vehicleLookYaw = 0; pitch = -.055; velocity.set(0, 0, 0); actionRequested = false;
           showToast(hasTouchInput() ? "Driving · left stick steers · Brake holds · Exit leaves cart" : "Field cart engaged — W / S drive · A / D steer · Space brake · E exit", 3600);
@@ -651,7 +668,10 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
         if (moving && !drivingCart && gameTime - lastFootstepAt > (activeBoat || swimming ? .74 : climbingTree || branchRoute || transfer ? .58 : .5)) {
           lastFootstepAt = gameTime; audio.playFootstep(activeBoat || swimming ? "water" : climbingTree || branchRoute || transfer ? "wood" : "earth", Math.min(1, traversalSpeed / 2.65));
         }
-        sloth.animate(gameTime, traversalSpeed, Boolean(climbingTree || branchRoute || transfer)); cart.animate(gameTime); rowboats.forEach(boat => { if (boat !== activeBoat) boat.animate(gameTime); }); world.animate(gameTime, player, scentRef.current, collected.current);
+        if (activeBoat) sloth.setVehiclePose("rowboat", activeBoat.steeringAngleRadians / .62, activeBoat.oarStrokePhaseRadians);
+        else if (drivingCart) sloth.setVehiclePose("cart", -cart.steeringAngleRadians / .54);
+        else sloth.setVehiclePose("none");
+        sloth.animate(gameTime, traversalSpeed, Boolean(climbingTree || branchRoute || transfer)); carts.forEach(candidate => candidate.animate(gameTime)); rowboats.forEach(boat => { if (boat !== activeBoat) boat.animate(gameTime); }); world.animate(gameTime, player, scentRef.current, collected.current);
 
         if (hawkEvent?.kind === "DIVE" && (drivingCart || activeBoat || swimming || (exposed < .3 && qaInput !== "hawk"))) {
           hawkEvent = null; alert = Math.max(24, alert - 24); hawkPhase = alert >= 55 ? "WATCHING" : "PATROL"; nextHawkPassAt = gameTime + 5;
@@ -752,14 +772,14 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
                   : { objective: "Descend into the 5 Av / 59 St subway for the Bronx Zoo", short: "SUBWAY", value: `${Math.round(goalDistance)} M`, label: "5 Av / 59 St stairs" };
           setHud({ energy, alert, buds: Math.min(collected.current.size, 5), ticketCollected, objective: campaignCopy.objective, objectiveShort: campaignCopy.short, prompt, promptKey, heading: directions[Math.round(head / (Math.PI / 4)) % 8], motion, hint, threat, hawkPhase, swimming, driving: Boolean(drivingCart || activeBoat), speed: vehicleSpeed, x: player.x, y: player.y, z: player.z, branchId: branchRoute?.id ?? -1, branchProgress, arboreal: Boolean(climbingTree || branchRoute || transfer || controlledDescent || dropVelocity < 0), goalDistance, goalBearing, parkStage, targetActive: parkStage !== "FORAGE", vehicle: activeBoat ? "rowboat" : drivingCart ? "cart" : null, waypointLabel: campaignCopy.label });
         }
-      } else { cart.animate(gameTime); rowboats.forEach(boat => boat.animate(gameTime)); world.animate(gameTime, player, scentRef.current, collected.current); }
+      } else { carts.forEach(candidate => candidate.animate(gameTime)); rowboats.forEach(boat => boat.animate(gameTime)); world.animate(gameTime, player, scentRef.current, collected.current); }
       if (composer) composer.render(); else renderer.render(scene, camera);
     }
     frame();
     return () => {
       disposed = true; cancelAnimationFrame(raf); renderer.domElement.removeEventListener("pointerdown", pointer); renderer.domElement.removeEventListener("pointermove", pointerMove); renderer.domElement.removeEventListener("pointerup", pointerUp);
       document.removeEventListener("mousemove", mouse); document.removeEventListener("keydown", keyDown); document.removeEventListener("keyup", keyUp); document.removeEventListener("sloth-look", touchLook); document.removeEventListener("pointerlockchange", pointerLockChanged); window.removeEventListener("blur", releaseInput); removeEventListener("resize", resize);
-      unsubscribeQuality(); cart.dispose(); rowboats.forEach(boat => boat.dispose()); campaign.dispose(); markerGeometry.dispose(); actionMarkerMaterial.dispose(); dropMarkerMaterial.dispose(); timer.dispose(); composer?.dispose(); renderer.dispose(); if (host.contains(renderer.domElement)) host.removeChild(renderer.domElement);
+      unsubscribeQuality(); carts.forEach(candidate => candidate.dispose()); rowboats.forEach(boat => boat.dispose()); campaign.dispose(); markerGeometry.dispose(); actionMarkerMaterial.dispose(); dropMarkerMaterial.dispose(); timer.dispose(); composer?.dispose(); renderer.dispose(); if (host.contains(renderer.domElement)) host.removeChild(renderer.domElement);
     };
   }, [audio, onEnterSubway, quality, showToast]);
 
