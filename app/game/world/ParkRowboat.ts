@@ -38,6 +38,8 @@ type RowboatMaterials = {
 
 const HALF_LENGTH = 2.58;
 const MAX_BEAM = .82;
+/** Root Y relative to the rendered water surface. Keeps the .04 local hull waterline exact. */
+export const ROWBOAT_ROOT_WATERLINE_OFFSET = -.04;
 
 function seeded(seed: number) {
   let value = seed >>> 0;
@@ -265,8 +267,8 @@ function createMaterials(textures: GameTextures, labelTexture: THREE.Texture): R
       clearcoatRoughness: .27,
     }),
     darkWood: new THREE.MeshStandardMaterial({ map: textures.bark, bumpMap: textures.bark, bumpScale: .03, color: "#59402a", roughness: .72 }),
-    metal: new THREE.MeshStandardMaterial({ color: "#75817c", roughness: .28, metalness: .88 }),
-    rope: new THREE.MeshStandardMaterial({ color: "#b9a47b", roughness: .94 }),
+    metal: new THREE.MeshStandardMaterial({ map: textures.stone, bumpMap: textures.stone, bumpScale: .018, color: "#9aa39e", roughness: .28, metalness: .88 }),
+    rope: new THREE.MeshStandardMaterial({ map: textures.bark, bumpMap: textures.bark, bumpScale: .045, color: "#d2bc8d", roughness: .94 }),
     label: new THREE.MeshStandardMaterial({ map: labelTexture, roughness: .5, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 }),
   };
 }
@@ -276,8 +278,8 @@ function buildBoat(textures: GameTextures, quality: number, boatNumber: number) 
   body.name = "premium-central-park-rowboat-model";
   const labelTexture = makeRowboatLabelTexture(boatNumber);
   const materials = createMaterials(textures, labelTexture);
-  const longitudinalSegments = quality > .72 ? 22 : 14;
-  const crossSegments = quality > .72 ? 14 : 9;
+  const longitudinalSegments = quality > .72 ? 34 : 18;
+  const crossSegments = quality > .72 ? 20 : 12;
 
   const hull = setShadow(new THREE.Mesh(createHullGeometry(longitudinalSegments, crossSegments), materials.hull));
   hull.name = "painted-lapstrake-hull";
@@ -321,11 +323,25 @@ function buildBoat(textures: GameTextures, quality: number, boatNumber: number) 
     body.add(seat);
   }
 
-  for (const x of [-.22, 0, .22]) {
-    const floorboard = setShadow(new THREE.Mesh(new RoundedBoxGeometry(.16, .045, 3.08, 2, .018), materials.varnishedWood), false, true);
+  // A continuous, opaque bilge sole sits above the hull waterline. The old
+  // open slats were below the water plane, so the lake visibly filled the boat
+  // in first person even though the outer hull was sound.
+  const dryBilge = setShadow(new THREE.Mesh(new RoundedBoxGeometry(.57, .085, 3.34, quality > .72 ? 5 : 3, .045), materials.darkWood), false, true);
+  dryBilge.name = "watertight-dry-cockpit-sole"; dryBilge.position.set(0, .205, .03); body.add(dryBilge);
+  for (const x of [-.24, -.12, 0, .12, .24]) {
+    const floorboard = setShadow(new THREE.Mesh(new RoundedBoxGeometry(.09, .042, 3.12, 2, .016), materials.varnishedWood), false, true);
     floorboard.name = "slatted-floorboard";
-    floorboard.position.set(x, .1, .02);
+    floorboard.position.set(x, .272, .02);
     body.add(floorboard);
+  }
+
+  for (const z of [-.72, .48, 1.35]) for (const side of [-1, 1]) {
+    const knee = setShadow(new THREE.Mesh(new RoundedBoxGeometry(.12, .3, .16, 3, .035), materials.darkWood));
+    knee.name = "steam-bent-thwart-knee"; knee.position.set(side * .59, .39, z); knee.rotation.z = side * -.28; body.add(knee);
+  }
+  for (const side of [-1, 1]) {
+    const footBrace = setShadow(new THREE.Mesh(new THREE.CylinderGeometry(.025, .03, .52, quality > .72 ? 12 : 8), materials.metal));
+    footBrace.name = "adjustable-rower-foot-brace"; footBrace.rotation.z = Math.PI / 2; footBrace.position.set(side * .3, .34, .56); body.add(footBrace);
   }
 
   for (const side of [-1, 1] as const) {
@@ -422,7 +438,7 @@ export class ParkRowboat {
     this.floatPivot.name = "rowboat-floating-pivot";
     this.floatPivot.add(this.body);
 
-    this.wakeGroup.name = "rowboat-dynamic-v-wake"; this.wakeGroup.position.set(0, .185, 1.72);
+    this.wakeGroup.name = "rowboat-dynamic-v-wake"; this.wakeGroup.position.set(0, .065, 1.72);
     const wakeGeometry = createWakeGeometry();
     for (const side of [-1, 1]) {
       const wake = new THREE.Mesh(wakeGeometry, this.wakeMaterial); wake.name = "rowboat-wake-ribbon"; wake.scale.x = side; wake.renderOrder = 3; this.wakeGroup.add(wake); this.wakeMeshes.push(wake);
@@ -441,7 +457,7 @@ export class ParkRowboat {
     this.floatPivot.add(this.seatTransform);
 
     this.cameraTransform.name = "rower-camera-transform";
-    this.cameraTransform.position.set(0, 1.28, .96);
+    this.cameraTransform.position.set(0, 1.34, .96);
     this.cameraTransform.rotation.x = -.045;
     this.floatPivot.add(this.cameraTransform);
 

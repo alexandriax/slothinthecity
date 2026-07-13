@@ -85,6 +85,14 @@ type PassengerRig = {
   seated: boolean;
 };
 
+type TrainSurfaceMaps = {
+  fabric: THREE.Texture;
+  leather: THREE.Texture;
+  paint: THREE.Texture;
+  skin: THREE.Texture;
+  vinyl: THREE.Texture;
+};
+
 const CAR_HALF_WIDTH = 1.36;
 const CAR_HALF_LENGTH = 9.2;
 const DOOR_Z = [-5.85, 0, 5.85] as const;
@@ -105,6 +113,28 @@ function canvasTexture(width: number, height: number, draw: (context: CanvasRend
   const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace; texture.anisotropy = 4; return texture;
 }
 
+function microSurfaceTexture(kind: keyof TrainSurfaceMaps) {
+  return canvasTexture(256, 256, (context, width, height) => {
+    const image = context.createImageData(width, height);
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+      const index = (y * width + x) * 4, hash = Math.sin(x * 15.37 + y * 91.17 + kind.length * 21.1) * 34821.731, noise = hash - Math.floor(hash);
+      let value = 180;
+      if (kind === "fabric") value = 148 + noise * 30 + ((x + y) % 6 === 0 ? 35 : 0);
+      else if (kind === "leather") value = 132 + noise * 46 + Math.sin(x * .13 + Math.sin(y * .04) * 4) * 16;
+      else if (kind === "skin") value = 198 + noise * 22 + Math.sin(x * .04 + y * .02) * 6;
+      else if (kind === "vinyl") value = 164 + noise * 22 + Math.sin(x * .18) * 11;
+      else value = 176 + noise * 20 + Math.sin(y * .06) * 5;
+      image.data[index] = image.data[index + 1] = image.data[index + 2] = THREE.MathUtils.clamp(value, 0, 255); image.data[index + 3] = 255;
+    }
+    context.putImageData(image, 0, 0);
+  });
+}
+
+function fitCanvasText(context: CanvasRenderingContext2D, text: string, maximumWidth: number, initialSize: number, weight = 700) {
+  let size = initialSize;
+  do { context.font = `${weight} ${size}px Helvetica, Arial, sans-serif`; size -= 2; } while (size > 17 && context.measureText(text).width > maximumWidth);
+}
+
 function routeTexture(journey: TrainInteriorJourney) {
   return canvasTexture(1536, 312, (context, width, height) => {
     context.fillStyle = "#f4f1e9"; context.fillRect(0, 0, width, height);
@@ -112,11 +142,11 @@ function routeTexture(journey: TrainInteriorJourney) {
     const stops = [journey.origin, ...journey.intermediateStops.map(stop => stop.name), journey.destination.name];
     const start = 88, end = width - 88, lineY = 166;
     context.strokeStyle = journey.route === "5" ? "#00933c" : "#f5b800"; context.lineWidth = 18; context.beginPath(); context.moveTo(start, lineY); context.lineTo(end, lineY); context.stroke();
-    context.font = "650 25px Helvetica, Arial, sans-serif"; context.textAlign = "center"; context.textBaseline = "top";
+    context.textAlign = "center"; context.textBaseline = "top";
     stops.forEach((stop, index) => {
       const x = THREE.MathUtils.lerp(start, end, index / Math.max(1, stops.length - 1));
       context.beginPath(); context.arc(x, lineY, index === stops.length - 1 ? 19 : 14, 0, Math.PI * 2); context.fillStyle = "#fff"; context.fill(); context.strokeStyle = "#151716"; context.lineWidth = 6; context.stroke();
-      context.save(); context.translate(x, lineY + 30); context.rotate(index % 2 ? -.1 : .1); context.fillStyle = "#191b1a"; context.fillText(stop, 0, 0); context.restore();
+      context.save(); context.translate(x, lineY + 30); context.rotate(index % 2 ? -.06 : .06); context.fillStyle = "#191b1a"; fitCanvasText(context, stop, Math.max(165, (end - start) / stops.length - 18), 25, 650); context.fillText(stop, 0, 0); context.restore();
       const transfers = stop.includes("Lexington") ? ["N", "R", "W", "4", "5", "6"] : stop.includes("West Farms") ? ["2", "5"] : stop.includes("5 Av") ? ["N", "R", "W"] : stop === "E 180 St" ? ["2", "5"] : [journey.route];
       const bulletStart = x - (transfers.length - 1) * 15;
       transfers.forEach((line, lineIndex) => {
@@ -132,8 +162,8 @@ function destinationTexture(journey: TrainInteriorJourney) {
     const gradient = context.createLinearGradient(0, 0, width, 0); gradient.addColorStop(0, "#080b09"); gradient.addColorStop(.5, "#17211b"); gradient.addColorStop(1, "#080b09");
     context.fillStyle = gradient; context.fillRect(0, 0, width, height);
     context.strokeStyle = "#8ea995"; context.lineWidth = 6; context.strokeRect(8, 8, width - 16, height - 16);
-    context.fillStyle = "#ccefb2"; context.textAlign = "center"; context.textBaseline = "middle"; context.font = "700 58px Helvetica, Arial, sans-serif"; context.fillText(`NEXT · ${journey.destination.name.toUpperCase()}`, width / 2, 100);
-    context.fillStyle = "#f2f5ed"; context.font = "650 28px Helvetica, Arial, sans-serif"; context.letterSpacing = "6px"; context.fillText("MOVE TO THE ILLUMINATED EXIT", width / 2, 176);
+    context.fillStyle = "#ccefb2"; context.textAlign = "center"; context.textBaseline = "middle"; fitCanvasText(context, `NEXT · ${journey.destination.name.toUpperCase()}`, width - 70, 58, 700); context.fillText(`NEXT · ${journey.destination.name.toUpperCase()}`, width / 2, 100);
+    context.fillStyle = "#f2f5ed"; fitCanvasText(context, "MOVE TO THE ILLUMINATED EXIT", width - 90, 28, 650); context.letterSpacing = "4px"; context.fillText("MOVE TO THE ILLUMINATED EXIT", width / 2, 176);
   });
 }
 
@@ -153,7 +183,7 @@ function servicePanelTexture(kind: "accessibility" | "door" | "emergency" | "int
       : ["DO NOT LEAN ON DOOR", "Stand clear of closing doors", `${route} SERVICE`];
     context.fillStyle = "#f4f3ec"; context.fillRect(0, 0, width, height); context.fillStyle = accent; context.fillRect(0, 0, width, 68);
     context.strokeStyle = "#202321"; context.lineWidth = 7; context.strokeRect(10, 10, width - 20, height - 20);
-    context.fillStyle = "#fff"; context.font = "800 30px Helvetica, Arial, sans-serif"; context.textAlign = "center"; context.textBaseline = "middle"; context.fillText(copy[0], width / 2, 35);
+    context.fillStyle = "#fff"; context.textAlign = "center"; context.textBaseline = "middle"; fitCanvasText(context, copy[0], width - 38, 30, 800); context.fillText(copy[0], width / 2, 35);
     if (kind === "accessibility") {
       context.strokeStyle = accent; context.lineWidth = 17; context.beginPath(); context.arc(132, 163, 47, 0, Math.PI * 2); context.stroke(); context.beginPath(); context.arc(162, 260, 73, 0, Math.PI * 2); context.stroke();
       context.beginPath(); context.moveTo(130, 212); context.lineTo(190, 310); context.lineTo(276, 310); context.stroke();
@@ -161,9 +191,9 @@ function servicePanelTexture(kind: "accessibility" | "door" | "emergency" | "int
       context.fillStyle = accent; context.beginPath(); context.arc(135, 205, 77, 0, Math.PI * 2); context.fill();
       context.fillStyle = "#fff"; context.font = "900 95px Helvetica, Arial, sans-serif"; context.fillText(kind === "emergency" ? "!" : kind === "intercom" ? "●" : "↔", 135, 209);
     }
-    context.textAlign = "left"; context.fillStyle = "#161918"; context.font = "750 36px Helvetica, Arial, sans-serif"; context.fillText(copy[1], 272, 185);
-    context.fillStyle = "#505653"; context.font = "600 25px Helvetica, Arial, sans-serif"; context.fillText(copy[2], 272, 239);
-    context.fillStyle = accent; context.fillRect(272, 279, 292, 8); context.font = "800 34px Helvetica, Arial, sans-serif"; context.fillText("SLOTH PARK TRANSIT", 272, 338);
+    context.textAlign = "left"; context.fillStyle = "#161918"; fitCanvasText(context, copy[1], width - 300, 36, 750); context.fillText(copy[1], 272, 185);
+    context.fillStyle = "#505653"; fitCanvasText(context, copy[2], width - 300, 25, 600); context.fillText(copy[2], 272, 239);
+    context.fillStyle = accent; context.fillRect(272, 279, 292, 8); fitCanvasText(context, "SLOTH PARK TRANSIT", width - 300, 34, 800); context.fillText("SLOTH PARK TRANSIT", 272, 338);
   });
 }
 
@@ -206,15 +236,15 @@ function advertisementTexture(index: number) {
   });
 }
 
-function createPassenger(index: number, quality: TrainInteriorQuality, pose: "holding" | "reading" | "seated" | "standing") {
+function createPassenger(index: number, quality: TrainInteriorQuality, pose: "holding" | "reading" | "seated" | "standing", surfaceMaps: TrainSurfaceMaps) {
   const group = new THREE.Group(); group.name = "detailed-train-passenger";
   const palettes = [
     ["#6d4436", "#ae785c", "#25201e"], ["#264d5a", "#d4a27f", "#34251e"], ["#625b35", "#80573f", "#171715"],
     ["#69405d", "#e0b58d", "#643c29"], ["#313e64", "#9a674d", "#24201d"], ["#4b5d45", "#c18767", "#463026"],
   ][index % 6];
-  const coat = new THREE.MeshStandardMaterial({ color: palettes[0], roughness: .72 }), skin = new THREE.MeshStandardMaterial({ color: palettes[1], roughness: .82 });
-  const dark = new THREE.MeshStandardMaterial({ color: palettes[2], roughness: .67 }), accent = new THREE.MeshStandardMaterial({ color: index % 2 ? "#d8b962" : "#b84b42", roughness: .62 });
-  const segments = quality === "desktop" ? 16 : 10;
+  const coat = new THREE.MeshStandardMaterial({ color: palettes[0], roughness: .72, map: surfaceMaps.fabric, bumpMap: surfaceMaps.fabric, bumpScale: .012 }), skin = new THREE.MeshStandardMaterial({ color: palettes[1], roughness: .82, map: surfaceMaps.skin, bumpMap: surfaceMaps.skin, bumpScale: .004 });
+  const dark = new THREE.MeshStandardMaterial({ color: palettes[2], roughness: .67, map: surfaceMaps.fabric, bumpMap: surfaceMaps.fabric, bumpScale: .014 }), accent = new THREE.MeshStandardMaterial({ color: index % 2 ? "#d8b962" : "#b84b42", roughness: .62, map: surfaceMaps.fabric, bumpMap: surfaceMaps.fabric, bumpScale: .01 });
+  const segments = quality === "desktop" ? 22 : 12;
   const stature = .92 + index % 5 * .032; group.scale.set(stature * (.96 + index % 2 * .025), stature, stature);
   const hips = new THREE.Mesh(new THREE.CapsuleGeometry(.23, .32, 5, segments), dark); hips.position.y = .86; group.add(hips);
   const torso = new THREE.Mesh(new THREE.CapsuleGeometry(.29, .67, 7, segments), coat); torso.position.y = 1.34; torso.scale.z = .78; group.add(torso);
@@ -233,14 +263,27 @@ function createPassenger(index: number, quality: TrainInteriorQuality, pose: "ho
   for (const side of [-1, 1]) {
     const eye = new THREE.Mesh(new THREE.SphereGeometry(.015, 7, 5), dark); eye.position.set(side * .069, .035, -.197); headGroup.add(eye);
     const ear = new THREE.Mesh(new THREE.SphereGeometry(.042, 8, 6), skin); ear.position.set(side * .196, .01, 0); ear.scale.x = .48; headGroup.add(ear);
+    if (quality === "desktop") {
+      const brow = new THREE.Mesh(new RoundedBoxGeometry(.062, .011, .008, 3, .004), dark); brow.position.set(side * .069, .087, -.207); brow.rotation.z = side * -.08; headGroup.add(brow);
+      const cheek = new THREE.Mesh(new THREE.SphereGeometry(.042, 10, 8), skin); cheek.scale.set(1.12, .66, .48); cheek.position.set(side * .108, -.04, -.184); headGroup.add(cheek);
+    }
     const leg = new THREE.Mesh(new THREE.CapsuleGeometry(.085, .52, 5, segments), dark); leg.position.set(side * .13, .4, 0); group.add(leg); legs.push(leg);
-    const shoe = new THREE.Mesh(new RoundedBoxGeometry(.19, .105, .34, 3, .04), new THREE.MeshStandardMaterial({ color: "#111312", roughness: .48 })); shoe.position.set(side * .13, .07, -.08); group.add(shoe); shoes.push(shoe);
+    const shoe = new THREE.Mesh(new RoundedBoxGeometry(.19, .105, .34, 4, .04), new THREE.MeshStandardMaterial({ color: "#111312", roughness: .48, map: surfaceMaps.leather, bumpMap: surfaceMaps.leather, bumpScale: .012 })); shoe.position.set(side * .13, .07, -.08); group.add(shoe); shoes.push(shoe);
+  }
+  if (quality === "desktop") {
+    const mouth = new THREE.Mesh(new THREE.TorusGeometry(.039, .005, 6, 16, Math.PI), new THREE.MeshStandardMaterial({ color: "#774946", roughness: .72, map: surfaceMaps.skin })); mouth.position.set(0, -.075, -.203); mouth.rotation.z = Math.PI; headGroup.add(mouth);
+    const coatSeam = new THREE.Mesh(new RoundedBoxGeometry(.014, .5, .012, 2, .004), accent); coatSeam.position.set(0, 1.31, -.248); group.add(coatSeam);
+    for (const y of [1.42, 1.27, 1.12]) { const button = new THREE.Mesh(new THREE.CylinderGeometry(.014, .014, .008, 8), dark); button.rotation.x = Math.PI / 2; button.position.set(0, y, -.264); group.add(button); }
   }
   const armLeft = new THREE.Group(), armRight = new THREE.Group();
   for (const [side, arm] of [[-1, armLeft], [1, armRight]] as const) {
     arm.position.set(side * .34, 1.53, 0); arm.rotation.z = side * -.11;
     const sleeve = new THREE.Mesh(new THREE.CapsuleGeometry(.07, .48, 5, segments), coat); sleeve.position.y = -.22; arm.add(sleeve);
-    const hand = new THREE.Mesh(new THREE.SphereGeometry(.075, 10, 8), skin); hand.position.y = -.52; arm.add(hand); group.add(arm);
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(.075, segments, Math.max(8, segments - 4)), skin); hand.position.y = -.52; arm.add(hand);
+    if (quality === "desktop") for (let finger = -1; finger <= 1; finger++) {
+      const digit = new THREE.Mesh(new THREE.CapsuleGeometry(.012, .055, 4, 8), skin); digit.position.set(finger * .023, -.58, -.012); digit.rotation.x = -.18; arm.add(digit);
+    }
+    group.add(arm);
   }
   if (index % 3 === 0) {
     const phone = new THREE.Mesh(new RoundedBoxGeometry(.13, .23, .018, 3, .02), dark); phone.position.set(.28, 1.04, -.23); phone.rotation.z = -.16; group.add(phone); armRight.rotation.x = -.55;
@@ -288,6 +331,7 @@ export class TrainInteriorWorld {
   private readonly passengers: PassengerRig[] = [];
   private readonly ownedTextures: THREE.Texture[] = [];
   private readonly platformTextures = new Map<string, THREE.Texture>();
+  private readonly surfaceMaps: TrainSurfaceMaps;
   private readonly tunnelPanels: THREE.Mesh[] = [];
   private tunnelTexture: THREE.Texture | null = null;
   private phase: TrainInteriorPhase = "CRUISING";
@@ -302,6 +346,10 @@ export class TrainInteriorWorld {
 
   constructor(scene: THREE.Scene, textures: GameTextures, journey: TrainInteriorJourney, quality: TrainInteriorQuality = "desktop") {
     this.journey = journey; this.quality = quality; this.root.name = `train-interior-${journey.route}`; scene.add(this.root);
+    this.surfaceMaps = {
+      fabric: microSurfaceTexture("fabric"), leather: microSurfaceTexture("leather"), paint: microSurfaceTexture("paint"), skin: microSurfaceTexture("skin"), vinyl: microSurfaceTexture("vinyl"),
+    };
+    for (const texture of Object.values(this.surfaceMaps)) { texture.wrapS = texture.wrapT = THREE.RepeatWrapping; texture.repeat.set(3, 3); texture.anisotropy = quality === "desktop" ? 8 : 4; this.ownedTextures.push(texture); }
     this.buildCar(textures); this.buildCrowd(); this.reset();
   }
 
@@ -331,11 +379,11 @@ export class TrainInteriorWorld {
     const shell = new THREE.Group(); shell.name = "train-interior-shell"; this.root.add(shell);
     const steel = new THREE.MeshStandardMaterial({ color: "#c3c9c6", metalness: .68, roughness: .27, map: textures.gravel, bumpMap: textures.gravel, bumpScale: .004 });
     const brushedSteel = new THREE.MeshStandardMaterial({ color: "#9da7a3", metalness: .78, roughness: .3, map: textures.gravel, bumpMap: textures.gravel, bumpScale: .008 });
-    const panel = new THREE.MeshStandardMaterial({ color: "#e7e2d5", metalness: .04, roughness: .43 }), dark = new THREE.MeshStandardMaterial({ color: "#161b1a", metalness: .34, roughness: .34 });
+    const panel = new THREE.MeshStandardMaterial({ color: "#e7e2d5", metalness: .04, roughness: .43, map: this.surfaceMaps.paint, bumpMap: this.surfaceMaps.paint, bumpScale: .008 }), dark = new THREE.MeshStandardMaterial({ color: "#161b1a", metalness: .34, roughness: .34, map: this.surfaceMaps.paint, bumpMap: this.surfaceMaps.paint, bumpScale: .008 });
     const floorMaterial = new THREE.MeshStandardMaterial({ color: "#414844", roughness: .88, map: textures.gravel, bumpMap: textures.gravel, bumpScale: .014 });
     const glass = new THREE.MeshPhysicalMaterial({ color: "#6d8790", roughness: .09, metalness: .05, transmission: .14, transparent: true, opacity: .76 });
-    const seatBlue = new THREE.MeshPhysicalMaterial({ color: "#2870a2", roughness: .31, clearcoat: .58, clearcoatRoughness: .25 });
-    const seatOrange = new THREE.MeshPhysicalMaterial({ color: "#e79632", roughness: .33, clearcoat: .5, clearcoatRoughness: .28 });
+    const seatBlue = new THREE.MeshPhysicalMaterial({ color: "#2870a2", roughness: .31, clearcoat: .58, clearcoatRoughness: .25, map: this.surfaceMaps.vinyl, bumpMap: this.surfaceMaps.vinyl, bumpScale: .01 });
+    const seatOrange = new THREE.MeshPhysicalMaterial({ color: "#e79632", roughness: .33, clearcoat: .5, clearcoatRoughness: .28, map: this.surfaceMaps.vinyl, bumpMap: this.surfaceMaps.vinyl, bumpScale: .01 });
     const floor = new THREE.Mesh(new RoundedBoxGeometry(CAR_HALF_WIDTH * 2, .14, CAR_HALF_LENGTH * 2, 4, .04), floorMaterial); floor.position.y = -.09; floor.receiveShadow = true; shell.add(floor);
     const ceiling = new THREE.Mesh(new RoundedBoxGeometry(CAR_HALF_WIDTH * 2, .16, CAR_HALF_LENGTH * 2, 5, .06), panel); ceiling.position.y = 2.72; shell.add(ceiling);
     for (const side of [-1, 1]) {
@@ -350,7 +398,7 @@ export class TrainInteriorWorld {
       const endDoor = new THREE.Mesh(new RoundedBoxGeometry(1.02, 2.15, .08, 4, .035), steel); endDoor.position.set(0, 1.15, end * (CAR_HALF_LENGTH - .22)); shell.add(endDoor);
       const endWindow = new THREE.Mesh(new RoundedBoxGeometry(.6, .82, .025, 4, .04), glass); endWindow.position.set(0, 1.5, end * (CAR_HALF_LENGTH - .14)); shell.add(endWindow);
       const kickPlate = new THREE.Mesh(new RoundedBoxGeometry(.72, .3, .025, 3, .02), brushedSteel); kickPlate.position.set(0, .3, end * (CAR_HALF_LENGTH - .28)); shell.add(kickPlate);
-      const routeBadge = new THREE.Mesh(new THREE.PlaneGeometry(.48, .48), new THREE.MeshBasicMaterial({ map: routeBullet, transparent: true, toneMapped: false, side: THREE.DoubleSide })); routeBadge.position.set(.86, 2.14, end * (CAR_HALF_LENGTH - .27)); routeBadge.rotation.y = end < 0 ? 0 : Math.PI; shell.add(routeBadge);
+      const routeBadge = new THREE.Mesh(new THREE.PlaneGeometry(.48, .48), new THREE.MeshBasicMaterial({ map: routeBullet, transparent: true, toneMapped: false, side: THREE.FrontSide })); routeBadge.position.set(.86, 2.14, end * (CAR_HALF_LENGTH - .27)); routeBadge.rotation.y = end < 0 ? 0 : Math.PI; shell.add(routeBadge);
     }
     this.tunnelTexture = exteriorTexture("tunnel"); this.tunnelTexture.wrapS = THREE.RepeatWrapping; this.tunnelTexture.repeat.set(1.25, 1); this.ownedTextures.push(this.tunnelTexture);
     for (const stop of [...this.journey.intermediateStops, this.journey.destination]) {
@@ -388,7 +436,7 @@ export class TrainInteriorWorld {
           const leafGasket = new THREE.Mesh(new RoundedBoxGeometry(.035, 2.23, .045, 2, .012), dark); leafGasket.position.set(-side * .052, 0, -half * .43); leaf.add(leafGasket);
           const windowGasket = new THREE.Mesh(new RoundedBoxGeometry(.034, .79, .58, 3, .04), dark); windowGasket.position.set(-side * .053, .34, 0); leaf.add(windowGasket);
           const window = new THREE.Mesh(new RoundedBoxGeometry(.025, .67, .47, 4, .035), glass); window.position.set(-side * .074, .34, 0); leaf.add(window);
-          const notice = new THREE.Mesh(new THREE.PlaneGeometry(.28, .18), new THREE.MeshBasicMaterial({ map: doorNoticeTexture, toneMapped: false, side: THREE.DoubleSide })); notice.position.set(-side * .09, -.53, 0); notice.rotation.y = side * Math.PI / 2; leaf.add(notice);
+          const notice = new THREE.Mesh(new THREE.PlaneGeometry(.28, .18), new THREE.MeshBasicMaterial({ map: doorNoticeTexture, toneMapped: false, side: THREE.FrontSide })); notice.position.set(-side * .09, -.53, 0); notice.rotation.y = -side * Math.PI / 2; leaf.add(notice);
         }
         const marker = new THREE.Mesh(new RoundedBoxGeometry(.035, 2.58, 2.13, 4, .04), new THREE.MeshBasicMaterial({ color: "#c7ff77", transparent: true, opacity: 0, toneMapped: false })); marker.position.set(side * (CAR_HALF_WIDTH - .105), 1.3, z); marker.name = "destination-door-marker"; shell.add(marker);
         const warningLights: THREE.Mesh[] = [];
@@ -422,7 +470,7 @@ export class TrainInteriorWorld {
     const serviceTextures = serviceKinds.map(kind => servicePanelTexture(kind, this.journey.route)); this.ownedTextures.push(...serviceTextures);
     serviceKinds.forEach((kind, index) => {
       const side = index === 1 ? 1 : -1, z = [-7.15, 7.35, 7.65][index];
-      const sign = new THREE.Mesh(new THREE.PlaneGeometry(.64, .42), new THREE.MeshBasicMaterial({ map: serviceTextures[index], toneMapped: false, side: THREE.DoubleSide })); sign.position.set(side * (CAR_HALF_WIDTH - .135), 1.68, z); sign.rotation.y = side * Math.PI / 2; sign.name = `${kind}-service-sign`; shell.add(sign);
+      const sign = new THREE.Mesh(new THREE.PlaneGeometry(.64, .42), new THREE.MeshBasicMaterial({ map: serviceTextures[index], toneMapped: false, side: THREE.FrontSide })); sign.position.set(side * (CAR_HALF_WIDTH - .135), 1.68, z); sign.rotation.y = -side * Math.PI / 2; sign.name = `${kind}-service-sign`; shell.add(sign);
     });
     const intercomCase = new THREE.Mesh(new RoundedBoxGeometry(.08, .48, .3, 4, .035), brushedSteel); intercomCase.position.set(-(CAR_HALF_WIDTH - .12), 1.1, 8.05); shell.add(intercomCase);
     const callButton = new THREE.Mesh(new THREE.CylinderGeometry(.055, .055, .018, 16), new THREE.MeshStandardMaterial({ color: "#e4bd37", metalness: .2, roughness: .42 })); callButton.rotation.z = Math.PI / 2; callButton.position.set(-(CAR_HALF_WIDTH - .065), 1.02, 8.05); shell.add(callButton);
@@ -432,8 +480,8 @@ export class TrainInteriorWorld {
     const adPositions = [-7.55, -3.72, 3.72, 7.55];
     for (const side of [-1, 1]) for (let positionIndex = 0; positionIndex < adPositions.length; positionIndex++) {
       const slotIndex = this.adSlots.length, adFrame = new THREE.Mesh(new RoundedBoxGeometry(.07, .65, 1.55, 3, .025), dark); adFrame.position.set(side * (CAR_HALF_WIDTH - .075), 2.24, adPositions[positionIndex]); shell.add(adFrame);
-      const material = new THREE.MeshBasicMaterial({ map: adTextures[slotIndex % adTextures.length], side: THREE.DoubleSide, toneMapped: false });
-      const ad = new THREE.Mesh(new THREE.PlaneGeometry(1.43, .54), material); ad.position.set(side * (CAR_HALF_WIDTH - .125), 2.24, adPositions[positionIndex]); ad.rotation.y = side * Math.PI / 2; ad.name = `train-interior-ad-slot-${slotIndex}`; ad.userData.adSlot = slotIndex; shell.add(ad); this.adSlots.push(ad);
+      const material = new THREE.MeshBasicMaterial({ map: adTextures[slotIndex % adTextures.length], side: THREE.FrontSide, toneMapped: false });
+      const ad = new THREE.Mesh(new THREE.PlaneGeometry(1.43, .54), material); ad.position.set(side * (CAR_HALF_WIDTH - .125), 2.24, adPositions[positionIndex]); ad.rotation.y = -side * Math.PI / 2; ad.name = `train-interior-ad-slot-${slotIndex}`; ad.userData.adSlot = slotIndex; shell.add(ad); this.adSlots.push(ad);
     }
     this.loadGeneratedAdvertisements();
     const fill = new THREE.HemisphereLight("#eff5e8", "#26302e", .82); this.root.add(fill);
@@ -449,7 +497,7 @@ export class TrainInteriorWorld {
       { pose: "seated", rotation: Math.PI / 2, x: 1.02, z: -7.12 }, { pose: "standing", rotation: Math.PI + .15, x: -.42, z: -7.75 },
     ];
     for (let index = 0; index < count; index++) {
-      const placement = placements[index], passenger = createPassenger(index, this.quality, placement.pose); passenger.base.set(placement.x, 0, placement.z); passenger.group.position.copy(passenger.base); passenger.group.rotation.y = placement.rotation; this.passengers.push(passenger); this.root.add(passenger.group);
+      const placement = placements[index], passenger = createPassenger(index, this.quality, placement.pose, this.surfaceMaps); passenger.base.set(placement.x, 0, placement.z); passenger.group.position.copy(passenger.base); passenger.group.rotation.y = placement.rotation; this.passengers.push(passenger); this.root.add(passenger.group);
     }
   }
 

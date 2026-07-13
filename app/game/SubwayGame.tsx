@@ -110,7 +110,11 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
     if (qaInput === "lexington" || qaInput === "trainride5") checkpoint("LEXINGTON", "QA checkpoint · Lexington Av / 59 St");
     else if (["westfarms", "finale"].includes(qaInput ?? "")) checkpoint("WEST_FARMS", "QA checkpoint · West Farms Sq–E Tremont Av");
     if (["subway", "subwayplatform", "lexington"].includes(qaInput ?? "") && stationWorld) { stationClock = 6; stationWorld.update(stationClock); }
-    if (["subwayplatform", "lexington"].includes(qaInput ?? "")) { player.set(-5, 1.48, -5.2); yaw = -Math.PI / 2; }
+    if (["subwayplatform", "lexington"].includes(qaInput ?? "")) {
+      // Stand opposite the center doorway so visual QA captures the open,
+      // illuminated vestibule instead of the blank side of an adjacent car.
+      player.set(-3.72, 1.48, -10); yaw = -Math.PI / 2;
+    }
     if (qaInput === "trainride" && stationWorld) startInterior({ correct: true, direction: "QUEENS-BOUND", route: "N", station: "FIFTH_AV" });
     if (qaInput === "trainride5" && stationWorld) startInterior({ correct: true, direction: "UPTOWN / BRONX", route: "5", station: "LEXINGTON" });
     if (qaInput === "finale" && stationWorld) { player.copy(stationWorld.waypoint); actionRequested = true; }
