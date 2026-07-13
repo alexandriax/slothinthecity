@@ -60,7 +60,7 @@ test("mobile entry cannot be stranded by unavailable Pointer Lock", async () => 
   assert.match(game, /data-touch-capable/);
 });
 
-test("foraging opens the Bow Bridge to zoo to subway campaign with adaptive wayfinding", async () => {
+test("foraging opens the Bow Bridge, island ticket, zoo, and subway campaign with adaptive wayfinding", async () => {
   const [game, mobileHud, wayfinder, world, landmarks] = await Promise.all([
     readFile(new URL("../app/game/GameClient.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/game/mobile/MobileHud.tsx", import.meta.url), "utf8"),
@@ -69,12 +69,15 @@ test("foraging opens the Bow Bridge to zoo to subway campaign with adaptive wayf
     readFile(new URL("../app/game/world/CampaignLandmarks.ts", import.meta.url), "utf8"),
   ]);
 
-  assert.match(game, /type ParkStage = "FORAGE" \| "BOW_BRIDGE" \| "ZOO" \| "SUBWAY_ENTRANCE"/);
+  assert.match(game, /type ParkStage = "FORAGE" \| "BOW_BRIDGE" \| "LAKE_TICKET" \| "ZOO" \| "SUBWAY_ENTRANCE"/);
   assert.match(game, /collected\.current\.size >= 5\) parkStage = "BOW_BRIDGE"/);
-  assert.match(game, /parkStage === "BOW_BRIDGE"[\s\S]{0,800}parkStage = "ZOO"/);
+  assert.match(game, /parkStage === "BOW_BRIDGE"[\s\S]{0,800}parkStage = "LAKE_TICKET"/);
+  assert.match(game, /actionRequested && ticketNearby[\s\S]{0,300}parkStage = "ZOO"/);
+  assert.match(game, /RECOVER CENTRAL PARK ZOO TICKET/);
+  assert.match(game, /data-ticket-collected/);
   assert.match(game, /Attendant: “There are no sloths here\.”/);
   assert.match(game, /parkStage = "SUBWAY_ENTRANCE"/);
-  assert.match(game, /onEnterSubway\(\)/);
+  assert.match(game, /subwayStepsReached[\s\S]{0,300}onEnterSubway\(\)/);
   assert.match(game, /<GoalWayfinder/);
   assert.match(game, /data-goal-distance/);
   assert.match(game, /active=\{hud\.targetActive\}/);
@@ -83,14 +86,15 @@ test("foraging opens the Bow Bridge to zoo to subway campaign with adaptive wayf
   assert.match(mobileHud, /objectiveValue/);
   assert.match(wayfinder, /aria-label=\{`\$\{label\}, \$\{meters\} meters away`\}/);
   assert.match(world, /export const GOAL = BOW_BRIDGE_TARGET/);
-  assert.match(landmarks, /bow-bridge-and-lake-landing/);
-  assert.match(landmarks, /central-park-zoo-entrance/);
-  assert.match(landmarks, /5-av-59-st-subway-entrance/);
+  assert.match(landmarks, /bow-bridge-northwest-inlet-span/);
+  assert.match(landmarks, /central-park-zoo-exterior-campus/);
+  assert.match(landmarks, /5-av-59-st-full-stair-subway-entrance/);
+  assert.match(landmarks, /subway-first-descending-step-trigger/);
   assert.doesNotMatch(game, /qaInput === "gate"|gatecomplete|Follow the marker to sanctuary/);
   assert.doesNotMatch(wayfinder, /Sanctuary gate/);
 });
 
-test("The expanded Lake supplies two driveable rowboats that are faster than swimming", async () => {
+test("The Lake is at least 15x larger, has a dry ticket island, and supplies faster rowboats", async () => {
   const [game, rowboat, world] = await Promise.all([
     readFile(new URL("../app/game/GameClient.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/game/world/ParkRowboat.ts", import.meta.url), "utf8"),
@@ -98,9 +102,16 @@ test("The expanded Lake supplies two driveable rowboats that are faster than swi
   ]);
 
   assert.match(game, /world\.rowboatSpawns\.map\(spawn => createParkRowboat/);
-  assert.match(game, /const lakeRadius = world\.lakeRadius/);
-  assert.match(game, /world\.boatRadius/);
-  assert.match(world, /LAKE_SWIM_RADIUS = 33\.2/);
+  assert.match(game, /world\.containsLakePoint\(x, z\)/);
+  assert.match(game, /world\.containsLakePoint\(x, z, 2\.4\)/);
+  assert.match(game, /ROWBOAT_ROOT_WATERLINE_OFFSET/);
+  assert.match(world, /THE_LAKE_RADII = new THREE\.Vector2\(150, 112\)/);
+  assert.match(world, /THE_LAKE_AREA_SCALE = THE_LAKE_RADII\.x \* THE_LAKE_RADII\.y \/ \(33\.2 \*\* 2\)/);
+  assert.match(world, /containsLakeWater\(x: number, z: number, shoreInset = 0\)/);
+  assert.match(world, /central-zoo-ticket-island/);
+  assert.match(world, /ticket-island-stone-and-timber-landing/);
+  assert.match(world, /southeast-lake-zoo-route-pier/);
+  assert.match(world, /imagegen-zoo-admission-ticket/);
   assert.match(world, /name: "Bow Bridge rowboat 7"/);
   assert.match(world, /name: "Bow Bridge rowboat 12"/);
   assert.match(world, /the-lake-playable-water/);
@@ -111,9 +122,12 @@ test("The expanded Lake supplies two driveable rowboats that are faster than swi
   assert.match(game, /rowboats\.forEach\(\(?boat\)? => boat\.dispose\(\)\)/);
   assert.match(rowboat, /interactionKind = "park-rowboat"/);
   assert.match(rowboat, /interactionLabel = "Row across The Lake"/);
+  assert.match(rowboat, /watertight-dry-cockpit-sole/);
+  assert.match(rowboat, /slatted-floorboard/);
   assert.match(rowboat, /readonly oars: \[ParkRowboatOar, ParkRowboatOar\]/);
   const speed = Number(rowboat.match(/readonly maxForwardSpeed = ([\d.]+)/)?.[1]);
   assert.ok(speed > 2.65, `expected rowboat speed to exceed walking speed, received ${speed}`);
+  await access(new URL("../public/game/props/central-park-zoo-island-ticket.webp", import.meta.url));
 });
 
 test("field-services cart has the requested plate and wheel-clear side placards", async () => {
@@ -124,6 +138,9 @@ test("field-services cart has the requested plate and wheel-clear side placards"
   assert.match(cart, /right-service-sign-backing/);
   assert.match(cart, /left-central-park-field-services-marking/);
   assert.match(cart, /right-central-park-field-services-marking/);
+  assert.match(cart, /back\.rotation\.set\(0, 0, 0\)/);
+  assert.match(cart, /toolGroup\.scale\.y = \.66/);
+  assert.match(cart, /tool heads below the canopy/);
 
   const labelSize = cart.match(/const label = new THREE\.Mesh\(new THREE\.PlaneGeometry\(([\d.]+), ([\d.]+)\), materials\.label\)/);
   const labelPosition = cart.match(/label\.position\.set\(side \* ([\d.]+), ([\d.]+), ([\d.]+)\)/);
@@ -132,6 +149,30 @@ test("field-services cart has the requested plate and wheel-clear side placards"
   const labelBottom = Number(labelPosition[2]) - Number(labelSize[2]) / 2;
   const fenderTop = Number(fender[3]) + Number(fender[1]) + Number(fender[2]);
   assert.ok(labelBottom > fenderTop, `service label bottom ${labelBottom} must clear fender top ${fenderTop}`);
+});
+
+test("park and finale landmarks use complete campuses and textured articulated characters", async () => {
+  const [landmarks, finale, characters] = await Promise.all([
+    readFile(new URL("../app/game/world/CampaignLandmarks.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/world/BronxZooWorld.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/world/PremiumCharacter.ts", import.meta.url), "utf8"),
+  ]);
+
+  for (const feature of [
+    "central-park-zoo-exterior-campus",
+    "central-park-zoo-public-forecourt",
+    "central-park-zoo-sea-lion-pool",
+    "central-park-zoo-ticket-kiosk",
+    "5-av-59-st-full-stair-subway-entrance",
+  ]) assert.match(landmarks, new RegExp(feature));
+  assert.match(landmarks, /for \(let step = 0; step < 20; step\+\+\)/);
+  assert.match(landmarks, /SUBWAY_ENTRY_TRIGGER/);
+  assert.match(characters, /proceduralSurface\("cloth"/);
+  assert.match(characters, /proceduralSurface\("skin"/);
+  assert.match(characters, /proceduralSurface\("fur"/);
+  assert.match(characters, /new THREE\.CapsuleGeometry/);
+  assert.match(characters, /createPremiumSlothFriend/);
+  for (const feature of ["west-farms-station-exit-approach", "bronx-zoo-arrival-fountain", "bronx-zoo-ticket-and-member-pavilion", "waiting-sloth-friend"]) assert.match(finale + characters, new RegExp(feature));
 });
 
 test("subway service cycles every 30 seconds and presents route-correct trains", async () => {
@@ -149,6 +190,13 @@ test("subway service cycles every 30 seconds and presents route-correct trains",
   assert.match(world, /configureTrain\(this\.wrongTrain,[\s\S]{0,160}"DOWNTOWN[^"]*"[\s\S]{0,80}false/);
   assert.match(world, /sloth-themed-subway-ad/);
   assert.match(world, /subway-passenger/);
+  assert.match(world, /left-stair-route-choice/);
+  assert.match(world, /right-stair-route-choice/);
+  assert.match(world, /unobstructed-sloth-themed-subway-ad/);
+  assert.match(world, /visible-open-car-interior/);
+  assert.match(world, /lit-passenger-cabin/);
+  assert.match(world, /bronx-zoo-featured-mosaic/);
+  assert.match(world, /daylight-bronx-zoo-wayfinding/);
   assert.match(world, /addStairs\(root, -5\.1[\s\S]{0,80}addStairs\(root, 5\.1/);
   await Promise.all([
     access(new URL("../public/game/ads/slow-superpower.webp", import.meta.url)),
@@ -157,6 +205,7 @@ test("subway service cycles every 30 seconds and presents route-correct trains",
     access(new URL("../public/game/ads/slow-fashion.webp", import.meta.url)),
     access(new URL("../public/game/ads/bronx-bound.webp", import.meta.url)),
     access(new URL("../public/game/ads/ramble-after-dark.webp", import.meta.url)),
+    access(new URL("../public/game/subway/bronx-zoo-mosaic.webp", import.meta.url)),
   ]);
 });
 
