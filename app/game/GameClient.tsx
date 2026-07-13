@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
 import * as THREE from "three";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
@@ -12,6 +12,7 @@ import { MobileHud } from "./mobile/MobileHud";
 import { TouchControls } from "./mobile/TouchControls";
 import { createSlothRig } from "./player/SlothRig";
 import { loadGameTextures } from "./rendering/textures";
+import { AudioQualitySettings, createAdaptiveQualityManager, createPremiumAudioDirector, type AdaptiveQualityManager, type PremiumAudioDirector } from "./systems";
 import { SubwayGame } from "./SubwayGame";
 import { BOW_BRIDGE_CENTER, BOW_BRIDGE_TARGET, createCampaignLandmarks, SUBWAY_TARGET, ZOO_TARGET } from "./world/CampaignLandmarks";
 import { createParkRowboat, type ParkRowboat } from "./world/ParkRowboat";
@@ -25,32 +26,6 @@ type MotionState = "ON GROUND" | "SWIMMING" | "DRIVING" | "ROWING" | "CLIMBING" 
 type HawkPhase = "PATROL" | "WATCHING" | "DIVING" | "SNATCHED" | "RECOVERING";
 type HudState = { energy: number; alert: number; buds: number; objective: string; objectiveShort: string; prompt: string; promptKey: string; heading: string; motion: MotionState; hint: string; threat: string; hawkPhase: HawkPhase; swimming: boolean; driving: boolean; speed: number; x: number; y: number; z: number; branchId: number; branchProgress: number; arboreal: boolean; goalDistance: number; goalBearing: number; parkStage: ParkStage; targetActive: boolean; vehicle: VehicleKind; waypointLabel: string };
 type HawkEvent = { kind: "DIVE" | "SNATCH"; started: number; duration: number; from: THREE.Vector3; target: THREE.Vector3; rescue: THREE.Vector3; willSnatch: boolean };
-
-function startAudio() {
-  const Audio = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-  const context = new Audio(), master = context.createGain(); master.gain.value = .13; master.connect(context.destination);
-  const hum = context.createOscillator(), filter = context.createBiquadFilter(), gain = context.createGain();
-  hum.type = "sine"; hum.frequency.value = 58; filter.type = "lowpass"; filter.frequency.value = 180; gain.gain.value = .045;
-  hum.connect(filter).connect(gain).connect(master); hum.start();
-  const interval = window.setInterval(() => {
-    const bird = context.createOscillator(), birdGain = context.createGain(); bird.type = "sine"; bird.frequency.value = 1100 + Math.random() * 1700;
-    birdGain.gain.setValueAtTime(0, context.currentTime); birdGain.gain.linearRampToValueAtTime(.035, context.currentTime + .02); birdGain.gain.exponentialRampToValueAtTime(.001, context.currentTime + .12);
-    bird.connect(birdGain).connect(master); bird.start(); bird.stop(context.currentTime + .14);
-  }, 2800);
-  return { context, master, interval };
-}
-
-function qualityTier() {
-  if (new URLSearchParams(location.search).has("qa")) return .66;
-  if (matchMedia("(prefers-reduced-motion: reduce)").matches || innerWidth < 760) return .66;
-  return (navigator.hardwareConcurrency ?? 4) >= 8 ? 1 : .8;
-}
-
-function renderPixelRatio(tier: number) {
-  const pixelBudget = tier > .85 ? 2_250_000 : 1_250_000;
-  const budgetRatio = Math.sqrt(pixelBudget / Math.max(1, innerWidth * innerHeight));
-  return Math.max(.72, Math.min(devicePixelRatio, tier > .85 ? 1.5 : 1.1, budgetRatio));
-}
 
 function hasTouchInput() {
   return typeof window !== "undefined" && ((navigator.maxTouchPoints ?? 0) > 0 || "ontouchstart" in window || matchMedia("(pointer: coarse)").matches);
@@ -66,10 +41,11 @@ function exitPointerLockSafely() {
   try { Promise.resolve(document.exitPointerLock()).catch(() => undefined); } catch { /* Ignore unsupported or denied exits. */ }
 }
 
-function ParkLevel({ onEnterSubway }: { onEnterSubway: () => void }) {
+function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirector; onEnterSubway: () => void; quality: AdaptiveQualityManager }) {
   const mount = useRef<HTMLDivElement>(null), phaseRef = useRef<Phase>("intro"), collected = useRef(new Set<number>()), scentRef = useRef(false), toastTimerRef = useRef<number | null>(null);
   const [phase, setPhaseState] = useState<Phase>("intro"), [ready, setReady] = useState(false), [exiting, setExiting] = useState(false);
-  const [muted, setMuted] = useState(false), [scent, setScent] = useState(false), [toast, setToast] = useState("");
+  const [scent, setScent] = useState(false), [toast, setToast] = useState("");
+  const audioState = useSyncExternalStore(audio.subscribe, audio.getSnapshot, audio.getSnapshot);
   const [mouseCaptured, setMouseCaptured] = useState(false);
   const [touchCapable, setTouchCapable] = useState(false);
   const [pointerLockAvailable] = useState(() => typeof window !== "undefined" && !hasTouchInput() && typeof HTMLCanvasElement.prototype.requestPointerLock === "function" && matchMedia("(pointer: fine)").matches && !new URLSearchParams(location.search).has("qa"));
@@ -83,12 +59,13 @@ function ParkLevel({ onEnterSubway }: { onEnterSubway: () => void }) {
 
   useEffect(() => {
     if (!mount.current) return;
-    const host = mount.current, tier = qualityTier(); let disposed = false;
+    const host = mount.current, initialBudget = quality.getRenderBudget();
+    const tier = THREE.MathUtils.clamp(initialBudget.foliageDensity, .58, 1); let disposed = false;
     const scene = new THREE.Scene(); scene.background = new THREE.Color("#8e9a89"); scene.fog = new THREE.FogExp2("#999e89", .0048);
     const camera = new THREE.PerspectiveCamera(64, innerWidth / innerHeight, .08, 500); camera.rotation.order = "YXZ";
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", alpha: false });
-    renderer.setPixelRatio(renderPixelRatio(tier)); renderer.setSize(innerWidth, innerHeight);
-    renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = .96; renderer.outputColorSpace = THREE.SRGBColorSpace;
+    const renderer = new THREE.WebGLRenderer({ antialias: initialBudget.antialias, powerPreference: "high-performance", alpha: false });
+    renderer.setPixelRatio(initialBudget.pixelRatio); renderer.setSize(innerWidth, innerHeight);
+    renderer.shadowMap.enabled = initialBudget.shadows; renderer.shadowMap.type = THREE.PCFShadowMap; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = .96; renderer.outputColorSpace = THREE.SRGBColorSpace;
     host.appendChild(renderer.domElement);
 
     const textures = loadGameTextures(renderer, () => { if (!disposed) setReady(true); });
@@ -98,10 +75,7 @@ function ParkLevel({ onEnterSubway }: { onEnterSubway: () => void }) {
     // W always begins as walking while the driver's door remains within reach.
     const cartSpawn = new THREE.Vector3(-39.8, terrainY(-39.8, 51.1), 51.1);
     const cart = createParkUtilityCart(textures, { scene, position: cartSpawn, rotationY: -.35, quality: tier, name: "Central Park field-services cart" });
-    const rowboats = [
-      createParkRowboat(textures, { scene, position: new THREE.Vector3(25, world.lake.position.y - .16, -51), rotationY: -.62, quality: tier, name: "Bow Bridge rowboat 7", boatNumber: 7 }),
-      createParkRowboat(textures, { scene, position: new THREE.Vector3(30, world.lake.position.y - .16, -54), rotationY: -1.04, quality: tier, name: "Bow Bridge rowboat 12", boatNumber: 12 }),
-    ];
+    const rowboats = world.rowboatSpawns.map(spawn => createParkRowboat(textures, { scene, ...spawn, quality: tier }));
     const markerGeometry = new THREE.RingGeometry(.17, .25, 28);
     const actionMarkerMaterial = new THREE.MeshBasicMaterial({ color: "#d9ef8b", transparent: true, opacity: .92, side: THREE.DoubleSide, depthTest: false });
     const dropMarkerMaterial = new THREE.MeshBasicMaterial({ color: "#e6a85e", transparent: true, opacity: .78, side: THREE.DoubleSide, depthTest: false });
@@ -109,11 +83,11 @@ function ParkLevel({ onEnterSubway }: { onEnterSubway: () => void }) {
     actionMarker.visible = dropMarker.visible = false; actionMarker.renderOrder = dropMarker.renderOrder = 100; scene.add(actionMarker, dropMarker);
     const hemisphere = new THREE.HemisphereLight("#dce3d2", "#3b3329", .62); scene.add(hemisphere);
     const sun = new THREE.DirectionalLight("#ffd49a", 2.65); sun.position.set(-35, 68, 25); sun.castShadow = true;
-    sun.shadow.mapSize.set(tier > .85 ? 2048 : 1024, tier > .85 ? 2048 : 1024); sun.shadow.camera.left = sun.shadow.camera.bottom = -42; sun.shadow.camera.right = sun.shadow.camera.top = 42;
+    sun.shadow.mapSize.set(initialBudget.shadowMapSize, initialBudget.shadowMapSize); sun.shadow.camera.left = sun.shadow.camera.bottom = -42; sun.shadow.camera.right = sun.shadow.camera.top = 42;
     sun.shadow.camera.near = 1; sun.shadow.camera.far = 150; sun.shadow.normalBias = .035; sun.shadow.bias = -.00008; scene.add(sun, sun.target);
 
     let composer: EffectComposer | null = null;
-    if (tier > .85 && innerWidth * innerHeight < 1_750_000) {
+    if (initialBudget.postProcessing && innerWidth * innerHeight < 1_750_000) {
       composer = new EffectComposer(renderer); composer.addPass(new RenderPass(scene, camera));
       const gtao = new GTAOPass(scene, camera, innerWidth, innerHeight); gtao.blendIntensity = .58; composer.addPass(gtao); composer.addPass(new OutputPass());
     }
@@ -176,7 +150,7 @@ function ParkLevel({ onEnterSubway }: { onEnterSubway: () => void }) {
       if (event.code === "KeyE" && !event.repeat) actionRequested = true;
       if ((event.code === "ControlLeft" || event.code === "ControlRight" || event.code === "Space" || event.code === "KeyQ") && !event.repeat) { event.preventDefault(); dropRequested = true; }
       if (event.code === "KeyC") { scentRef.current = !scentRef.current; setScent(scentRef.current); }
-      if (event.code === "KeyM") setMuted(value => !value);
+      if (event.code === "KeyM") audio.toggleMuted();
     };
     const keyUp = (event: KeyboardEvent) => keys.delete(event.code);
     const releaseInput = () => { if (qaInput) return; keys.clear(); velocity.set(0, 0, 0); };
@@ -185,10 +159,14 @@ function ParkLevel({ onEnterSubway }: { onEnterSubway: () => void }) {
     document.addEventListener("mousemove", mouse); document.addEventListener("keydown", keyDown); document.addEventListener("keyup", keyUp);
     document.addEventListener("sloth-look", touchLook);
     document.addEventListener("pointerlockchange", pointerLockChanged); window.addEventListener("blur", releaseInput);
-    const resize = () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setPixelRatio(renderPixelRatio(tier)); renderer.setSize(innerWidth, innerHeight); composer?.setSize(innerWidth, innerHeight); layoutSloth(); };
+    const applyRenderBudget = () => {
+      const budget = quality.getRenderBudget(); renderer.setPixelRatio(budget.pixelRatio); renderer.shadowMap.enabled = budget.shadows; renderer.shadowMap.type = THREE.PCFShadowMap;
+    };
+    const unsubscribeQuality = quality.subscribe(applyRenderBudget);
+    const resize = () => { quality.refreshDeviceProfile(); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); applyRenderBudget(); renderer.setSize(innerWidth, innerHeight); composer?.setSize(innerWidth, innerHeight); layoutSloth(); };
     addEventListener("resize", resize);
 
-    let raf = 0;
+    let raf = 0, lastFootstepAt = 0;
     function nearestTree(position: THREE.Vector3, maxSurfaceDistance = Infinity, excluded?: ClimbableTree) {
       let result: ClimbableTree | null = null, best = maxSurfaceDistance;
       for (const tree of world.trees) {
@@ -256,7 +234,7 @@ function ParkLevel({ onEnterSubway }: { onEnterSubway: () => void }) {
       }
       return terrainY(x, z) + 1.48;
     }
-    const lakeRadius = 24.72, waterSurfaceY = world.lake.position.y;
+    const lakeRadius = world.lakeRadius, waterSurfaceY = world.lake.position.y;
     function isSwimmableWater(x: number, z: number) {
       // The mesh is a circle, but much of its outer edge sits beneath the
       // sculpted bank. Requiring terrain below the rendered water plane makes
@@ -264,7 +242,7 @@ function ParkLevel({ onEnterSubway }: { onEnterSubway: () => void }) {
       return Math.hypot(x - world.lake.position.x, z - world.lake.position.z) <= lakeRadius && terrainY(x, z) <= waterSurfaceY + .08;
     }
     function isBoatWater(x: number, z: number) {
-      return isSwimmableWater(x, z) && Math.hypot(x - world.lake.position.x, z - world.lake.position.z) <= 23.8;
+      return isSwimmableWater(x, z) && Math.hypot(x - world.lake.position.x, z - world.lake.position.z) <= world.boatRadius;
     }
     const cartHullSamples = [[-.42, -1.42], [.42, -1.42], [-.42, 0], [.42, 0], [-.42, 1.42], [.42, 1.42]] as const;
     const cartPlayerHalfX = Math.max(Math.abs(cart.collisionBounds.min.x), Math.abs(cart.collisionBounds.max.x)) + .48;
@@ -366,7 +344,7 @@ function ParkLevel({ onEnterSubway }: { onEnterSubway: () => void }) {
       if (clampedX !== player.x || clampedZ !== player.z) { blockedBy = moving ? "TREE" : blockedBy; player.x = clampedX; player.z = clampedZ; velocity.multiplyScalar(.35); }
     }
     function frame(timestamp?: number) {
-      raf = requestAnimationFrame(frame); timer.update(timestamp); const delta = Math.min(timer.getDelta(), .05);
+      raf = requestAnimationFrame(frame); if (timestamp !== undefined) quality.reportFrame(timestamp); timer.update(timestamp); const delta = Math.min(timer.getDelta(), .05);
       if (phaseRef.current === "playing") {
         gameTime += delta;
         if (!qaPrepared && (["autoclimb", "autobranch", "autotransfer", "autodrop", "autoflow", "cart", "treecollision", "watercollision", "swim", "energy", "rest", "hawk", "bridgewalk", "bowbridge", "rowboat", "zoo", "subwayentrance"].includes(qaInput ?? ""))) {
@@ -436,7 +414,7 @@ function ParkLevel({ onEnterSubway }: { onEnterSubway: () => void }) {
         const subwayNearby = parkStage === "SUBWAY_ENTRANCE" && !drivingCart && !activeBoat && Math.hypot(player.x - SUBWAY_TARGET.x, player.z - SUBWAY_TARGET.z) < 5;
         // Keep the interaction shown by the HUD and the interaction that fires
         // on E identical when a forage pickup sits beside the parked cart.
-        if (actionRequested && hawkEvent?.kind !== "SNATCH" && !drivingCart && !activeBoat && collectNearby()) actionRequested = false;
+        if (actionRequested && hawkEvent?.kind !== "SNATCH" && !drivingCart && !activeBoat && collectNearby()) { if (collected.current.size >= 5) audio.playQuestComplete(); else audio.playUiConfirm(); actionRequested = false; }
         if (actionRequested && hawkEvent?.kind !== "SNATCH" && activeBoat) {
           activeBoat.stop(); activeBoat.getWorldEntryPosition(player); player.y = waterSurfaceY + .58; yaw = activeBoat.root.rotation.y; activeBoat = null; swimming = true; wasSwimming = true; vehicleLookYaw = 0; velocity.set(0, 0, 0); actionRequested = false;
           showToast("Back in the water — swim to shore or board either rowboat", 2400);
@@ -648,6 +626,9 @@ function ParkLevel({ onEnterSubway }: { onEnterSubway: () => void }) {
         else if (gameTime < recoveryUntil) alert = Math.max(8, alert - 5.5 * delta);
         else alert = THREE.MathUtils.clamp(alert + (exposed * 5 - (1 - exposed) * 7) * delta, 2, 100);
 
+        if (moving && !drivingCart && gameTime - lastFootstepAt > (activeBoat || swimming ? .74 : climbingTree || branchRoute || transfer ? .58 : .5)) {
+          lastFootstepAt = gameTime; audio.playFootstep(activeBoat || swimming ? "water" : climbingTree || branchRoute || transfer ? "wood" : "earth", Math.min(1, traversalSpeed / 2.65));
+        }
         sloth.animate(gameTime, traversalSpeed, Boolean(climbingTree || branchRoute || transfer)); cart.animate(gameTime); rowboats.forEach(boat => { if (boat !== activeBoat) boat.animate(gameTime); }); world.animate(gameTime, player, scentRef.current, collected.current);
 
         if (hawkEvent?.kind === "DIVE" && (drivingCart || activeBoat || swimming || (exposed < .3 && qaInput !== "hawk"))) {
@@ -753,11 +734,10 @@ function ParkLevel({ onEnterSubway }: { onEnterSubway: () => void }) {
     return () => {
       disposed = true; cancelAnimationFrame(raf); renderer.domElement.removeEventListener("pointerdown", pointer); renderer.domElement.removeEventListener("pointermove", pointerMove); renderer.domElement.removeEventListener("pointerup", pointerUp);
       document.removeEventListener("mousemove", mouse); document.removeEventListener("keydown", keyDown); document.removeEventListener("keyup", keyUp); document.removeEventListener("sloth-look", touchLook); document.removeEventListener("pointerlockchange", pointerLockChanged); window.removeEventListener("blur", releaseInput); removeEventListener("resize", resize);
-      cart.dispose(); rowboats.forEach(boat => boat.dispose()); campaign.dispose(); markerGeometry.dispose(); actionMarkerMaterial.dispose(); dropMarkerMaterial.dispose(); timer.dispose(); composer?.dispose(); renderer.dispose(); if (host.contains(renderer.domElement)) host.removeChild(renderer.domElement);
+      unsubscribeQuality(); cart.dispose(); rowboats.forEach(boat => boat.dispose()); campaign.dispose(); markerGeometry.dispose(); actionMarkerMaterial.dispose(); dropMarkerMaterial.dispose(); timer.dispose(); composer?.dispose(); renderer.dispose(); if (host.contains(renderer.domElement)) host.removeChild(renderer.domElement);
     };
-  }, [onEnterSubway, showToast]);
+  }, [audio, onEnterSubway, quality, showToast]);
 
-  const audioRef = useRef<ReturnType<typeof startAudio> | null>(null);
   const resetViewportScroll = useCallback(() => {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     const shell = mount.current?.closest<HTMLElement>(".game-shell");
@@ -776,18 +756,16 @@ function ParkLevel({ onEnterSubway }: { onEnterSubway: () => void }) {
     resetViewportScroll(); setExiting(true); setPhase("playing");
     showToast(hasTouchInput() ? "Left stick moves · drag right to look · tap action to interact" : "E drives the marked field cart · hold W to follow ring-marked canopy routes", 5200);
     requestAnimationFrame(resetViewportScroll); window.setTimeout(() => setExiting(false), 850);
-    try { if (!audioRef.current) audioRef.current = startAudio(); } catch { audioRef.current = null; }
+    audio.setScene("central-park", { transitionSeconds: .8, intensity: .62 }); void audio.unlock();
     safeLock();
-  }, [ready, exiting, resetViewportScroll, safeLock, showToast]);
+  }, [audio, ready, exiting, resetViewportScroll, safeLock, showToast]);
   const resume = () => { setPhase("playing"); safeLock(); };
-  useEffect(() => { if (audioRef.current) audioRef.current.master.gain.value = muted ? 0 : .13; }, [muted]);
   useEffect(() => {
     const frame = requestAnimationFrame(() => setTouchCapable(hasTouchInput()));
     return () => cancelAnimationFrame(frame);
   }, []);
   useEffect(() => () => {
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
-    if (audioRef.current) { clearInterval(audioRef.current.interval); audioRef.current.context.close().catch(() => undefined); audioRef.current = null; }
   }, []);
   return <main className="game-shell" data-game-state={phase} data-park-stage={hud.parkStage} data-vehicle={hud.vehicle ?? "none"} data-touch-capable={touchCapable ? "true" : "false"} data-motion={hud.motion} data-energy={hud.energy.toFixed(1)} data-threat={hud.alert.toFixed(1)} data-hawk-phase={hud.hawkPhase} data-swimming={hud.swimming ? "true" : "false"} data-driving={hud.driving ? "true" : "false"} data-speed={hud.speed.toFixed(2)} data-position={`${hud.x.toFixed(2)},${hud.z.toFixed(2)}`} data-altitude={hud.y.toFixed(2)} data-branch={hud.branchId} data-branch-progress={hud.branchProgress.toFixed(3)} data-buds={hud.buds} data-goal-distance={hud.goalDistance.toFixed(1)} data-goal-bearing={hud.goalBearing.toFixed(1)}>
     <div ref={mount} className="viewport" aria-label="3D game viewport" />
@@ -798,7 +776,7 @@ function ParkLevel({ onEnterSubway }: { onEnterSubway: () => void }) {
       <div className="status"><div className="eyebrow">Hawk status · {Math.round(hud.alert)}%</div><strong>{hud.threat}</strong></div>
       <div className="meters"><div className={`motion-state ${hud.motion === "PATH BLOCKED" || hud.motion === "HAWK DIVE" || hud.motion === "SNATCHED" ? "warning" : ""}`}><span>{hud.motion}</span><small>{hud.hint}</small></div><div className="meter-row"><span>Energy</span><div className="meter-track"><div className="meter-fill" style={{ width: `${hud.energy}%` }}/></div><span>{Math.round(hud.energy)}</span></div><div className="meter-row"><span>Threat</span><div className="meter-track"><div className="meter-fill alert" style={{ width: `${hud.alert}%` }}/></div><span>{Math.round(hud.alert)}</span></div></div>
       {hud.prompt && <div className="interaction">{hud.promptKey && <span className="key">{hud.promptKey}</span>}{hud.prompt}</div>}
-      <div className="controls-strip">{hud.vehicle === "rowboat" ? <><span>W / S Row</span><span>A / D Steer</span><span>Space Brake</span><span>E Swim</span></> : hud.vehicle === "cart" ? <><span>W / S Drive</span><span>A / D Steer</span><span>Space Brake</span><span>E Exit</span></> : <><span>W / S Move / Auto-flow</span><span>Shift Hold Grip</span><span>E Interact</span><span>Ctrl / Space Descend</span></>}<span>P Pause</span><span>C Scent</span><span>M {muted ? "Unmute" : "Mute"}</span></div>
+      <div className="controls-strip">{hud.vehicle === "rowboat" ? <><span>W / S Row</span><span>A / D Steer</span><span>Space Brake</span><span>E Swim</span></> : hud.vehicle === "cart" ? <><span>W / S Drive</span><span>A / D Steer</span><span>Space Brake</span><span>E Exit</span></> : <><span>W / S Move / Auto-flow</span><span>Shift Hold Grip</span><span>E Interact</span><span>Ctrl / Space Descend</span></>}<span>P Pause</span><span>C Scent</span><span>M {audioState.muted ? "Unmute" : "Mute"}</span></div>
     </div>}
     {phase !== "intro" && <MobileHud alert={hud.alert} buds={hud.buds} driving={hud.driving} energy={hud.energy} hawkPhase={hud.hawkPhase} motion={hud.motion} objectiveShort={hud.objectiveShort} objectiveValue={hud.parkStage === "FORAGE" ? `${hud.buds} / 5` : `${Math.round(hud.goalDistance)} M`} showMotion={!toast && hud.parkStage === "FORAGE"} speed={hud.speed} swimming={hud.swimming}/>}
     {phase === "playing" && <GoalWayfinder active={hud.targetActive} bearing={hud.goalBearing} distance={hud.goalDistance} label={hud.waypointLabel}/>}
@@ -815,19 +793,28 @@ function ParkLevel({ onEnterSubway }: { onEnterSubway: () => void }) {
         <small>Headphones recommended · Mouse, keyboard &amp; touch</small>
       </div>
     </section>}
-    {phase === "paused" && <section className="screen"><div className="pause-card"><div className="eyebrow">Field session paused · P</div><h2>Listen to the park.</h2><p>Your progress is safe. The hawk will keep circling, but the canopy is patient.</p><div className="actions"><button className="primary" onClick={resume}>Return to trail <b>→</b></button><button className="secondary" onClick={() => setMuted(value => !value)}>{muted ? "Enable sound" : "Mute sound"}</button></div></div></section>}
+    {phase === "paused" && <section className="screen"><div className="pause-card"><div className="eyebrow">Field session paused · P</div><h2>Listen to the park.</h2><p>Your progress is safe. The hawk will keep circling, but the canopy is patient.</p><div className="actions"><button className="primary" onClick={resume}>Return to trail <b>→</b></button><button className="secondary" onClick={() => audio.toggleMuted()}>{audioState.muted ? "Enable sound" : "Mute sound"}</button></div></div></section>}
     {phase === "playing" && <TouchControls arboreal={hud.arboreal} prompt={hud.prompt} vehicle={hud.vehicle} />}
   </main>;
 }
 
 export function GameClient() {
   const [level, setLevel] = useState<"park" | "subway">("park");
+  const [audio] = useState(() => createPremiumAudioDirector({ scene: "central-park" }));
+  const [quality] = useState(() => createAdaptiveQualityManager());
   const enterSubway = useCallback(() => setLevel("subway"), []);
   useEffect(() => {
+    const disarmAudio = audio.armForUserGesture();
+    return () => { disarmAudio(); void audio.dispose(); quality.dispose(); };
+  }, [audio, quality]);
+  useEffect(() => {
     if (!["localhost", "127.0.0.1"].includes(location.hostname)) return;
-    if (!["subway", "subwayplatform", "lexington", "westfarms", "finale"].includes(new URLSearchParams(location.search).get("qa") ?? "")) return;
+    if (!["subway", "subwayplatform", "trainride", "trainride5", "lexington", "westfarms", "finale"].includes(new URLSearchParams(location.search).get("qa") ?? "")) return;
     const frame = requestAnimationFrame(() => setLevel("subway"));
     return () => cancelAnimationFrame(frame);
   }, []);
-  return level === "subway" ? <SubwayGame/> : <ParkLevel onEnterSubway={enterSubway}/>;
+  return <>
+    {level === "subway" ? <SubwayGame audio={audio} quality={quality}/> : <ParkLevel audio={audio} onEnterSubway={enterSubway} quality={quality}/>}
+    <AudioQualitySettings audio={audio} quality={quality} className="experience-settings"/>
+  </>;
 }

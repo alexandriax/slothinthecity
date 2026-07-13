@@ -222,6 +222,9 @@ function buildOar(side: -1 | 1, materials: RowboatMaterials, quality: number): P
   shaft.position.x = side * .72;
   rig.add(shaft);
 
+  const grip = setShadow(new THREE.Mesh(new THREE.CylinderGeometry(.037, .039, .34, quality > .7 ? 12 : 8), materials.darkWood));
+  grip.name = "leather-wrapped-oar-grip"; grip.rotation.z = Math.PI / 2; grip.position.x = side * -.45; rig.add(grip);
+
   const bladeGeometry = makeOarBladeGeometry();
   if (side < 0) bladeGeometry.rotateY(Math.PI);
   const blade = setShadow(new THREE.Mesh(bladeGeometry, materials.varnishedWood));
@@ -287,6 +290,10 @@ function buildBoat(textures: GameTextures, quality: number, boatNumber: number) 
     const gunwale = setShadow(new THREE.Mesh(new THREE.TubeGeometry(sideCurve(side), quality > .7 ? 72 : 40, .044, quality > .7 ? 10 : 7, false), materials.darkWood));
     gunwale.name = side < 0 ? "port-gunwale" : "starboard-gunwale";
     body.add(gunwale);
+    for (const heightOffset of [-.13, -.255]) {
+      const strake = new THREE.Mesh(new THREE.TubeGeometry(sideCurve(side, .018, heightOffset), quality > .7 ? 56 : 30, .012, 5, false), materials.darkWood);
+      strake.name = "lapstrake-hull-seam"; strake.castShadow = false; body.add(strake);
+    }
     const waterline = new THREE.Mesh(new THREE.TubeGeometry(waterlineCurve(side), quality > .7 ? 54 : 30, .018, 6, false), materials.rope);
     waterline.name = "cream-waterline-inlay";
     waterline.castShadow = false;
@@ -346,11 +353,26 @@ function buildBoat(textures: GameTextures, quality: number, boatNumber: number) 
   bowEye.position.set(0, .57, -2.45);
   body.add(bowEye);
 
+  for (const z of [-1.92, 1.92]) {
+    const deck = setShadow(new THREE.Mesh(new RoundedBoxGeometry(.86, .07, .54, 4, .04), materials.varnishedWood)); deck.name = z < 0 ? "bow-breast-hook" : "stern-breast-hook"; deck.position.set(0, .56, z); body.add(deck);
+    for (const side of [-1, 1]) {
+      const cleat = new THREE.Group(); cleat.name = "bronze-mooring-cleat"; cleat.position.set(side * .23, .64, z);
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(.018, .024, .1, 8), materials.metal); base.position.y = .02; cleat.add(base);
+      const horn = new THREE.Mesh(new RoundedBoxGeometry(.26, .035, .045, 2, .012), materials.metal); horn.position.y = .075; cleat.add(horn); body.add(cleat);
+    }
+  }
+
   const portOar = buildOar(-1, materials, quality);
   const starboardOar = buildOar(1, materials, quality);
   body.add(portOar.rig, starboardOar.rig);
 
   return { body, oars: [portOar, starboardOar] as [ParkRowboatOar, ParkRowboatOar], ownedTextures: [labelTexture] };
+}
+
+function createWakeGeometry() {
+  const shape = new THREE.Shape();
+  shape.moveTo(.08, 0); shape.bezierCurveTo(.42, .65, .78, 1.85, 1.28, 4.5); shape.lineTo(.86, 4.2); shape.bezierCurveTo(.5, 2.15, .22, .72, 0, .08); shape.closePath();
+  const geometry = new THREE.ShapeGeometry(shape, 10); geometry.rotateX(Math.PI / 2); return geometry;
 }
 
 /**
@@ -376,6 +398,9 @@ export class ParkRowboat {
   readonly oars: [ParkRowboatOar, ParkRowboatOar];
 
   private readonly ownedTextures: THREE.Texture[];
+  private readonly wakeGroup = new THREE.Group();
+  private readonly wakeMaterial = new THREE.MeshBasicMaterial({ color: "#dce9dc", transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+  private readonly wakeMeshes: THREE.Mesh[] = [];
   private speed = 0;
   private steerAngle = 0;
   private rowEffort = 0;
@@ -396,6 +421,15 @@ export class ParkRowboat {
     this.root.add(this.floatPivot);
     this.floatPivot.name = "rowboat-floating-pivot";
     this.floatPivot.add(this.body);
+
+    this.wakeGroup.name = "rowboat-dynamic-v-wake"; this.wakeGroup.position.set(0, .185, 1.72);
+    const wakeGeometry = createWakeGeometry();
+    for (const side of [-1, 1]) {
+      const wake = new THREE.Mesh(wakeGeometry, this.wakeMaterial); wake.name = "rowboat-wake-ribbon"; wake.scale.x = side; wake.renderOrder = 3; this.wakeGroup.add(wake); this.wakeMeshes.push(wake);
+    }
+    const sternFroth = new THREE.Mesh(new THREE.RingGeometry(.18, .68, quality > .7 ? 28 : 16, 1, .35, Math.PI * 1.3), this.wakeMaterial);
+    sternFroth.name = "rowboat-stern-froth"; sternFroth.rotation.x = -Math.PI / 2; sternFroth.rotation.z = Math.PI * .35; sternFroth.position.z = .18; sternFroth.renderOrder = 3; this.wakeGroup.add(sternFroth); this.wakeMeshes.push(sternFroth);
+    this.root.add(this.wakeGroup);
 
     this.driverEntryPoint.name = "rowboat-entry-point";
     this.driverEntryPoint.position.set(-1.05, .05, .3);
@@ -517,6 +551,10 @@ export class ParkRowboat {
       oar.rig.rotation.z = side * (-.075 - Math.max(0, dip) * .11);
       oar.blade.rotation.x = (dip > 0 ? .05 : .48) * effort;
     }
+    this.wakeMaterial.opacity = wake * (.12 + effort * .19);
+    this.wakeGroup.scale.set(1 + wake * .28, 1, .48 + wake * .72);
+    this.wakeGroup.position.x = Math.sin(elapsedSeconds * 3.1) * .018 * wake;
+    this.wakeMeshes.forEach((mesh, index) => { mesh.position.y = Math.sin(elapsedSeconds * 2.4 + index * 1.7) * .006; });
     return this;
   }
 

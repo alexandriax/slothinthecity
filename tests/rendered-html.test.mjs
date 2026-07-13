@@ -28,10 +28,11 @@ test("server-renders the branded game shell", async () => {
 });
 
 test("removes the disposable starter and keeps the game browser-safe", async () => {
-  const [page, layout, game, packageJson] = await Promise.all([
+  const [page, layout, game, quality, packageJson] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/game/GameClient.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/systems/quality/AdaptiveQualityManager.ts", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
   assert.match(page, /GameClient/);
@@ -41,7 +42,7 @@ test("removes the disposable starter and keeps the game browser-safe", async () 
   assert.match(game, /requestPointerLock/);
   assert.match(game, /typeof canvas\.requestPointerLock !== "function"/);
   assert.match(game, /requestPointerLockSafely/);
-  assert.match(game, /prefers-reduced-motion/);
+  assert.match(quality, /prefers-reduced-motion/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
   await assert.rejects(access(new URL("../app/_sites-preview/SkeletonPreview.tsx", import.meta.url)));
 });
@@ -53,7 +54,8 @@ test("mobile entry cannot be stranded by unavailable Pointer Lock", async () => 
   assert.ok(beginStart >= 0 && beginEnd > beginStart);
   const begin = game.slice(beginStart, beginEnd);
   assert.ok(begin.indexOf('setPhase("playing")') < begin.indexOf("safeLock()"));
-  assert.match(begin, /try \{ if \(!audioRef\.current\)/);
+  assert.match(begin, /audio\.setScene\("central-park"/);
+  assert.match(begin, /void audio\.unlock\(\)/);
   assert.match(game, /phase === "intro" \|\| exiting/);
   assert.match(game, /data-touch-capable/);
 });
@@ -88,15 +90,21 @@ test("foraging opens the Bow Bridge to zoo to subway campaign with adaptive wayf
   assert.doesNotMatch(wayfinder, /Sanctuary gate/);
 });
 
-test("The Lake supplies two driveable rowboats that are faster than swimming", async () => {
-  const [game, rowboat] = await Promise.all([
+test("The expanded Lake supplies two driveable rowboats that are faster than swimming", async () => {
+  const [game, rowboat, world] = await Promise.all([
     readFile(new URL("../app/game/GameClient.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/game/world/ParkRowboat.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/world/RealisticWorld.ts", import.meta.url), "utf8"),
   ]);
 
-  assert.equal((game.match(/createParkRowboat\(textures/g) ?? []).length, 2);
-  assert.match(game, /name: "Bow Bridge rowboat 7", boatNumber: 7/);
-  assert.match(game, /name: "Bow Bridge rowboat 12", boatNumber: 12/);
+  assert.match(game, /world\.rowboatSpawns\.map\(spawn => createParkRowboat/);
+  assert.match(game, /const lakeRadius = world\.lakeRadius/);
+  assert.match(game, /world\.boatRadius/);
+  assert.match(world, /LAKE_SWIM_RADIUS = 33\.2/);
+  assert.match(world, /name: "Bow Bridge rowboat 7"/);
+  assert.match(world, /name: "Bow Bridge rowboat 12"/);
+  assert.match(world, /the-lake-playable-water/);
+  assert.match(world, /the-lake-irregular-bank/);
   assert.match(game, /activeBoat\.update\(/);
   assert.match(game, /isBoatWater\(/);
   assert.match(game, /Rowboat boarded/);
@@ -145,6 +153,10 @@ test("subway service cycles every 30 seconds and presents route-correct trains",
   await Promise.all([
     access(new URL("../public/game/ads/slow-superpower.webp", import.meta.url)),
     access(new URL("../public/game/ads/branch-out.webp", import.meta.url)),
+    access(new URL("../public/game/ads/canopy-commute.webp", import.meta.url)),
+    access(new URL("../public/game/ads/slow-fashion.webp", import.meta.url)),
+    access(new URL("../public/game/ads/bronx-bound.webp", import.meta.url)),
+    access(new URL("../public/game/ads/ramble-after-dark.webp", import.meta.url)),
   ]);
 });
 
@@ -157,11 +169,11 @@ test("wrong trains restore the current station checkpoint and correct trains adv
   const checkpoint = subway.slice(checkpointStart, finishRideStart);
   const finishRide = subway.slice(finishRideStart, frameStart);
 
-  assert.match(checkpoint, /world\.setStation\(station\)/);
-  assert.match(checkpoint, /player\.copy\(world\.spawn\)/);
-  assert.match(checkpoint, /stationClock = 0/);
+  assert.match(checkpoint, /stationWorld\.setStation\(station\)/);
+  assert.match(checkpoint, /player\.copy\(stationWorld\.spawn\)/);
+  assert.match(checkpoint, /stationClock = waitForNextTrain \? 18 : 0/);
   assert.match(checkpoint, /boarded = null/);
-  assert.match(finishRide, /if \(!boarded\.correct\) \{ checkpoint\(currentStation/);
+  assert.match(finishRide, /if \(!boarded\.correct\)[\s\S]{0,220}checkpoint\(currentStation/);
   assert.match(finishRide, /Wrong train — checkpoint restored/);
   assert.match(finishRide, /checkpoint\("LEXINGTON"/);
   assert.match(finishRide, /checkpoint\("WEST_FARMS"/);
@@ -177,9 +189,51 @@ test("West Farms north exit completes the mission at the Bronx Zoo", async () =>
   assert.match(world, /EXIT · BOSTON RD \/ E 178 ST/);
   assert.match(world, /BRONX ZOO · ASIA GATE/);
   assert.match(world, /this\.stationId === "WEST_FARMS"[\s\S]{0,140}this\.trainPhase = "AWAY"/);
-  assert.match(subway, /prompt = "EXIT TO BRONX ZOO"/);
+  assert.match(subway, /prompt = "WALK UP TO THE BRONX ZOO EXIT"/);
+  assert.match(subway, /distance < 1\.45\) enterBronxZoo\(\)/);
   assert.match(subway, /setTransitStage\("COMPLETE"\)/);
-  assert.match(subway, /bronxZooArrival\(scene, textures\)/);
+  assert.match(subway, /new BronxZooWorld\(scene, textures/);
+  assert.match(subway, /stationWorld\.dispose\(\); stationWorld = null/);
   assert.match(subway, /<div className="eyebrow">Bronx Zoo · Asia Gate<\/div>/);
   assert.match(subway, /<h2>Mission complete\.<\/h2>/);
+});
+
+test("train boarding streams a dedicated interior world with crowd and door gameplay", async () => {
+  const [subway, interior] = await Promise.all([
+    readFile(new URL("../app/game/SubwayGame.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/world/TrainInteriorWorld.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(subway, /stationWorld\.dispose\(\); stationWorld = null; interiorWorld = new TrainInteriorWorld/);
+  assert.match(subway, /stationWorld \?\?= createStationWorld\(\)/);
+  assert.match(subway, /new TrainInteriorWorld\(scene, textures/);
+  assert.match(subway, /data-loaded-world=\{stage === "RIDING" \? "train-interior"/);
+  assert.match(subway, /boardThroughOpenDoor\(option\)/);
+  assert.match(subway, /stationWorld\.boardingHint\(player\)/);
+  assert.match(subway, /WALK THROUGH OPEN/);
+  assert.match(subway, /The crowd carried you onto the platform/);
+  assert.match(interior, /PUSHED_OUT/);
+  assert.match(interior, /MISSED_STOP/);
+  assert.match(interior, /destination-door-marker/);
+  assert.match(interior, /Stay clear of the doors until/);
+  assert.match(interior, /Move to the illuminated/);
+  assert.match(interior, /"86 St"[\s\S]{0,120}"125 St"[\s\S]{0,120}"E 180 St"/);
+});
+
+test("premium audio and adaptive graphics cover every loaded world", async () => {
+  const [game, subway, audio, quality] = await Promise.all([
+    readFile(new URL("../app/game/GameClient.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/SubwayGame.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/systems/audio/PremiumAudioDirector.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/systems/quality/AdaptiveQualityManager.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(game, /AudioQualitySettings/);
+  assert.match(game, /createAdaptiveQualityManager/);
+  for (const scene of ["central-park", "subway-station", "moving-train", "west-farms", "finale"]) assert.match(audio, new RegExp(`"${scene}"`));
+  for (const effect of ["playTrainChime", "playTrainDoors", "playTrainArrival", "playCrowdBed", "playFootstep", "playQuestComplete", "playFailure"]) assert.match(subway + audio, new RegExp(effect));
+  assert.match(quality, /"auto" \| QualityLevel/);
+  assert.match(quality, /reportFrame\(timestamp/);
+  assert.match(quality, /pixelBudget/);
+  assert.match(quality, /targetFps/);
 });

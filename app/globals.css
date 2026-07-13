@@ -395,11 +395,40 @@ button { font: inherit; }
   font-weight:620;
   letter-spacing:.035em;
 }
-.subway-shell[data-station="RIDING"] .goal-wayfinder,
 .subway-shell[data-station="RIDING"] .crosshair { opacity:0; }
 .subway-shell[data-station="RIDING"] .world-grade {
   background:linear-gradient(90deg,transparent,rgba(var(--transit-accent-rgb),.06) 45% 55%,transparent),linear-gradient(180deg,rgba(255,255,255,.035),rgba(0,0,0,.32));
 }
+
+.experience-settings {
+  position:fixed !important;
+  top:max(100px,calc(env(safe-area-inset-top) + 84px));
+  right:max(18px,env(safe-area-inset-right));
+  z-index:160;
+}
+.experience-settings > button { backdrop-filter:blur(14px); }
+.world-transition {
+  position:absolute;
+  inset:0;
+  z-index:145;
+  display:grid;
+  place-content:center;
+  gap:8px;
+  pointer-events:none;
+  color:#f7f3e8;
+  background:radial-gradient(circle at 50% 45%,rgba(21,35,30,.78),rgba(3,6,6,.97) 72%);
+  animation:world-handoff .9s ease both;
+  text-align:center;
+}
+.world-transition span { color:rgba(217,239,139,.62); font-size:8px; font-weight:800; letter-spacing:.28em; text-transform:uppercase; }
+.world-transition strong { font-family:Georgia,serif; font-size:clamp(24px,3.5vw,48px); font-weight:400; letter-spacing:-.025em; }
+.world-transition i { justify-self:center; width:150px; height:2px; overflow:hidden; background:rgba(255,255,255,.12); }
+.world-transition i:after { content:""; display:block; width:52%; height:100%; background:var(--transit-accent,#d9ef8b); animation:world-progress .82s cubic-bezier(.2,.75,.2,1) both; }
+.subway-shell[data-loaded-world="train-interior"] { --transit-glass:rgba(8,12,11,.82); }
+.subway-shell[data-loaded-world="train-interior"] .mission { border-left-color:#c7ff77; }
+.subway-shell[data-loaded-world="train-interior"] .goal-wayfinder { top:max(112px,calc(env(safe-area-inset-top) + 88px)); }
+@keyframes world-handoff { 0%{opacity:0} 16%,72%{opacity:1} 100%{opacity:0} }
+@keyframes world-progress { from{transform:translateX(-110%)} to{transform:translateX(195%)} }
 
 .subway-shell .finale-screen {
   background:
@@ -484,6 +513,9 @@ button { font: inherit; }
 }
 
 @media(max-width:900px), (pointer:coarse) {
+  .experience-settings { top:max(8px,env(safe-area-inset-top)); right:max(60px,calc(env(safe-area-inset-right) + 48px)); }
+  .experience-settings > button { width:40px !important; min-width:40px !important; height:40px; min-height:40px !important; }
+  .world-transition strong { max-width:85vw; font-size:26px; }
   .subway-shell .mobile-telemetry {
     border-color:rgba(255,255,255,.14);
     border-left:3px solid var(--transit-accent);
@@ -563,4 +595,5 @@ button { font: inherit; }
 
 @media(prefers-reduced-motion:reduce) {
   .subway-shell .goal-wayfinder-arrow { transition:none; }
+  .world-transition,.world-transition i:after { animation-duration:.01ms; }
 }
