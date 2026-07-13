@@ -90,15 +90,21 @@ test("foraging opens the Bow Bridge to zoo to subway campaign with adaptive wayf
   assert.doesNotMatch(wayfinder, /Sanctuary gate/);
 });
 
-test("The Lake supplies two driveable rowboats that are faster than swimming", async () => {
-  const [game, rowboat] = await Promise.all([
+test("The expanded Lake supplies two driveable rowboats that are faster than swimming", async () => {
+  const [game, rowboat, world] = await Promise.all([
     readFile(new URL("../app/game/GameClient.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/game/world/ParkRowboat.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/world/RealisticWorld.ts", import.meta.url), "utf8"),
   ]);
 
-  assert.equal((game.match(/createParkRowboat\(textures/g) ?? []).length, 2);
-  assert.match(game, /name: "Bow Bridge rowboat 7", boatNumber: 7/);
-  assert.match(game, /name: "Bow Bridge rowboat 12", boatNumber: 12/);
+  assert.match(game, /world\.rowboatSpawns\.map\(spawn => createParkRowboat/);
+  assert.match(game, /const lakeRadius = world\.lakeRadius/);
+  assert.match(game, /world\.boatRadius/);
+  assert.match(world, /LAKE_SWIM_RADIUS = 33\.2/);
+  assert.match(world, /name: "Bow Bridge rowboat 7"/);
+  assert.match(world, /name: "Bow Bridge rowboat 12"/);
+  assert.match(world, /the-lake-playable-water/);
+  assert.match(world, /the-lake-irregular-bank/);
   assert.match(game, /activeBoat\.update\(/);
   assert.match(game, /isBoatWater\(/);
   assert.match(game, /Rowboat boarded/);
@@ -149,6 +155,8 @@ test("subway service cycles every 30 seconds and presents route-correct trains",
     access(new URL("../public/game/ads/branch-out.webp", import.meta.url)),
     access(new URL("../public/game/ads/canopy-commute.webp", import.meta.url)),
     access(new URL("../public/game/ads/slow-fashion.webp", import.meta.url)),
+    access(new URL("../public/game/ads/bronx-bound.webp", import.meta.url)),
+    access(new URL("../public/game/ads/ramble-after-dark.webp", import.meta.url)),
   ]);
 });
 
@@ -181,7 +189,8 @@ test("West Farms north exit completes the mission at the Bronx Zoo", async () =>
   assert.match(world, /EXIT · BOSTON RD \/ E 178 ST/);
   assert.match(world, /BRONX ZOO · ASIA GATE/);
   assert.match(world, /this\.stationId === "WEST_FARMS"[\s\S]{0,140}this\.trainPhase = "AWAY"/);
-  assert.match(subway, /prompt = "EXIT TO BRONX ZOO"/);
+  assert.match(subway, /prompt = "WALK UP TO THE BRONX ZOO EXIT"/);
+  assert.match(subway, /distance < 1\.45\) enterBronxZoo\(\)/);
   assert.match(subway, /setTransitStage\("COMPLETE"\)/);
   assert.match(subway, /new BronxZooWorld\(scene, textures/);
   assert.match(subway, /stationWorld\.dispose\(\); stationWorld = null/);
@@ -199,6 +208,9 @@ test("train boarding streams a dedicated interior world with crowd and door game
   assert.match(subway, /stationWorld \?\?= createStationWorld\(\)/);
   assert.match(subway, /new TrainInteriorWorld\(scene, textures/);
   assert.match(subway, /data-loaded-world=\{stage === "RIDING" \? "train-interior"/);
+  assert.match(subway, /boardThroughOpenDoor\(option\)/);
+  assert.match(subway, /stationWorld\.boardingHint\(player\)/);
+  assert.match(subway, /WALK THROUGH OPEN/);
   assert.match(subway, /The crowd carried you onto the platform/);
   assert.match(interior, /PUSHED_OUT/);
   assert.match(interior, /MISSED_STOP/);
