@@ -194,7 +194,7 @@ function servicePanelTexture(kind: "accessibility" | "door" | "emergency" | "int
     }
     context.textAlign = "left"; context.fillStyle = "#161918"; fitCanvasText(context, copy[1], width - 300, 36, 750); context.fillText(copy[1], 272, 185);
     context.fillStyle = "#505653"; fitCanvasText(context, copy[2], width - 300, 25, 600); context.fillText(copy[2], 272, 239);
-    context.fillStyle = accent; context.fillRect(272, 279, 292, 8); fitCanvasText(context, "SLOTH PARK TRANSIT", width - 300, 34, 800); context.fillText("SLOTH PARK TRANSIT", 272, 338);
+    context.fillStyle = accent; context.fillRect(272, 279, 292, 8); fitCanvasText(context, "SLOTH IN THE CITY TRANSIT", width - 300, 34, 800); context.fillText("SLOTH IN THE CITY TRANSIT", 272, 338);
   });
 }
 
@@ -210,7 +210,7 @@ function exteriorTexture(kind: "platform" | "tunnel", stationName = "") {
       context.fillStyle = "#d8d1bd"; context.fillRect(0, 0, width, height);
       for (let y = 0; y < height; y += 62) { context.strokeStyle = "rgba(79,72,61,.34)"; context.lineWidth = 3; context.beginPath(); context.moveTo(0, y); context.lineTo(width, y); context.stroke(); }
       for (let x = 0; x < width; x += 112) { context.strokeStyle = "rgba(79,72,61,.24)"; context.beginPath(); context.moveTo(x, 0); context.lineTo(x, height); context.stroke(); }
-      for (let x = 48; x < width; x += 340) { context.fillStyle = "#26302d"; context.fillRect(x, 0, 42, height); context.fillStyle = "#161a19"; context.fillRect(x + 48, 122, 274, 112); context.fillStyle = "#f4f0e5"; context.font = "700 28px Helvetica, Arial, sans-serif"; context.fillText(stationName.toUpperCase(), x + 68, 172); context.fillStyle = "#aeb8b3"; context.font = "650 19px Helvetica, Arial, sans-serif"; context.fillText("SLOTH PARK TRANSIT", x + 68, 207); }
+      for (let x = 48; x < width; x += 340) { context.fillStyle = "#26302d"; context.fillRect(x, 0, 42, height); context.fillStyle = "#161a19"; context.fillRect(x + 48, 122, 274, 112); context.fillStyle = "#f4f0e5"; context.font = "700 28px Helvetica, Arial, sans-serif"; context.fillText(stationName.toUpperCase(), x + 68, 172); context.fillStyle = "#aeb8b3"; fitCanvasText(context, "SLOTH IN THE CITY TRANSIT", 226, 19, 650); context.fillText("SLOTH IN THE CITY TRANSIT", x + 68, 207); }
       context.fillStyle = "#e9c637"; context.fillRect(0, height - 42, width, 42);
     }
   });

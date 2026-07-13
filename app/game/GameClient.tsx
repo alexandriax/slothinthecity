@@ -830,9 +830,9 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
     <div className={`scent-overlay ${scent ? "on" : ""}`}/>{toast && <div className="toast" role="status" aria-live="polite">{toast}</div>}
     {phase === "playing" && pointerLockAvailable && !mouseCaptured && <button className="mouse-resume" onClick={safeLock}><span>Mouse free</span>Click to look</button>}
     {(phase === "intro" || exiting) && <section className={`screen intro-screen ${exiting ? "exiting" : ""}`}>
-      <Image className="intro-art" src="/game/splash.webp" alt="" aria-hidden="true" fill priority sizes="100vw" unoptimized/>
+      <Image className="intro-art" src="/game/splash-city.webp" alt="" aria-hidden="true" fill priority sizes="100vw" unoptimized/>
       <div className="intro-scrim"/><div className="intro-location">THE RAMBLE · CENTRAL PARK · 6:42 PM</div>
-      <div className="intro-ui"><h1 className="sr-only">SLOTH / PARK</h1><div className="mobile-wordmark" aria-hidden="true">SLOTH <i>/</i> PARK</div>
+      <div className="intro-ui"><h1 className="sr-only">Sloth in the City</h1><div className="mobile-wordmark" aria-hidden="true"><span>SLOTH</span><i>IN THE</i><span>CITY</span></div>
         <p>A storm broke the route home. Cross Manhattan’s wild heart, descend beneath the city, and find your way to the Bronx Zoo.</p>
         <button className="cinematic-cta" onClick={begin} disabled={!ready}>{ready ? "ENTER THE RAMBLE" : "PREPARING THE PARK"}<b>→</b><span/></button>
         <small>Headphones recommended · Mouse, keyboard &amp; touch</small>

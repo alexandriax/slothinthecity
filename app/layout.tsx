@@ -1,14 +1,14 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
-const title = "SLOTH / PARK — A Central Park Survival Adventure";
-const description = "Play as a displaced sloth in a cinematic first-person Central Park adventure. Forage, climb, swim, evade hawks, and find sanctuary before nightfall.";
-const socialImage = "/social/sloth-park-og-v2.jpg";
-const siteUrl = process.env.SITE_URL ?? (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000");
+const title = "Sloth in the City — A New York City Adventure";
+const description = "Play as a displaced sloth in a cinematic first-person New York City adventure. Forage and climb through Central Park, navigate the subway, and find your friends at the Bronx Zoo.";
+const socialImage = "/social/sloth-in-the-city-og.jpg";
+const siteUrl = process.env.SITE_URL ?? "https://www.slothinthecity.com";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
-  applicationName: "SLOTH / PARK",
+  applicationName: "Sloth in the City",
   title,
   description,
   alternates: { canonical: "/" },
@@ -17,15 +17,15 @@ export const metadata: Metadata = {
     description,
     type: "website",
     url: "/",
-    siteName: "SLOTH / PARK",
+    siteName: "Sloth in the City",
     locale: "en_US",
-    images: [{ url: socialImage, width: 1200, height: 630, type: "image/jpeg", alt: "First-person view of a sloth crossing the Central Park canopy at golden hour beside the SLOTH / PARK title." }],
+    images: [{ url: socialImage, width: 1200, height: 630, type: "image/jpeg", alt: "First-person view of a sloth crossing the Central Park canopy at golden hour beside the Sloth in the City title." }],
   },
   twitter: {
     card: "summary_large_image",
     title,
     description,
-    images: [{ url: socialImage, alt: "First-person view of a sloth crossing the Central Park canopy at golden hour beside the SLOTH / PARK title." }],
+    images: [{ url: socialImage, alt: "First-person view of a sloth crossing the Central Park canopy at golden hour beside the Sloth in the City title." }],
   },
   robots: { index: true, follow: true },
 };
