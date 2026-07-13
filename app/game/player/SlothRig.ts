@@ -5,6 +5,7 @@ export type SlothRig = {
   left: THREE.Group;
   right: THREE.Group;
   animate(time: number, speed: number, gripping: boolean): void;
+  setVehiclePose(mode: "none" | "cart" | "rowboat", steering?: number, oarPhase?: number): void;
 };
 
 type ArmJoints = {
@@ -108,8 +109,34 @@ function furSegment(
   );
   const mesh = new THREE.Mesh(geometry, material);
   mesh.castShadow = true;
-  mesh.receiveShadow = true;
+  mesh.receiveShadow = false;
   return mesh;
+}
+
+function pawSegment(side: number, material: THREE.Material) {
+  const curve = new THREE.CubicBezierCurve3(
+    new THREE.Vector3(0, -.006, 0),
+    new THREE.Vector3(-side * .006, .055, -.004),
+    new THREE.Vector3(-side * .018, .145, -.018),
+    new THREE.Vector3(-side * .019, .205, -.031),
+  );
+  const geometry = sweptGeometry(
+    curve,
+    54,
+    34,
+    (t) => {
+      // Tendon at the wrist, a single muscular palm bulge, then the compact
+      // distal pad from which all three hooks emerge.
+      const wrist = THREE.MathUtils.lerp(.074, .058, t);
+      return wrist + Math.sin(Math.PI * t) * .024 + Math.sin(Math.PI * Math.min(1, t * 1.35)) * .005;
+    },
+    .7,
+  );
+  const paw = new THREE.Mesh(geometry, material);
+  paw.castShadow = true;
+  paw.receiveShadow = false;
+  paw.frustumCulled = false;
+  return paw;
 }
 
 function addFurShell(parent: THREE.Object3D, mesh: THREE.Mesh, fringe: THREE.Material) {
@@ -209,8 +236,10 @@ function makeArm(
   const elbowMass = new THREE.Mesh(new THREE.SphereGeometry(1, 34, 24), fur);
   elbowMass.scale.set(.116, .16, .096);
   elbowMass.castShadow = true;
+  elbowMass.receiveShadow = false;
   elbowMass.frustumCulled = false;
   elbow.add(elbowMass);
+  addEllipsoidShell(elbow, elbowMass, fringe);
   shoulder.add(elbow);
 
   const wristEnd = new THREE.Vector3(-side * .032, .36, -.10);
@@ -232,38 +261,19 @@ function makeArm(
   wrist.rotation.z = -side * .34;
   elbow.add(wrist);
 
-  const wristMass = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 24), fur);
-  wristMass.position.set(0, .024, -.004);
-  wristMass.scale.set(.074, .124, .057);
-  wristMass.castShadow = true;
-  wristMass.frustumCulled = false;
-  wrist.add(wristMass);
-  addEllipsoidShell(wrist, wristMass, fringe);
-
-  // The splash silhouette reads as a compact fur-covered paw. The three distal
-  // phalanges are buried in this mass; only their keratin hooks should show.
-  const palm = new THREE.Mesh(new THREE.SphereGeometry(1, 40, 30), palmFur);
-  palm.position.set(-side * .014, .105, -.016);
-  palm.scale.set(.073, .135, .053);
-  palm.castShadow = true;
-  palm.receiveShadow = true;
-  palm.frustumCulled = false;
-  wrist.add(palm);
-  addEllipsoidShell(wrist, palm, fringe);
-
-  const digitWeb = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 22), palmFur);
-  digitWeb.position.set(-side * .02, .176, -.025);
-  digitWeb.scale.set(.078, .052, .046);
-  digitWeb.castShadow = true;
-  digitWeb.frustumCulled = false;
-  wrist.add(digitWeb);
+  // One continuous swept paw replaces the former wrist/palm/digit ellipsoid
+  // stack. Its overlap with the forearm is hidden in the same fur shell, so
+  // bright station lighting no longer reveals toy-like seams.
+  const paw = pawSegment(side, palmFur);
+  wrist.add(paw);
+  addFurShell(wrist, paw, fringe);
 
   const digits: THREE.Group[] = [];
   for (let index = -1; index <= 1; index++) {
     const claw = makeClaw(index, side, keratin);
     // Roots overlap the fur cap so the hooks emerge from the paw rather than
     // appearing glued onto a visible set of human-like fingers.
-    claw.position.set(-side * .022 + index * .027, .182 - Math.abs(index) * .007, -.033 + (index === 0 ? -.008 : 0));
+    claw.position.set(-side * .019 + index * .027, .198 - Math.abs(index) * .007, -.039 + (index === 0 ? -.008 : 0));
     wrist.add(claw);
     digits.push(claw);
   }
@@ -287,39 +297,39 @@ export function createSlothRig(furTexture: THREE.Texture): SlothRig {
     map: furTexture,
     bumpMap: furTexture,
     bumpScale: .032,
-    color: "#d7d2c8",
-    roughness: .93,
-    sheen: .9,
+    color: "#b7aa98",
+    roughness: .96,
+    sheen: .32,
     sheenColor: new THREE.Color("#8d8373"),
-    sheenRoughness: .78,
-    emissive: new THREE.Color("#27231d"),
-    emissiveIntensity: .11,
+    sheenRoughness: .9,
+    emissive: new THREE.Color("#2a241e"),
+    emissiveIntensity: .055,
   });
   const palmFur = new THREE.MeshPhysicalMaterial({
     map: furTexture,
     bumpMap: furTexture,
-    bumpScale: .018,
-    color: "#cac3b7",
+    bumpScale: .028,
+    color: "#b3a592",
     roughness: .96,
-    sheen: .65,
+    sheen: .3,
     sheenColor: new THREE.Color("#716653"),
-    sheenRoughness: .85,
-    emissive: new THREE.Color("#25211c"),
-    emissiveIntensity: .12,
+    sheenRoughness: .92,
+    emissive: new THREE.Color("#2a241e"),
+    emissiveIntensity: .055,
   });
   const fringe = new THREE.MeshPhysicalMaterial({
     map: furTexture,
     alphaMap: furTexture,
     bumpMap: furTexture,
     bumpScale: .012,
-    color: "#ddd5c7",
+    color: "#b8aa97",
     roughness: .98,
     sheen: .9,
     sheenColor: new THREE.Color("#938670"),
     sheenRoughness: .9,
     alphaTest: .3,
     transparent: true,
-    opacity: .62,
+    opacity: .52,
     depthWrite: false,
   });
   const keratin = new THREE.MeshPhysicalMaterial({
@@ -337,16 +347,45 @@ export function createSlothRig(furTexture: THREE.Texture): SlothRig {
   const joints = (arm: THREE.Group) => arm.userData.joints as ArmJoints;
   const leftJoints = joints(left);
   const rightJoints = joints(right);
+  let vehicleMode: "none" | "cart" | "rowboat" = "none";
+  let vehicleSteering = 0;
+  let vehicleOarPhase = 0;
 
   return {
     root,
     left,
     right,
+    setVehiclePose(mode, steering = 0, oarPhase = 0) {
+      vehicleMode = mode;
+      vehicleSteering = THREE.MathUtils.clamp(steering, -1, 1);
+      vehicleOarPhase = oarPhase;
+    },
     animate(time, speed, gripping) {
       const stride = Math.min(1, speed / 4);
       const gait = Math.sin(time * 3.05);
       const breath = Math.sin(time * 1.35);
       const grip = gripping ? 1 : 0;
+      const leftBaseX = left.userData.layoutX as number | undefined;
+      const rightBaseX = right.userData.layoutX as number | undefined;
+      const leftBaseY = left.userData.layoutY as number | undefined;
+      const rightBaseY = right.userData.layoutY as number | undefined;
+      const leftBaseDepth = left.userData.layoutDepth as number | undefined;
+      const rightBaseDepth = right.userData.layoutDepth as number | undefined;
+
+      if (vehicleMode === "none") {
+        if (leftBaseX !== undefined) left.position.x = leftBaseX;
+        if (rightBaseX !== undefined) right.position.x = rightBaseX;
+        if (leftBaseY !== undefined) left.position.y = leftBaseY;
+        if (rightBaseY !== undefined) right.position.y = rightBaseY;
+        if (leftBaseDepth !== undefined) left.position.z = leftBaseDepth;
+        if (rightBaseDepth !== undefined) right.position.z = rightBaseDepth;
+      } else {
+        const targetX = vehicleMode === "cart" ? .24 : .28;
+        const targetY = vehicleMode === "cart" ? -.75 : -.72;
+        const targetDepth = vehicleMode === "cart" ? -.59 : -.63;
+        left.position.set(-targetX, targetY, targetDepth);
+        right.position.set(targetX, targetY, targetDepth);
+      }
 
       left.rotation.x = -.045 + gait * .022 * stride - grip * .03;
       right.rotation.x = -.045 - gait * .022 * stride - grip * .03;
@@ -368,6 +407,34 @@ export function createSlothRig(furTexture: THREE.Texture): SlothRig {
         const rightDigit = rightJoints.digits[index];
         leftDigit.rotation.x = Math.abs(index - 1) * -.035 - grip * (.018 + index * .003) + Math.sin(phase) * .0025;
         rightDigit.rotation.x = Math.abs(index - 1) * -.035 - grip * (.022 - index * .003) + Math.sin(phase + .8) * .0025;
+      }
+
+      if (vehicleMode === "cart") {
+        // Hands stay opposite one another on the wheel and travel with its
+        // rotation rather than hovering above the dashboard.
+        const wheel = vehicleSteering * .24;
+        left.rotation.x = -.3 - wheel * .12;
+        right.rotation.x = -.3 + wheel * .12;
+        left.rotation.z = (left.userData.layoutZ ?? -.34) + .27 + wheel;
+        right.rotation.z = (right.userData.layoutZ ?? .34) - .27 + wheel;
+        leftJoints.elbow.rotation.x = rightJoints.elbow.rotation.x = -.2;
+        leftJoints.wrist.rotation.x = rightJoints.wrist.rotation.x = -.36;
+        leftJoints.wrist.rotation.z = .38 + wheel;
+        rightJoints.wrist.rotation.z = -.38 + wheel;
+        for (const digit of [...leftJoints.digits, ...rightJoints.digits]) digit.rotation.x = -.19;
+      } else if (vehicleMode === "rowboat") {
+        // Mirrored sweep and feather phases keep each paw planted on its oar.
+        const sweep = Math.sin(vehicleOarPhase) * .22;
+        const feather = Math.cos(vehicleOarPhase) * .14;
+        left.rotation.x = right.rotation.x = -.2 - Math.abs(sweep) * .1;
+        left.rotation.z = (left.userData.layoutZ ?? -.34) + .2 + sweep;
+        right.rotation.z = (right.userData.layoutZ ?? .34) - .2 - sweep;
+        leftJoints.elbow.rotation.x = -.16 - sweep * .28;
+        rightJoints.elbow.rotation.x = -.16 + sweep * .28;
+        leftJoints.wrist.rotation.x = rightJoints.wrist.rotation.x = -.3 + feather;
+        leftJoints.wrist.rotation.z = .22 + feather;
+        rightJoints.wrist.rotation.z = -.22 - feather;
+        for (const digit of [...leftJoints.digits, ...rightJoints.digits]) digit.rotation.x = -.17;
       }
 
       // Keep the viewmodel anchored to the camera. Motion is deliberately
