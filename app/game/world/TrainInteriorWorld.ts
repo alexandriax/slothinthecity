@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import type { GameTextures } from "../rendering/textures";
+import { createPremiumHuman } from "./PremiumCharacter";
 
 export type TrainInteriorQuality = "mobile" | "desktop";
 export type TrainInteriorPhase = "CRUISING" | "APPROACHING" | "DWELL" | "DEPARTING" | "COMPLETE" | "FAILED";
@@ -236,77 +237,26 @@ function advertisementTexture(index: number) {
   });
 }
 
-function createPassenger(index: number, quality: TrainInteriorQuality, pose: "holding" | "reading" | "seated" | "standing", surfaceMaps: TrainSurfaceMaps) {
+function createPassenger(index: number, quality: TrainInteriorQuality, pose: "holding" | "reading" | "seated" | "standing", ownedTextures: THREE.Texture[]) {
   const group = new THREE.Group(); group.name = "detailed-train-passenger";
   const palettes = [
     ["#6d4436", "#ae785c", "#25201e"], ["#264d5a", "#d4a27f", "#34251e"], ["#625b35", "#80573f", "#171715"],
     ["#69405d", "#e0b58d", "#643c29"], ["#313e64", "#9a674d", "#24201d"], ["#4b5d45", "#c18767", "#463026"],
   ][index % 6];
-  const coat = new THREE.MeshStandardMaterial({ color: palettes[0], roughness: .72, map: surfaceMaps.fabric, bumpMap: surfaceMaps.fabric, bumpScale: .012 }), skin = new THREE.MeshStandardMaterial({ color: palettes[1], roughness: .82, map: surfaceMaps.skin, bumpMap: surfaceMaps.skin, bumpScale: .004 });
-  const dark = new THREE.MeshStandardMaterial({ color: palettes[2], roughness: .67, map: surfaceMaps.fabric, bumpMap: surfaceMaps.fabric, bumpScale: .014 }), accent = new THREE.MeshStandardMaterial({ color: index % 2 ? "#d8b962" : "#b84b42", roughness: .62, map: surfaceMaps.fabric, bumpMap: surfaceMaps.fabric, bumpScale: .01 });
-  const segments = quality === "desktop" ? 22 : 12;
-  const stature = .92 + index % 5 * .032; group.scale.set(stature * (.96 + index % 2 * .025), stature, stature);
-  const hips = new THREE.Mesh(new THREE.CapsuleGeometry(.23, .32, 5, segments), dark); hips.position.y = .86; group.add(hips);
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(.29, .67, 7, segments), coat); torso.position.y = 1.34; torso.scale.z = .78; group.add(torso);
-  for (const side of [-1, 1]) { const lapel = new THREE.Mesh(new THREE.ConeGeometry(.105, .38, 3), accent); lapel.position.set(side * .105, 1.54, -.245); lapel.rotation.z = side * .22; lapel.rotation.x = .14; group.add(lapel); }
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(.085, .1, .15, segments), skin); neck.position.y = 1.78; group.add(neck);
-  const headGroup = new THREE.Group(); headGroup.position.y = 2.02; group.add(headGroup);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(.215, segments, Math.max(8, segments - 2)), skin); head.scale.set(.86, 1.08, .92); headGroup.add(head);
-  const hair = new THREE.Mesh(new THREE.SphereGeometry(.221, segments, 10, 0, Math.PI * 2, 0, Math.PI * .56), dark); hair.position.y = .04; hair.scale.set(.88, 1.08, .94); headGroup.add(hair);
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(.032, 8, 6), skin); nose.position.set(0, -.015, -.202); nose.scale.set(.7, .8, 1.2); headGroup.add(nose);
-  if (index % 4 === 2) {
-    const eyewear = new THREE.MeshStandardMaterial({ color: "#202321", metalness: .58, roughness: .28 });
-    for (const side of [-1, 1]) { const lens = new THREE.Mesh(new THREE.TorusGeometry(.052, .008, 6, 16), eyewear); lens.position.set(side * .061, .035, -.211); headGroup.add(lens); }
-    const bridge = new THREE.Mesh(new RoundedBoxGeometry(.055, .009, .01, 2, .002), eyewear); bridge.position.set(0, .035, -.214); headGroup.add(bridge);
-  }
-  const legs: THREE.Mesh[] = [], shoes: THREE.Mesh[] = [];
-  for (const side of [-1, 1]) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(.015, 7, 5), dark); eye.position.set(side * .069, .035, -.197); headGroup.add(eye);
-    const ear = new THREE.Mesh(new THREE.SphereGeometry(.042, 8, 6), skin); ear.position.set(side * .196, .01, 0); ear.scale.x = .48; headGroup.add(ear);
-    if (quality === "desktop") {
-      const brow = new THREE.Mesh(new RoundedBoxGeometry(.062, .011, .008, 3, .004), dark); brow.position.set(side * .069, .087, -.207); brow.rotation.z = side * -.08; headGroup.add(brow);
-      const cheek = new THREE.Mesh(new THREE.SphereGeometry(.042, 10, 8), skin); cheek.scale.set(1.12, .66, .48); cheek.position.set(side * .108, -.04, -.184); headGroup.add(cheek);
-    }
-    const leg = new THREE.Mesh(new THREE.CapsuleGeometry(.085, .52, 5, segments), dark); leg.position.set(side * .13, .4, 0); group.add(leg); legs.push(leg);
-    const shoe = new THREE.Mesh(new RoundedBoxGeometry(.19, .105, .34, 4, .04), new THREE.MeshStandardMaterial({ color: "#111312", roughness: .48, map: surfaceMaps.leather, bumpMap: surfaceMaps.leather, bumpScale: .012 })); shoe.position.set(side * .13, .07, -.08); group.add(shoe); shoes.push(shoe);
-  }
-  if (quality === "desktop") {
-    const mouth = new THREE.Mesh(new THREE.TorusGeometry(.039, .005, 6, 16, Math.PI), new THREE.MeshStandardMaterial({ color: "#774946", roughness: .72, map: surfaceMaps.skin })); mouth.position.set(0, -.075, -.203); mouth.rotation.z = Math.PI; headGroup.add(mouth);
-    const coatSeam = new THREE.Mesh(new RoundedBoxGeometry(.014, .5, .012, 2, .004), accent); coatSeam.position.set(0, 1.31, -.248); group.add(coatSeam);
-    for (const y of [1.42, 1.27, 1.12]) { const button = new THREE.Mesh(new THREE.CylinderGeometry(.014, .014, .008, 8), dark); button.rotation.x = Math.PI / 2; button.position.set(0, y, -.264); group.add(button); }
-  }
-  const armLeft = new THREE.Group(), armRight = new THREE.Group();
-  for (const [side, arm] of [[-1, armLeft], [1, armRight]] as const) {
-    arm.position.set(side * .34, 1.53, 0); arm.rotation.z = side * -.11;
-    const sleeve = new THREE.Mesh(new THREE.CapsuleGeometry(.07, .48, 5, segments), coat); sleeve.position.y = -.22; arm.add(sleeve);
-    const hand = new THREE.Mesh(new THREE.SphereGeometry(.075, segments, Math.max(8, segments - 4)), skin); hand.position.y = -.52; arm.add(hand);
-    if (quality === "desktop") for (let finger = -1; finger <= 1; finger++) {
-      const digit = new THREE.Mesh(new THREE.CapsuleGeometry(.012, .055, 4, 8), skin); digit.position.set(finger * .023, -.58, -.012); digit.rotation.x = -.18; arm.add(digit);
-    }
-    group.add(arm);
-  }
-  if (index % 3 === 0) {
-    const phone = new THREE.Mesh(new RoundedBoxGeometry(.13, .23, .018, 3, .02), dark); phone.position.set(.28, 1.04, -.23); phone.rotation.z = -.16; group.add(phone); armRight.rotation.x = -.55;
-  } else if (index % 3 === 1) {
-    const bag = new THREE.Mesh(new RoundedBoxGeometry(.34, .43, .16, 4, .045), accent); bag.position.set(.36, .9, .03); group.add(bag);
-    const strap = new THREE.Mesh(new THREE.TorusGeometry(.27, .018, 6, 20, Math.PI), dark); strap.position.set(.24, 1.22, .03); strap.rotation.z = -.35; group.add(strap);
-  } else {
-    const book = new THREE.Mesh(new RoundedBoxGeometry(.26, .34, .045, 3, .02), accent); book.position.set(-.27, 1.08, -.25); book.rotation.z = .13; group.add(book); armLeft.rotation.x = -.52;
-  }
-  const scarf = new THREE.Mesh(new THREE.TorusGeometry(.2, .03, 7, 20), accent); scarf.rotation.x = Math.PI / 2; scarf.position.y = 1.72; group.add(scarf);
-  if (pose === "holding") {
-    armLeft.rotation.z = 2.72; armLeft.rotation.x = -.08;
-    const cuff = new THREE.Mesh(new THREE.TorusGeometry(.071, .012, 6, 14), accent); cuff.position.set(-.69, 1.94, 0); cuff.rotation.x = Math.PI / 2; group.add(cuff);
-  } else if (pose === "reading") {
-    armLeft.rotation.x = -.72; armRight.rotation.x = -.72; armLeft.rotation.z = -.26; armRight.rotation.z = .26;
-  } else if (pose === "seated") {
-    hips.position.y = .56; torso.position.y = 1.04; neck.position.y = 1.49; headGroup.position.y = 1.73; scarf.position.y = 1.43;
-    legs.forEach((leg, legIndex) => { leg.position.set(legIndex ? .13 : -.13, .38, -.2); leg.rotation.x = 1.02; });
-    shoes.forEach((shoe, shoeIndex) => { shoe.position.set(shoeIndex ? .13 : -.13, .17, -.54); });
-    armLeft.position.y = armRight.position.y = 1.23; armLeft.rotation.x = armRight.rotation.x = -.48;
-  }
-  group.traverse(object => { if (object instanceof THREE.Mesh) { object.castShadow = quality === "desktop"; object.receiveShadow = true; } });
-  return { armLeft, armLeftBaseX: armLeft.rotation.x, armRight, armRightBaseX: armRight.rotation.x, base: new THREE.Vector3(), group, head: headGroup, movable: pose !== "seated", phase: index * 1.73, seated: pose === "seated" } satisfies PassengerRig;
+  const premium = createPremiumHuman({
+    role: "visitor", quality: quality === "desktop" ? .72 : .5, variant: index + 31, coat: palettes[0], trousers: palettes[2], skin: palettes[1],
+    accessory: pose === "seated" ? "none" : index % 3 === 0 ? "backpack" : index % 3 === 1 ? "tote" : "none",
+    pose: pose === "reading" ? "checking-map" : pose === "seated" ? "seated" : "neutral",
+    faceAtlasUrl: "/game/characters/npc-face-atlas-v1.webp", clothingAtlasUrl: "/game/characters/npc-cloth-atlas-v1.webp",
+  });
+  premium.root.scale.setScalar(.88);
+  if (pose === "seated") premium.root.position.y = -.3;
+  group.add(premium.root); ownedTextures.push(...premium.ownedTextures);
+  const inertLeft = new THREE.Group(), inertRight = new THREE.Group(), inertHead = new THREE.Group();
+  return {
+    armLeft: inertLeft, armLeftBaseX: 0, armRight: inertRight, armRightBaseX: 0, base: new THREE.Vector3(), group, head: inertHead,
+    movable: pose !== "seated", phase: index * 1.73, seated: pose === "seated",
+  } satisfies PassengerRig;
 }
 
 function addCylinderBetween(parent: THREE.Group, start: THREE.Vector3, end: THREE.Vector3, radius: number, material: THREE.Material) {
@@ -356,6 +306,12 @@ export class TrainInteriorWorld {
   get currentStop() { return this.stopIndex < this.journey.intermediateStops.length ? this.journey.intermediateStops[this.stopIndex] : this.journey.destination; }
   get isDestination() { return this.stopIndex >= this.journey.intermediateStops.length; }
   get exitWaypoint() { return new THREE.Vector3(this.journey.destination.side * (CAR_HALF_WIDTH + .36), PLAYER_EYE_Y, 0); }
+
+  private nearestExitWaypoint(player: THREE.Vector3) {
+    let closest: number = DOOR_Z[0], distance = Infinity;
+    for (const z of DOOR_Z) { const candidate = Math.abs(player.z - z); if (candidate < distance) { closest = z; distance = candidate; } }
+    return new THREE.Vector3(this.journey.destination.side * (CAR_HALF_WIDTH + .36), PLAYER_EYE_Y, closest);
+  }
 
   /** Replaces one authored fallback without taking ownership of the supplied texture. */
   setAdvertisementTexture(slotIndex: number, texture: THREE.Texture) {
@@ -497,7 +453,7 @@ export class TrainInteriorWorld {
       { pose: "seated", rotation: Math.PI / 2, x: 1.02, z: -7.12 }, { pose: "standing", rotation: Math.PI + .15, x: -.42, z: -7.75 },
     ];
     for (let index = 0; index < count; index++) {
-      const placement = placements[index], passenger = createPassenger(index, this.quality, placement.pose, this.surfaceMaps); passenger.base.set(placement.x, 0, placement.z); passenger.group.position.copy(passenger.base); passenger.group.rotation.y = placement.rotation; this.passengers.push(passenger); this.root.add(passenger.group);
+      const placement = placements[index], passenger = createPassenger(index, this.quality, placement.pose, this.ownedTextures); passenger.base.set(placement.x, 0, placement.z); passenger.group.position.copy(passenger.base); passenger.group.rotation.y = placement.rotation; this.passengers.push(passenger); this.root.add(passenger.group);
     }
   }
 
@@ -512,7 +468,9 @@ export class TrainInteriorWorld {
       const active = door.side === this.currentStop.side;
       const opening = active ? this.doorsOpenAmount * .82 : 0;
       door.left.position.z = -.47 - opening; door.right.position.z = .47 + opening;
-      const destinationMarker = this.isDestination && active && door.z === 0 && (this.phase === "APPROACHING" || this.phase === "DWELL");
+      // Every platform-side doorway is a valid, illuminated exit. The earlier
+      // center-door-only rule made an apparently open car behave like a funnel.
+      const destinationMarker = this.isDestination && active && (this.phase === "APPROACHING" || this.phase === "DWELL");
       (door.correctMarker.material as THREE.MeshBasicMaterial).opacity = destinationMarker ? .13 + Math.sin(this.elapsed * 5) * .055 : 0;
       for (const light of door.warningLights) light.visible = active && (this.phase === "APPROACHING" || this.phase === "DWELL") && Math.floor(this.elapsed * 4) % 2 === 0;
     }
@@ -587,7 +545,7 @@ export class TrainInteriorWorld {
     if (this.phase !== "DWELL" || !this.isDestination || this.doorsOpenAmount <= .58) return;
     const crossedThreshold = this.journey.destination.side * player.x > CAR_HALF_WIDTH + .08;
     if (!crossedThreshold) { this.wrongDoorNotified = false; return; }
-    if (Math.abs(player.z) < .78) {
+    if (this.doorZone(player, this.journey.destination.side)) {
       this.phase = "COMPLETE"; this.pendingEvent = { type: "ARRIVED", stop: this.currentStop.name }; this.setDoorAmount(1); return;
     }
     if (!this.wrongDoorNotified) this.pendingEvent = { type: "WRONG_DOOR", stop: this.currentStop.name };
@@ -617,10 +575,10 @@ export class TrainInteriorWorld {
       if (map && material.map !== map) { material.map = map; material.needsUpdate = true; }
     });
     const event = this.pendingEvent; this.pendingEvent = null;
-    const zone = this.doorZone(player, this.journey.destination.side, 0);
+    const zone = this.doorZone(player, this.journey.destination.side);
     const seconds = this.phase === "CRUISING" ? CRUISE_SECONDS - this.phaseTime : this.phase === "APPROACHING" ? APPROACH_SECONDS - this.phaseTime : this.phase === "DWELL" ? DWELL_SECONDS - this.phaseTime : DEPART_SECONDS - this.phaseTime;
     const objective = this.isDestination && (this.phase === "APPROACHING" || this.phase === "DWELL")
-      ? `Move to the illuminated ${this.journey.destination.side < 0 ? "left" : "right"} doors for ${this.journey.destination.name}`
+      ? `Use any illuminated ${this.journey.destination.side < 0 ? "left-side" : "right-side"} door for ${this.journey.destination.name}`
       : `Stay clear of the doors until ${this.journey.destination.name}`;
     return {
       cameraOffset: this.cameraOffset,
@@ -629,7 +587,7 @@ export class TrainInteriorWorld {
       destination: this.journey.destination.name,
       doorsOpen: this.doorsOpenAmount > .65,
       event,
-      exitWaypoint: this.exitWaypoint,
+      exitWaypoint: this.nearestExitWaypoint(player),
       objective,
       phase: this.phase,
       prompt: this.isDestination && this.phase === "DWELL" && this.doorsOpenAmount > .65 && zone ? "EXIT TRAIN" : "",
@@ -641,7 +599,7 @@ export class TrainInteriorWorld {
   /** Route an E/touch interaction through the destination-door rules. */
   interact(player: THREE.Vector3): TrainInteriorEvent | null {
     if (this.phase !== "DWELL" || !this.isDestination || this.doorsOpenAmount <= .65) return null;
-    if (!this.doorZone(player, this.journey.destination.side, 0)) return { type: "WRONG_DOOR", stop: this.currentStop.name };
+    if (!this.doorZone(player, this.journey.destination.side)) return { type: "WRONG_DOOR", stop: this.currentStop.name };
     this.phase = "COMPLETE"; this.setDoorAmount(1); return { type: "ARRIVED", stop: this.currentStop.name };
   }
 

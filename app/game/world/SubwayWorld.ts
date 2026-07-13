@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import type { GameTextures } from "../rendering/textures";
+import { createPremiumHuman, type PremiumHumanRole } from "./PremiumCharacter";
 
 export type SubwayStationId = "FIFTH_AV" | "LEXINGTON" | "WEST_FARMS";
 export type TrainPhase = "AWAY" | "APPROACHING" | "BOARDING" | "DEPARTING";
@@ -125,30 +126,54 @@ function platformChoiceTexture(title: string, detail: string, routes: string[], 
 
 function openCarInteriorTexture(route: string, quality: SubwayQuality) {
   return canvasTexture(1024, 1344, (context, width, height) => {
-    const horizon = height * .45;
-    const gradient = context.createLinearGradient(0, 0, 0, height); gradient.addColorStop(0, "#f7f0db"); gradient.addColorStop(.46, "#d8d5c9"); gradient.addColorStop(1, "#353d3b");
-    context.fillStyle = gradient; context.fillRect(0, 0, width, height);
-    context.fillStyle = "#171d1e"; context.fillRect(0, 0, width, 72);
-    context.fillStyle = "#f7edc2"; context.fillRect(width * .28, 82, width * .44, 24);
-    context.fillStyle = route === "5" ? "#00933c" : "#fccc0a"; context.beginPath(); context.arc(width * .5, 178, 58, 0, Math.PI * 2); context.fill();
-    context.fillStyle = route === "5" ? "#fff" : "#111"; context.textAlign = "center"; context.textBaseline = "middle"; context.font = "900 78px Helvetica, Arial, sans-serif"; context.fillText(route, width * .5, 184);
-    // Perspective aisle, longitudinal seats, poles, and ceiling ribs.
-    context.fillStyle = "#49514e"; context.beginPath(); context.moveTo(width * .43, horizon); context.lineTo(width * .57, horizon); context.lineTo(width * .77, height); context.lineTo(width * .23, height); context.closePath(); context.fill();
-    context.fillStyle = route === "5" ? "#dc8d32" : "#2772a8";
-    for (const side of [-1, 1]) for (let row = 0; row < 4; row++) {
-      const amount = row / 4, y = horizon + 65 + amount * 165, seatWidth = 105 + amount * 58, x = side < 0 ? width * .18 - amount * 38 : width * .82 + amount * 38;
-      context.fillRect(x - seatWidth / 2, y, seatWidth, 72 + amount * 38);
-      context.strokeStyle = "rgba(255,255,255,.38)"; context.lineWidth = 7; context.strokeRect(x - seatWidth / 2, y, seatWidth, 72 + amount * 38);
+    // This is the view straight across the car from a platform doorway. Keep
+    // every major edge horizontal or vertical so it reads as a shallow MTA
+    // vestibule with opposite closed doors, never as a receding tunnel.
+    const wallGradient = context.createLinearGradient(0, 180, 0, 1080);
+    wallGradient.addColorStop(0, "#eee9dc"); wallGradient.addColorStop(.72, "#d6d3c8"); wallGradient.addColorStop(1, "#b8b9b3");
+    context.fillStyle = "#202627"; context.fillRect(0, 0, width, 174);
+    context.fillStyle = wallGradient; context.fillRect(0, 174, width, 904);
+    context.fillStyle = "#414845"; context.fillRect(0, 1078, width, height - 1078);
+    context.fillStyle = "#fff5d2"; context.fillRect(208, 72, 608, 26);
+
+    // Opposite platform glimpses through the two side windows establish the
+    // cross-car axis while the closed far-side doors remain unmistakable.
+    for (const x of [44, 770]) {
+      context.fillStyle = "#31393b"; context.fillRect(x, 274, 210, 476);
+      context.fillStyle = "#72878b"; context.fillRect(x + 14, 290, 182, 444);
+      context.fillStyle = "#d7d2c2"; context.fillRect(x + 14, 488, 182, 238);
+      context.fillStyle = route === "5" ? "#00933c" : "#fccc0a"; context.fillRect(x + 14, 470, 182, 18);
+      context.fillStyle = "rgba(228,239,235,.34)"; context.fillRect(x + 26, 304, 18, 410); context.fillRect(x + 152, 304, 12, 410);
     }
-    context.strokeStyle = "#b9c3be"; context.lineWidth = 22;
-    for (const x of [width * .28, width * .72]) { context.beginPath(); context.moveTo(width * .5 + (x - width * .5) * .18, 260); context.lineTo(x, height); context.stroke(); }
-    context.lineWidth = 11; for (let rib = 0; rib < 6; rib++) { const y = 265 + rib * 138; context.beginPath(); context.moveTo(width * .22, y); context.lineTo(width * .78, y); context.stroke(); }
-    if (quality !== "mobile") for (let person = 0; person < 5; person++) {
-      const side = person % 2 ? -1 : 1, amount = person / 5, x = width * .5 + side * (110 + amount * 150), y = horizon + 110 + amount * 155, scale = .58 + amount * .42;
-      context.fillStyle = ["#344f5c", "#6f4b3f", "#455b42", "#76526d", "#505b69"][person]; context.beginPath(); context.ellipse(x, y + 88 * scale, 42 * scale, 90 * scale, 0, 0, Math.PI * 2); context.fill();
-      context.fillStyle = ["#bd8464", "#e0b18b", "#8b5c43", "#c88d69", "#d9aa87"][person]; context.beginPath(); context.arc(x, y, 37 * scale, 0, Math.PI * 2); context.fill();
+
+    context.fillStyle = "#777f7e"; context.fillRect(274, 224, 476, 854);
+    context.fillStyle = "#d7d9d4"; context.fillRect(294, 246, 436, 810);
+    context.fillStyle = "#8f9795"; context.fillRect(505, 246, 14, 810);
+    context.fillStyle = "#263238";
+    for (const x of [326, 548]) context.fillRect(x, 352, 150, 286);
+    context.fillStyle = "#739098";
+    for (const x of [338, 560]) context.fillRect(x, 366, 126, 256);
+    context.fillStyle = "rgba(232,242,239,.28)";
+    for (const x of [350, 572]) context.fillRect(x, 378, 16, 228);
+    context.fillStyle = "#a9afad"; context.fillRect(294, 748, 436, 22);
+    context.fillStyle = "#4f5857"; context.fillRect(294, 1024, 436, 32);
+
+    // Bench end-caps and vertical grab poles frame, but do not obstruct, the
+    // opposite door. Their flat silhouettes reinforce the side-on view.
+    const seatColor = route === "5" ? "#d68d39" : "#286fa0";
+    context.fillStyle = seatColor; context.fillRect(18, 816, 244, 214); context.fillRect(762, 816, 244, 214);
+    context.fillStyle = "rgba(255,255,255,.3)"; context.fillRect(28, 828, 224, 18); context.fillRect(772, 828, 224, 18);
+    context.strokeStyle = "#c3c9c5"; context.lineWidth = 24;
+    for (const x of [278, 746]) { context.beginPath(); context.moveTo(x, 176); context.lineTo(x, 1080); context.stroke(); }
+    context.lineWidth = 14; context.beginPath(); context.moveTo(278, 214); context.lineTo(746, 214); context.stroke();
+
+    context.fillStyle = route === "5" ? "#00933c" : "#fccc0a"; context.beginPath(); context.arc(width * .5, 144, 50, 0, Math.PI * 2); context.fill();
+    context.fillStyle = route === "5" ? "#fff" : "#111"; context.textAlign = "center"; context.textBaseline = "middle"; context.font = "900 68px Helvetica, Arial, sans-serif"; context.fillText(route, width * .5, 150);
+    if (quality !== "mobile") for (const [x, coat, skin] of [[142, "#344f5c", "#bd8464"], [882, "#76526d", "#d9aa87"]] as const) {
+      context.fillStyle = coat; context.beginPath(); context.ellipse(x, 840, 58, 142, 0, 0, Math.PI * 2); context.fill();
+      context.fillStyle = skin; context.beginPath(); context.arc(x, 670, 48, 0, Math.PI * 2); context.fill();
     }
-    context.fillStyle = "rgba(255,255,255,.16)"; for (let stripe = 0; stripe < 9; stripe++) context.fillRect(0, stripe * 150, width, 2);
+    context.fillStyle = "rgba(255,255,255,.11)"; for (let stripe = 0; stripe < 7; stripe++) context.fillRect(0, 200 + stripe * 142, width, 2);
   });
 }
 
@@ -259,7 +284,7 @@ function addCylinderBetween(parent: THREE.Group, start: THREE.Vector3, end: THRE
   return mesh;
 }
 
-function addNpc(parent: THREE.Group, x: number, z: number, palette: [string, string], facing = 0, variant = 0, quality: SubwayQuality = "balanced", surfaceMaps?: CommuterSurfaceMaps) {
+function addLegacyNpc(parent: THREE.Group, x: number, z: number, palette: [string, string], facing = 0, variant = 0, quality: SubwayQuality = "balanced", surfaceMaps?: CommuterSurfaceMaps) {
   const npc = new THREE.Group(); npc.name = `subway-passenger-${variant}`; npc.position.set(x, 0, z); npc.rotation.y = facing;
   const segments = SUBWAY_DETAIL[quality].radialSegments;
   const coat = new THREE.MeshStandardMaterial({ color: palette[0], roughness: .72, metalness: .015, map: surfaceMaps?.fabric ?? null, bumpMap: surfaceMaps?.fabric ?? null, bumpScale: .012 });
@@ -345,11 +370,33 @@ function addNpc(parent: THREE.Group, x: number, z: number, palette: [string, str
   npc.traverse(object => { if (object instanceof THREE.Mesh) { object.castShadow = true; object.receiveShadow = true; } }); parent.add(npc); return npc;
 }
 
-function addStationAttendant(parent: THREE.Group, x: number, y: number, z: number, facing: number, quality: SubwayQuality, surfaceMaps?: CommuterSurfaceMaps) {
-  const attendant = addNpc(parent, x, z, ["#173d67", "#b87f62"], facing, 9, quality, surfaceMaps); attendant.name = "mta-station-attendant"; attendant.position.y = y;
-  const vest = new THREE.MeshStandardMaterial({ color: "#efc440", roughness: .58 });
-  const reflective = new THREE.MeshPhysicalMaterial({ color: "#e9f2df", roughness: .24, clearcoat: .3 });
-  const radioMaterial = new THREE.MeshStandardMaterial({ color: "#151b1c", metalness: .32, roughness: .44 });
+function addNpc(parent: THREE.Group, x: number, z: number, palette: [string, string], facing = 0, variant = 0, quality: SubwayQuality = "balanced", surfaceMaps?: CommuterSurfaceMaps, ownedTextures?: THREE.Texture[], role: PremiumHumanRole = "visitor") {
+  // Keep the legacy rig as a deterministic emergency fallback for callers that
+  // do not provide shared station surfaces. Authored stations use the premium,
+  // atlas-backed rig at every quality tier.
+  if (!surfaceMaps) return addLegacyNpc(parent, x, z, palette, facing, variant, quality, surfaceMaps);
+  const trouserColors = ["#171b1e", "#292a35", "#2d382f", "#443b35", "#182c3d"];
+  const accessories = ["backpack", "none", "tote", "none", "backpack"] as const;
+  const result = createPremiumHuman({
+    role,
+    quality: quality === "mobile" ? .48 : quality === "ultra" ? .82 : .64,
+    variant,
+    coat: palette[0],
+    trousers: trouserColors[variant % trouserColors.length],
+    skin: palette[1],
+    accessory: role === "attendant" ? "radio" : accessories[variant % accessories.length],
+    pose: variant % 4 === 1 ? "checking-map" : "neutral",
+    faceAtlasUrl: "/game/characters/npc-face-atlas-v1.webp",
+    clothingAtlasUrl: "/game/characters/npc-cloth-atlas-v1.webp",
+  });
+  const npc = result.root; npc.name = role === "attendant" ? "mta-station-attendant" : `subway-passenger-${variant}`; npc.position.set(x, 0, z); npc.rotation.y = facing; npc.scale.setScalar(.9); parent.add(npc); ownedTextures?.push(...result.ownedTextures); return npc;
+}
+
+function addStationAttendant(parent: THREE.Group, x: number, y: number, z: number, facing: number, quality: SubwayQuality, surfaceMaps?: CommuterSurfaceMaps, ownedTextures?: THREE.Texture[]) {
+  const attendant = addNpc(parent, x, z, ["#173d67", "#b87f62"], facing, 9, quality, surfaceMaps, ownedTextures, "attendant"); attendant.name = "mta-station-attendant"; attendant.position.y = y;
+  const vest = new THREE.MeshStandardMaterial({ color: "#efc440", roughness: .58, map: surfaceMaps?.fabric ?? null, bumpMap: surfaceMaps?.fabric ?? null, bumpScale: .01 });
+  const reflective = new THREE.MeshPhysicalMaterial({ color: "#e9f2df", roughness: .24, clearcoat: .3, map: surfaceMaps?.fabric ?? null });
+  const radioMaterial = new THREE.MeshStandardMaterial({ color: "#151b1c", metalness: .32, roughness: .44, map: surfaceMaps?.leather ?? null, bumpMap: surfaceMaps?.leather ?? null, bumpScale: .008 });
   for (const side of [-1, 1]) {
     const vestPanel = new THREE.Mesh(new RoundedBoxGeometry(.14, .56, .026, 3, .018), vest); vestPanel.position.set(side * .105, 1.34, -.292); vestPanel.rotation.z = side * .05; attendant.add(vestPanel);
     const strip = new THREE.Mesh(new RoundedBoxGeometry(.035, .5, .012, 2, .006), reflective); strip.position.set(side * .105, 1.34, -.31); attendant.add(strip);
@@ -479,19 +526,26 @@ function buildTrain(textures: GameTextures, route: string, direction: string, co
       }
     }
     const doorway = new THREE.Mesh(new RoundedBoxGeometry(2.18, 2.35, .018, 3, .04), dark); doorway.position.z = -.006; pair.add(doorway);
+    const openInterior = new THREE.Group(); openInterior.name = "open-door-interior"; openInterior.visible = false; pair.add(openInterior);
     // Keep the open doorway behind the sliding leaves, but far enough in front
     // of the dark recess to avoid z-fighting. A lit vestibule, floor threshold,
     // pole, and seat edge make boarding read as a real car interior instead of
     // a black teleport portal from platform height.
-    const doorwayGlow = new THREE.Mesh(new RoundedBoxGeometry(1.82, 2.02, .012, 3, .025), cabinGlow); doorwayGlow.position.z = .012; pair.add(doorwayGlow);
-    const vestibule = new THREE.Mesh(new RoundedBoxGeometry(1.22, 1.76, .009, 3, .018), interior); vestibule.position.set(0, -.03, .021); pair.add(vestibule);
-    const aisle = new THREE.Mesh(new RoundedBoxGeometry(.62, 1.42, .006, 3, .012), new THREE.MeshStandardMaterial({ color: "#4a4d48", roughness: .78 })); aisle.position.set(0, -.12, .028); pair.add(aisle);
-    const portal = new THREE.Mesh(new RoundedBoxGeometry(1.78, 1.98, .012, 3, .024), openInteriorMaterial); portal.name = "visible-open-car-interior"; portal.position.set(0, 0, .039); pair.add(portal);
-    const threshold = new THREE.Mesh(new RoundedBoxGeometry(1.76, .09, .075, 2, .015), brushedSteel); threshold.position.set(0, -1.03, .045); pair.add(threshold);
-    const seatEdge = new THREE.Mesh(new RoundedBoxGeometry(.34, .52, .035, 5, .05), seatSilhouetteMaterial); seatEdge.position.set(-.63, -.55, .054); pair.add(seatEdge);
-    const headerLight = new THREE.Mesh(new RoundedBoxGeometry(1.48, .06, .028, 2, .012), warmLight); headerLight.position.set(0, .89, .04); pair.add(headerLight);
-    const centrePole = new THREE.Mesh(new THREE.CylinderGeometry(.025, .025, 2, radial), brushedSteel); centrePole.position.set(.52, 0, .065); pair.add(centrePole);
-    const indicator = new THREE.Mesh(new THREE.SphereGeometry(.055, radial, Math.max(6, radial - 2)), new THREE.MeshBasicMaterial({ color: "#e2513f", toneMapped: false })); indicator.position.set(0, 1.25, .075); pair.add(indicator);
+    const doorwayGlow = new THREE.Mesh(new RoundedBoxGeometry(1.82, 2.02, .012, 3, .025), cabinGlow); doorwayGlow.position.z = .012; openInterior.add(doorwayGlow);
+    const vestibule = new THREE.Mesh(new RoundedBoxGeometry(1.22, 1.76, .009, 3, .018), interior); vestibule.position.set(0, -.03, .021); openInterior.add(vestibule);
+    const aisle = new THREE.Mesh(new RoundedBoxGeometry(.62, 1.42, .006, 3, .012), new THREE.MeshStandardMaterial({ color: "#4a4d48", roughness: .78 })); aisle.position.set(0, -.12, .028); openInterior.add(aisle);
+    const portal = new THREE.Mesh(new RoundedBoxGeometry(1.78, 1.98, .012, 3, .024), openInteriorMaterial); portal.name = "visible-open-car-interior"; portal.position.set(0, 0, .039); openInterior.add(portal);
+    const threshold = new THREE.Mesh(new RoundedBoxGeometry(1.76, .09, .075, 2, .015), brushedSteel); threshold.position.set(0, -1.03, .045); openInterior.add(threshold);
+    // Layer a modeled, side-on vestibule over the authored depth plate. The
+    // geometry is shared by every door and is disabled while the leaves are shut.
+    const vestibuleFloor = new THREE.Mesh(new RoundedBoxGeometry(1.7, .18, .36, 3, .025), new THREE.MeshStandardMaterial({ color: "#424744", roughness: .86 })); vestibuleFloor.position.set(0, -.94, .09); vestibuleFloor.rotation.x = .2; openInterior.add(vestibuleFloor);
+    for (const sideOffset of [-.66, .66]) {
+      const seatEdge = new THREE.Mesh(new RoundedBoxGeometry(.32, .5, .08, 5, .05), seatSilhouetteMaterial); seatEdge.position.set(sideOffset, -.54, .072); openInterior.add(seatEdge);
+      const seatBack = new THREE.Mesh(new RoundedBoxGeometry(.3, .62, .055, 5, .04), seatSilhouetteMaterial); seatBack.position.set(sideOffset, -.28, .064); openInterior.add(seatBack);
+    }
+    const headerLight = new THREE.Mesh(new RoundedBoxGeometry(1.48, .06, .028, 2, .012), warmLight); headerLight.position.set(0, .89, .04); openInterior.add(headerLight);
+    for (const poleX of [-.5, .5]) { const pole = new THREE.Mesh(new THREE.CylinderGeometry(.025, .025, 2, radial), brushedSteel); pole.position.set(poleX, 0, .075); openInterior.add(pole); }
+    const indicator = new THREE.Mesh(new THREE.SphereGeometry(.055, radial, Math.max(6, radial - 2)), new THREE.MeshBasicMaterial({ color: "#e2513f", toneMapped: false })); indicator.position.set(0, 1.25, .075); openInterior.add(indicator);
     pair.userData.platformFacing = side === platformSide; root.add(pair); doors.push(pair);
   }
   for (const side of [-1, 1]) for (const z of [-8.25, -3.1, 3.1, 8.25]) {
@@ -618,19 +672,19 @@ function buildStation(id: SubwayStationId, textures: GameTextures, adTextures: T
   addTextPanel(root, leftChoice, [-5.1, 6.02, 13.95], [4.15, 1.17], 0).name = "left-stair-route-choice";
   addTextPanel(root, rightChoice, [5.1, 6.02, 13.95], [4.15, 1.17], 0).name = "right-stair-route-choice";
   const streetRoutes = isFifth ? ["N", "R", "W"] : isLex ? ["4", "5", "6"] : ["2", "5"];
-  const streetTexture = exitSignTexture(isFifth ? "Subway entrance · 5 Av / 60 St" : isLex ? "Lexington Av / 59 St" : "Exit · Boston Rd / E 178 St", isFifth ? "Central Park South · Queens-bound N / R" : isLex ? "Uptown / The Bronx transfer" : "Bronx Zoo · Asia Gate", streetRoutes); ownedTextures.push(streetTexture);
+  const streetTexture = exitSignTexture(isFifth ? "Subway entrance · 5 Av / 60 St" : isLex ? "Lexington Av / 59 St" : "Exit · Boston Rd / E 178 St", isFifth ? "N · R · W trains · choose direction in concourse" : isLex ? "4 · 5 · 6 and N · R · W · follow platform signs" : "Bronx Zoo · Asia Gate", streetRoutes); ownedTextures.push(streetTexture);
   addStreetEntrance(root, floor, streetTexture, quality, paintMap);
-  const exitTexture = exitSignTexture(isFifth ? "Queens-bound platform" : isLex ? "Uptown & The Bronx" : "North exit · Bronx Zoo", isFifth ? "N / R via 59 St platform" : isLex ? "4 / 5 / 6 · stairs down" : "Boston Rd & E 178 St", isFifth ? ["N", "R"] : isLex ? ["4", "5", "6"] : ["2", "5"], isLex ? "#00933c" : "#fccc0a"); ownedTextures.push(exitTexture);
+  const exitTexture = exitSignTexture(isFifth ? "N · R · W platforms" : isLex ? "Subway platforms" : "North exit · Bronx Zoo", isFifth ? "Choose Queens-bound or downtown at the signed stairs" : isLex ? "Choose uptown / The Bronx or downtown below" : "Boston Rd & E 178 St", streetRoutes, isLex ? "#00933c" : id === "WEST_FARMS" ? "#72aa92" : "#fccc0a"); ownedTextures.push(exitTexture);
   addTextPanel(root, exitTexture, [0, 6.35, 26.6], [7.4, 1.25], 0).name = "concourse-direction-sign";
   const mosaic = mosaicTexture(isFifth ? "Fifth Avenue" : isLex ? "Lexington Avenue" : "West Farms Square", isFifth ? "#80522c" : isLex ? "#2c7351" : "#426f69"); ownedTextures.push(mosaic);
-  for (const side of [-1, 1]) for (const z of [-43, -20, 3, 24]) addTextPanel(root, mosaic, [side * 9.88, 3.72, z], [3.55, .64], side > 0 ? -Math.PI / 2 : Math.PI / 2);
+  for (const side of [-1, 1]) for (const z of [-43, -20, 3, 24]) addTextPanel(root, mosaic, [side * 9.88, 3.94, z], [3.45, .5], side > 0 ? -Math.PI / 2 : Math.PI / 2);
   const adsPerWall = Math.ceil(detail.wallAds / 2);
   for (const side of [-1, 1]) for (let index = 0; index < adsPerWall; index++) {
     const texture = adTextures[(index + (side > 0 ? 1 : 0)) % adTextures.length];
-    const ad = addTextPanel(root, texture, [side * 9.82, 2.08, -34 + index * 13], [2.72, 3.22], side > 0 ? -Math.PI / 2 : Math.PI / 2); ad.name = "unobstructed-sloth-themed-subway-ad";
+    const ad = addTextPanel(root, texture, [side * 9.82, 2.02, -34 + index * 13], [2.55, 2.82], side > 0 ? -Math.PI / 2 : Math.PI / 2); ad.name = "unobstructed-sloth-themed-subway-ad";
   }
   const benchMaterial = new THREE.MeshStandardMaterial({ color: "#976748", roughness: .54, metalness: .04, map: woodMap, bumpMap: woodMap, bumpScale: .024 });
-  for (const side of [-1, 1]) for (const z of [-27, 5]) {
+  for (const side of [-1, 1]) for (const z of [-36, -20]) {
     const bench = new THREE.Group(); bench.name = "platform-parallel-bench"; bench.position.set(side * 7.35, 0, z);
     for (let slat = -2; slat <= 2; slat++) { const seatSlat = new THREE.Mesh(new RoundedBoxGeometry(.18, .12, 3.6, 3, .04), benchMaterial); seatSlat.position.set(slat * .205, .67, 0); bench.add(seatSlat); }
     for (const legZ of [-1.3, 1.3]) addCylinderBetween(bench, new THREE.Vector3(-.34, .05, legZ), new THREE.Vector3(-.34, .62, legZ), .035, steel, radial);
@@ -647,9 +701,21 @@ function buildStation(id: SubwayStationId, textures: GameTextures, adTextures: T
     const bin = new THREE.Mesh(new THREE.CylinderGeometry(.24, .28, .72, radial), new THREE.MeshStandardMaterial({ color: side < 0 ? "#4b7758" : "#3b586c", metalness: .36, roughness: .48, map: paintMap, bumpMap: paintMap, bumpScale: .008 })); bin.position.set(side * 8.55, .36, -8); root.add(bin);
     addTextPanel(root, mapTexture, [side * 9.8, 2.15, 29], [2.4, 3.2], side > 0 ? -Math.PI / 2 : Math.PI / 2).name = "neighborhood-service-map";
   }
-  for (const x of [-7.4, -2.45, 2.45, 7.4]) {
-    const turnstile = new THREE.Mesh(new RoundedBoxGeometry(.42, .86, .72, 4, .08), steel); turnstile.position.set(x, 4.43, 23.4); root.add(turnstile);
-    addCylinderBetween(root, new THREE.Vector3(x, 4.9, 23.4), new THREE.Vector3(x + .62, 4.9, 23.4), .025, brushedSteel, radial);
+  for (const x of [-1.8, -.6, .6, 1.8]) {
+    const turnstile = new THREE.Group(); turnstile.name = "three-arm-mta-turnstile"; turnstile.position.set(x, 4, 23.25); root.add(turnstile);
+    const pedestal = new THREE.Mesh(new RoundedBoxGeometry(.56, .9, 1.16, 5, .1), steel); pedestal.position.y = .45; turnstile.add(pedestal);
+    const reader = new THREE.Mesh(new RoundedBoxGeometry(.38, .12, .48, 4, .045), dark); reader.position.set(0, .96, -.18); reader.rotation.x = -.12; turnstile.add(reader);
+    const readerGlow = new THREE.Mesh(new RoundedBoxGeometry(.21, .018, .18, 3, .01), new THREE.MeshBasicMaterial({ color: "#64be86", toneMapped: false })); readerGlow.position.set(0, 1.025, -.23); readerGlow.rotation.x = -.12; turnstile.add(readerGlow);
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(.1, .1, .52, radial), brushedSteel); hub.rotation.z = Math.PI / 2; hub.position.set(.43, .76, .12); turnstile.add(hub);
+    for (let arm = 0; arm < 3; arm++) {
+      const angle = arm / 3 * Math.PI * 2 + Math.PI / 6;
+      addCylinderBetween(turnstile, new THREE.Vector3(.7, .76, .12), new THREE.Vector3(.7, .76 + Math.sin(angle) * .62, .12 + Math.cos(angle) * .62), .025, brushedSteel, radial);
+    }
+  }
+  for (const side of [-1, 1]) {
+    const funnel = new THREE.Group(); funnel.name = "fare-control-side-rail-funnel"; root.add(funnel);
+    for (const height of [4.58, 4.93]) addCylinderBetween(funnel, new THREE.Vector3(side * 2.56, height, 21.45), new THREE.Vector3(side * 2.56, height, 24.72), .027, brushedSteel, radial);
+    for (const z of [21.45, 24.72]) addCylinderBetween(funnel, new THREE.Vector3(side * 2.56, 4.12, z), new THREE.Vector3(side * 2.56, 5.02, z), .03, brushedSteel, radial);
   }
   const booth = new THREE.Group(); booth.name = "station-agent-booth"; booth.position.set(8.15, 4, 20.2);
   const boothBlue = new THREE.MeshStandardMaterial({ color: "#174f78", metalness: .28, roughness: .5, map: paintMap, bumpMap: paintMap, bumpScale: .01 });
@@ -658,21 +724,22 @@ function buildStation(id: SubwayStationId, textures: GameTextures, adTextures: T
   const boothRoof = new THREE.Mesh(new RoundedBoxGeometry(3.05, .16, 2.3, 4, .06), steel); boothRoof.position.y = 2.2; booth.add(boothRoof);
   for (const side of [-1, 1]) { const post = new THREE.Mesh(new RoundedBoxGeometry(.1, 1.45, .1, 2, .02), steel); post.position.set(side * 1.32, 1.42, 1); booth.add(post); }
   const boothWindow = new THREE.Mesh(new RoundedBoxGeometry(2.55, 1.28, .055, 3, .035), boothGlass); boothWindow.position.set(0, 1.43, 1.04); booth.add(boothWindow); root.add(booth);
-  addStationAttendant(root, 8.15, 4, 20.35, Math.PI, quality, commuterMaps);
+  addStationAttendant(root, 8.15, 4, 20.35, Math.PI, quality, commuterMaps, ownedTextures);
   const npcPlacements: Array<[number, number, [string, string], number]> = [
     [-7.15, -9, ["#7a463f", "#986e59"], .3], [7.1, -17, ["#31566a", "#d0a27d"], -2.7], [7.3, 5.5, ["#6c6544", "#704c38"], -1.4],
     [-7.2, -35.5, ["#824d63", "#c68f6d"], .8], [7.15, -4.5, ["#4b6653", "#e0b894"], -2.1], [-7.2, 2.6, ["#705a83", "#815a43"], .15],
     [7.2, 21, ["#a36f3f", "#b87857"], 2.6], [-7.15, -24.5, ["#38566f", "#d0aa91"], -.4],
   ];
-  npcPlacements.slice(0, detail.npcCount).forEach(([x, z, palette, facing], index) => addNpc(root, x, z, palette, facing, index + (isLex ? 3 : id === "WEST_FARMS" ? 6 : 0), quality, commuterMaps));
+  npcPlacements.slice(0, detail.npcCount).forEach(([x, z, palette, facing], index) => addNpc(root, x, z, palette, facing, index + (isLex ? 3 : id === "WEST_FARMS" ? 6 : 0), quality, commuterMaps, ownedTextures));
   if (id === "WEST_FARMS") {
-    const artWall = new THREE.Mesh(new RoundedBoxGeometry(18.8, 4.35, .22, 3, .035), new THREE.MeshStandardMaterial({ color: "#26312f", roughness: .72, map: paintMap, bumpMap: paintMap, bumpScale: .012 })); artWall.position.set(0, 2.25, -25.18); root.add(artWall);
+    const artWallMaterial = new THREE.MeshStandardMaterial({ color: "#26312f", roughness: .72, map: paintMap, bumpMap: paintMap, bumpScale: .012 });
+    for (const side of [-1, 1]) { const artWall = new THREE.Mesh(new RoundedBoxGeometry(.22, 4.35, 18.8, 3, .035), artWallMaterial); artWall.position.set(side * 9.7, 2.25, -25.18); root.add(artWall); }
     const artColors = ["#4d8e7e", "#d1a459", "#8c594b", "#65809f"];
     const artPanelTextures = [0, 1, 2].map(index => animalTracksPanelTexture(index)); ownedTextures.push(...artPanelTextures);
-    const featuredMosaic = addTextPanel(root, bronxMosaicTexture, [0, 2.42, -24.92], [9.3, 4.08], 0); featuredMosaic.name = "bronx-zoo-featured-mosaic";
+    for (const side of [-1, 1]) { const featuredMosaic = addTextPanel(root, bronxMosaicTexture, [side * 9.56, 2.42, -25.18], [8.9, 3.84], side > 0 ? -Math.PI / 2 : Math.PI / 2); featuredMosaic.name = "bronx-zoo-featured-mosaic"; }
     const artLabelTexture = stationSignTexture("MTA ARTS & DESIGN", ["ANIMAL TRACKS · WEST FARMS SQUARE"], "#72aa92"); ownedTextures.push(artLabelTexture);
-    addTextPanel(root, artLabelTexture, [-6.55, 3.95, -24.82], [3.45, .88], 0).name = "animal-tracks-gallery-label";
-    for (const x of [-6.55, 6.55]) { const galleryLight = new THREE.SpotLight("#fff0ce", 27, 9, .62, .45, 1.3); galleryLight.position.set(x, 4.55, -21.4); galleryLight.target.position.set(x, 2.35, -25); root.add(galleryLight, galleryLight.target); }
+    addTextPanel(root, artLabelTexture, [-9.5, 4.25, -15.85], [3.45, .72], Math.PI / 2).name = "animal-tracks-gallery-label";
+    for (const side of [-1, 1]) { const galleryLight = new THREE.SpotLight("#fff0ce", 27, 9, .62, .45, 1.3); galleryLight.position.set(side * 7.75, 4.55, -25); galleryLight.target.position.set(side * 9.5, 2.35, -25); root.add(galleryLight, galleryLight.target); }
     const artMaterials = artColors.map((color, index) => new THREE.MeshPhysicalMaterial({ color, map: artPanelTextures[index % artPanelTextures.length], transparent: true, opacity: .72, roughness: .12, transmission: quality === "mobile" ? 0 : .18, thickness: .08 }));
     // Original faceted windscreens evoke the station's zoo-linked glass art
     // through abstract tracks, plumage, and leaf colors without copying it.
@@ -801,6 +868,8 @@ export class SubwayWorld {
       const pairOpening = pair.userData.platformFacing === true ? opening : 0;
       pair.children[0].position.x = -.56 - pairOpening;
       pair.children[1].position.x = .56 + pairOpening;
+      const openInterior = pair.getObjectByName("open-door-interior");
+      if (openInterior) openInterior.visible = pair.userData.platformFacing === true && opening > .035;
     }
   }
 

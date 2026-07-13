@@ -89,10 +89,13 @@ test("foraging opens the Bow Bridge, island ticket, zoo, and subway campaign wit
   assert.match(wayfinder, /aria-label=\{`\$\{label\}, \$\{meters\} meters away`\}/);
   assert.match(world, /export const GOAL = BOW_BRIDGE_TARGET/);
   assert.match(landmarks, /bow-bridge-northwest-inlet-span/);
+  assert.match(landmarks, /bow-bridge-side-abutment/);
+  assert.match(landmarks, /bow-bridge-clear-walkable-approach/);
   assert.match(landmarks, /central-park-zoo-exterior-campus/);
   assert.match(landmarks, /5-av-59-st-full-stair-subway-entrance/);
-  assert.match(landmarks, /subway-first-descending-step-trigger/);
-  assert.match(landmarks, /QUEENS & ASTORIA/);
+  assert.match(landmarks, /subway-mid-descent-transition-step/);
+  assert.match(landmarks, /UPTOWN  ·  DOWNTOWN  ·  QUEENS  VIA CONCOURSE/);
+  assert.doesNotMatch(landmarks, /QUEENS & ASTORIA/);
   assert.doesNotMatch(game, /qaInput === "gate"|gatecomplete|Follow the marker to sanctuary/);
   assert.doesNotMatch(wayfinder, /Sanctuary gate/);
 });
@@ -176,6 +179,10 @@ test("park and finale landmarks use complete campuses and textured articulated c
   assert.match(characters, /new THREE\.CapsuleGeometry/);
   assert.match(characters, /createPremiumSlothFriend/);
   for (const feature of ["west-farms-station-exit-approach", "bronx-zoo-arrival-fountain", "bronx-zoo-ticket-and-member-pavilion", "waiting-sloth-friend"]) assert.match(finale + characters, new RegExp(feature));
+  assert.match(finale, /bronx-zoo-arrival-attendant/);
+  assert.match(finale, /attendantNearby\(player: THREE\.Vector3/);
+  assert.match(finale, /\/game\/characters\/npc-face-atlas-v1\.webp/);
+  assert.match(finale, /\/game\/characters\/npc-cloth-atlas-v1\.webp/);
 });
 
 test("subway service cycles every 30 seconds and presents route-correct trains", async () => {
@@ -197,7 +204,18 @@ test("subway service cycles every 30 seconds and presents route-correct trains",
   assert.match(world, /right-stair-route-choice/);
   assert.match(world, /unobstructed-sloth-themed-subway-ad/);
   assert.match(world, /visible-open-car-interior/);
+  assert.match(world, /open-door-interior/);
+  assert.match(world, /opening > \.035/);
   assert.match(world, /lit-passenger-cabin/);
+  assert.match(world, /three-arm-mta-turnstile/);
+  assert.match(world, /\[-1\.8, -\.6, \.6, 1\.8\]/);
+  assert.match(world, /fare-control-side-rail-funnel/);
+  assert.match(world, /view straight across the car from a platform doorway/);
+  assert.doesNotMatch(world, /Perspective aisle, longitudinal seats/);
+  assert.match(world, /choose direction in concourse/);
+  assert.match(world, /createPremiumHuman/);
+  assert.match(world, /\/game\/characters\/npc-face-atlas-v1\.webp/);
+  assert.match(world, /\/game\/characters\/npc-cloth-atlas-v1\.webp/);
   assert.match(world, /bronx-zoo-featured-mosaic/);
   assert.match(world, /daylight-bronx-zoo-wayfinding/);
   assert.match(world, /addStairs\(root, -5\.1[\s\S]{0,80}addStairs\(root, 5\.1/);
@@ -231,10 +249,11 @@ test("wrong trains restore the current station checkpoint and correct trains adv
   assert.match(finishRide, /checkpoint\("WEST_FARMS"/);
 });
 
-test("West Farms north exit completes the mission at the Bronx Zoo", async () => {
-  const [subway, world] = await Promise.all([
+test("West Farms streams a playable Bronx Zoo arrival before mission completion", async () => {
+  const [subway, world, finale] = await Promise.all([
     readFile(new URL("../app/game/SubwayGame.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/game/world/SubwayWorld.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/world/BronxZooWorld.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(world, /WEST FARMS SQ \/ E TREMONT AV/);
@@ -243,9 +262,16 @@ test("West Farms north exit completes the mission at the Bronx Zoo", async () =>
   assert.match(world, /this\.stationId === "WEST_FARMS"[\s\S]{0,140}this\.trainPhase = "AWAY"/);
   assert.match(subway, /prompt = "WALK UP TO THE BRONX ZOO EXIT"/);
   assert.match(subway, /distance < 1\.45\) enterBronxZoo\(\)/);
-  assert.match(subway, /setTransitStage\("COMPLETE"\)/);
+  assert.match(subway, /setTransitStage\("BRONX_ZOO"\)/);
   assert.match(subway, /new BronxZooWorld\(scene, textures/);
   assert.match(subway, /stationWorld\.dispose\(\); stationWorld = null/);
+  assert.match(subway, /player\.copy\(zooWorld\.spawn\)/);
+  assert.match(subway, /zooWorld\.attendantNearby\(player\)/);
+  assert.match(subway, /SPEAK WITH BRONX ZOO ATTENDANT/);
+  assert.match(subway, /function completeMission\(\)[\s\S]{0,180}setTransitStage\("COMPLETE"\)/);
+  assert.match(finale, /readonly spawn = new THREE\.Vector3/);
+  assert.match(finale, /resolvePlayer\(player: THREE\.Vector3/);
+  assert.match(finale, /attendantNearby\(player: THREE\.Vector3/);
   assert.match(subway, /<div className="eyebrow">Bronx Zoo · Asia Gate<\/div>/);
   assert.match(subway, /<h2>Mission complete\.<\/h2>/);
 });
@@ -268,7 +294,7 @@ test("train boarding streams a dedicated interior world with crowd and door game
   assert.match(interior, /MISSED_STOP/);
   assert.match(interior, /destination-door-marker/);
   assert.match(interior, /Stay clear of the doors until/);
-  assert.match(interior, /Move to the illuminated/);
+  assert.match(interior, /Use any illuminated/);
   assert.match(interior, /"86 St"[\s\S]{0,120}"125 St"[\s\S]{0,120}"E 180 St"/);
 });
 
