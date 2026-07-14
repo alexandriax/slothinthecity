@@ -188,8 +188,9 @@ test("park and finale landmarks use complete campuses and textured articulated c
   for (const feature of ["west-farms-station-exit-approach", "bronx-zoo-arrival-fountain", "bronx-zoo-ticket-and-member-pavilion", "waiting-sloth-friend"]) assert.match(finale + characters, new RegExp(feature));
   assert.match(finale, /bronx-zoo-arrival-attendant/);
   assert.match(finale, /attendantNearby\(player: THREE\.Vector3/);
-  assert.match(finale, /\/game\/characters\/npc-face-atlas-v1\.webp/);
-  assert.match(finale, /\/game\/characters\/npc-cloth-atlas-v1\.webp/);
+  assert.match(characters, /\/game\/characters\/npc-face-atlas-v2-03\.webp/);
+  assert.match(characters, /\/game\/characters\/npc-cloth-atlas-v2-03\.webp/);
+  assert.doesNotMatch(finale, /npc-(?:face|cloth)-atlas-v1/);
 });
 
 test("subway service cycles every 30 seconds and presents route-correct trains", async () => {
@@ -199,7 +200,8 @@ test("subway service cycles every 30 seconds and presents route-correct trains",
   assert.match(world, /SUBWAY_TRAIN_INTERVAL_SECONDS = 30/);
   assert.match(world, /const cycle = elapsed % SUBWAY_TRAIN_INTERVAL_SECONDS/);
   assert.match(world, /cycle < 4[\s\S]{0,240}cycle < 16[\s\S]{0,240}cycle < 21/);
-  assert.match(world, /this\.doorsOpen = cycle >= 5 && cycle < 15/);
+  assert.match(world, /this\.doorOpenAmount = Math\.min\(THREE\.MathUtils\.smoothstep\(cycle, 5, 6\.15\)/);
+  assert.match(world, /this\.doorsOpen = this\.doorOpenAmount > \.62/);
   assert.match(world, /buildTrain\(textures, "N", "QUEENS-BOUND", true/);
   assert.match(world, /const route = cycleNumber % 2 === 0 \? "N" : "R"/);
   assert.match(world, /buildTrain\(textures, "W", "[^"]+", false/);
@@ -221,8 +223,8 @@ test("subway service cycles every 30 seconds and presents route-correct trains",
   assert.doesNotMatch(world, /Perspective aisle, longitudinal seats/);
   assert.match(world, /choose direction in concourse/);
   assert.match(world, /createPremiumHuman/);
-  assert.match(world, /\/game\/characters\/npc-face-atlas-v1\.webp/);
-  assert.match(world, /\/game\/characters\/npc-cloth-atlas-v1\.webp/);
+  assert.doesNotMatch(world, /faceAtlasUrl:/);
+  assert.doesNotMatch(world, /clothingAtlasUrl:/);
   assert.match(world, /bronx-zoo-featured-mosaic/);
   assert.match(world, /daylight-bronx-zoo-wayfinding/);
   assert.match(world, /addStairs\(root, -5\.1[\s\S]{0,80}addStairs\(root, 5\.1/);

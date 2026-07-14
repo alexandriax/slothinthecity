@@ -79,6 +79,8 @@ type PassengerRig = {
   armRight: THREE.Group;
   armRightBaseX: number;
   base: THREE.Vector3;
+  flow: "ALIGHT" | "BOARD" | "STAY";
+  flowDoorZ: number;
   group: THREE.Group;
   head: THREE.Group;
   movable: boolean;
@@ -247,7 +249,6 @@ function createPassenger(index: number, quality: TrainInteriorQuality, pose: "ho
     role: "visitor", quality: quality === "desktop" ? .72 : .5, variant: index + 31, coat: palettes[0], trousers: palettes[2], skin: palettes[1],
     accessory: pose === "seated" ? "none" : index % 3 === 0 ? "backpack" : index % 3 === 1 ? "tote" : "none",
     pose: pose === "reading" ? "checking-map" : pose === "seated" ? "seated" : "neutral",
-    faceAtlasUrl: "/game/characters/npc-face-atlas-v1.webp", clothingAtlasUrl: "/game/characters/npc-cloth-atlas-v1.webp",
   });
   premium.root.scale.setScalar(.88);
   if (pose === "seated") premium.root.position.y = -.3;
@@ -255,7 +256,7 @@ function createPassenger(index: number, quality: TrainInteriorQuality, pose: "ho
   const inertLeft = new THREE.Group(), inertRight = new THREE.Group(), inertHead = new THREE.Group();
   return {
     armLeft: inertLeft, armLeftBaseX: 0, armRight: inertRight, armRightBaseX: 0, base: new THREE.Vector3(), group, head: inertHead,
-    movable: pose !== "seated", phase: index * 1.73, seated: pose === "seated",
+    flow: "STAY", flowDoorZ: 0, movable: pose !== "seated", phase: index * 1.73, seated: pose === "seated",
   } satisfies PassengerRig;
 }
 
@@ -385,13 +386,18 @@ export class TrainInteriorWorld {
         for (const edge of [-1, 1]) { const jamb = new THREE.Mesh(new RoundedBoxGeometry(.16, 2.5, .14, 3, .028), dark); jamb.position.set(side * (CAR_HALF_WIDTH - .005), 1.27, z + edge * 1.02); shell.add(jamb); }
         const header = new THREE.Mesh(new RoundedBoxGeometry(.16, .18, 2.1, 3, .028), dark); header.position.set(side * (CAR_HALF_WIDTH - .005), 2.48, z); shell.add(header);
         const threshold = new THREE.Mesh(new RoundedBoxGeometry(.24, .045, 2.02, 3, .018), new THREE.MeshStandardMaterial({ color: "#e2bd3d", metalness: .32, roughness: .56 })); threshold.position.set(side * (CAR_HALF_WIDTH - .03), .025, z); shell.add(threshold);
+        // A dedicated exterior plate sits behind each transparent door window.
+        // It shares the same animated tunnel/platform material path as the side
+        // windows, so a closed door never becomes an opaque painted rectangle.
+        const doorOutside = new THREE.Mesh(new THREE.PlaneGeometry(1.42, .7), new THREE.MeshBasicMaterial({ map: this.tunnelTexture, side: THREE.DoubleSide, toneMapped: false }));
+        doorOutside.name = "animated-door-window-exterior"; doorOutside.position.set(side * (CAR_HALF_WIDTH - .087), 1.59, z); doorOutside.rotation.y = side * -Math.PI / 2; doorOutside.userData.side = side; doorOutside.userData.windowIndex = this.tunnelPanels.length; shell.add(doorOutside); this.tunnelPanels.push(doorOutside);
         const doorGroup = new THREE.Group(); doorGroup.position.set(side * (CAR_HALF_WIDTH - .04), 1.25, z); shell.add(doorGroup);
         const leaves: THREE.Object3D[] = [];
         for (const half of [-1, 1]) {
           const leaf = new THREE.Mesh(new RoundedBoxGeometry(.09, 2.28, .92, 4, .025), steel); leaf.position.z = half * .47; doorGroup.add(leaf); leaves.push(leaf);
           const leafGasket = new THREE.Mesh(new RoundedBoxGeometry(.035, 2.23, .045, 2, .012), dark); leafGasket.position.set(-side * .052, 0, -half * .43); leaf.add(leafGasket);
           const windowGasket = new THREE.Mesh(new RoundedBoxGeometry(.034, .79, .58, 3, .04), dark); windowGasket.position.set(-side * .053, .34, 0); leaf.add(windowGasket);
-          const window = new THREE.Mesh(new RoundedBoxGeometry(.025, .67, .47, 4, .035), glass); window.position.set(-side * .074, .34, 0); leaf.add(window);
+          const window = new THREE.Mesh(new RoundedBoxGeometry(.025, .67, .47, 4, .035), glass); window.name = "transparent-interior-door-window"; window.position.set(-side * .074, .34, 0); leaf.add(window);
           const notice = new THREE.Mesh(new THREE.PlaneGeometry(.28, .18), new THREE.MeshBasicMaterial({ map: doorNoticeTexture, toneMapped: false, side: THREE.FrontSide })); notice.position.set(-side * .09, -.53, 0); notice.rotation.y = -side * Math.PI / 2; leaf.add(notice);
         }
         const marker = new THREE.Mesh(new RoundedBoxGeometry(.035, 2.58, 2.13, 4, .04), new THREE.MeshBasicMaterial({ color: "#c7ff77", transparent: true, opacity: 0, toneMapped: false })); marker.position.set(side * (CAR_HALF_WIDTH - .105), 1.3, z); marker.name = "destination-door-marker"; shell.add(marker);
@@ -486,7 +492,25 @@ export class TrainInteriorWorld {
 
   private enterPhase(phase: TrainInteriorPhase) {
     this.phase = phase; this.phaseTime = 0; this.wrongDoorNotified = false;
-    if (phase === "DWELL") this.pendingEvent = this.isDestination ? { type: "DESTINATION_READY", stop: this.currentStop.name } : { type: "INTERMEDIATE_STOP", stop: this.currentStop.name };
+    if (phase === "APPROACHING") {
+      // Re-seed the visible car before each stop. Riders who exited at the last
+      // station are replaced by the next station's boarding cohort off-camera.
+      this.passengers.forEach(passenger => { passenger.group.visible = true; passenger.group.position.copy(passenger.base); passenger.flow = "STAY"; });
+    }
+    if (phase === "DWELL") {
+      this.passengers.forEach((passenger, index) => {
+        passenger.flow = !passenger.movable ? "STAY" : (index + this.stopIndex) % 3 === 0 ? "ALIGHT" : (index + this.stopIndex) % 3 === 1 ? "BOARD" : "STAY";
+        passenger.flowDoorZ = DOOR_Z[(index + this.stopIndex) % DOOR_Z.length] + (index % 2 ? .25 : -.25);
+        if (passenger.flow === "BOARD") passenger.group.position.set(this.currentStop.side * (CAR_HALF_WIDTH + .58), 0, passenger.flowDoorZ);
+      });
+      this.pendingEvent = this.isDestination ? { type: "DESTINATION_READY", stop: this.currentStop.name } : { type: "INTERMEDIATE_STOP", stop: this.currentStop.name };
+    }
+    if (phase === "DEPARTING") {
+      this.passengers.forEach(passenger => {
+        passenger.group.visible = passenger.flow !== "ALIGHT";
+        if (passenger.flow === "BOARD") passenger.group.position.copy(passenger.base);
+      });
+    }
   }
 
   private advanceTimeline(player: THREE.Vector3) {
@@ -506,13 +530,28 @@ export class TrainInteriorWorld {
     const pressure = stopActivity ? THREE.MathUtils.smoothstep(this.phaseTime, 0, this.phase === "DWELL" ? 2 : APPROACH_SECONDS) : 0;
     this.passengers.forEach((passenger, index) => {
       const target = passenger.base.clone();
-      if (stopActivity && passenger.movable && index < Math.ceil(this.passengers.length * .68)) {
+      let flowPosition: THREE.Vector3 | null = null;
+      if (this.phase === "DWELL" && passenger.flow !== "STAY") {
+        // Riders alight as soon as the doors have a readable opening. Boarding
+        // begins only after that stream reaches the aisle, then finishes before
+        // the closing envelope starts. This makes the intermediate-stop hazard
+        // a visible passenger exchange instead of an arbitrary fail volume.
+        const flow = passenger.flow === "ALIGHT"
+          ? THREE.MathUtils.smoothstep(this.phaseTime, .72, 2.2)
+          : THREE.MathUtils.smoothstep(this.phaseTime, 2.05, DWELL_SECONDS - 1.18);
+        const outside = new THREE.Vector3(this.currentStop.side * (CAR_HALF_WIDTH + .62), 0, passenger.flowDoorZ);
+        const threshold = new THREE.Vector3(this.currentStop.side * .7, 0, passenger.flowDoorZ);
+        if (passenger.flow === "BOARD") flowPosition = flow < .48 ? outside.clone().lerp(threshold, flow / .48) : threshold.clone().lerp(passenger.base, (flow - .48) / .52);
+        else flowPosition = flow < .48 ? passenger.base.clone().lerp(threshold, flow / .48) : threshold.clone().lerp(outside, (flow - .48) / .52);
+        passenger.group.rotation.y = passenger.flow === "BOARD" ? -this.currentStop.side * Math.PI / 2 : this.currentStop.side * Math.PI / 2;
+      } else if (stopActivity && passenger.movable && index < Math.ceil(this.passengers.length * .68)) {
         const doorIndex = this.isDestination ? (index % 2 ? 0 : 2) : index % DOOR_Z.length;
-        target.x = this.currentStop.side * (.78 + index % 2 * .13); target.z = DOOR_Z[doorIndex] + (index % 3 - 1) * .3;
+        target.x = this.currentStop.side * (.68 + index % 2 * .12); target.z = DOOR_Z[doorIndex] + (index % 3 - 1) * .3;
       }
       const playerDistance = Math.hypot(player.x - passenger.group.position.x, player.z - passenger.group.position.z);
       if (passenger.movable && playerDistance < .82) { const part = passenger.group.position.x <= player.x ? -1 : 1; target.x += part * (.82 - playerDistance) * .6; }
-      passenger.group.position.lerp(target, 1 - Math.exp(-delta * (stopActivity ? 2.8 : 1.3)));
+      if (flowPosition) passenger.group.position.lerp(flowPosition, 1 - Math.exp(-delta * 7.5));
+      else passenger.group.position.lerp(target, 1 - Math.exp(-delta * (stopActivity ? 2.8 : 1.3)));
       passenger.group.position.y = Math.sin(this.elapsed * (passenger.seated ? 1.3 : 2.4) + passenger.phase) * (passenger.seated ? .002 : .006);
       passenger.group.rotation.z = Math.sin(this.elapsed * 2.1 + passenger.phase) * .008 + this.cameraRoll * .36;
       passenger.head.rotation.y = Math.sin(this.elapsed * .38 + passenger.phase) * .16;
@@ -535,6 +574,7 @@ export class TrainInteriorWorld {
     const maxX = passageOpen && this.currentStop.side > 0 ? CAR_HALF_WIDTH + .48 : 1.08;
     player.x = THREE.MathUtils.clamp(player.x, minX, maxX);
     for (const passenger of this.passengers) {
+      if (!passenger.group.visible) continue;
       const dx = player.x - passenger.group.position.x, dz = player.z - passenger.group.position.z, distance = Math.hypot(dx, dz);
       if (distance > 0 && distance < .36) { const correction = (.36 - distance) / distance; player.x += dx * correction; player.z += dz * correction; velocity.multiplyScalar(.72); }
     }

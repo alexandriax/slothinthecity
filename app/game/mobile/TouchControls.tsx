@@ -45,7 +45,7 @@ export function TouchControls({ arboreal, prompt, showSense = true, vehicle }: T
     lookPoint.current = { x: event.clientX, y: event.clientY };
     document.dispatchEvent(new CustomEvent("sloth-look", { detail: { dx, dy } }));
   };
-  const actionLabel = vehicle ? "Exit" : prompt.includes("EXIT TRAIN") ? "Exit" : prompt.includes("DRIVE") ? "Drive" : prompt.includes("FORAGE") ? "Forage" : prompt.includes("CLIMB TRUNK") ? "Climb" : prompt.includes("STEP ONTO") || prompt.includes("TAKE THIS") || prompt.includes("REACH ACROSS") ? "Grab" : prompt.includes("ROWBOAT") || prompt.includes("BOARD") ? "Board" : prompt.includes("ATTENDANT") ? "Talk" : prompt.includes("SUBWAY") || prompt.includes("EXIT") ? "Enter" : "";
+  const actionLabel = vehicle ? "Exit" : prompt.includes("SWIPE METROCARD") ? "Swipe" : prompt.includes("COLLECT METROCARD") ? "Card" : prompt.includes("EXIT TRAIN") ? "Exit" : prompt.includes("DRIVE") ? "Drive" : prompt.includes("FORAGE") ? "Forage" : prompt.includes("CLIMB TRUNK") ? "Climb" : prompt.includes("STEP ONTO") || prompt.includes("TAKE THIS") || prompt.includes("REACH ACROSS") ? "Grab" : prompt.includes("ROWBOAT") || prompt.includes("BOARD") ? "Board" : prompt.includes("ATTENDANT") ? "Talk" : prompt.includes("SUBWAY") || prompt.includes("EXIT") ? "Enter" : "";
 
   useEffect(() => {
     const release = () => { for (const code of [...held.current]) emitKey(code, false); held.current.clear(); };
