@@ -89,8 +89,9 @@ button { font: inherit; }
 .cinematic-cta:not(:disabled):hover { transform:translateY(-2px); border-color:rgba(241,233,214,.7); background:rgba(7,17,12,.76); }
 .cinematic-cta:disabled { cursor:wait; color:rgba(241,233,214,.52); }
 .cinematic-cta:not(:disabled) span { animation:none; width:32px; }
-.mobile-wordmark { display:none; color:#f1e9d6; font-family:Georgia,serif; font-size:42px; letter-spacing:-.04em; margin-bottom:22px; }
-.mobile-wordmark i { color:#b7cf73; font-weight:400; }
+.mobile-wordmark { display:none; color:#f1e9d6; font-family:Georgia,serif; font-size:42px; line-height:.88; letter-spacing:-.04em; margin-bottom:22px; }
+.mobile-wordmark span { display:block; }
+.mobile-wordmark i { display:block; margin:8px 0 7px 2px; color:#b7cf73; font-family:Arial,sans-serif; font-size:12px; font-style:normal; font-weight:700; letter-spacing:.28em; }
 @keyframes introPush { to { transform:scale(1.026); } }
 @keyframes introUi { from { opacity:0; transform:translateY(13px); } to { opacity:1; transform:translateY(0); } }
 @keyframes loadLine { 0%{transform:scaleX(.08)} 50%{transform:scaleX(.72)} 100%{transform:scaleX(.08);transform-origin:right} }

@@ -1,4 +1,4 @@
-# SLOTH / PARK — Vertical Slice Production Plan
+# Sloth in the City — Vertical Slice Production Plan
 
 ## 1. Product statement
 
@@ -434,7 +434,7 @@ Each milestone ends in a playable build, measurement snapshot, and focused commi
 
 **Exit:** Scope, budget, control contract, route beats, and acceptance metrics agreed. No asset is acquired without a provenance entry.
 
-**Commit:** `docs: define sloth park vertical slice production plan`
+**Commit:** `docs: define Sloth in the City vertical slice production plan`
 
 ### M1 — Runtime foundation (1 day)
 

@@ -301,11 +301,37 @@ function buildBoat(textures: GameTextures, quality: number, boatNumber: number) 
     waterline.castShadow = false;
     body.add(waterline);
 
-    const label = new THREE.Mesh(new THREE.PlaneGeometry(1.18, .37), materials.label);
+    // Keep the identity plate proud of the lapstrakes and safely above the
+    // waterline.  The old decal sat inside the curved hull and was clipped by
+    // both the outer skin and the lake surface at oblique viewing angles.
+    const label = new THREE.Mesh(new THREE.PlaneGeometry(1.3, .42), materials.label);
     label.name = "central-park-rowboat-marking";
-    label.position.set(side * .79, .33, .26);
+    label.position.set(side * .872, .43, .26);
     label.rotation.y = side * Math.PI / 2;
+    label.renderOrder = 4;
     body.add(label);
+  }
+
+  // The swept hull deliberately retains a tiny amount of beam at each end so
+  // its normals remain stable.  Close those end rings with substantial oak
+  // stem posts; without them the open BufferGeometry looked like a boat split
+  // cleanly in two whenever the player approached bow-on.
+  for (const z of [-HALF_LENGTH + .055, HALF_LENGTH - .055]) {
+    const stem = setShadow(new THREE.Mesh(
+      new RoundedBoxGeometry(.145, .84, .22, quality > .7 ? 5 : 3, .055),
+      materials.darkWood,
+    ));
+    stem.name = z < 0 ? "watertight-bow-stem-post" : "watertight-stern-post";
+    stem.position.set(0, .29, z);
+    body.add(stem);
+
+    const stemCap = setShadow(new THREE.Mesh(
+      new RoundedBoxGeometry(.34, .075, .31, quality > .7 ? 4 : 2, .032),
+      materials.varnishedWood,
+    ));
+    stemCap.name = z < 0 ? "bow-stem-cap" : "stern-stem-cap";
+    stemCap.position.set(0, .69, z);
+    body.add(stemCap);
   }
 
   for (const z of [-1.55, -.77, 0, .77, 1.55]) {
@@ -359,11 +385,9 @@ function buildBoat(textures: GameTextures, quality: number, boatNumber: number) 
     body.add(lock);
   }
 
-  const ropeCoil = setShadow(new THREE.Mesh(new THREE.TorusGeometry(.19, .022, 7, quality > .7 ? 36 : 20), materials.rope));
-  ropeCoil.name = "bow-mooring-rope";
-  ropeCoil.rotation.x = Math.PI / 2;
-  ropeCoil.position.set(.24, .64, -1.82);
-  body.add(ropeCoil);
+  // Do not place a horizontal torus on the foredeck: from the rower's seat it
+  // read as a hovering steering wheel rather than a practical fitting.  The
+  // bronze eye and paired cleats below communicate the mooring hardware.
   const bowEye = setShadow(new THREE.Mesh(new THREE.TorusGeometry(.055, .012, 6, 16), materials.metal));
   bowEye.name = "bronze-bow-eye";
   bowEye.position.set(0, .57, -2.45);
@@ -475,6 +499,15 @@ export class ParkRowboat {
 
   get steeringAngleRadians() {
     return this.steerAngle;
+  }
+
+  /** Current paired-oar stroke, used to keep the first-person paws on grips. */
+  get oarStrokePhaseRadians() {
+    return this.oarPhase;
+  }
+
+  get rowingEffort() {
+    return this.rowEffort;
   }
 
   getWorldCollisionBounds(target = new THREE.Box3()) {

@@ -13,7 +13,7 @@ test("train interior provides a complete onboard door-positioning quest", async 
   assert.match(source, /type: "PUSHED_OUT"/);
   assert.match(source, /type: "MISSED_STOP"/);
   assert.match(source, /type: "ARRIVED"/);
-  assert.match(source, /Move to the illuminated/);
+  assert.match(source, /Use any illuminated/);
   assert.match(source, /Stay clear of the doors until/);
   assert.match(source, /interact\(player: THREE\.Vector3\)/);
 });
@@ -36,6 +36,9 @@ test("train interior scales detail for mobile without losing authored features",
   assert.match(source, /setAdvertisementTexture/);
   assert.match(source, /cameraOffset/);
   assert.match(source, /cameraRoll/);
+  assert.match(source, /createPremiumHuman/);
+  assert.match(source, /\/game\/characters\/npc-face-atlas-v1\.webp/);
+  assert.match(source, /\/game\/characters\/npc-cloth-atlas-v1\.webp/);
 });
 
 test("train doors create real passages and walking through the lit exit completes the ride", async () => {
@@ -48,6 +51,10 @@ test("train doors create real passages and walking through the lit exit complete
   assert.match(source, /door\.left\.position\.z = -\.47 - opening/);
   assert.match(source, /leaf\.add\(window\)/);
   assert.match(source, /threshold/);
+  assert.doesNotMatch(source, /door\.z === 0/);
+  assert.match(source, /this\.doorZone\(player, this\.journey\.destination\.side\)/);
+  assert.match(source, /Every platform-side doorway is a valid/);
+  assert.match(source, /nearestExitWaypoint\(player/);
 });
 
 test("onboard wayfinding reflects the authored MTA route and transfer topology", async () => {

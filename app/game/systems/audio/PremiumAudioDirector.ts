@@ -41,20 +41,31 @@ type NoiseOptions = {
 };
 
 type SceneLayer = {
-  musicGain: GainNode;
   ambienceGain: GainNode;
   sources: AudioScheduledSourceNode[];
 };
 
 const DEFAULT_MIX: AudioMix = { master: 0.78, music: 0.64, ambience: 0.58, sfx: 0.86 };
 
-const SCENE_TEMPO: Record<AudioScene, number> = {
-  "central-park": 72,
-  "subway-station": 84,
-  "moving-train": 112,
-  "west-farms": 76,
-  finale: 92,
-};
+/**
+ * The authored score is deliberately ordered here rather than selected by
+ * scene. One continuous album now follows the player from Central Park to the
+ * finale, then starts again at track 00 after track 11 ends.
+ */
+export const SOUNDTRACK_TRACKS = [
+  "/audio/soundtrack/00.mp3",
+  "/audio/soundtrack/01.mp3",
+  "/audio/soundtrack/02.mp3",
+  "/audio/soundtrack/03.mp3",
+  "/audio/soundtrack/04.mp3",
+  "/audio/soundtrack/05.mp3",
+  "/audio/soundtrack/06.mp3",
+  "/audio/soundtrack/07.mp3",
+  "/audio/soundtrack/08.mp3",
+  "/audio/soundtrack/09.mp3",
+  "/audio/soundtrack/10.mp3",
+  "/audio/soundtrack/11.mp3",
+] as const;
 
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 
@@ -68,7 +79,7 @@ function audioContextConstructor() {
 }
 
 /**
- * A zero-download, procedural score and effects engine for Sloth Park.
+ * Streaming soundtrack, procedural ambience, and effects engine.
  *
  * The director deliberately does not create an AudioContext until `unlock()` is
  * called from a click/touch/key handler. Worlds may call `setScene()` before
@@ -84,9 +95,12 @@ export class PremiumAudioDirector {
   private noiseBuffer: AudioBuffer | null = null;
   private layers = new Map<AudioScene, SceneLayer>();
   private listeners = new Set<SnapshotListener>();
-  private scheduler: number | null = null;
-  private nextStepAt = 0;
-  private step = 0;
+  private soundtrackElement: HTMLAudioElement | null = null;
+  private soundtrackPreloadElement: HTMLAudioElement | null = null;
+  private soundtrackSource: MediaElementAudioSourceNode | null = null;
+  private soundtrackIndex = 0;
+  private soundtrackFailures = 0;
+  private soundtrackRecoveryTimer: number | null = null;
   private lastFootstepAt = -1;
   private disposed = false;
   private snapshot: AudioDirectorSnapshot = {
@@ -134,8 +148,13 @@ export class PremiumAudioDirector {
     const context = this.ensureContext();
     if (!context) return false;
     try {
-      if (context.state !== "running") await context.resume();
-      this.startScheduler();
+      // Start both operations synchronously inside the gesture handler. This
+      // keeps Safari/iOS and Chromium autoplay policies satisfied even when
+      // resuming the Web Audio graph takes an asynchronous turn.
+      const playback = this.playSoundtrack();
+      const resume = context.state !== "running" ? context.resume() : Promise.resolve();
+      await Promise.allSettled([playback, resume]);
+      if (context.state === "running" && this.soundtrackElement?.paused) await this.playSoundtrack();
       this.setSnapshot({ unlocked: context.state === "running", suspended: context.state !== "running" });
       return context.state === "running";
     } catch {
@@ -145,6 +164,7 @@ export class PremiumAudioDirector {
 
   async suspend() {
     if (!this.context || this.context.state !== "running") return;
+    this.soundtrackElement?.pause();
     await this.context.suspend();
     this.setSnapshot({ suspended: true });
   }
@@ -157,14 +177,11 @@ export class PremiumAudioDirector {
     const transition = Math.max(0.15, options.transitionSeconds ?? 2.4);
     for (const [id, layer] of this.layers) {
       const target = id === scene ? 0.88 + intensity * 0.12 : 0.0001;
-      for (const gain of [layer.musicGain.gain, layer.ambienceGain.gain]) {
-        gain.cancelScheduledValues(now);
-        gain.setValueAtTime(Math.max(0.0001, gain.value), now);
-        gain.exponentialRampToValueAtTime(target, now + transition);
-      }
+      const gain = layer.ambienceGain.gain;
+      gain.cancelScheduledValues(now);
+      gain.setValueAtTime(Math.max(0.0001, gain.value), now);
+      gain.exponentialRampToValueAtTime(target, now + transition);
     }
-    this.nextStepAt = now + 0.04;
-    this.step = 0;
   }
 
   setIntensity(intensity: number) {
@@ -293,8 +310,23 @@ export class PremiumAudioDirector {
   async dispose() {
     if (this.disposed) return;
     this.disposed = true;
-    if (this.scheduler !== null) window.clearInterval(this.scheduler);
-    this.scheduler = null;
+    if (this.soundtrackRecoveryTimer !== null) window.clearTimeout(this.soundtrackRecoveryTimer);
+    this.soundtrackRecoveryTimer = null;
+    if (this.soundtrackElement) {
+      this.soundtrackElement.pause();
+      this.soundtrackElement.removeEventListener("ended", this.handleSoundtrackEnded);
+      this.soundtrackElement.removeEventListener("error", this.handleSoundtrackError);
+      this.soundtrackElement.removeAttribute("src");
+      this.soundtrackElement.load();
+    }
+    if (this.soundtrackPreloadElement) {
+      this.soundtrackPreloadElement.removeAttribute("src");
+      this.soundtrackPreloadElement.load();
+    }
+    this.soundtrackSource?.disconnect();
+    this.soundtrackSource = null;
+    this.soundtrackElement = null;
+    this.soundtrackPreloadElement = null;
     for (const layer of this.layers.values()) {
       for (const source of layer.sources) {
         try { source.stop(); } catch { /* The source may already have ended. */ }
@@ -323,11 +355,18 @@ export class PremiumAudioDirector {
     music.connect(master); ambience.connect(master); sfx.connect(master); master.connect(compressor).connect(context.destination);
     this.masterBus = master; this.musicBus = music; this.ambienceBus = ambience; this.sfxBus = sfx; this.compressor = compressor;
     this.noiseBuffer = this.makeNoiseBuffer(context);
-    for (const scene of Object.keys(SCENE_TEMPO) as AudioScene[]) this.layers.set(scene, this.createSceneLayer(scene));
+    this.createSoundtrack(context);
+    for (const scene of ["central-park", "subway-station", "moving-train", "west-farms", "finale"] satisfies AudioScene[]) this.layers.set(scene, this.createSceneLayer(scene));
     this.applyMix(0.01);
     this.setScene(this.snapshot.scene, { transitionSeconds: 0.12, intensity: this.snapshot.intensity });
     context.addEventListener("statechange", () => {
-      this.setSnapshot({ unlocked: context.state === "running", suspended: context.state === "suspended" });
+      // `unlocked` records that the user has granted playback once; it must
+      // survive an OS/browser suspension so returning to a mobile tab resumes
+      // the same track instead of leaving the album permanently paused.
+      const hasBeenUnlocked = this.snapshot.unlocked;
+      if (context.state === "running" && hasBeenUnlocked) void this.playSoundtrack();
+      else if (context.state !== "running") this.soundtrackElement?.pause();
+      this.setSnapshot({ unlocked: hasBeenUnlocked || context.state === "running", suspended: context.state === "suspended" });
     });
     return context;
   }
@@ -347,88 +386,91 @@ export class PremiumAudioDirector {
     return buffer;
   }
 
+  private handleSoundtrackEnded = () => {
+    this.soundtrackFailures = 0;
+    this.advanceSoundtrack();
+  };
+
+  private handleSoundtrackError = () => {
+    if (this.disposed || this.soundtrackFailures >= SOUNDTRACK_TRACKS.length - 1) return;
+    this.soundtrackFailures += 1;
+    if (this.soundtrackRecoveryTimer !== null) window.clearTimeout(this.soundtrackRecoveryTimer);
+    this.soundtrackRecoveryTimer = window.setTimeout(() => {
+      this.soundtrackRecoveryTimer = null;
+      this.advanceSoundtrack();
+    }, 300);
+  };
+
+  private createSoundtrack(context: AudioContext) {
+    if (typeof Audio === "undefined" || !this.musicBus || this.soundtrackElement) return;
+    const element = new Audio();
+    element.preload = "auto";
+    element.loop = false;
+    element.addEventListener("ended", this.handleSoundtrackEnded);
+    element.addEventListener("error", this.handleSoundtrackError);
+    this.soundtrackElement = element;
+    this.soundtrackSource = context.createMediaElementSource(element);
+    this.soundtrackSource.connect(this.musicBus);
+    this.loadSoundtrack(0);
+  }
+
+  private loadSoundtrack(index: number) {
+    if (!this.soundtrackElement) return;
+    this.soundtrackIndex = (index + SOUNDTRACK_TRACKS.length) % SOUNDTRACK_TRACKS.length;
+    this.soundtrackElement.src = SOUNDTRACK_TRACKS[this.soundtrackIndex];
+    this.soundtrackElement.load();
+    this.preloadNextSoundtrack();
+  }
+
+  private preloadNextSoundtrack() {
+    if (typeof Audio === "undefined" || this.disposed) return;
+    if (this.soundtrackPreloadElement) {
+      this.soundtrackPreloadElement.removeAttribute("src");
+      this.soundtrackPreloadElement.load();
+    }
+    const preload = new Audio();
+    preload.preload = "auto";
+    preload.src = SOUNDTRACK_TRACKS[(this.soundtrackIndex + 1) % SOUNDTRACK_TRACKS.length];
+    preload.load();
+    this.soundtrackPreloadElement = preload;
+  }
+
+  private advanceSoundtrack() {
+    this.loadSoundtrack(this.soundtrackIndex + 1);
+    if (this.snapshot.unlocked) void this.playSoundtrack();
+  }
+
+  private async playSoundtrack() {
+    if (!this.soundtrackElement || this.disposed) return false;
+    if (!this.soundtrackElement.paused) return true;
+    try {
+      await this.soundtrackElement.play();
+      this.soundtrackFailures = 0;
+      return true;
+    } catch {
+      // Autoplay rejection is expected before the first real gesture. The
+      // armed pointer/touch/key listeners will retry without losing position.
+      return false;
+    }
+  }
+
   private createSceneLayer(scene: AudioScene): SceneLayer {
-    const context = this.context!, musicGain = context.createGain(), ambienceGain = context.createGain();
-    musicGain.gain.value = ambienceGain.gain.value = scene === this.snapshot.scene ? 1 : 0.0001;
-    musicGain.connect(this.musicBus!); ambienceGain.connect(this.ambienceBus!);
+    const context = this.context!, ambienceGain = context.createGain();
+    ambienceGain.gain.value = scene === this.snapshot.scene ? 1 : 0.0001;
+    ambienceGain.connect(this.ambienceBus!);
     const sources: AudioScheduledSourceNode[] = [];
-    const addDrone = (frequency: number, volume: number, type: OscillatorType, cutoff: number) => {
-      const oscillator = context.createOscillator(), filter = context.createBiquadFilter(), level = context.createGain();
-      oscillator.type = type; oscillator.frequency.value = frequency; filter.type = "lowpass"; filter.frequency.value = cutoff; filter.Q.value = 0.5; level.gain.value = volume;
-      oscillator.connect(filter).connect(level).connect(musicGain); oscillator.start(); sources.push(oscillator);
-    };
     const addAir = (frequency: number, volume: number, type: BiquadFilterType = "lowpass") => {
       if (!this.noiseBuffer) return;
       const source = context.createBufferSource(), filter = context.createBiquadFilter(), level = context.createGain();
       source.buffer = this.noiseBuffer; source.loop = true; filter.type = type; filter.frequency.value = frequency; filter.Q.value = 0.65; level.gain.value = volume;
       source.connect(filter).connect(level).connect(ambienceGain); source.start(); sources.push(source);
     };
-    if (scene === "central-park") { addDrone(73.42, 0.012, "sine", 360); addDrone(110, 0.008, "triangle", 520); addAir(760, 0.027, "lowpass"); }
-    if (scene === "subway-station") { addDrone(60, 0.018, "sine", 240); addDrone(120, 0.006, "triangle", 310); addAir(1250, 0.019, "bandpass"); }
-    if (scene === "moving-train") { addDrone(48, 0.022, "sawtooth", 180); addDrone(96, 0.008, "square", 260); addAir(520, 0.035, "bandpass"); }
-    if (scene === "west-farms") { addDrone(82.41, 0.011, "sine", 380); addDrone(123.47, 0.006, "triangle", 440); addAir(980, 0.023, "highpass"); }
-    if (scene === "finale") { addDrone(98, 0.013, "sine", 500); addDrone(146.83, 0.009, "triangle", 680); addAir(820, 0.018, "lowpass"); }
-    return { musicGain, ambienceGain, sources };
-  }
-
-  private startScheduler() {
-    if (!this.context || this.scheduler !== null) return;
-    this.nextStepAt = this.context.currentTime + 0.06;
-    this.scheduler = window.setInterval(() => this.scheduleMusic(), 35);
-  }
-
-  private scheduleMusic() {
-    const context = this.context, layer = this.layers.get(this.snapshot.scene);
-    if (!context || context.state !== "running" || !layer) return;
-    const secondsPerStep = 60 / SCENE_TEMPO[this.snapshot.scene] / 2;
-    const horizon = context.currentTime + 0.18;
-    while (this.nextStepAt < horizon) {
-      this.scheduleSceneStep(this.snapshot.scene, layer.musicGain, this.step, this.nextStepAt);
-      this.step += 1;
-      this.nextStepAt += secondsPerStep;
-    }
-  }
-
-  private scheduleSceneStep(scene: AudioScene, output: AudioNode, step: number, at: number) {
-    const intensity = this.snapshot.intensity;
-    if (scene === "central-park") {
-      const melody = [293.66, 0, 369.99, 0, 440, 0, 369.99, 329.63, 0, 293.66, 246.94, 0, 293.66, 0, 220, 0];
-      const note = melody[step % melody.length];
-      if (note) this.tone(output, note, at, { type: "triangle", gain: 0.028 + intensity * 0.012, attack: 0.045, duration: 0.7, release: 0.48, filter: 1700, pan: Math.sin(step * 1.7) * 0.35 });
-      if (step % 8 === 0) this.tone(output, step % 16 === 0 ? 146.83 : 110, at, { type: "sine", gain: 0.045, attack: 0.08, duration: 1.5, release: 0.8, filter: 420 });
-      if (step % 12 === 7) this.birdCall(output, at);
-    } else if (scene === "subway-station") {
-      const notes = [146.83, 0, 0, 220, 0, 164.81, 0, 0, 196, 0, 0, 246.94, 0, 164.81, 0, 0];
-      const note = notes[step % notes.length];
-      if (note) this.tone(output, note, at, { type: "triangle", gain: 0.035, attack: 0.008, duration: 0.42, release: 0.35, filter: 1150, pan: step % 4 < 2 ? -0.42 : 0.42 });
-      if (step % 4 === 0) this.noise(output, at, { duration: 0.11, gain: 0.016 + intensity * 0.012, frequency: 1280, q: 3.2, type: "bandpass", pan: Math.sin(step) * 0.6 });
-    } else if (scene === "moving-train") {
-      if (step % 2 === 0) this.noise(output, at, { duration: 0.085, gain: 0.038 + intensity * 0.025, frequency: step % 4 === 0 ? 190 : 410, q: 0.8, type: "bandpass", pan: step % 4 === 0 ? -0.28 : 0.28 });
-      if (step % 4 === 0) this.tone(output, step % 8 === 0 ? 73.42 : 82.41, at, { type: "sine", gain: 0.055, attack: 0.008, duration: 0.24, release: 0.18, filter: 280 });
-      const motif = [293.66, 329.63, 369.99, 440];
-      if (step % 8 === 6) this.tone(output, motif[Math.floor(step / 8) % motif.length], at, { type: "triangle", gain: 0.027, attack: 0.02, duration: 0.5, release: 0.4, filter: 1450 });
-    } else if (scene === "west-farms") {
-      const notes = [246.94, 293.66, 369.99, 329.63, 293.66, 220, 246.94, 196];
-      if (step % 2 === 0) this.tone(output, notes[(step / 2) % notes.length], at, { type: "sine", gain: 0.035, attack: 0.028, duration: 0.62, release: 0.52, filter: 1900, pan: Math.sin(step * 0.7) * 0.48 });
-      if (step % 8 === 0) this.tone(output, step % 16 === 0 ? 123.47 : 146.83, at, { type: "triangle", gain: 0.032, attack: 0.1, duration: 1.35, release: 0.7, filter: 620 });
-    } else {
-      const arpeggio = [293.66, 369.99, 440, 587.33, 329.63, 392, 493.88, 659.25];
-      const note = arpeggio[step % arpeggio.length];
-      this.tone(output, note, at, { type: "triangle", gain: 0.038 + intensity * 0.015, attack: 0.025, duration: 0.58, release: 0.48, filter: 2200, pan: Math.sin(step * 0.8) * 0.42 });
-      if (step % 8 === 0) this.tone(output, step % 16 === 0 ? 146.83 : 196, at, { type: "sine", gain: 0.052, attack: 0.12, duration: 1.5, release: 0.85, filter: 520 });
-    }
-  }
-
-  private birdCall(output: AudioNode, at: number) {
-    if (!this.context) return;
-    const oscillator = this.context.createOscillator(), gain = this.context.createGain(), pan = this.context.createStereoPanner();
-    oscillator.type = "sine";
-    oscillator.frequency.setValueAtTime(1480, at);
-    oscillator.frequency.exponentialRampToValueAtTime(2340, at + 0.07);
-    oscillator.frequency.exponentialRampToValueAtTime(1760, at + 0.18);
-    gain.gain.setValueAtTime(0.0001, at); gain.gain.exponentialRampToValueAtTime(0.025, at + 0.02); gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.25);
-    pan.pan.value = Math.sin(this.step * 2.13) * 0.72;
-    oscillator.connect(gain).connect(pan).connect(output); oscillator.start(at); oscillator.stop(at + 0.28);
+    if (scene === "central-park") addAir(760, 0.027, "lowpass");
+    if (scene === "subway-station") addAir(1250, 0.019, "bandpass");
+    if (scene === "moving-train") addAir(520, 0.035, "bandpass");
+    if (scene === "west-farms") addAir(980, 0.023, "highpass");
+    if (scene === "finale") addAir(820, 0.018, "lowpass");
+    return { ambienceGain, sources };
   }
 
   private tone(output: AudioNode, frequency: number, at: number, options: ToneOptions = {}) {

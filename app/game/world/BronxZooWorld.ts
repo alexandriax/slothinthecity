@@ -108,8 +108,11 @@ function addArrivalFountain(root: THREE.Group, textures: GameTextures, quality: 
 
 export class BronxZooWorld {
   readonly root = new THREE.Group();
-  readonly cameraPosition = new THREE.Vector3(0, 3.1, 21.2);
-  readonly cameraTarget = new THREE.Vector3(0, 3.8, -12);
+  readonly spawn = new THREE.Vector3(0, 2.5, 25.5);
+  readonly attendantPosition = new THREE.Vector3(4.9, 1.48, -1.3);
+  readonly cameraPosition = new THREE.Vector3(0, 3.1, 20.5);
+  readonly cameraTarget = new THREE.Vector3(0, 3.6, -10);
+  readonly attendant: THREE.Group;
   private ownedTextures: THREE.Texture[] = [];
 
   constructor(scene: THREE.Scene, textures: GameTextures, quality = 1) {
@@ -176,8 +179,14 @@ export class BronxZooWorld {
     addFriend(this.root, textures, this.ownedTextures, quality, .1, -3.35, Math.PI, "#756957", 1);
     addFriend(this.root, textures, this.ownedTextures, quality, 3.55, -2.15, Math.PI - .12, "#9a886d", 2);
     addFriend(this.root, textures, this.ownedTextures, quality, 6.7, -.15, Math.PI - .28, "#756b5c", 3);
+    const attendant = createPremiumHuman({
+      role: "attendant", quality, variant: 24, coat: "#315747", trousers: "#252c2a", skin: "#9a684f", accessory: "radio", pose: "waving",
+      faceAtlasUrl: "/game/characters/npc-face-atlas-v1.webp", clothingAtlasUrl: "/game/characters/npc-cloth-atlas-v1.webp",
+    });
+    this.attendant = attendant.root; this.attendant.name = "bronx-zoo-arrival-attendant"; this.attendant.userData.dialogue = "Welcome to the Bronx Zoo — your friends are waiting at Asia Gate.";
+    this.attendant.position.set(this.attendantPosition.x, 0, this.attendantPosition.z); this.attendant.rotation.y = Math.PI; this.root.add(this.attendant); this.ownedTextures.push(...attendant.ownedTextures);
     const guestData = [[-8.2, 5.7, -.2, "#516d76", "#343a3c", "#b77e61"], [10.3, 5.3, .24, "#875a48", "#30383d", "#7b503d"], [14.2, -1.3, 2.7, "#667a4e", "#383438", "#cf9d78"]] as const;
-    guestData.slice(0, quality < .62 ? 1 : quality < .82 ? 2 : 3).forEach((data, index) => { const result = createPremiumHuman({ role: "visitor", quality, variant: index + 11, coat: data[3], trousers: data[4], skin: data[5], accessory: index === 1 ? "camera" : "backpack", pose: index === 1 ? "photographing" : "neutral" }); result.root.position.set(data[0], 0, data[1]); result.root.rotation.y = data[2]; this.root.add(result.root); this.ownedTextures.push(...result.ownedTextures); });
+    guestData.slice(0, quality < .62 ? 1 : quality < .82 ? 2 : 3).forEach((data, index) => { const result = createPremiumHuman({ role: "visitor", quality, variant: index + 11, coat: data[3], trousers: data[4], skin: data[5], accessory: index === 1 ? "camera" : "backpack", pose: index === 1 ? "photographing" : "neutral", faceAtlasUrl: "/game/characters/npc-face-atlas-v1.webp", clothingAtlasUrl: "/game/characters/npc-cloth-atlas-v1.webp" }); result.root.position.set(data[0], 0, data[1]); result.root.rotation.y = data[2]; this.root.add(result.root); this.ownedTextures.push(...result.ownedTextures); });
     const glow = new THREE.PointLight("#e5f3b9", 34, 23, 1.45); glow.position.set(0, 7.2, -3); this.root.add(glow);
   }
 
@@ -186,6 +195,38 @@ export class BronxZooWorld {
       if (object.name === "waiting-sloth-friend") object.rotation.z = Math.sin(elapsed * .9 + object.position.x) * .018;
       else if (object.name === "friend-wave-arm") object.rotation.x = -.22 + Math.sin(elapsed * 2.35 + object.parent!.position.x) * .22;
     });
+    this.attendant.rotation.z = Math.sin(elapsed * .72) * .008;
+  }
+
+  attendantNearby(player: THREE.Vector3, distance = 2.35) {
+    return Math.hypot(player.x - this.attendantPosition.x, player.z - this.attendantPosition.z) <= distance;
+  }
+
+  floorHeight(z: number) {
+    if (z >= 18 && z <= 30.2) return 1.02;
+    if (z >= 10.4 && z < 18) {
+      const amount = THREE.MathUtils.clamp((z - 10.4) / 7.6, 0, 1), step = Math.round(amount * 11);
+      return .145 + step * .085;
+    }
+    return 0;
+  }
+
+  resolvePlayer(player: THREE.Vector3, velocity: THREE.Vector3) {
+    player.x = THREE.MathUtils.clamp(player.x, -17.2, 17.2);
+    player.z = THREE.MathUtils.clamp(player.z, -5.5, 29.5);
+    // Keep the arrival walk legible while still allowing the player to explore
+    // the full forecourt. Props use compact circular footprints, never invisible
+    // rectangular walls across the route.
+    for (const obstacle of [
+      { x: -12, z: -2, radius: 4.65 },
+      { x: -15.5, z: -5.2, radius: 2.55 },
+      { x: 15.5, z: -5.2, radius: 2.55 },
+      { x: 7.25, z: 3.2, radius: 1.85 },
+    ]) {
+      const dx = player.x - obstacle.x, dz = player.z - obstacle.z, distance = Math.hypot(dx, dz);
+      if (distance > 0 && distance < obstacle.radius) { const correction = (obstacle.radius - distance) / distance; player.x += dx * correction; player.z += dz * correction; velocity.multiplyScalar(.65); }
+    }
+    player.y = this.floorHeight(player.z) + 1.48;
   }
 
   dispose() {
