@@ -23,13 +23,23 @@ export type ParkRowboatDriveInput = {
 export type ParkRowboatOar = {
   rig: THREE.Group;
   shaft: THREE.Mesh;
+  grip: THREE.Mesh;
+  gripAnchor: THREE.Object3D;
   blade: THREE.Mesh;
+};
+
+export type ParkRowboatGripTransforms = {
+  leftPosition: THREE.Vector3;
+  leftQuaternion: THREE.Quaternion;
+  rightPosition: THREE.Vector3;
+  rightQuaternion: THREE.Quaternion;
 };
 
 type RowboatMaterials = {
   hull: THREE.MeshPhysicalMaterial;
   innerHull: THREE.MeshStandardMaterial;
   varnishedWood: THREE.MeshPhysicalMaterial;
+  oarWood: THREE.MeshPhysicalMaterial;
   darkWood: THREE.MeshStandardMaterial;
   metal: THREE.MeshStandardMaterial;
   rope: THREE.MeshStandardMaterial;
@@ -186,22 +196,22 @@ function ribCurve(z: number) {
 
 function makeOarBladeGeometry() {
   const shape = new THREE.Shape();
-  shape.moveTo(0, -.045);
-  shape.lineTo(.23, -.09);
-  shape.quadraticCurveTo(.58, -.18, .72, -.09);
-  shape.quadraticCurveTo(.79, 0, .72, .09);
-  shape.quadraticCurveTo(.58, .18, .23, .09);
-  shape.lineTo(0, .045);
+  shape.moveTo(0, -.055);
+  shape.lineTo(.25, -.115);
+  shape.quadraticCurveTo(.62, -.235, .79, -.12);
+  shape.quadraticCurveTo(.89, 0, .79, .12);
+  shape.quadraticCurveTo(.62, .235, .25, .115);
+  shape.lineTo(0, .055);
   shape.closePath();
   const geometry = new THREE.ExtrudeGeometry(shape, {
-    depth: .032,
+    depth: .042,
     bevelEnabled: true,
     bevelSegments: 2,
     bevelSize: .018,
     bevelThickness: .012,
     curveSegments: 10,
   });
-  geometry.translate(0, 0, -.016);
+  geometry.translate(0, 0, -.021);
   geometry.rotateX(Math.PI / 2);
   geometry.computeVertexNormals();
   return geometry;
@@ -218,22 +228,35 @@ function buildOar(side: -1 | 1, materials: RowboatMaterials, quality: number): P
   rig.name = side < 0 ? "port-oar" : "starboard-oar";
   rig.position.set(side * .63, .625, .2);
 
-  const shaft = setShadow(new THREE.Mesh(new THREE.CylinderGeometry(.026, .034, 2.2, quality > .7 ? 14 : 9), materials.varnishedWood));
+  const shaft = setShadow(new THREE.Mesh(new THREE.CylinderGeometry(.036, .043, 2.38, quality > .7 ? 18 : 12), materials.oarWood));
   shaft.name = "ash-oar-shaft";
   shaft.rotation.z = Math.PI / 2;
-  shaft.position.x = side * .72;
+  shaft.position.x = side * .76;
+  shaft.frustumCulled = false;
   rig.add(shaft);
 
-  const grip = setShadow(new THREE.Mesh(new THREE.CylinderGeometry(.037, .039, .34, quality > .7 ? 12 : 8), materials.darkWood));
-  grip.name = "leather-wrapped-oar-grip"; grip.rotation.z = Math.PI / 2; grip.position.x = side * -.45; rig.add(grip);
+  const grip = setShadow(new THREE.Mesh(new THREE.CylinderGeometry(.045, .047, .42, quality > .7 ? 16 : 10), materials.darkWood));
+  grip.name = "leather-wrapped-oar-grip"; grip.rotation.z = Math.PI / 2; grip.position.x = side * -.45; grip.frustumCulled = false; rig.add(grip);
+  const gripAnchor = new THREE.Object3D();
+  gripAnchor.name = side < 0 ? "port-oar-hand-grip" : "starboard-oar-hand-grip";
+  gripAnchor.position.copy(grip.position);
+  rig.add(gripAnchor);
+
+  const collar = setShadow(new THREE.Mesh(new THREE.TorusGeometry(.052, .014, 8, 20), materials.metal));
+  collar.name = "bronze-oarlock-collar";
+  collar.position.x = side * .15;
+  collar.rotation.y = Math.PI / 2;
+  collar.frustumCulled = false;
+  rig.add(collar);
 
   const bladeGeometry = makeOarBladeGeometry();
   if (side < 0) bladeGeometry.rotateY(Math.PI);
-  const blade = setShadow(new THREE.Mesh(bladeGeometry, materials.varnishedWood));
+  const blade = setShadow(new THREE.Mesh(bladeGeometry, materials.oarWood));
   blade.name = "varnished-oar-blade";
   blade.position.x = side * 1.79;
+  blade.frustumCulled = false;
   rig.add(blade);
-  return { rig, shaft, blade };
+  return { rig, shaft, grip, gripAnchor, blade };
 }
 
 function createMaterials(textures: GameTextures, labelTexture: THREE.Texture): RowboatMaterials {
@@ -265,6 +288,15 @@ function createMaterials(textures: GameTextures, labelTexture: THREE.Texture): R
       roughness: .4,
       clearcoat: .62,
       clearcoatRoughness: .27,
+    }),
+    oarWood: new THREE.MeshPhysicalMaterial({
+      map: textures.bark,
+      bumpMap: textures.bark,
+      bumpScale: .018,
+      color: "#e0bd86",
+      roughness: .34,
+      clearcoat: .78,
+      clearcoatRoughness: .2,
     }),
     darkWood: new THREE.MeshStandardMaterial({ map: textures.bark, bumpMap: textures.bark, bumpScale: .03, color: "#59402a", roughness: .72 }),
     metal: new THREE.MeshStandardMaterial({ map: textures.stone, bumpMap: textures.stone, bumpScale: .018, color: "#9aa39e", roughness: .28, metalness: .88 }),
@@ -436,6 +468,7 @@ export class ParkRowboat {
   readonly maxForwardSpeed = 4.8;
   readonly maxReverseSpeed = 2.15;
   readonly oars: [ParkRowboatOar, ParkRowboatOar];
+  readonly gripAnchors: readonly [THREE.Object3D, THREE.Object3D];
 
   private readonly ownedTextures: THREE.Texture[];
   private readonly wakeGroup = new THREE.Group();
@@ -453,6 +486,7 @@ export class ParkRowboat {
     const built = buildBoat(textures, quality, options.boatNumber ?? 7);
     this.body = built.body;
     this.oars = built.oars;
+    this.gripAnchors = [built.oars[0].gripAnchor, built.oars[1].gripAnchor];
     this.ownedTextures = built.ownedTextures;
 
     this.root.name = options.name ?? "central-park-lake-rowboat";
@@ -529,6 +563,15 @@ export class ParkRowboat {
     this.cameraTransform.getWorldPosition(position);
     this.cameraTransform.getWorldQuaternion(quaternion);
     return { position, quaternion };
+  }
+
+  getWorldGripTransforms(target: ParkRowboatGripTransforms) {
+    this.root.updateMatrixWorld(true);
+    this.gripAnchors[0].getWorldPosition(target.leftPosition);
+    this.gripAnchors[0].getWorldQuaternion(target.leftQuaternion);
+    this.gripAnchors[1].getWorldPosition(target.rightPosition);
+    this.gripAnchors[1].getWorldQuaternion(target.rightQuaternion);
+    return target;
   }
 
   setPose(position: THREE.Vector3, rotationY = this.root.rotation.y) {

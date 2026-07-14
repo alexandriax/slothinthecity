@@ -1,11 +1,16 @@
 import * as THREE from "three";
 
+export type SlothVehicleGripTargets = {
+  left: THREE.Vector3;
+  right: THREE.Vector3;
+};
+
 export type SlothRig = {
   root: THREE.Group;
   left: THREE.Group;
   right: THREE.Group;
   animate(time: number, speed: number, gripping: boolean): void;
-  setVehiclePose(mode: "none" | "cart" | "rowboat", steering?: number, oarPhase?: number): void;
+  setVehiclePose(mode: "none" | "cart" | "rowboat", steering?: number, oarPhase?: number, rowingEffort?: number, gripTargets?: SlothVehicleGripTargets): void;
 };
 
 type ArmJoints = {
@@ -30,6 +35,8 @@ function sweptGeometry(
   radiusAt: (t: number) => number,
   ellipse = .84,
   colorAt?: (t: number, target: THREE.Color) => THREE.Color,
+  capStart = true,
+  capEnd = true,
 ) {
   const frames = curve.computeFrenetFrames(segments, false);
   const positions: number[] = [];
@@ -40,8 +47,13 @@ function sweptGeometry(
   const point = new THREE.Vector3();
   const offset = new THREE.Vector3();
   const surfaceNormal = new THREE.Vector3();
+  const tangent = new THREE.Vector3();
+  const capA = new THREE.Vector3();
+  const capB = new THREE.Vector3();
+  const capNormal = new THREE.Vector3();
   const color = new THREE.Color();
   const ringSize = radialSegments + 1;
+  const capVertexRanges: Array<{ start: number; count: number }> = [];
 
   for (let segment = 0; segment <= segments; segment++) {
     const t = segment / segments;
@@ -76,12 +88,67 @@ function sweptGeometry(
     }
   }
 
+  // Close both tube ends. The viewmodel uses articulated overlapping sweeps,
+  // and an uncapped ring can become a conspicuous sky-colored hole as a child
+  // joint rotates—especially in the tighter portrait framing.
+  const addCap = (segment: number, t: number, direction: -1 | 1) => {
+    curve.getPointAt(t, point);
+    curve.getTangentAt(t, tangent).normalize().multiplyScalar(direction);
+    const ring = segment * ringSize;
+    const capRing = positions.length / 3;
+    const radius = Math.max(radiusAt(t), .0001);
+    for (let radial = 0; radial <= radialSegments; radial++) {
+      const source = ring + radial;
+      capA.fromArray(positions, source * 3);
+      positions.push(capA.x, capA.y, capA.z);
+      normals.push(tangent.x, tangent.y, tangent.z);
+      offset.copy(capA).sub(point);
+      uvs.push(
+        .5 + offset.dot(frames.normals[segment]) / (radius * ellipse * 2),
+        .5 + offset.dot(frames.binormals[segment]) / (radius * 2),
+      );
+      if (colorAt) {
+        colorAt(t, color);
+        colors.push(color.r, color.g, color.b);
+      }
+    }
+
+    const center = positions.length / 3;
+    positions.push(point.x, point.y, point.z);
+    normals.push(tangent.x, tangent.y, tangent.z);
+    uvs.push(.5, .5);
+    if (colorAt) {
+      colorAt(t, color);
+      colors.push(color.r, color.g, color.b);
+    }
+    capVertexRanges.push({ start: capRing, count: radialSegments + 2 });
+
+    capA.fromArray(positions, capRing * 3).sub(point);
+    capB.fromArray(positions, (capRing + 1) * 3).sub(point);
+    const forwardWinding = capNormal.crossVectors(capA, capB).dot(tangent) >= 0;
+    for (let radial = 0; radial < radialSegments; radial++) {
+      const current = capRing + radial;
+      const next = current + 1;
+      if (forwardWinding) indices.push(center, current, next);
+      else indices.push(center, next, current);
+    }
+  };
+
+  if (capStart) addCap(0, 0, -1);
+  if (capEnd) addCap(segments, 1, 1);
+
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
   geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
   if (colors.length) geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
   geometry.setIndex(indices);
+  geometry.userData.sweep = {
+    segments,
+    radialSegments,
+    sideVertexCount: (segments + 1) * ringSize,
+    capVertexRanges,
+  };
   geometry.computeBoundingSphere();
   return geometry;
 }
@@ -94,8 +161,9 @@ function furSegment(
   tipRadius: number,
   material: THREE.Material,
   segments = 36,
+  start = new THREE.Vector3(),
 ) {
-  const curve = new THREE.CubicBezierCurve3(new THREE.Vector3(), bendA, bendB, end);
+  const curve = new THREE.CubicBezierCurve3(start, bendA, bendB, end);
   const geometry = sweptGeometry(
     curve,
     segments,
@@ -115,8 +183,10 @@ function furSegment(
 
 function pawSegment(side: number, material: THREE.Material) {
   const curve = new THREE.CubicBezierCurve3(
-    new THREE.Vector3(0, -.006, 0),
-    new THREE.Vector3(-side * .006, .055, -.004),
+    // Begin behind the wrist pivot so the palm remains embedded in its blend
+    // volume throughout the full articulated rotation range.
+    new THREE.Vector3(side * .004, -.052, .012),
+    new THREE.Vector3(-side * .004, .038, .002),
     new THREE.Vector3(-side * .018, .145, -.018),
     new THREE.Vector3(-side * .019, .205, -.031),
   );
@@ -127,7 +197,7 @@ function pawSegment(side: number, material: THREE.Material) {
     (t) => {
       // Tendon at the wrist, a single muscular palm bulge, then the compact
       // distal pad from which all three hooks emerge.
-      const wrist = THREE.MathUtils.lerp(.074, .058, t);
+      const wrist = THREE.MathUtils.lerp(.094, .058, t);
       return wrist + Math.sin(Math.PI * t) * .024 + Math.sin(Math.PI * Math.min(1, t * 1.35)) * .005;
     },
     .7,
@@ -213,21 +283,27 @@ function makeClaw(
 function makeArm(
   side: number,
   fur: THREE.Material,
-  palmFur: THREE.Material,
   keratin: THREE.Material,
   fringe: THREE.Material,
 ) {
   const shoulder = new THREE.Group();
+  // A single uninterrupted sweep now runs from below the camera mount to the
+  // elbow. Besides removing two permanent viewmodel draw calls per arm, this
+  // makes the proximal silhouette truly contiguous rather than merely hidden
+  // by an overlap sphere.
+  const proximalStart = new THREE.Vector3(side * .05, -.46, .075);
   const upperEnd = new THREE.Vector3(-side * .018, .35, -.046);
   const upperArm = furSegment(
     upperEnd,
-    new THREE.Vector3(-side * .008, .105, .008),
-    new THREE.Vector3(-side * .022, .245, -.006),
-    .16,
+    new THREE.Vector3(side * .035, -.24, .05),
+    new THREE.Vector3(-side * .008, .19, .008),
+    .195,
     .119,
     fur,
-    40,
+    54,
+    proximalStart,
   );
+  upperArm.name = "continuous-upper-arm";
   upperArm.frustumCulled = false;
   addFurShell(shoulder, upperArm, fringe);
 
@@ -252,8 +328,21 @@ function makeArm(
     fur,
     42,
   );
+  forearm.name = "continuous-forearm-sweep";
   forearm.frustumCulled = false;
   addFurShell(elbow, forearm, fringe);
+
+  // This textured blend volume overlaps both the forearm's closed end and the
+  // paw's extended root. Because it lives at the articulation pivot, wrist
+  // rotation can no longer tear a wedge-shaped hole through the silhouette.
+  const wristBlend = new THREE.Mesh(new THREE.SphereGeometry(1, 42, 30), fur);
+  wristBlend.name = "continuous-wrist-blend";
+  wristBlend.position.copy(wristEnd);
+  wristBlend.scale.set(.108, .135, .10);
+  wristBlend.castShadow = true;
+  wristBlend.frustumCulled = false;
+  elbow.add(wristBlend);
+  addEllipsoidShell(elbow, wristBlend, fringe);
 
   const wrist = new THREE.Group();
   wrist.position.copy(wristEnd);
@@ -264,7 +353,8 @@ function makeArm(
   // One continuous swept paw replaces the former wrist/palm/digit ellipsoid
   // stack. Its overlap with the forearm is hidden in the same fur shell, so
   // bright station lighting no longer reveals toy-like seams.
-  const paw = pawSegment(side, palmFur);
+  const paw = pawSegment(side, fur);
+  paw.name = "continuous-paw-sweep";
   wrist.add(paw);
   addFurShell(wrist, paw, fringe);
 
@@ -305,18 +395,6 @@ export function createSlothRig(furTexture: THREE.Texture): SlothRig {
     emissive: new THREE.Color("#2a241e"),
     emissiveIntensity: .055,
   });
-  const palmFur = new THREE.MeshPhysicalMaterial({
-    map: furTexture,
-    bumpMap: furTexture,
-    bumpScale: .028,
-    color: "#b3a592",
-    roughness: .96,
-    sheen: .3,
-    sheenColor: new THREE.Color("#716653"),
-    sheenRoughness: .92,
-    emissive: new THREE.Color("#2a241e"),
-    emissiveIntensity: .055,
-  });
   const fringe = new THREE.MeshPhysicalMaterial({
     map: furTexture,
     alphaMap: furTexture,
@@ -340,8 +418,8 @@ export function createSlothRig(furTexture: THREE.Texture): SlothRig {
     clearcoatRoughness: .5,
   });
 
-  const left = makeArm(-1, fur, palmFur, keratin, fringe);
-  const right = makeArm(1, fur, palmFur, keratin, fringe);
+  const left = makeArm(-1, fur, keratin, fringe);
+  const right = makeArm(1, fur, keratin, fringe);
   root.add(left, right);
 
   const joints = (arm: THREE.Group) => arm.userData.joints as ArmJoints;
@@ -350,15 +428,46 @@ export function createSlothRig(furTexture: THREE.Texture): SlothRig {
   let vehicleMode: "none" | "cart" | "rowboat" = "none";
   let vehicleSteering = 0;
   let vehicleOarPhase = 0;
+  let vehicleRowingEffort = 0;
+  let vehicleGripTargetsValid = false;
+  const leftVehicleGrip = new THREE.Vector3();
+  const rightVehicleGrip = new THREE.Vector3();
+  const vehicleTarget = new THREE.Vector3();
+  const vehicleChain = new THREE.Vector3();
+
+  /**
+   * Positions an articulated wrist at an authored camera-space grip point.
+   * Solving the short two-joint chain from its live rotations avoids the old
+   * hard-coded shoulder offsets, which let the paws cross at steering and
+   * rowing extremes and drift away from the object they were meant to hold.
+   */
+  const placeWristAt = (arm: THREE.Group, armJoints: ArmJoints, target: THREE.Vector3) => {
+    vehicleTarget.set(
+      (target.x - root.position.x) / Math.max(.001, root.scale.x),
+      (target.y - root.position.y) / Math.max(.001, root.scale.y),
+      (target.z - root.position.z) / Math.max(.001, root.scale.z),
+    );
+    vehicleChain.copy(armJoints.wrist.position)
+      .applyEuler(armJoints.elbow.rotation)
+      .add(armJoints.elbow.position)
+      .applyEuler(arm.rotation);
+    arm.position.copy(vehicleTarget).sub(vehicleChain);
+  };
 
   return {
     root,
     left,
     right,
-    setVehiclePose(mode, steering = 0, oarPhase = 0) {
+    setVehiclePose(mode, steering = 0, oarPhase = 0, rowingEffort = 0, gripTargets) {
       vehicleMode = mode;
       vehicleSteering = THREE.MathUtils.clamp(steering, -1, 1);
       vehicleOarPhase = oarPhase;
+      vehicleRowingEffort = THREE.MathUtils.clamp(rowingEffort, 0, 1);
+      vehicleGripTargetsValid = mode !== "none" && Boolean(gripTargets);
+      if (gripTargets) {
+        leftVehicleGrip.copy(gripTargets.left);
+        rightVehicleGrip.copy(gripTargets.right);
+      }
     },
     animate(time, speed, gripping) {
       const stride = Math.min(1, speed / 4);
@@ -372,6 +481,11 @@ export function createSlothRig(furTexture: THREE.Texture): SlothRig {
       const leftBaseDepth = left.userData.layoutDepth as number | undefined;
       const rightBaseDepth = right.userData.layoutDepth as number | undefined;
 
+      // Establish the viewmodel anchor before solving vehicle grip points, so
+      // locomotion bob never pulls a planted paw off a steering wheel or oar.
+      root.position.y = .012 + breath * .004 + Math.sin(time * 5.15) * .004 * stride;
+      root.position.z = -.02 - grip * .004;
+
       if (vehicleMode === "none") {
         if (leftBaseX !== undefined) left.position.x = leftBaseX;
         if (rightBaseX !== undefined) right.position.x = rightBaseX;
@@ -379,12 +493,6 @@ export function createSlothRig(furTexture: THREE.Texture): SlothRig {
         if (rightBaseY !== undefined) right.position.y = rightBaseY;
         if (leftBaseDepth !== undefined) left.position.z = leftBaseDepth;
         if (rightBaseDepth !== undefined) right.position.z = rightBaseDepth;
-      } else {
-        const targetX = vehicleMode === "cart" ? .24 : .28;
-        const targetY = vehicleMode === "cart" ? -.75 : -.72;
-        const targetDepth = vehicleMode === "cart" ? -.59 : -.63;
-        left.position.set(-targetX, targetY, targetDepth);
-        right.position.set(targetX, targetY, targetDepth);
       }
 
       left.rotation.x = -.045 + gait * .022 * stride - grip * .03;
@@ -410,37 +518,38 @@ export function createSlothRig(furTexture: THREE.Texture): SlothRig {
       }
 
       if (vehicleMode === "cart") {
-        // Hands stay opposite one another on the wheel and travel with its
-        // rotation rather than hovering above the dashboard.
-        const wheel = vehicleSteering * .24;
-        left.rotation.x = -.3 - wheel * .12;
-        right.rotation.x = -.3 + wheel * .12;
-        left.rotation.z = (left.userData.layoutZ ?? -.34) + .27 + wheel;
-        right.rotation.z = (right.userData.layoutZ ?? .34) - .27 + wheel;
-        leftJoints.elbow.rotation.x = rightJoints.elbow.rotation.x = -.2;
-        leftJoints.wrist.rotation.x = rightJoints.wrist.rotation.x = -.36;
-        leftJoints.wrist.rotation.z = .38 + wheel;
-        rightJoints.wrist.rotation.z = -.38 + wheel;
+        // Grip targets come from the rendered steering-wheel anchors after
+        // their world transforms are projected through the live camera. This
+        // keeps both paws attached through steering and unrestricted free-look.
+        const wheelTurn = vehicleSteering * 1.161;
+        left.rotation.set(-.22, 0, -.15);
+        right.rotation.set(-.22, 0, .15);
+        leftJoints.elbow.rotation.x = rightJoints.elbow.rotation.x = -.12;
+        if (vehicleGripTargetsValid) {
+          placeWristAt(left, leftJoints, leftVehicleGrip);
+          placeWristAt(right, rightJoints, rightVehicleGrip);
+        }
+        leftJoints.wrist.rotation.x = rightJoints.wrist.rotation.x = -.32;
+        leftJoints.wrist.rotation.z = .34 + wheelTurn;
+        rightJoints.wrist.rotation.z = -.34 + wheelTurn;
         for (const digit of [...leftJoints.digits, ...rightJoints.digits]) digit.rotation.x = -.19;
       } else if (vehicleMode === "rowboat") {
-        // Mirrored sweep and feather phases keep each paw planted on its oar.
-        const sweep = Math.sin(vehicleOarPhase) * .22;
-        const feather = Math.cos(vehicleOarPhase) * .14;
-        left.rotation.x = right.rotation.x = -.2 - Math.abs(sweep) * .1;
-        left.rotation.z = (left.userData.layoutZ ?? -.34) + .2 + sweep;
-        right.rotation.z = (right.userData.layoutZ ?? .34) - .2 - sweep;
-        leftJoints.elbow.rotation.x = -.16 - sweep * .28;
-        rightJoints.elbow.rotation.x = -.16 + sweep * .28;
-        leftJoints.wrist.rotation.x = rightJoints.wrist.rotation.x = -.3 + feather;
-        leftJoints.wrist.rotation.z = .22 + feather;
-        rightJoints.wrist.rotation.z = -.22 - feather;
+        // The live oar anchors already include float, sweep and feather motion;
+        // only wrist articulation remains authored here.
+        const effort = vehicleRowingEffort;
+        const feather = Math.cos(vehicleOarPhase) * (.025 + effort * .115);
+        left.rotation.set(-.22, 0, -.15);
+        right.rotation.set(-.22, 0, .15);
+        leftJoints.elbow.rotation.x = rightJoints.elbow.rotation.x = -.12;
+        if (vehicleGripTargetsValid) {
+          placeWristAt(left, leftJoints, leftVehicleGrip);
+          placeWristAt(right, rightJoints, rightVehicleGrip);
+        }
+        leftJoints.wrist.rotation.x = rightJoints.wrist.rotation.x = -.28 + feather;
+        leftJoints.wrist.rotation.z = .34;
+        rightJoints.wrist.rotation.z = -.34;
         for (const digit of [...leftJoints.digits, ...rightJoints.digits]) digit.rotation.x = -.17;
       }
-
-      // Keep the viewmodel anchored to the camera. Motion is deliberately
-      // millimetric; locomotion and climbing must never push the paws offscreen.
-      root.position.y = .012 + breath * .004 + Math.sin(time * 5.15) * .004 * stride;
-      root.position.z = -.02 - grip * .004;
     },
   };
 }

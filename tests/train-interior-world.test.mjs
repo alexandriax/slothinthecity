@@ -37,8 +37,8 @@ test("train interior scales detail for mobile without losing authored features",
   assert.match(source, /cameraOffset/);
   assert.match(source, /cameraRoll/);
   assert.match(source, /createPremiumHuman/);
-  assert.match(source, /\/game\/characters\/npc-face-atlas-v1\.webp/);
-  assert.match(source, /\/game\/characters\/npc-cloth-atlas-v1\.webp/);
+  assert.doesNotMatch(source, /faceAtlasUrl:/);
+  assert.doesNotMatch(source, /clothingAtlasUrl:/);
 });
 
 test("train doors create real passages and walking through the lit exit completes the ride", async () => {
@@ -55,6 +55,26 @@ test("train doors create real passages and walking through the lit exit complete
   assert.match(source, /this\.doorZone\(player, this\.journey\.destination\.side\)/);
   assert.match(source, /Every platform-side doorway is a valid/);
   assert.match(source, /nearestExitWaypoint\(player/);
+  assert.match(source, /animated-door-window-exterior/);
+  assert.match(source, /transparent-interior-door-window/);
+  assert.match(source, /this\.tunnelPanels\.push\(doorOutside\)/);
+  assert.match(source, /passenger\.flow === "BOARD"/);
+  assert.match(source, /passenger\.flow !== "ALIGHT"/);
+  assert.match(source, /passenger\.flow === "ALIGHT"[\s\S]{0,160}smoothstep\(this\.phaseTime, \.72, 2\.2\)/);
+  assert.match(source, /smoothstep\(this\.phaseTime, 2\.05, DWELL_SECONDS - 1\.18\)/);
+  assert.match(source, /CAR_HALF_WIDTH \+ \.62/);
+});
+
+test("passenger exchange recycles riders off-car and restores authored poses", async () => {
+  const source = await readFile(sourceUrl, "utf8");
+
+  assert.match(source, /baseRotation: number/);
+  assert.match(source, /passenger\.baseRotation = placement\.rotation/);
+  assert.match(source, /const recycleFromPlatform = passenger\.movable && !passenger\.group\.visible/);
+  assert.match(source, /recycleFromPlatform \? "BOARD"/);
+  assert.match(source, /passenger\.group\.position\.set\(this\.currentStop\.side \* \(CAR_HALF_WIDTH \+ \.58\)[\s\S]{0,160}passenger\.group\.visible = true/);
+  assert.match(source, /passenger\.group\.visible = passenger\.flow !== "ALIGHT"[\s\S]{0,180}passenger\.group\.rotation\.y = passenger\.baseRotation/);
+  assert.doesNotMatch(source, /phase === "APPROACHING"[\s\S]{0,320}passenger\.group\.visible = true/);
 });
 
 test("onboard wayfinding reflects the authored MTA route and transfer topology", async () => {

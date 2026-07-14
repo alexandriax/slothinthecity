@@ -4,6 +4,8 @@ export type FootstepSurface = "earth" | "wood" | "stone" | "metal" | "water";
 
 export type TrainChimeKind = "arrival" | "doors-closing" | "transfer";
 
+export type HawkAudioCue = "near" | "dive";
+
 export type AudioMix = {
   master: number;
   music: number;
@@ -67,6 +69,36 @@ export const SOUNDTRACK_TRACKS = [
   "/audio/soundtrack/11.mp3",
 ] as const;
 
+/**
+ * Pregenerated, deploy-safe recordings. These paths intentionally point at
+ * checked-in files: the shipped game never needs an ElevenLabs or OpenAI key.
+ */
+export const AUTHORED_SFX = {
+  cartMotor: "/audio/sfx/cart-motor-loop.mp3",
+  hawkNear: "/audio/sfx/hawk-near-screech.mp3",
+  hawkDive: "/audio/sfx/hawk-dive-pass.mp3",
+} as const;
+
+export const TRANSIT_ANNOUNCEMENTS = {
+  fifth_nr_platform: "/audio/announcements/fifth_nr_platform.mp3",
+  fifth_nr_boarding: "/audio/announcements/fifth_nr_boarding.mp3",
+  lex_arrival_transfer: "/audio/announcements/lex_arrival_transfer.mp3",
+  lex_5_platform: "/audio/announcements/lex_5_platform.mp3",
+  lex_5_boarding: "/audio/announcements/lex_5_boarding.mp3",
+  stop_86: "/audio/announcements/stop_86.mp3",
+  stop_125: "/audio/announcements/stop_125.mp3",
+  stop_e180: "/audio/announcements/stop_e180.mp3",
+  west_farms_arrival: "/audio/announcements/west_farms_arrival.mp3",
+  stand_clear_doors: "/audio/announcements/stand_clear_doors.mp3",
+} as const;
+
+export type TransitAnnouncement = keyof typeof TRANSIT_ANNOUNCEMENTS;
+
+type QueuedAnnouncement = {
+  cue: TransitAnnouncement;
+  notBefore: number;
+};
+
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 
 function equalPower(value: number) {
@@ -101,6 +133,21 @@ export class PremiumAudioDirector {
   private soundtrackIndex = 0;
   private soundtrackFailures = 0;
   private soundtrackRecoveryTimer: number | null = null;
+  private authoredBuffers = new Map<string, AudioBuffer>();
+  private authoredLoads = new Map<string, Promise<AudioBuffer | null>>();
+  private cartMotorSource: AudioBufferSourceNode | null = null;
+  private cartMotorGain: GainNode | null = null;
+  private cartMotorRequested = false;
+  private cartMotorSpeed = 0;
+  private cartMotorStarting = false;
+  private hawkCueTimes = new Map<HawkAudioCue, number>();
+  private announcementQueue: QueuedAnnouncement[] = [];
+  private announcementSource: AudioBufferSourceNode | null = null;
+  private announcementCue: TransitAnnouncement | null = null;
+  private announcementLoading = false;
+  private announcementTimer: number | null = null;
+  private announcementGeneration = 0;
+  private announcementCueTimes = new Map<TransitAnnouncement, number>();
   private lastFootstepAt = -1;
   private disposed = false;
   private snapshot: AudioDirectorSnapshot = {
@@ -307,11 +354,79 @@ export class PremiumAudioDirector {
     return true;
   }
 
+  /**
+   * Start, update, or stop the authored field-cart motor loop. Calling this
+   * every frame is cheap: one source is retained and only its gain/rate ramps.
+   */
+  setCartMotor(active: boolean, speedMetersPerSecond = 0) {
+    this.cartMotorRequested = active;
+    this.cartMotorSpeed = Math.max(0, Math.abs(speedMetersPerSecond));
+    if (!this.context || !this.sfxBus) return false;
+    if (!active) {
+      const source = this.cartMotorSource, gain = this.cartMotorGain;
+      this.cartMotorSource = null; this.cartMotorGain = null;
+      if (source && gain) {
+        const now = this.context.currentTime;
+        gain.gain.cancelScheduledValues(now);
+        gain.gain.setValueAtTime(Math.max(.0001, gain.gain.value), now);
+        gain.gain.exponentialRampToValueAtTime(.0001, now + .18);
+        try { source.stop(now + .2); } catch {}
+      }
+      return true;
+    }
+    if (this.cartMotorSource && this.cartMotorGain) {
+      this.applyCartMotorMotion();
+      return true;
+    }
+    if (!this.cartMotorStarting) void this.startCartMotor();
+    return true;
+  }
+
+  /** Authored hawk calls with per-cue cooldowns so a frame loop cannot spam. */
+  playHawkCue(kind: HawkAudioCue) {
+    if (!this.context || !this.sfxBus) return false;
+    const now = this.context.currentTime, minimumGap = kind === "dive" ? 3.6 : 8;
+    if (now - (this.hawkCueTimes.get(kind) ?? -Infinity) < minimumGap) return false;
+    this.hawkCueTimes.set(kind, now);
+    const path = kind === "dive" ? AUTHORED_SFX.hawkDive : AUTHORED_SFX.hawkNear;
+    void this.playAuthoredOneShot(path, kind === "dive" ? .9 : .68, kind === "dive" ? 1 : .96);
+    return true;
+  }
+
+  /**
+   * Queue a pregenerated transit announcement. Announcements are serialized,
+   * duplicate-suppressed, and gently duck the score while the voice is active.
+   */
+  playTransitAnnouncement(cue: TransitAnnouncement, options: { delaySeconds?: number; dedupeSeconds?: number } = {}) {
+    if (this.disposed) return false;
+    const now = this.context?.currentTime ?? 0, dedupe = Math.max(0, options.dedupeSeconds ?? 10);
+    if (now - (this.announcementCueTimes.get(cue) ?? -Infinity) < dedupe) return false;
+    if (this.announcementCue === cue || this.announcementQueue.some(item => item.cue === cue)) return false;
+    this.announcementCueTimes.set(cue, now);
+    this.announcementQueue.push({ cue, notBefore: now + Math.max(0, options.delaySeconds ?? 0) });
+    this.pumpAnnouncementQueue();
+    return true;
+  }
+
+  cancelTransitAnnouncements() {
+    this.announcementGeneration += 1;
+    this.announcementQueue.length = 0;
+    this.announcementLoading = false;
+    if (this.announcementTimer !== null) window.clearTimeout(this.announcementTimer);
+    this.announcementTimer = null;
+    const source = this.announcementSource;
+    this.announcementSource = null; this.announcementCue = null;
+    if (source) { try { source.stop(); } catch {} }
+    this.applyMix(.12);
+  }
+
   async dispose() {
     if (this.disposed) return;
     this.disposed = true;
     if (this.soundtrackRecoveryTimer !== null) window.clearTimeout(this.soundtrackRecoveryTimer);
     this.soundtrackRecoveryTimer = null;
+    this.setCartMotor(false);
+    this.cancelTransitAnnouncements();
     if (this.soundtrackElement) {
       this.soundtrackElement.pause();
       this.soundtrackElement.removeEventListener("ended", this.handleSoundtrackEnded);
@@ -333,6 +448,8 @@ export class PremiumAudioDirector {
       }
     }
     this.layers.clear();
+    this.authoredBuffers.clear();
+    this.authoredLoads.clear();
     const context = this.context;
     this.context = null;
     if (context && context.state !== "closed") await context.close().catch(() => undefined);
@@ -359,6 +476,8 @@ export class PremiumAudioDirector {
     for (const scene of ["central-park", "subway-station", "moving-train", "west-farms", "finale"] satisfies AudioScene[]) this.layers.set(scene, this.createSceneLayer(scene));
     this.applyMix(0.01);
     this.setScene(this.snapshot.scene, { transitionSeconds: 0.12, intensity: this.snapshot.intensity });
+    if (this.cartMotorRequested) void this.startCartMotor();
+    this.pumpAnnouncementQueue();
     context.addEventListener("statechange", () => {
       // `unlocked` records that the user has granted playback once; it must
       // survive an OS/browser suspension so returning to a mobile tab resumes
@@ -412,6 +531,94 @@ export class PremiumAudioDirector {
     this.soundtrackSource = context.createMediaElementSource(element);
     this.soundtrackSource.connect(this.musicBus);
     this.loadSoundtrack(0);
+  }
+
+  private loadAuthoredBuffer(path: string) {
+    const cached = this.authoredBuffers.get(path);
+    if (cached) return Promise.resolve(cached);
+    const pending = this.authoredLoads.get(path);
+    if (pending) return pending;
+    const context = this.context;
+    if (!context || typeof fetch === "undefined") return Promise.resolve(null);
+    const request = fetch(path)
+      .then(response => response.ok ? response.arrayBuffer() : Promise.reject(new Error(`Audio ${response.status}`)))
+      .then(data => context.decodeAudioData(data.slice(0)))
+      .then(buffer => {
+        if (!this.disposed && this.context === context) this.authoredBuffers.set(path, buffer);
+        return buffer;
+      })
+      .catch(() => null)
+      .finally(() => this.authoredLoads.delete(path));
+    this.authoredLoads.set(path, request);
+    return request;
+  }
+
+  private async playAuthoredOneShot(path: string, level: number, playbackRate = 1) {
+    const context = this.context, output = this.sfxBus;
+    if (!context || !output || this.disposed) return false;
+    const buffer = await this.loadAuthoredBuffer(path);
+    if (!buffer || this.context !== context || this.disposed) return false;
+    const source = context.createBufferSource(), gain = context.createGain();
+    source.buffer = buffer; source.playbackRate.value = playbackRate; gain.gain.value = clamp01(level);
+    source.connect(gain).connect(output); source.start();
+    source.onended = () => { source.disconnect(); gain.disconnect(); };
+    return true;
+  }
+
+  private async startCartMotor() {
+    if (this.cartMotorStarting) return;
+    this.cartMotorStarting = true;
+    const context = this.context;
+    const buffer = await this.loadAuthoredBuffer(AUTHORED_SFX.cartMotor);
+    this.cartMotorStarting = false;
+    if (!context || !buffer || this.context !== context || !this.sfxBus || !this.cartMotorRequested || this.disposed || this.cartMotorSource) return;
+    const source = context.createBufferSource(), gain = context.createGain();
+    source.buffer = buffer; source.loop = true; gain.gain.value = .0001;
+    source.connect(gain).connect(this.sfxBus); source.start();
+    source.onended = () => {
+      source.disconnect(); gain.disconnect();
+      if (this.cartMotorSource === source) { this.cartMotorSource = null; this.cartMotorGain = null; }
+    };
+    this.cartMotorSource = source; this.cartMotorGain = gain;
+    this.applyCartMotorMotion();
+  }
+
+  private applyCartMotorMotion() {
+    if (!this.context || !this.cartMotorSource || !this.cartMotorGain) return;
+    const now = this.context.currentTime, amount = clamp01(this.cartMotorSpeed / 6.5);
+    this.cartMotorSource.playbackRate.setTargetAtTime(.78 + amount * .58, now, .11);
+    this.cartMotorGain.gain.setTargetAtTime(.045 + amount * .17, now, .08);
+  }
+
+  private pumpAnnouncementQueue() {
+    if (this.announcementSource || this.announcementLoading || this.announcementTimer !== null || this.disposed || !this.context || !this.sfxBus) return;
+    const next = this.announcementQueue.shift();
+    if (!next) return;
+    const wait = Math.max(0, next.notBefore - this.context.currentTime);
+    if (wait > .015) {
+      this.announcementTimer = window.setTimeout(() => {
+        this.announcementTimer = null;
+        this.announcementQueue.unshift(next);
+        this.pumpAnnouncementQueue();
+      }, wait * 1000);
+      return;
+    }
+    const generation = this.announcementGeneration;
+    this.announcementLoading = true;
+    void this.loadAuthoredBuffer(TRANSIT_ANNOUNCEMENTS[next.cue]).then(buffer => {
+      if (generation !== this.announcementGeneration) return;
+      this.announcementLoading = false;
+      if (!buffer || this.disposed || !this.context || !this.sfxBus) { this.pumpAnnouncementQueue(); return; }
+      const source = this.context.createBufferSource(), gain = this.context.createGain();
+      source.buffer = buffer; gain.gain.value = .94; source.connect(gain).connect(this.sfxBus);
+      this.announcementSource = source; this.announcementCue = next.cue;
+      this.applyMix(.16); source.start();
+      source.onended = () => {
+        source.disconnect(); gain.disconnect();
+        if (this.announcementSource === source) { this.announcementSource = null; this.announcementCue = null; }
+        this.applyMix(.24); this.pumpAnnouncementQueue();
+      };
+    });
   }
 
   private loadSoundtrack(index: number) {
@@ -502,7 +709,7 @@ export class PremiumAudioDirector {
       node.gain.linearRampToValueAtTime(target, now + rampSeconds);
     };
     ramp(this.masterBus, this.snapshot.muted ? 0 : equalPower(this.snapshot.master));
-    ramp(this.musicBus, equalPower(this.snapshot.music));
+    ramp(this.musicBus, equalPower(this.snapshot.music) * (this.announcementSource ? .38 : 1));
     ramp(this.ambienceBus, equalPower(this.snapshot.ambience));
     ramp(this.sfxBus, equalPower(this.snapshot.sfx));
   }

@@ -16,6 +16,8 @@ export type PremiumHumanOptions = {
   hair?: string;
   accessory?: "backpack" | "camera" | "tote" | "radio" | "none";
   pose?: "neutral" | "checking-map" | "photographing" | "waving" | "seated";
+  faceVariant?: number;
+  clothingVariant?: number;
   /** Optional overrides keep the rig reusable in streamed worlds. */
   faceAtlasUrl?: string;
   clothingAtlasUrl?: string;
@@ -25,6 +27,25 @@ export type PremiumCharacterResult = {
   root: THREE.Group;
   ownedTextures: THREE.Texture[];
 };
+
+export const PREMIUM_CHARACTER_ASSETS = {
+  columns: 2,
+  rows: 2,
+  tilesPerAtlas: 4,
+  identityCount: 12,
+  faceAtlases: [
+    "/game/characters/npc-face-atlas-v2-01.webp",
+    "/game/characters/npc-face-atlas-v2-02.webp",
+    "/game/characters/npc-face-atlas-v2-03.webp",
+  ],
+  clothingAtlases: [
+    "/game/characters/npc-cloth-atlas-v2-01.webp",
+    "/game/characters/npc-cloth-atlas-v2-02.webp",
+    "/game/characters/npc-cloth-atlas-v2-03.webp",
+  ],
+  legacyFaceAtlas: "/game/characters/npc-face-atlas-v1.webp",
+  legacyClothingAtlas: "/game/characters/npc-cloth-atlas-v1.webp",
+} as const;
 
 function seeded(seed: number) {
   let value = seed >>> 0;
@@ -125,9 +146,18 @@ function atlasTile(url: string, tile: number, quality: number) {
   return texture;
 }
 
+function normalizedVariant(variant: number, count = PREMIUM_CHARACTER_ASSETS.identityCount) {
+  return ((Math.floor(variant) % count) + count) % count;
+}
+
+function defaultAtlas(kind: "face" | "clothing", variant: number) {
+  const paths = kind === "face" ? PREMIUM_CHARACTER_ASSETS.faceAtlases : PREMIUM_CHARACTER_ASSETS.clothingAtlases;
+  return paths[Math.floor(normalizedVariant(variant) / PREMIUM_CHARACTER_ASSETS.tilesPerAtlas)];
+}
+
 function portraitTile(url: string, tile: number, quality: number) {
   if (typeof document === "undefined") return atlasTile(url, tile, quality);
-  const size = quality > .86 ? 384 : quality > .62 ? 256 : 160;
+  const size = quality > .86 ? 384 : quality > .62 ? 256 : 128;
   const canvas = document.createElement("canvas"); canvas.width = canvas.height = size;
   const context = canvas.getContext("2d", { willReadFrequently: true });
   const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace; texture.anisotropy = quality > .86 ? 8 : 4;
@@ -135,9 +165,10 @@ function portraitTile(url: string, tile: number, quality: number) {
   const image = new Image(); image.decoding = "async";
   image.onload = () => {
     const index = ((tile % 4) + 4) % 4, tileWidth = image.naturalWidth / 2, tileHeight = image.naturalHeight / 2;
-    const sourceX = (index % 2) * tileWidth + tileWidth * .07, sourceY = (index < 2 ? 0 : tileHeight) + tileHeight * .015;
+    const legacy = url.includes("-v1."), cropX = legacy ? .07 : .035, cropY = legacy ? .015 : .035, cropWidth = legacy ? .86 : .93, cropHeight = legacy ? .84 : .91;
+    const sourceX = (index % 2) * tileWidth + tileWidth * cropX, sourceY = (index < 2 ? 0 : tileHeight) + tileHeight * cropY;
     context.clearRect(0, 0, size, size);
-    context.drawImage(image, sourceX, sourceY, tileWidth * .86, tileHeight * .84, 0, 0, size, size);
+    context.drawImage(image, sourceX, sourceY, tileWidth * cropWidth, tileHeight * cropHeight, 0, 0, size, size);
     const pixels = context.getImageData(0, 0, size, size), sample = (x: number, y: number) => {
       const offset = (y * size + x) * 4; return [pixels.data[offset], pixels.data[offset + 1], pixels.data[offset + 2]] as const;
     };
@@ -148,7 +179,8 @@ function portraitTile(url: string, tile: number, quality: number) {
       const distance = Math.hypot(pixels.data[offset] - background[0], pixels.data[offset + 1] - background[1], pixels.data[offset + 2] - background[2]);
       const edgeX = Math.min(1, x / (size * .055), (size - 1 - x) / (size * .055));
       const edgeY = Math.min(1, y / (size * .035), (size - 1 - y) / (size * .035));
-      pixels.data[offset + 3] = Math.round(255 * THREE.MathUtils.smoothstep(distance, 18, 42) * Math.max(0, Math.min(edgeX, edgeY)));
+      const edgeFeather = Math.max(0, Math.min(edgeX, edgeY));
+      pixels.data[offset + 3] = Math.round(255 * edgeFeather * (legacy ? THREE.MathUtils.smoothstep(distance, 18, 42) : 1));
     }
     context.putImageData(pixels, 0, 0); texture.needsUpdate = true;
   };
@@ -156,14 +188,63 @@ function portraitTile(url: string, tile: number, quality: number) {
   return texture;
 }
 
-function portraitGeometry(segments: number) {
-  const geometry = new THREE.CircleGeometry(.245, segments);
+function anatomicalHeadGeometry(segments: number) {
+  const geometry = new THREE.SphereGeometry(1, segments, Math.max(16, Math.floor(segments * .78)));
   const positions = geometry.getAttribute("position") as THREE.BufferAttribute;
   for (let index = 0; index < positions.count; index++) {
-    const x = positions.getX(index), y = positions.getY(index), radial = Math.min(1, (x * x + y * y) / (.245 * .245));
-    positions.setZ(index, -.305 + radial * .052);
+    const sourceX = positions.getX(index), sourceY = positions.getY(index), sourceZ = positions.getZ(index);
+    const jawTaper = .8 + THREE.MathUtils.smoothstep(sourceY, -.83, -.05) * .2;
+    const cheek = Math.exp(-Math.pow((sourceY + .08) / .3, 2)) * (sourceZ < 0 ? .035 : .012);
+    const temple = Math.exp(-Math.pow((sourceY - .32) / .22, 2)) * .018;
+    positions.setXYZ(index, sourceX * .247 * (jawTaper + cheek + temple), sourceY * .292, sourceZ * .245 * (1 + cheek * .75));
   }
   positions.needsUpdate = true; geometry.computeVertexNormals(); return geometry;
+}
+
+/**
+ * A subdivided ellipsoidal facial shell follows the cranium instead of
+ * presenting the generated portrait on a flat billboard. Standardized atlas
+ * landmarks are also given subtle geometric depth at the brow, nose, cheeks,
+ * lips and chin, so silhouettes remain human from oblique viewing angles.
+ */
+function faceSurfaceGeometry(quality: number) {
+  const columns = quality > .86 ? 32 : quality > .62 ? 22 : 14;
+  const rows = quality > .86 ? 34 : quality > .62 ? 24 : 16;
+  const positions: number[] = [], normals: number[] = [], uvs: number[] = [], indices: number[] = [];
+  for (let row = 0; row <= rows; row++) {
+    const v = row / rows, latitude = THREE.MathUtils.lerp(.96, -.99, v);
+    for (let column = 0; column <= columns; column++) {
+      const u = column / columns, longitude = (u - .5) * 1.76;
+      const latitudeCosine = Math.cos(latitude);
+      let x = Math.sin(longitude) * latitudeCosine * .249;
+      const y = Math.sin(latitude) * .292;
+      // Keep the photographic shell just proud of the unified skin cranium.
+      // The extra clearance prevents the eye-socket recession from dipping
+      // behind the underlying head at grazing camera angles.
+      let z = -Math.cos(longitude) * latitudeCosine * .247 - .009;
+      const gaussian = (centerU: number, centerV: number, spreadU: number, spreadV: number) => Math.exp(-Math.pow((u - centerU) / spreadU, 2) - Math.pow((v - centerV) / spreadV, 2));
+      const nose = gaussian(.5, .51, .09, .17), brow = gaussian(.5, .245, .24, .075);
+      const eyeSockets = gaussian(.34, .325, .095, .065) + gaussian(.66, .325, .095, .065);
+      const cheeks = gaussian(.29, .55, .15, .15) + gaussian(.71, .55, .15, .15);
+      const lips = gaussian(.5, .7, .14, .065), chin = gaussian(.5, .89, .19, .095);
+      z -= nose * .042 + cheeks * .008 + lips * .008 + chin * .005;
+      z += eyeSockets * .0025 + brow * .0015;
+      x *= .985 + cheeks * .018;
+      positions.push(x, y, z); uvs.push(u, 1 - v);
+      const normal = new THREE.Vector3(x / (.249 * .249), y / (.292 * .292), z / (.247 * .247)).normalize();
+      normals.push(normal.x, normal.y, normal.z);
+    }
+  }
+  const stride = columns + 1;
+  for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) {
+    const topLeft = row * stride + column, bottomLeft = topLeft + stride;
+    indices.push(topLeft, topLeft + 1, bottomLeft, topLeft + 1, bottomLeft + 1, bottomLeft);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices); geometry.computeVertexNormals(); geometry.computeBoundingSphere(); return geometry;
 }
 
 function atlasMaterial(atlas: THREE.Texture, relief: THREE.Texture, roughness: number) {
@@ -180,19 +261,31 @@ function atlasMaterial(atlas: THREE.Texture, relief: THREE.Texture, roughness: n
 
 function profiledTorsoGeometry(segments: number, role: PremiumHumanRole) {
   const attendant = role === "attendant";
-  const points = [
-    new THREE.Vector2(.235, -.55),
-    new THREE.Vector2(.315, -.47),
-    new THREE.Vector2(.33, -.23),
-    new THREE.Vector2(.315, .02),
-    new THREE.Vector2(attendant ? .38 : .355, .31),
-    new THREE.Vector2(attendant ? .405 : .385, .43),
-    new THREE.Vector2(.235, .52),
+  const levels = [
+    { y: -.55, x: .245, z: .19 },
+    { y: -.46, x: .305, z: .22 },
+    { y: -.2, x: .318, z: .232 },
+    { y: .08, x: .325, z: .24 },
+    { y: .3, x: attendant ? .375 : .36, z: .235 },
+    { y: .42, x: attendant ? .415 : .392, z: .22 },
+    { y: .52, x: .235, z: .17 },
   ];
-  const geometry = new THREE.LatheGeometry(points, segments);
-  geometry.scale(1, 1, .72);
-  geometry.computeVertexNormals();
-  return geometry;
+  const ringSegments = Math.max(18, segments), positions: number[] = [], uvs: number[] = [], indices: number[] = [];
+  for (let level = 0; level < levels.length; level++) {
+    const data = levels[level];
+    for (let segment = 0; segment <= ringSegments; segment++) {
+      const u = segment / ringSegments, angle = u * Math.PI * 2, front = Math.max(0, -Math.sin(angle));
+      const chest = Math.exp(-Math.pow((data.y - .18) / .25, 2)) * front * .018;
+      positions.push(Math.cos(angle) * data.x, data.y, Math.sin(angle) * data.z - chest);
+      uvs.push(u, level / (levels.length - 1));
+    }
+  }
+  const stride = ringSegments + 1;
+  for (let level = 0; level < levels.length - 1; level++) for (let segment = 0; segment < ringSegments; segment++) {
+    const current = level * stride + segment, next = current + stride;
+    indices.push(current, next, current + 1, current + 1, next, next + 1);
+  }
+  const geometry = new THREE.BufferGeometry(); geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3)); geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2)); geometry.setIndex(indices); geometry.computeVertexNormals(); return geometry;
 }
 
 function taperedLimbBetween(start: THREE.Vector3, end: THREE.Vector3, startRadius: number, endRadius: number, material: THREE.Material, segments: number) {
@@ -225,7 +318,11 @@ function castCharacterShadows(root: THREE.Group, high: boolean) {
 export function createPremiumHuman(options: PremiumHumanOptions): PremiumCharacterResult {
   const quality = THREE.MathUtils.clamp(options.quality, .42, 1.2), high = quality > .7;
   const segments = quality > .92 ? 40 : quality > .68 ? 28 : 18;
-  const hairColor = options.hair ?? (options.variant % 3 === 0 ? "#241b17" : options.variant % 3 === 1 ? "#4a3223" : "#17191a");
+  const identityVariant = normalizedVariant(options.faceVariant ?? options.variant);
+  const wardrobeVariant = normalizedVariant(options.clothingVariant ?? options.variant + (options.role === "attendant" ? 4 : 0));
+  const faceAtlasUrl = options.faceAtlasUrl ?? defaultAtlas("face", identityVariant);
+  const clothingAtlasUrl = options.clothingAtlasUrl ?? defaultAtlas("clothing", wardrobeVariant);
+  const hairColor = options.hair ?? (identityVariant % 4 === 0 ? "#241b17" : identityVariant % 4 === 1 ? "#38251d" : identityVariant % 4 === 2 ? "#5a402f" : "#17191a");
   const coatMap = proceduralSurface("cloth", options.coat, "#d8d2bc", 17 + options.variant, quality);
   const trouserMap = proceduralSurface("cloth", options.trousers, "#7f8d8b", 31 + options.variant, quality);
   const skinMap = proceduralSurface("skin", options.skin, "#6f4536", 47 + options.variant, quality);
@@ -233,22 +330,25 @@ export function createPremiumHuman(options: PremiumHumanOptions): PremiumCharact
   const leatherMap = proceduralSurface("leather", options.role === "attendant" ? "#151b18" : "#5a3c2b", "#b18c63", 79 + options.variant, quality);
   const metalMap = proceduralSurface("metal", "#a8aaa2", "#f5f1dc", 97 + options.variant, quality);
   const trimMap = proceduralSurface("cloth", options.role === "attendant" ? "#e7e0cf" : "#b7a582", "#ffffff", 103 + options.variant, quality);
-  const faceAtlas = portraitTile(options.faceAtlasUrl ?? "/game/characters/npc-face-atlas-v1.webp", options.variant, quality);
-  const clothingAtlas = atlasTile(options.clothingAtlasUrl ?? "/game/characters/npc-cloth-atlas-v1.webp", options.variant + (options.role === "attendant" ? 1 : 0), quality);
+  const faceAtlas = portraitTile(faceAtlasUrl, identityVariant % PREMIUM_CHARACTER_ASSETS.tilesPerAtlas, quality);
+  const clothingAtlas = atlasTile(clothingAtlasUrl, wardrobeVariant % PREMIUM_CHARACTER_ASSETS.tilesPerAtlas, quality);
   const ownedTextures = [coatMap, trouserMap, skinMap, hairMap, leatherMap, metalMap, trimMap, faceAtlas, clothingAtlas];
   const coat = atlasMaterial(clothingAtlas, coatMap, .8), trousers = texturedMaterial(trouserMap, .83), skin = texturedMaterial(skinMap, .76);
-  const faceSkin = new THREE.MeshPhysicalMaterial({ map: faceAtlas, transparent: true, alphaTest: .08, roughness: .72, clearcoat: .025, side: THREE.DoubleSide });
+  const faceSkin = new THREE.MeshPhysicalMaterial({ map: faceAtlas, bumpMap: skinMap, bumpScale: .004, transparent: true, alphaTest: .08, depthWrite: true, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1, roughness: .72, clearcoat: .018, clearcoatRoughness: .9, side: THREE.FrontSide });
   const hair = texturedMaterial(hairMap, .91), leather = texturedMaterial(leatherMap, .72), metal = texturedMaterial(metalMap, .32, { metalness: .76, clearcoat: .22 }), trim = texturedMaterial(trimMap, .72);
   const root = new THREE.Group(); root.name = options.role === "attendant" ? "central-park-zoo-attendant" : "central-park-zoo-visitor";
   root.userData.role = options.role === "attendant" ? "zoo-attendant" : "zoo-visitor";
   root.userData.characterFidelity = high ? "premium-high" : "premium-mobile";
-  root.userData.faceAtlas = options.faceAtlasUrl ?? "/game/characters/npc-face-atlas-v1.webp";
-  root.userData.clothingAtlas = options.clothingAtlasUrl ?? "/game/characters/npc-cloth-atlas-v1.webp";
+  root.userData.faceAtlas = faceAtlasUrl;
+  root.userData.faceVariant = identityVariant;
+  root.userData.clothingAtlas = clothingAtlasUrl;
+  root.userData.clothingVariant = wardrobeVariant;
   if (options.role === "attendant") root.userData.dialogue = "There are no sloths here.";
 
   // A profiled, slightly asymmetrical torso replaces the stacked-box outline.
-  const hips = new THREE.Mesh(CapsuleGeometrySafe(.29, .24, segments), trousers); hips.position.y = 1.02; hips.scale.set(1.06, .68, .78); root.add(hips);
-  const torso = new THREE.Mesh(profiledTorsoGeometry(segments, options.role), coat); torso.position.y = 1.5; torso.rotation.y = (options.variant % 3 - 1) * .018; root.add(torso);
+  const build = identityVariant % 4;
+  const hips = new THREE.Mesh(CapsuleGeometrySafe(.29, .24, segments), trousers); hips.position.y = 1.02; hips.scale.set(1.02 + build * .025, .68, .76 + (build % 2) * .035); root.add(hips);
+  const torso = new THREE.Mesh(profiledTorsoGeometry(segments, options.role), coat); torso.position.y = 1.5; torso.rotation.y = (identityVariant % 3 - 1) * .018; torso.scale.set(.96 + build * .022, 1 + (identityVariant % 2) * .018, .98 + (build % 2) * .025); root.add(torso);
   const jacketHem = new THREE.Mesh(new THREE.TorusGeometry(.295, .025, Math.max(8, segments / 3), segments), coat); jacketHem.rotation.x = Math.PI / 2; jacketHem.scale.z = .74; jacketHem.position.y = .99; root.add(jacketHem);
   for (const side of [-1, 1]) {
     const deltoid = new THREE.Mesh(new THREE.SphereGeometry(.145, segments, Math.max(12, Math.floor(segments * .65))), coat);
@@ -262,33 +362,27 @@ export function createPremiumHuman(options: PremiumHumanOptions): PremiumCharact
     const zip = new THREE.Mesh(new RoundedBoxGeometry(.02, .72, .018, 3, .006), metal); zip.position.set(0, 1.47, -.307); root.add(zip);
     for (const side of [-1, 1]) { const seam = new THREE.Mesh(new THREE.TorusGeometry(.24, .014, 7, segments, Math.PI * .62), trim); seam.position.set(side * .045, 1.76, -.015); seam.rotation.set(Math.PI / 2, 0, side * .2); root.add(seam); }
   }
+  if (high) for (const side of [-1, 1]) {
+    const pocketWelt = new THREE.Mesh(new RoundedBoxGeometry(.17, .035, .025, 4, .009), coat); pocketWelt.name = "tailored-textured-pocket-welt"; pocketWelt.position.set(side * .18, 1.3, -.238); pocketWelt.rotation.z = side * -.055; root.add(pocketWelt);
+    const shoulderSeam = new THREE.Mesh(new THREE.TorusGeometry(.105, .009, 6, Math.max(16, segments / 2), Math.PI * .72), trim); shoulderSeam.position.set(side * .31, 1.77, -.015); shoulderSeam.rotation.set(Math.PI / 2, 0, side * .46); root.add(shoulderSeam);
+  }
+  if (quality > .9) for (const y of [1.62, 1.48, 1.34]) { const button = new THREE.Mesh(new THREE.CylinderGeometry(.014, .014, .009, 12), metal); button.position.set(.018, y, -.316); button.rotation.x = Math.PI / 2; root.add(button); }
 
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(.105, .125, .235, segments), skin); neck.position.y = 1.99; root.add(neck);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(.27, segments, Math.max(16, Math.floor(segments * .76))), skin); head.scale.set(.9, 1.08, .92); head.position.y = 2.23; root.add(head);
-  const portrait = new THREE.Mesh(portraitGeometry(segments), faceSkin); portrait.name = "photoreal-generated-face-albedo"; portrait.scale.set(.9, 1.12, 1); portrait.position.set(0, 2.235, 0); root.add(portrait);
-  const jaw = new THREE.Mesh(new THREE.SphereGeometry(.205, segments, Math.max(14, Math.floor(segments * .68))), skin); jaw.scale.set(.85, .74, .66); jaw.position.set(0, 2.1, -.14); root.add(jaw);
-  for (const side of [-1, 1]) { const cheek = new THREE.Mesh(new THREE.SphereGeometry(.086, segments, 13), skin); cheek.scale.set(1.05, .72, .35); cheek.position.set(side * .11, 2.15, -.238); root.add(cheek); }
-  const hairCap = new THREE.Mesh(new THREE.SphereGeometry(.278, segments, Math.max(14, Math.floor(segments * .7)), 0, Math.PI * 2, 0, Math.PI * .57), hair); hairCap.position.y = 2.28; hairCap.rotation.y = options.variant * .3; root.add(hairCap);
-  if (options.variant % 3 === 1) {
-    const bun = new THREE.Mesh(new THREE.SphereGeometry(.125, segments, 14), hair); bun.scale.set(.9, 1.07, .92); bun.position.set(0, 2.39, .205); root.add(bun);
-  } else if (options.variant % 3 === 2) {
-    for (const side of [-1, 1]) { const sideHair = new THREE.Mesh(new THREE.CapsuleGeometry(.065, .17, 8, segments), hair); sideHair.position.set(side * .21, 2.13, .02); sideHair.rotation.z = side * .08; root.add(sideHair); }
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(.105, .126, .245, segments), skin); neck.position.y = 1.985; root.add(neck);
+  const head = new THREE.Mesh(anatomicalHeadGeometry(segments), skin); head.name = "unified-anatomical-head-and-jaw"; head.position.y = 2.23; root.add(head);
+  const faceSurface = new THREE.Mesh(faceSurfaceGeometry(quality), faceSkin); faceSurface.name = "head-conforming-generated-face-surface"; faceSurface.position.y = 2.23; faceSurface.renderOrder = 4; root.add(faceSurface);
+  const hairCap = new THREE.Mesh(new THREE.SphereGeometry(.278, segments, Math.max(14, Math.floor(segments * .7)), 0, Math.PI * 2, 0, Math.PI * .56), hair); hairCap.scale.set(.9, 1.04, .91); hairCap.position.y = 2.285; hairCap.rotation.y = identityVariant * .23; root.add(hairCap);
+  if (identityVariant % 4 === 1) {
+    const bun = new THREE.Mesh(new THREE.SphereGeometry(.125, segments, 16), hair); bun.scale.set(.9, 1.07, .92); bun.position.set(0, 2.4, .205); root.add(bun);
+  } else if (identityVariant % 4 === 2) {
+    for (const side of [-1, 1]) { const sideHair = new THREE.Mesh(new THREE.CapsuleGeometry(.057, .22, 10, segments), hair); sideHair.position.set(side * .205, 2.12, .018); sideHair.rotation.z = side * .055; root.add(sideHair); }
+  } else if (identityVariant % 4 === 3 && high) {
+    for (let curl = 0; curl < 9; curl++) { const angle = curl / 9 * Math.PI * 2; const coil = new THREE.Mesh(new THREE.TorusGeometry(.048, .016, 8, 14), hair); coil.position.set(Math.cos(angle) * .19, 2.39 + Math.sin(curl * 1.7) * .025, Math.sin(angle) * .14); coil.rotation.set(Math.PI / 2, angle, 0); root.add(coil); }
   }
-  const eyeTexture = proceduralSurface("ivory", "#493324", "#cab98f", 131 + options.variant, quality); ownedTextures.push(eyeTexture);
-  const iris = new THREE.MeshPhysicalMaterial({ map: eyeTexture, color: "#ffffff", roughness: .12, clearcoat: 1 });
   for (const side of [-1, 1]) {
-    const ear = new THREE.Mesh(new THREE.SphereGeometry(.071, segments, 14), skin); ear.scale.set(.52, .96, .68); ear.position.set(side * .252, 2.22, -.002); root.add(ear);
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(.071, segments, Math.max(12, Math.floor(segments * .5))), skin); ear.scale.set(.52, .96, .68); ear.position.set(side * .248, 2.22, -.002); root.add(ear);
     const earFold = new THREE.Mesh(new THREE.TorusGeometry(.027, .007, 7, 18, Math.PI * 1.45), skin); earFold.position.set(side * .257, 2.22, -.035); earFold.rotation.y = side * Math.PI / 2; root.add(earFold);
-    const eyeWhite = new THREE.Mesh(new THREE.SphereGeometry(.039, segments, 14), trim); eyeWhite.scale.set(1, .58, .3); eyeWhite.position.set(side * .086, 2.24, -.247); root.add(eyeWhite);
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(.018, Math.max(14, segments / 2), 12), iris); eye.position.set(side * .086, 2.24, -.273); root.add(eye);
-    const upperLid = new THREE.Mesh(new THREE.TorusGeometry(.038, .006, 6, 20, Math.PI), skin); upperLid.position.set(side * .086, 2.248, -.274); upperLid.rotation.z = Math.PI; root.add(upperLid);
-    const brow = new THREE.Mesh(new THREE.CapsuleGeometry(.008, .07, 6, 12), hair); brow.position.set(side * .086, 2.302, -.248); brow.rotation.z = side * (-.08 + options.variant * .012); root.add(brow);
   }
-  const noseBridge = new THREE.Mesh(new THREE.CapsuleGeometry(.021, .085, 7, segments), skin); noseBridge.position.set(0, 2.19, -.266); noseBridge.rotation.x = .08; root.add(noseBridge);
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(.041, segments, 14), skin); nose.scale.set(.88, .74, .82); nose.position.set(0, 2.145, -.294); root.add(nose);
-  for (const side of [-1, 1]) { const nostril = new THREE.Mesh(new THREE.SphereGeometry(.0065, 10, 8), hair); nostril.position.set(side * .017, 2.139, -.326); root.add(nostril); }
-  const lipsMap = proceduralSurface("skin", "#74483f", "#ab7466", 149 + options.variant, quality); ownedTextures.push(lipsMap);
-  const lips = new THREE.Mesh(new THREE.TorusGeometry(.052, .007, 7, 26, Math.PI * .82), texturedMaterial(lipsMap, .68)); lips.position.set(0, 2.074, -.289); lips.rotation.z = .13; root.add(lips);
 
   const pose = options.pose ?? "neutral";
   for (const side of [-1, 1]) {

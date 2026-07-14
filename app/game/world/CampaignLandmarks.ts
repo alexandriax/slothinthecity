@@ -6,8 +6,13 @@ import { createPremiumHuman } from "./PremiumCharacter";
 export const BOW_BRIDGE_CENTER = new THREE.Vector3(-35, 0, -122);
 export const BOW_BRIDGE_LENGTH = 28;
 export const BOW_BRIDGE_WIDTH = 4.15;
-// The first campaign waypoint lands on the Ramble / northwest abutment.
-export const BOW_BRIDGE_TARGET = new THREE.Vector3(-48.1, 0, -116.15);
+// The span crosses the inlet rather than following it. Keeping this authored
+// yaw shared with the water-support code prevents the bridge deck and its
+// dry gameplay footprint from drifting apart.
+export const BOW_BRIDGE_YAW = -.43;
+// The first campaign waypoint lands on the clear east approach, where the
+// ticket quest can naturally continue down the nearby rowboat pier.
+export const BOW_BRIDGE_TARGET = new THREE.Vector3(-20.45, 0, -115.33);
 // The zoo target is the attendant on the public forecourt. The campus itself
 // spans roughly x=258..312 / z=-378..-338 and remains visibly complete behind
 // its closed conservation gate.
@@ -104,7 +109,7 @@ function addSouthboundParkPath(root: THREE.Group, textures: GameTextures, height
 
 function addBowBridge(root: THREE.Group, textures: GameTextures, heightAt: (x: number, z: number) => number, ownedTextures: THREE.Texture[]) {
   const bridge = new THREE.Group(); bridge.name = "bow-bridge-northwest-inlet-span";
-  const rotation = .43, length = BOW_BRIDGE_LENGTH, width = BOW_BRIDGE_WIDTH;
+  const rotation = BOW_BRIDGE_YAW, length = BOW_BRIDGE_LENGTH, width = BOW_BRIDGE_WIDTH;
   const west = new THREE.Vector3(-length / 2, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), rotation).add(BOW_BRIDGE_CENTER);
   const east = new THREE.Vector3(length / 2, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), rotation).add(BOW_BRIDGE_CENTER);
   const bridgeY = Math.max(heightAt(west.x, west.z), heightAt(east.x, east.z), heightAt(BOW_BRIDGE_CENTER.x, BOW_BRIDGE_CENTER.z)) + .16;
@@ -131,13 +136,13 @@ function addBowBridge(root: THREE.Group, textures: GameTextures, heightAt: (x: n
     // Bow Bridge's masonry terminates beside the path. A single full-width
     // abutment here used to form an accidental wall across the playable deck.
     for (const side of [-1, 1]) {
-      const pier = new THREE.Mesh(new RoundedBoxGeometry(2.25, 2.65, 1.18, 7, .2), stone);
+      const pier = new THREE.Mesh(new RoundedBoxGeometry(2.25, 2.65, .96, 7, .2), stone);
       pier.name = "bow-bridge-side-abutment";
-      pier.position.set(end * (length / 2 + .6), .74, side * (width / 2 + .55));
+      pier.position.set(end * (length / 2 + .6), .74, side * (width / 2 + .82));
       pier.castShadow = pier.receiveShadow = true;
       bridge.add(pier);
-      const cap = new THREE.Mesh(new RoundedBoxGeometry(2.55, .27, 1.42, 5, .09), iron);
-      cap.position.set(end * (length / 2 + .6), 2.08, side * (width / 2 + .55));
+      const cap = new THREE.Mesh(new RoundedBoxGeometry(2.55, .27, 1.22, 5, .09), iron);
+      cap.position.set(end * (length / 2 + .6), 2.08, side * (width / 2 + .82));
       bridge.add(cap);
     }
     const approach = new THREE.Mesh(new RoundedBoxGeometry(4.4, .16, width, 4, .06), deckMaterial);
@@ -151,7 +156,7 @@ function addBowBridge(root: THREE.Group, textures: GameTextures, heightAt: (x: n
     const plaque = new THREE.Mesh(new RoundedBoxGeometry(2.9, .74, .12, 4, .045), new THREE.MeshStandardMaterial({ map: bridgePlaqueTexture, roughness: .48 })); plaque.position.set(end * (length / 2 + .62), 1.16, -width / 2 - .83); plaque.rotation.y = end < 0 ? Math.PI / 2 : -Math.PI / 2; bridge.add(plaque);
   }
   const surface: BowBridgeSurface = {
-    center: new THREE.Vector3(BOW_BRIDGE_CENTER.x, bridgeY, BOW_BRIDGE_CENTER.z), yaw: rotation, length, width, archHeight: 1.15, baseY: bridgeY,
+    center: new THREE.Vector3(BOW_BRIDGE_CENTER.x, bridgeY, BOW_BRIDGE_CENTER.z), yaw: rotation, length: length + 5.2, width, archHeight: 1.15, baseY: bridgeY,
     deckHeightAt(worldX: number, worldZ: number) {
       const deltaX = worldX - BOW_BRIDGE_CENTER.x, deltaZ = worldZ - BOW_BRIDGE_CENTER.z;
       const localX = deltaX * Math.cos(rotation) - deltaZ * Math.sin(rotation), amount = THREE.MathUtils.clamp(localX / length + .5, 0, 1);
@@ -339,8 +344,8 @@ export function createCampaignLandmarks(scene: THREE.Scene, textures: GameTextur
   const zooWestBooth = zooGate.localToWorld(new THREE.Vector3(-10.4, 0, 5.1));
   const zooEastBooth = zooGate.localToWorld(new THREE.Vector3(10.4, 0, 5.1));
   for (const end of [-1, 1]) for (const side of [-1, 1]) {
-    const abutment = bowBridge.localToWorld(new THREE.Vector3(end * (BOW_BRIDGE_LENGTH / 2 + .6), 0, side * (BOW_BRIDGE_WIDTH / 2 + .55)));
-    obstacles.push({ id: `bow-bridge-abutment-${end}-${side}`, kind: "circle", x: abutment.x, z: abutment.z, radius: .82, minY: -5, maxY: 8 });
+    const abutment = bowBridge.localToWorld(new THREE.Vector3(end * (BOW_BRIDGE_LENGTH / 2 + .6), 0, side * (BOW_BRIDGE_WIDTH / 2 + .82)));
+    obstacles.push({ id: `bow-bridge-abutment-${end}-${side}`, kind: "circle", x: abutment.x, z: abutment.z, radius: .68, minY: -5, maxY: 8 });
   }
   obstacles.push(
     { id: "zoo-gate-west", kind: "circle", x: zooWestPillar.x, z: zooWestPillar.z, radius: 1.08, minY: -5, maxY: 8 },

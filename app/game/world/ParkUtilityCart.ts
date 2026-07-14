@@ -33,8 +33,16 @@ export type ParkUtilityCartSteeringParts = {
   steeringWheel: THREE.Group;
   steeringWheelRim: THREE.Mesh;
   steeringColumn: THREE.Mesh;
+  gripAnchors: [THREE.Object3D, THREE.Object3D];
   frontLeftPivot: THREE.Group;
   frontRightPivot: THREE.Group;
+};
+
+export type ParkUtilityCartGripTransforms = {
+  leftPosition: THREE.Vector3;
+  leftQuaternion: THREE.Quaternion;
+  rightPosition: THREE.Vector3;
+  rightQuaternion: THREE.Quaternion;
 };
 
 export type ParkUtilityCartLights = {
@@ -488,6 +496,13 @@ function buildCart(textures: GameTextures, quality: number): BuiltCart {
   const wheelHub = new THREE.Mesh(new THREE.CylinderGeometry(.052, .052, .045, 18), materials.paintDark);
   wheelHub.rotation.x = Math.PI / 2;
   steeringWheel.add(wheelHub);
+  const leftGripAnchor = new THREE.Object3D();
+  leftGripAnchor.name = "steering-wheel-left-hand-grip";
+  leftGripAnchor.position.set(-.185, 0, 0);
+  const rightGripAnchor = new THREE.Object3D();
+  rightGripAnchor.name = "steering-wheel-right-hand-grip";
+  rightGripAnchor.position.set(.185, 0, 0);
+  steeringWheel.add(leftGripAnchor, rightGripAnchor);
   body.add(steeringWheel);
   const steeringColumn = addRod(body, "steering-column", new THREE.Vector3(-.36, .89, -.67), new THREE.Vector3(-.36, 1.275, -.53), .035, materials.blackMetal, 14);
 
@@ -606,6 +621,7 @@ function buildCart(textures: GameTextures, quality: number): BuiltCart {
       steeringWheel,
       steeringWheelRim,
       steeringColumn,
+      gripAnchors: [leftGripAnchor, rightGripAnchor],
       frontLeftPivot: frontLeft.steeringPivot,
       frontRightPivot: frontRight.steeringPivot,
     },
@@ -635,6 +651,7 @@ export class ParkUtilityCart {
   readonly wheels: BuiltCart["wheels"];
   readonly wheelMeshes: readonly THREE.Mesh[];
   readonly steeringParts: ParkUtilityCartSteeringParts;
+  readonly gripAnchors: readonly [THREE.Object3D, THREE.Object3D];
   readonly lights: ParkUtilityCartLights;
   readonly maxForwardSpeed = 8.8;
   readonly maxReverseSpeed = 3.5;
@@ -651,6 +668,7 @@ export class ParkUtilityCart {
     this.wheels = built.wheels;
     this.wheelMeshes = [built.wheels.frontLeft.tire, built.wheels.frontRight.tire, built.wheels.rearLeft.tire, built.wheels.rearRight.tire];
     this.steeringParts = built.steeringParts;
+    this.gripAnchors = built.steeringParts.gripAnchors;
     this.lights = built.lights;
     this.ownedTextures = built.ownedTextures;
 
@@ -706,6 +724,15 @@ export class ParkUtilityCart {
     this.cameraTransform.getWorldPosition(position);
     this.cameraTransform.getWorldQuaternion(quaternion);
     return { position, quaternion };
+  }
+
+  getWorldGripTransforms(target: ParkUtilityCartGripTransforms) {
+    this.root.updateMatrixWorld(true);
+    this.gripAnchors[0].getWorldPosition(target.leftPosition);
+    this.gripAnchors[0].getWorldQuaternion(target.leftQuaternion);
+    this.gripAnchors[1].getWorldPosition(target.rightPosition);
+    this.gripAnchors[1].getWorldQuaternion(target.rightQuaternion);
+    return target;
   }
 
   setPose(position: THREE.Vector3, rotationY = this.root.rotation.y) {

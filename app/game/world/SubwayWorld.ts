@@ -13,6 +13,13 @@ export type SubwayQuality = "mobile" | "balanced" | "ultra";
 export type SubwayWorldOptions = {
   /** Scales cosmetic geometry and local lights without changing traversal or progression. */
   quality?: SubwayQuality;
+  /** Builds only the station being entered; later stations stream in through setStation. */
+  initialStation?: SubwayStationId;
+};
+
+export type SubwayProgressState = {
+  hasMetroCard: boolean;
+  fifthAvenueFarePaid: boolean;
 };
 
 type SubwayDetail = {
@@ -47,6 +54,15 @@ export type BoardingOption = {
   station: SubwayStationId;
 };
 
+export type SubwayFareInteraction = {
+  kind: "COLLECT_METROCARD" | "SWIPE_METROCARD";
+  label: string;
+};
+
+export type SubwayFareEvent = SubwayFareInteraction & {
+  message: string;
+};
+
 type TrainRig = {
   root: THREE.Group;
   doors: THREE.Group[];
@@ -61,9 +77,22 @@ type TrainRig = {
 };
 
 type StationRig = {
+  fareReaders: THREE.MeshBasicMaterial[];
+  metroCard: THREE.Group | null;
+  passengerFlows: StationPassengerFlow[];
+  platformCheckpoint: THREE.Vector3;
   root: THREE.Group;
   spawn: THREE.Vector3;
+  turnstileRotors: THREE.Group[];
   waypoint: THREE.Vector3;
+};
+
+type StationPassengerFlow = {
+  base: THREE.Vector3;
+  doorZ: number;
+  group: THREE.Group;
+  mode: "ALIGHT" | "BOARD" | "WAIT";
+  side: -1 | 1;
 };
 
 function canvasTexture(width: number, height: number, draw: (context: CanvasRenderingContext2D, width: number, height: number) => void) {
@@ -221,6 +250,20 @@ function trainIdentityTexture(number: string) {
     context.fillStyle = "#fff"; context.textAlign = "center"; context.textBaseline = "middle"; context.font = "800 52px Helvetica, Arial, sans-serif"; context.fillText("M", 92, height / 2 + 2);
     context.fillStyle = "#111"; context.textAlign = "left"; context.font = "700 39px Helvetica, Arial, sans-serif"; context.fillText("NEW YORK CITY SUBWAY", 184, 73);
     context.font = "650 32px Helvetica, Arial, sans-serif"; context.fillStyle = "#38403d"; context.fillText(`CAR ${number} · DO NOT LEAN ON DOORS`, 184, 128);
+  });
+}
+
+function metroCardTexture() {
+  return canvasTexture(768, 444, (context, width, height) => {
+    const gradient = context.createLinearGradient(0, 0, width, height); gradient.addColorStop(0, "#f4d54c"); gradient.addColorStop(1, "#e8b626");
+    context.fillStyle = gradient; context.fillRect(0, 0, width, height);
+    context.strokeStyle = "#172331"; context.lineWidth = 18; context.strokeRect(12, 12, width - 24, height - 24);
+    context.fillStyle = "#164b82"; context.fillRect(42, 54, 168, height - 108);
+    context.fillStyle = "#fff7cf"; context.textAlign = "left"; context.textBaseline = "middle";
+    context.font = "900 72px Helvetica, Arial, sans-serif"; context.fillText("METROCARD", 250, 156);
+    context.font = "700 33px Helvetica, Arial, sans-serif"; context.fillText("SLOTH IN THE CITY TRANSIT", 250, 226);
+    context.fillStyle = "#182331"; context.font = "650 27px Helvetica, Arial, sans-serif"; context.fillText("INSERT · SWIPE · RIDE", 250, 316);
+    context.fillStyle = "rgba(255,255,255,.38)"; context.fillRect(58, 78, 18, height - 156); context.fillRect(94, 78, 7, height - 156);
   });
 }
 
@@ -386,8 +429,6 @@ function addNpc(parent: THREE.Group, x: number, z: number, palette: [string, str
     skin: palette[1],
     accessory: role === "attendant" ? "radio" : accessories[variant % accessories.length],
     pose: variant % 4 === 1 ? "checking-map" : "neutral",
-    faceAtlasUrl: "/game/characters/npc-face-atlas-v1.webp",
-    clothingAtlasUrl: "/game/characters/npc-cloth-atlas-v1.webp",
   });
   const npc = result.root; npc.name = role === "attendant" ? "mta-station-attendant" : `subway-passenger-${variant}`; npc.position.set(x, 0, z); npc.rotation.y = facing; npc.scale.setScalar(.9); parent.add(npc); ownedTextures?.push(...result.ownedTextures); return npc;
 }
@@ -407,7 +448,7 @@ function addStationAttendant(parent: THREE.Group, x: number, y: number, z: numbe
   return attendant;
 }
 
-function addStairs(parent: THREE.Group, x: number, side: -1 | 1, material: THREE.Material, surfaceMap?: THREE.Texture) {
+function addStairs(parent: THREE.Group, x: number, _side: -1 | 1, material: THREE.Material, surfaceMap?: THREE.Texture) {
   const steps = 16;
   for (let index = 0; index < steps; index++) {
     const amount = index / (steps - 1), step = new THREE.Mesh(new RoundedBoxGeometry(4.2, .14, .66, 2, .025), material);
@@ -418,7 +459,6 @@ function addStairs(parent: THREE.Group, x: number, side: -1 | 1, material: THREE
     const start = new THREE.Vector3(x + railSide * 1.85, .72, 4.3), end = new THREE.Vector3(x + railSide * 1.85, 4.72, 13.8), direction = end.clone().sub(start);
     const rail = new THREE.Mesh(new THREE.CylinderGeometry(.04, .04, direction.length(), 10), railMaterial); rail.position.copy(start).add(end).multiplyScalar(.5); rail.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize()); rail.castShadow = true; parent.add(rail);
   }
-  const arrow = new THREE.Mesh(new THREE.ConeGeometry(.15, .45, 12), new THREE.MeshBasicMaterial({ color: side < 0 ? "#d9ef8b" : "#e6a85e" })); arrow.position.set(x, 4.25, 14.05); arrow.rotation.x = side < 0 ? Math.PI : 0; parent.add(arrow);
 }
 
 function addStreetEntrance(parent: THREE.Group, stairMaterial: THREE.Material, signTexture: THREE.Texture, quality: SubwayQuality, surfaceMap?: THREE.Texture) {
@@ -520,7 +560,7 @@ function buildTrain(textures: GameTextures, route: string, direction: string, co
     const pair = new THREE.Group(); pair.name = "exterior-door-pair"; pair.position.set(side * 1.071, 1.62, z); pair.rotation.y = side * Math.PI / 2;
     for (const half of [-1, 1]) {
       const door = new THREE.Mesh(new RoundedBoxGeometry(1.1, 2.36, .07, 3, .035), steel); door.position.x = half * .56;
-      const doorWindow = new THREE.Mesh(new RoundedBoxGeometry(.54, .68, .025, 3, .035), glass); doorWindow.position.set(0, .4, .055); door.add(doorWindow); pair.add(door);
+      const doorWindow = new THREE.Mesh(new RoundedBoxGeometry(.54, .68, .025, 3, .035), glass); doorWindow.name = "transparent-exterior-door-window"; doorWindow.position.set(0, .4, .055); door.add(doorWindow); pair.add(door);
       if (quality !== "mobile") {
         const gasket = new THREE.Mesh(new RoundedBoxGeometry(.61, .76, .018, 3, .04), doorGasket); gasket.position.set(0, .4, .041); door.add(gasket); doorWindow.position.z = .056;
       }
@@ -550,7 +590,7 @@ function buildTrain(textures: GameTextures, route: string, direction: string, co
   }
   for (const side of [-1, 1]) for (const z of [-8.25, -3.1, 3.1, 8.25]) {
     const glow = new THREE.Mesh(new RoundedBoxGeometry(1.04, .78, .02, 3, .035), cabinGlow); glow.position.set(side * 1.087, 2.15, z); glow.rotation.y = side * Math.PI / 2; root.add(glow);
-    const window = new THREE.Mesh(new RoundedBoxGeometry(1.18, .9, .045, 3, .04), glass); window.position.set(side * 1.095, 2.15, z); window.rotation.y = side * Math.PI / 2; root.add(window);
+    const window = new THREE.Mesh(new RoundedBoxGeometry(1.18, .9, .045, 3, .04), glass); window.name = "transparent-exterior-side-window"; window.position.set(side * 1.095, 2.15, z); window.rotation.y = side * Math.PI / 2; root.add(window);
     if (quality !== "mobile") {
       const seatSilhouette = new THREE.Mesh(new RoundedBoxGeometry(.42, .3, .02, 3, .04), seatSilhouetteMaterial); seatSilhouette.position.set(side * 1.104, 1.84, z); seatSilhouette.rotation.y = side * Math.PI / 2; root.add(seatSilhouette);
     }
@@ -701,36 +741,64 @@ function buildStation(id: SubwayStationId, textures: GameTextures, adTextures: T
     const bin = new THREE.Mesh(new THREE.CylinderGeometry(.24, .28, .72, radial), new THREE.MeshStandardMaterial({ color: side < 0 ? "#4b7758" : "#3b586c", metalness: .36, roughness: .48, map: paintMap, bumpMap: paintMap, bumpScale: .008 })); bin.position.set(side * 8.55, .36, -8); root.add(bin);
     addTextPanel(root, mapTexture, [side * 9.8, 2.15, 29], [2.4, 3.2], side > 0 ? -Math.PI / 2 : Math.PI / 2).name = "neighborhood-service-map";
   }
+  const fareReaders: THREE.MeshBasicMaterial[] = [], turnstileRotors: THREE.Group[] = [];
   for (const x of [-1.8, -.6, .6, 1.8]) {
     const turnstile = new THREE.Group(); turnstile.name = "three-arm-mta-turnstile"; turnstile.position.set(x, 4, 23.25); root.add(turnstile);
     const pedestal = new THREE.Mesh(new RoundedBoxGeometry(.56, .9, 1.16, 5, .1), steel); pedestal.position.y = .45; turnstile.add(pedestal);
     const reader = new THREE.Mesh(new RoundedBoxGeometry(.38, .12, .48, 4, .045), dark); reader.position.set(0, .96, -.18); reader.rotation.x = -.12; turnstile.add(reader);
-    const readerGlow = new THREE.Mesh(new RoundedBoxGeometry(.21, .018, .18, 3, .01), new THREE.MeshBasicMaterial({ color: "#64be86", toneMapped: false })); readerGlow.position.set(0, 1.025, -.23); readerGlow.rotation.x = -.12; turnstile.add(readerGlow);
-    const hub = new THREE.Mesh(new THREE.CylinderGeometry(.1, .1, .52, radial), brushedSteel); hub.rotation.z = Math.PI / 2; hub.position.set(.43, .76, .12); turnstile.add(hub);
+    const readerMaterial = new THREE.MeshBasicMaterial({ color: isFifth ? "#c8473e" : "#64be86", toneMapped: false }); fareReaders.push(readerMaterial);
+    const readerGlow = new THREE.Mesh(new RoundedBoxGeometry(.21, .018, .18, 3, .01), readerMaterial); readerGlow.name = "metrocard-reader-status"; readerGlow.position.set(0, 1.025, -.23); readerGlow.rotation.x = -.12; turnstile.add(readerGlow);
+    const rotor = new THREE.Group(); rotor.name = "locked-three-arm-rotor"; rotor.position.set(.43, .76, .12); turnstile.add(rotor); turnstileRotors.push(rotor);
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(.1, .1, .52, radial), brushedSteel); hub.rotation.z = Math.PI / 2; rotor.add(hub);
     for (let arm = 0; arm < 3; arm++) {
       const angle = arm / 3 * Math.PI * 2 + Math.PI / 6;
-      addCylinderBetween(turnstile, new THREE.Vector3(.7, .76, .12), new THREE.Vector3(.7, .76 + Math.sin(angle) * .62, .12 + Math.cos(angle) * .62), .025, brushedSteel, radial);
+      addCylinderBetween(rotor, new THREE.Vector3(.27, 0, 0), new THREE.Vector3(.27, Math.sin(angle) * .62, Math.cos(angle) * .62), .025, brushedSteel, radial);
     }
+  }
+  // The railing reaches both tiled walls, leaving the four turnstile lanes as
+  // the only route between unpaid mezzanine and platforms. Collision mirrors
+  // this geometry, so walking around the fare array is never possible.
+  for (const [startX, endX] of [[-9.72, -2.42], [2.42, 9.72]] as const) {
+    for (const height of [4.52, 4.92]) addCylinderBetween(root, new THREE.Vector3(startX, height, 23.25), new THREE.Vector3(endX, height, 23.25), .032, brushedSteel, radial);
+    for (let x = startX; x <= endX + .01; x += 1.2) addCylinderBetween(root, new THREE.Vector3(x, 4.02, 23.25), new THREE.Vector3(x, 5.02, 23.25), .028, brushedSteel, radial);
   }
   for (const side of [-1, 1]) {
     const funnel = new THREE.Group(); funnel.name = "fare-control-side-rail-funnel"; root.add(funnel);
     for (const height of [4.58, 4.93]) addCylinderBetween(funnel, new THREE.Vector3(side * 2.56, height, 21.45), new THREE.Vector3(side * 2.56, height, 24.72), .027, brushedSteel, radial);
     for (const z of [21.45, 24.72]) addCylinderBetween(funnel, new THREE.Vector3(side * 2.56, 4.12, z), new THREE.Vector3(side * 2.56, 5.02, z), .03, brushedSteel, radial);
   }
-  const booth = new THREE.Group(); booth.name = "station-agent-booth"; booth.position.set(8.15, 4, 20.2);
+  const booth = new THREE.Group(); booth.name = "unpaid-side-station-agent-booth"; booth.position.set(8.05, 4, 26.25);
   const boothBlue = new THREE.MeshStandardMaterial({ color: "#174f78", metalness: .28, roughness: .5, map: paintMap, bumpMap: paintMap, bumpScale: .01 });
   const boothGlass = new THREE.MeshPhysicalMaterial({ color: "#b8d1d1", transparent: true, opacity: .36, transmission: quality === "mobile" ? 0 : .36, roughness: .16 });
   const boothBase = new THREE.Mesh(new RoundedBoxGeometry(2.85, .78, 2.1, 4, .08), boothBlue); boothBase.position.y = .38; booth.add(boothBase);
   const boothRoof = new THREE.Mesh(new RoundedBoxGeometry(3.05, .16, 2.3, 4, .06), steel); boothRoof.position.y = 2.2; booth.add(boothRoof);
   for (const side of [-1, 1]) { const post = new THREE.Mesh(new RoundedBoxGeometry(.1, 1.45, .1, 2, .02), steel); post.position.set(side * 1.32, 1.42, 1); booth.add(post); }
   const boothWindow = new THREE.Mesh(new RoundedBoxGeometry(2.55, 1.28, .055, 3, .035), boothGlass); boothWindow.position.set(0, 1.43, 1.04); booth.add(boothWindow); root.add(booth);
-  addStationAttendant(root, 8.15, 4, 20.35, Math.PI, quality, commuterMaps, ownedTextures);
+  addStationAttendant(root, 8.05, 4, 26.45, Math.PI, quality, commuterMaps, ownedTextures);
+  let metroCard: THREE.Group | null = null;
+  if (isFifth) {
+    const cardTexture = metroCardTexture(); ownedTextures.push(cardTexture);
+    const machine = new THREE.Group(); machine.name = "unpaid-side-metrocard-machine"; machine.position.set(5.65, 4, 27.05); root.add(machine);
+    const machineBody = new THREE.Mesh(new RoundedBoxGeometry(1.18, 1.8, .66, 5, .09), boothBlue); machineBody.position.y = .9; machine.add(machineBody);
+    const screen = new THREE.Mesh(new RoundedBoxGeometry(.72, .46, .035, 4, .035), new THREE.MeshBasicMaterial({ map: cardTexture, toneMapped: false })); screen.position.set(0, 1.24, -.35); screen.rotation.y = Math.PI; machine.add(screen);
+    const slot = new THREE.Mesh(new RoundedBoxGeometry(.5, .055, .06, 3, .014), dark); slot.position.set(0, .64, -.37); machine.add(slot);
+    metroCard = new THREE.Group(); metroCard.name = "collectible-metrocard"; metroCard.position.set(5.65, 4.76, 26.62); root.add(metroCard);
+    const card = new THREE.Mesh(new RoundedBoxGeometry(.54, .025, .32, 3, .025), new THREE.MeshBasicMaterial({ map: cardTexture, toneMapped: false })); card.rotation.x = -.18; metroCard.add(card);
+    const cardGlow = new THREE.Mesh(new THREE.RingGeometry(.36, .42, 24), new THREE.MeshBasicMaterial({ color: "#f4d54c", transparent: true, opacity: .48, side: THREE.DoubleSide, toneMapped: false })); cardGlow.rotation.x = -Math.PI / 2; cardGlow.position.y = -.12; metroCard.add(cardGlow);
+  }
   const npcPlacements: Array<[number, number, [string, string], number]> = [
     [-7.15, -9, ["#7a463f", "#986e59"], .3], [7.1, -17, ["#31566a", "#d0a27d"], -2.7], [7.3, 5.5, ["#6c6544", "#704c38"], -1.4],
     [-7.2, -35.5, ["#824d63", "#c68f6d"], .8], [7.15, -4.5, ["#4b6653", "#e0b894"], -2.1], [-7.2, 2.6, ["#705a83", "#815a43"], .15],
     [7.2, 21, ["#a36f3f", "#b87857"], 2.6], [-7.15, -24.5, ["#38566f", "#d0aa91"], -.4],
   ];
-  npcPlacements.slice(0, detail.npcCount).forEach(([x, z, palette, facing], index) => addNpc(root, x, z, palette, facing, index + (isLex ? 3 : id === "WEST_FARMS" ? 6 : 0), quality, commuterMaps, ownedTextures));
+  const passengerFlows: StationPassengerFlow[] = [];
+  const authoredDoorZ = [-35.95, -29.85, -23.75, -16.1, -10, -3.9, 2.2, 9.85] as const;
+  npcPlacements.slice(0, detail.npcCount).forEach(([x, z, palette, facing], index) => {
+    const passenger = addNpc(root, x, z, palette, facing, index + (isLex ? 3 : id === "WEST_FARMS" ? 6 : 0), quality, commuterMaps, ownedTextures);
+    if (z > 11 || id === "WEST_FARMS") return;
+    const doorZ = authoredDoorZ.reduce((nearest, candidate) => Math.abs(candidate - z) < Math.abs(nearest - z) ? candidate : nearest, authoredDoorZ[0]);
+    passengerFlows.push({ base: passenger.position.clone(), doorZ, group: passenger, mode: index % 3 === 0 ? "BOARD" : index % 3 === 1 ? "ALIGHT" : "WAIT", side: x < 0 ? -1 : 1 });
+  });
   if (id === "WEST_FARMS") {
     const artWallMaterial = new THREE.MeshStandardMaterial({ color: "#26312f", roughness: .72, map: paintMap, bumpMap: paintMap, bumpScale: .012 });
     for (const side of [-1, 1]) { const artWall = new THREE.Mesh(new RoundedBoxGeometry(.22, 4.35, 18.8, 3, .035), artWallMaterial); artWall.position.set(side * 9.7, 2.25, -25.18); root.add(artWall); }
@@ -788,9 +856,15 @@ function buildStation(id: SubwayStationId, textures: GameTextures, adTextures: T
       const streetLamp = new THREE.Mesh(new THREE.SphereGeometry(.22, radial, radial), new THREE.MeshBasicMaterial({ color: "#fff2c9", toneMapped: false })); streetLamp.position.set(side * 4.7, 12.35, 51.5); root.add(streetLamp);
     }
   }
-  const spawn = id === "FIFTH_AV" ? new THREE.Vector3(0, STREET_FLOOR_Y + 1.48, 46) : id === "LEXINGTON" ? new THREE.Vector3(0, CONCOURSE_FLOOR_Y + 1.48, 26) : new THREE.Vector3(-6, 1.48, -10);
+  // ParkLevel hands off halfway down its visible exterior staircase. Match that
+  // elevation and run here so the streamed interior continues the same descent
+  // instead of snapping the player back to the sidewalk landing.
+  const fifthEntryZ = (STREET_STAIR_BOTTOM_Z + STREET_STAIR_TOP_Z) * .5;
+  const fifthEntryY = THREE.MathUtils.lerp(CONCOURSE_FLOOR_Y, STREET_FLOOR_Y, .5) + 1.48;
+  const spawn = id === "FIFTH_AV" ? new THREE.Vector3(0, fifthEntryY, fifthEntryZ) : id === "LEXINGTON" ? new THREE.Vector3(0, CONCOURSE_FLOOR_Y + 1.48, 26) : new THREE.Vector3(-6, 1.48, -10);
   const waypoint = id === "WEST_FARMS" ? new THREE.Vector3(0, STREET_FLOOR_Y, 46) : new THREE.Vector3(-6, 0, TRAIN_STOP_Z);
-  return { root, spawn, waypoint } satisfies StationRig;
+  const platformCheckpoint = id === "WEST_FARMS" ? spawn.clone() : new THREE.Vector3(-6, 1.48, -3.6);
+  return { fareReaders, metroCard, passengerFlows, platformCheckpoint, root, spawn, turnstileRotors, waypoint } satisfies StationRig;
 }
 
 export class SubwayWorld {
@@ -800,25 +874,33 @@ export class SubwayWorld {
   readonly wrongTrain: TrainRig;
   readonly ownedTextures: THREE.Texture[] = [];
   readonly quality: SubwayQuality;
+  private readonly gameTextures: GameTextures;
+  private readonly adTextures: THREE.Texture[];
+  private readonly bronxMosaicTexture: THREE.Texture;
+  private readonly stationOwnedTextures = new Map<SubwayStationId, THREE.Texture[]>();
   stationId: SubwayStationId = "FIFTH_AV";
   trainPhase: TrainPhase = "APPROACHING";
   secondsToTrain = 4;
   doorsOpen = false;
   private serviceCycle = -1;
+  private doorOpenAmount = 0;
+  private hasMetroCard = false;
+  private readonly farePaidByStation = new Map<SubwayStationId, boolean>([["FIFTH_AV", false], ["LEXINGTON", true], ["WEST_FARMS", true]]);
 
   constructor(scene: THREE.Scene, textures: GameTextures, options: SubwayWorldOptions = {}) {
     this.quality = options.quality ?? "balanced";
+    this.gameTextures = textures;
+    this.stationId = options.initialStation ?? "FIFTH_AV";
     const detail = SUBWAY_DETAIL[this.quality];
     this.root.name = "premium-nyc-subway-campaign"; scene.add(this.root);
     const loader = new THREE.TextureLoader();
-    const adTextures = [
+    this.adTextures = [
       loader.load("/game/ads/slow-superpower.webp"), loader.load("/game/ads/branch-out.webp"),
       loader.load("/game/ads/canopy-commute.webp"), loader.load("/game/ads/slow-fashion.webp"),
       loader.load("/game/ads/bronx-bound.webp"), loader.load("/game/ads/ramble-after-dark.webp"),
     ];
-    adTextures.forEach(texture => { texture.colorSpace = THREE.SRGBColorSpace; texture.anisotropy = this.quality === "ultra" ? 8 : 4; }); this.ownedTextures.push(...adTextures);
-    const bronxMosaicTexture = loader.load("/game/subway/bronx-zoo-mosaic.webp"); bronxMosaicTexture.colorSpace = THREE.SRGBColorSpace; bronxMosaicTexture.anisotropy = this.quality === "ultra" ? 8 : 4; this.ownedTextures.push(bronxMosaicTexture);
-    for (const id of ["FIFTH_AV", "LEXINGTON", "WEST_FARMS"] as const) { const station = buildStation(id, textures, adTextures, bronxMosaicTexture, this.ownedTextures, this.quality); station.root.visible = false; this.stations.set(id, station); this.root.add(station.root); }
+    this.adTextures.forEach(texture => { texture.colorSpace = THREE.SRGBColorSpace; texture.anisotropy = this.quality === "ultra" ? 8 : 4; }); this.ownedTextures.push(...this.adTextures);
+    this.bronxMosaicTexture = loader.load("/game/subway/bronx-zoo-mosaic.webp"); this.bronxMosaicTexture.colorSpace = THREE.SRGBColorSpace; this.bronxMosaicTexture.anisotropy = this.quality === "ultra" ? 8 : 4; this.ownedTextures.push(this.bronxMosaicTexture);
     this.correctTrain = buildTrain(textures, "N", "QUEENS-BOUND", true, -1.1, this.quality, this.ownedTextures); this.wrongTrain = buildTrain(textures, "W", "DOWNTOWN / BROOKLYN", false, 1.1, this.quality, this.ownedTextures); this.root.add(this.correctTrain.root, this.wrongTrain.root);
     const ambient = new THREE.HemisphereLight("#e9eee5", "#394039", 1.08), fill = new THREE.AmbientLight("#c8d1c7", .48);
     this.root.add(ambient, fill);
@@ -832,14 +914,44 @@ export class SubwayWorld {
       const concourseStrip = new THREE.Mesh(new RoundedBoxGeometry(9.4, .07, .22, 2, .025), fluorescent); concourseStrip.position.set(0, z < 32 ? 7.15 : 9.95, z); this.root.add(concourseStrip);
       if (z < 32 || this.quality !== "mobile") for (const x of [-4.6, 4.6]) { const fixture = new THREE.PointLight("#e5f1d3", z < 32 ? 34 : 26, 16, 1.25); fixture.position.set(x, z < 32 ? 6.9 : 9.7, z); this.root.add(fixture); }
     }
-    this.setStation("FIFTH_AV");
+    this.setStation(this.stationId);
   }
 
   get spawn() { return this.stations.get(this.stationId)!.spawn; }
-  get waypoint() { return this.stations.get(this.stationId)!.waypoint; }
+  get farePaid() { return this.farePaidByStation.get(this.stationId) ?? true; }
+  get fareObjective() {
+    if (this.stationId !== "FIFTH_AV" || this.farePaid) return null;
+    return this.hasMetroCard ? "Swipe your MetroCard at the turnstiles" : "Collect a MetroCard from the fare machine";
+  }
+  get waypoint() {
+    if (this.stationId === "FIFTH_AV" && !this.farePaid) return this.hasMetroCard ? new THREE.Vector3(0, CONCOURSE_FLOOR_Y, 24.15) : new THREE.Vector3(5.65, CONCOURSE_FLOOR_Y, 26.62);
+    return this.stations.get(this.stationId)!.waypoint;
+  }
+
+  get progressState(): SubwayProgressState {
+    return { hasMetroCard: this.hasMetroCard, fifthAvenueFarePaid: this.farePaidByStation.get("FIFTH_AV") === true };
+  }
+
+  restoreProgressState(progress: SubwayProgressState) {
+    this.hasMetroCard = progress.hasMetroCard || progress.fifthAvenueFarePaid;
+    this.farePaidByStation.set("FIFTH_AV", progress.fifthAvenueFarePaid);
+    this.applyFareState();
+    return this;
+  }
+
+  checkpointSpawn(platform = false) {
+    const station = this.stations.get(this.stationId)!;
+    return (platform ? station.platformCheckpoint : station.spawn).clone();
+  }
 
   setStation(id: SubwayStationId) {
-    this.stationId = id; for (const [stationId, station] of this.stations) station.root.visible = stationId === id;
+    for (const stationId of [...this.stations.keys()]) if (stationId !== id) this.disposeStation(stationId);
+    if (!this.stations.has(id)) {
+      const stationTextures: THREE.Texture[] = [];
+      const station = buildStation(id, this.gameTextures, this.adTextures, this.bronxMosaicTexture, stationTextures, this.quality);
+      this.stations.set(id, station); this.stationOwnedTextures.set(id, stationTextures); this.root.add(station.root);
+    }
+    this.stationId = id;
     const westFarms = id === "WEST_FARMS"; this.correctTrain.root.visible = this.wrongTrain.root.visible = !westFarms; this.serviceCycle = -1;
     if (id === "LEXINGTON") {
       this.configureTrain(this.correctTrain, "5", "UPTOWN / BRONX", true, "#00933c");
@@ -848,9 +960,23 @@ export class SubwayWorld {
       this.configureTrain(this.correctTrain, "N", "QUEENS-BOUND", true, "#fccc0a");
       this.configureTrain(this.wrongTrain, "W", "DOWNTOWN / BROOKLYN", false, "#fccc0a");
     }
-    this.setDoorAmount(this.correctTrain, 0); this.setDoorAmount(this.wrongTrain, 0); this.doorsOpen = false;
+    this.setDoorAmount(this.correctTrain, 0); this.setDoorAmount(this.wrongTrain, 0); this.doorOpenAmount = 0; this.doorsOpen = false; this.applyFareState();
     this.correctTrain.root.position.z = -TRAIN_APPROACH_DISTANCE; this.wrongTrain.root.position.z = TRAIN_APPROACH_DISTANCE;
     this.root.updateMatrixWorld(true); return this;
+  }
+
+  private disposeStation(id: SubwayStationId) {
+    const station = this.stations.get(id); if (!station) return;
+    const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
+    station.root.traverse(object => {
+      if (!(object instanceof THREE.Mesh)) return;
+      geometries.add(object.geometry);
+      const meshMaterials = Array.isArray(object.material) ? object.material : [object.material];
+      meshMaterials.forEach(material => materials.add(material));
+    });
+    station.root.removeFromParent(); geometries.forEach(geometry => geometry.dispose()); materials.forEach(material => material.dispose());
+    new Set(this.stationOwnedTextures.get(id) ?? []).forEach(texture => texture.dispose());
+    this.stationOwnedTextures.delete(id); this.stations.delete(id);
   }
 
   private configureTrain(train: TrainRig, route: string, direction: string, correct: boolean, color: string) {
@@ -871,6 +997,37 @@ export class SubwayWorld {
       const openInterior = pair.getObjectByName("open-door-interior");
       if (openInterior) openInterior.visible = pair.userData.platformFacing === true && opening > .035;
     }
+  }
+
+  private applyFareState() {
+    const station = this.stations.get(this.stationId); if (!station) return;
+    if (station.metroCard) station.metroCard.visible = !this.hasMetroCard;
+    const readerColor = this.farePaid ? "#64be86" : this.hasMetroCard ? "#e8b633" : "#c8473e";
+    station.fareReaders.forEach(material => material.color.set(readerColor));
+    station.turnstileRotors.forEach(rotor => { rotor.userData.unlocked = this.farePaid; });
+  }
+
+  interactionHint(player: THREE.Vector3): SubwayFareInteraction | null {
+    if (this.stationId !== "FIFTH_AV" || this.farePaid) return null;
+    if (!this.hasMetroCard && Math.hypot(player.x - 5.65, player.z - 26.62) < 1.55) return { kind: "COLLECT_METROCARD", label: "COLLECT METROCARD" };
+    if (this.hasMetroCard && player.z >= 23.5 && player.z <= 25.2 && Math.abs(player.x) <= 2.35) return { kind: "SWIPE_METROCARD", label: "SWIPE METROCARD" };
+    return null;
+  }
+
+  interact(player: THREE.Vector3): SubwayFareEvent | null {
+    const interaction = this.interactionHint(player); if (!interaction) return null;
+    if (interaction.kind === "COLLECT_METROCARD") {
+      this.hasMetroCard = true; this.applyFareState();
+      return { ...interaction, message: "MetroCard collected — take it to the glowing readers at the turnstiles." };
+    }
+    this.farePaidByStation.set(this.stationId, true); this.applyFareState();
+    this.stations.get(this.stationId)?.turnstileRotors.forEach((rotor, index) => { rotor.rotation.x = index % 2 ? Math.PI / 3 : -Math.PI / 3; });
+    return { ...interaction, message: "Fare accepted — the turnstiles are unlocked. Follow signs for Queens-bound N / R service." };
+  }
+
+  streetEnvironmentMix(player: THREE.Vector3) {
+    if (this.stationId !== "FIFTH_AV" && this.stationId !== "WEST_FARMS") return 0;
+    return THREE.MathUtils.smoothstep(player.z, STREET_STAIR_BOTTOM_Z + 1, STREET_STAIR_TOP_Z + 1);
   }
 
   private staircaseAt(x: number) {
@@ -922,6 +1079,15 @@ export class SubwayWorld {
       if (absoluteX >= 2.15) { player.x = side * THREE.MathUtils.clamp(absoluteX, 3, 7.2); velocity.x = 0; }
       else { player.z = player.z >= 8.95 ? 13.6 : 4.15; velocity.z = 0; }
     }
+    // A continuous wall-to-wall fare array blocks every bypass. Fifth Avenue
+    // starts unpaid; after the card swipe only the four authored lanes open.
+    if (player.z > 22.55 && player.z < 24.05) {
+      const blockedByFare = this.stationId === "FIFTH_AV" && !this.farePaid;
+      const outsideTurnstileLanes = Math.abs(player.x) > 2.35;
+      if (blockedByFare || outsideTurnstileLanes) {
+        player.z = player.z >= 23.3 ? 24.05 : 22.55; velocity.z = 0;
+      }
+    }
     if (player.z <= 4.15 && Math.abs(player.x) < 2.25) {
       const side = player.x <= 0 ? -1 : 1, openDoor = this.nearestOpenDoor(player, .61);
       if (openDoor && openDoor.train.platformSide === side) {
@@ -948,12 +1114,44 @@ export class SubwayWorld {
     else if (cycle < 16) { this.trainPhase = "BOARDING"; z = TRAIN_STOP_Z; this.secondsToTrain = 0; }
     else if (cycle < 21) { this.trainPhase = "DEPARTING"; z = THREE.MathUtils.lerp(TRAIN_STOP_Z, TRAIN_APPROACH_DISTANCE + 8, (cycle - 16) / 5); this.secondsToTrain = Math.ceil(SUBWAY_TRAIN_INTERVAL_SECONDS + 4 - cycle); }
     else { this.trainPhase = "AWAY"; this.secondsToTrain = Math.ceil(SUBWAY_TRAIN_INTERVAL_SECONDS + 4 - cycle); }
-    this.doorsOpen = cycle >= 5 && cycle < 15;
+    // Door leaves use an eased open/close envelope instead of teleporting at
+    // the one-second boundaries. Boarding becomes active only after a readable
+    // opening exists and ends before the closing leaves reach the player.
+    this.doorOpenAmount = Math.min(THREE.MathUtils.smoothstep(cycle, 5, 6.15), 1 - THREE.MathUtils.smoothstep(cycle, 13.85, 15));
+    this.doorsOpen = this.doorOpenAmount > .62;
     for (const train of [this.correctTrain, this.wrongTrain]) {
       train.root.visible = this.trainPhase !== "AWAY"; train.root.position.z = train.correct ? z : -z;
       train.root.position.y = -.08 + Math.sin(elapsed * 8 + (train.correct ? 0 : 1)) * .008;
-      this.setDoorAmount(train, this.doorsOpen ? 1 : 0);
+      this.setDoorAmount(train, this.doorOpenAmount);
     }
+    this.updateStationPassengerFlows(cycle);
+  }
+
+  private updateStationPassengerFlows(cycle: number) {
+    const station = this.stations.get(this.stationId); if (!station) return;
+    const exchangeActive = this.trainPhase === "BOARDING" && this.doorOpenAmount > .52;
+    // The platform exchange is deliberately staged: riders appear from the car
+    // and clear the threshold before the waiting cohort starts to board. Apart
+    // from looking more natural, that cadence visually teaches the same
+    // clear-the-doors rule used by the onboard gameplay.
+    const alightProgress = THREE.MathUtils.smoothstep(cycle, 6, 9.35);
+    const boardProgress = THREE.MathUtils.smoothstep(cycle, 8.85, 12.75);
+    station.passengerFlows.forEach((flow, index) => {
+      const doorway = new THREE.Vector3(flow.side * 2.5, flow.base.y, flow.doorZ + (index % 2 ? .24 : -.24));
+      if (!exchangeActive || flow.mode === "WAIT") {
+        const waitingToBoard = flow.mode === "BOARD" && cycle < 13.2;
+        const hasAlighted = flow.mode === "ALIGHT" && cycle >= 6;
+        flow.group.visible = flow.mode === "WAIT" || waitingToBoard || hasAlighted;
+        flow.group.position.lerp(flow.base, .16); return;
+      }
+      if (flow.mode === "BOARD") {
+        flow.group.visible = boardProgress < .96; flow.group.position.lerpVectors(flow.base, doorway, boardProgress);
+        flow.group.rotation.y = flow.side < 0 ? -Math.PI / 2 : Math.PI / 2;
+      } else {
+        flow.group.visible = true; flow.group.position.lerpVectors(doorway, flow.base, alightProgress);
+        flow.group.rotation.y = flow.side < 0 ? Math.PI / 2 : -Math.PI / 2;
+      }
+    });
   }
 
   /** Closes the doors, hides the other service, and moves the boarded train out. */
@@ -994,6 +1192,7 @@ export class SubwayWorld {
   }
 
   dispose() {
+    for (const stationId of [...this.stations.keys()]) this.disposeStation(stationId);
     this.root.removeFromParent();
     const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
     this.root.traverse(object => { if (!(object instanceof THREE.Mesh)) return; geometries.add(object.geometry); const meshMaterials = Array.isArray(object.material) ? object.material : [object.material]; meshMaterials.forEach(material => materials.add(material)); });

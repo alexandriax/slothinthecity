@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import * as THREE from "three";
+import { createSlothRig } from "../app/game/player/SlothRig.ts";
+import { createParkRowboat } from "../app/game/world/ParkRowboat.ts";
+import { createParkUtilityCart } from "../app/game/world/ParkUtilityCart.ts";
 
 test("both lake shores provide usable boats and field-services carts", async () => {
   const [game, world] = await Promise.all([
@@ -9,6 +13,7 @@ test("both lake shores provide usable boats and field-services carts", async () 
   ]);
 
   for (const name of [
+    "Bow Bridge checkpoint rowboat 5",
     "Bow Bridge rowboat 7",
     "Bow Bridge rowboat 12",
     "Southeast shore rowboat 18",
@@ -33,20 +38,254 @@ test("rowboats are closed, dry, clearly labelled, and omit the ambiguous bow rin
   assert.doesNotMatch(rowboat, /ropeCoil|bow-mooring-rope/);
   assert.match(rowboat, /get oarStrokePhaseRadians\(\)/);
   assert.match(rowboat, /get rowingEffort\(\)/);
+  assert.match(rowboat, /port-oar-hand-grip/);
+  assert.match(rowboat, /bronze-oarlock-collar/);
+  assert.match(rowboat, /materials\.oarWood/);
+  assert.match(rowboat, /shaft\.frustumCulled = false/);
+  assert.match(rowboat, /blade\.frustumCulled = false/);
+});
+
+test("Bow Bridge and each timber pier provide dry, elevated player support", async () => {
+  const [campaign, world] = await Promise.all([
+    readFile(new URL("../app/game/world/CampaignLandmarks.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/world/RealisticWorld.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(campaign, /BOW_BRIDGE_YAW = -\.43/);
+  assert.match(campaign, /const rotation = BOW_BRIDGE_YAW/);
+  assert.match(campaign, /length: length \+ 5\.2/);
+  assert.match(world, /function bowBridgeSupportsPlayer/);
+  assert.match(world, /export function lakeDockSurfaceHeightAt/);
+  assert.match(world, /shoreInset === 0 && \(bowBridgeSupportsPlayer\(x, z\) \|\| lakeDockSurfaceHeightAt\(x, z\) !== null\)/);
+  assert.match(world, /dummy\.position\.y = dockTopAt\(definition, amount\) - \.0525/);
+  assert.match(world, /return lakeDockSurfaceHeightAt\(x, z\) \?\? baseTerrainY\(x, z\)/);
 });
 
 test("shore forestry and first-person vehicle grips preserve visual clarity", async () => {
-  const [game, world, sloth] = await Promise.all([
+  const [game, world, sloth, cart, rowboat] = await Promise.all([
     readFile(new URL("../app/game/GameClient.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/game/world/RealisticWorld.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/game/player/SlothRig.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/world/ParkUtilityCart.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/world/ParkRowboat.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(world, /containsLakeWater\(x, z, -radius - 6\.5\)/);
   assert.match(world, /containsLakeWater\(x, z, -8\)/);
   assert.match(game, /layoutDepth/);
-  assert.match(game, /setVehiclePose\("cart", -cart\.steeringAngleRadians \/ \.54\)/);
-  assert.match(game, /setVehiclePose\("rowboat", activeBoat\.steeringAngleRadians \/ \.62, activeBoat\.oarStrokePhaseRadians\)/);
+  assert.match(game, /getWorldGripTransforms\(vehicleGripTransforms\)/);
+  assert.match(game, /camera\.worldToLocal\(vehicleGripTargets\.left\)/);
+  assert.match(game, /camera\.worldToLocal\(vehicleGripTargets\.right\)/);
+  assert.match(game, /setVehiclePose\("cart", -cart\.steeringAngleRadians \/ \.54, 0, 0, vehicleGripTargets\)/);
+  assert.match(game, /setVehiclePose\("rowboat", activeBoat\.steeringAngleRadians \/ \.62, activeBoat\.oarStrokePhaseRadians, activeBoat\.rowingEffort, vehicleGripTargets\)/);
+  assert.match(cart, /steering-wheel-left-hand-grip/);
+  assert.match(cart, /steering-wheel-right-hand-grip/);
+  assert.match(cart, /getWorldGripTransforms/);
+  assert.match(rowboat, /getWorldGripTransforms/);
   assert.match(sloth, /vehicleMode === "cart"/);
   assert.match(sloth, /vehicleMode === "rowboat"/);
+  assert.doesNotMatch(sloth, /wheelCenterX|gripWorldY|cameraTiltCosine/);
+});
+
+test("mobile vehicle braking emits Space and cart audio follows pause and resume", async () => {
+  const [game, touch] = await Promise.all([
+    readFile(new URL("../app/game/GameClient.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/mobile/TouchControls.tsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(touch, /\(vehicle \|\| arboreal\)/);
+  assert.match(touch, /setHeld\(vehicle \? "Space" : "ShiftLeft", true\)/);
+  assert.match(touch, /\["ShiftLeft", "Space"\]/);
+  assert.match(game, /if \(next === "playing" && cartMotorStateRef\.current\.driving\) audio\.setCartMotor\(true, cartMotorStateRef\.current\.speed\)/);
+  assert.match(game, /else if \(next !== "playing"\) audio\.setCartMotor\(false\)/);
+  assert.match(game, /cartMotorState\.speed = traversalSpeed/);
+});
+
+test("cart and rowboat expose live grip transforms that remain camera-relative during free-look", () => {
+  const texture = new THREE.Texture();
+  const textures = new Proxy({}, { get: () => texture });
+  const cart = createParkUtilityCart(textures, { position: new THREE.Vector3(7, 2, -4), rotationY: .38 });
+  const rowboat = createParkRowboat(textures, { position: new THREE.Vector3(-5, 1, 8), rotationY: -.27 });
+  for (let index = 0; index < 24; index++) {
+    cart.update(1 / 60, { throttle: 0, steering: .8 });
+    rowboat.update(1 / 60, { throttle: .7, steering: -.55 });
+  }
+
+  const transforms = {
+    leftPosition: new THREE.Vector3(), leftQuaternion: new THREE.Quaternion(),
+    rightPosition: new THREE.Vector3(), rightQuaternion: new THREE.Quaternion(),
+  };
+  const cameraPosition = new THREE.Vector3();
+  const cameraQuaternion = new THREE.Quaternion();
+  const camera = new THREE.PerspectiveCamera();
+  camera.rotation.order = "YXZ";
+  const rig = createSlothRig(texture);
+  rig.root.scale.setScalar(.78);
+  rig.left.userData.layoutZ = -.74;
+  rig.right.userData.layoutZ = .74;
+
+  const assertAttached = (label, vehicle, mode, steering, oarPhase = 0, rowingEffort = 0) => {
+    vehicle.getWorldGripTransforms(transforms);
+    vehicle.getWorldCameraTransform(cameraPosition, cameraQuaternion);
+    camera.position.copy(cameraPosition);
+    camera.rotation.set(.31, vehicle.root.rotation.y + 1.08, 0);
+    camera.updateMatrixWorld(true);
+    const targets = {
+      left: camera.worldToLocal(transforms.leftPosition.clone()),
+      right: camera.worldToLocal(transforms.rightPosition.clone()),
+    };
+    rig.setVehiclePose(mode, steering, oarPhase, rowingEffort, targets);
+    rig.animate(2.35, 1.2, false);
+    rig.root.updateMatrixWorld(true);
+    const leftWrist = rig.left.userData.joints.wrist.getWorldPosition(new THREE.Vector3());
+    const rightWrist = rig.right.userData.joints.wrist.getWorldPosition(new THREE.Vector3());
+    assert.ok(leftWrist.distanceTo(targets.left) < 1e-5, `${label} left paw follows the live anchor in free-look`);
+    assert.ok(rightWrist.distanceTo(targets.right) < 1e-5, `${label} right paw follows the live anchor in free-look`);
+    assert.ok(leftWrist.distanceTo(rightWrist) > .16, `${label} paws retain physical separation`);
+  };
+
+  assertAttached("cart", cart, "cart", -cart.steeringAngleRadians / .54);
+  assertAttached("rowboat", rowboat, "rowboat", rowboat.steeringAngleRadians / .62, rowboat.oarStrokePhaseRadians, rowboat.rowingEffort);
+  cart.dispose();
+  rowboat.dispose();
+  texture.dispose();
+});
+
+test("first-person sloth arms use watertight sweeps and overlapping articulated joins", async () => {
+  const sloth = await readFile(new URL("../app/game/player/SlothRig.ts", import.meta.url), "utf8");
+
+  assert.match(sloth, /capStart = true/);
+  assert.match(sloth, /capEnd = true/);
+  assert.match(sloth, /capVertexRanges/);
+  assert.match(sloth, /continuous-upper-arm/);
+  assert.match(sloth, /continuous-wrist-blend/);
+  assert.match(sloth, /continuous-paw-sweep/);
+  assert.match(sloth, /new THREE\.Vector3\(side \* \.004, -\.052, \.012\)/);
+  assert.match(sloth, /THREE\.MathUtils\.lerp\(\.094, \.058, t\)/);
+  assert.doesNotMatch(sloth, /palmFur/);
+});
+
+test("wrist volumes remain deeply overlapped and sweep caps shade correctly in every gameplay pose", () => {
+  const rig = createSlothRig(new THREE.Texture());
+  rig.root.scale.setScalar(.54);
+  rig.left.position.set(-.55, -.74, -.72);
+  rig.right.position.set(.55, -.74, -.72);
+  rig.left.userData.layoutX = -.55;
+  rig.right.userData.layoutX = .55;
+  rig.left.userData.layoutY = rig.right.userData.layoutY = -.74;
+  rig.left.userData.layoutDepth = rig.right.userData.layoutDepth = -.72;
+  rig.left.userData.layoutZ = -.48;
+  rig.right.userData.layoutZ = .48;
+
+  const overlappingSweepRings = (blend, mesh) => {
+    rig.root.updateMatrixWorld(true);
+    const positions = mesh.geometry.getAttribute("position");
+    const { segments, radialSegments } = mesh.geometry.userData.sweep;
+    const inverseBlend = new THREE.Matrix4().copy(blend.matrixWorld).invert();
+    const point = new THREE.Vector3();
+    const overlappingRings = [];
+    for (let segment = 0; segment <= segments; segment++) {
+      let overlaps = false;
+      for (let radial = 0; radial <= radialSegments; radial++) {
+        const index = segment * (radialSegments + 1) + radial;
+        point.fromBufferAttribute(positions, index).applyMatrix4(mesh.matrixWorld).applyMatrix4(inverseBlend);
+        if (point.lengthSq() <= 1.001) { overlaps = true; break; }
+      }
+      if (overlaps) overlappingRings.push(segment);
+    }
+    return overlappingRings;
+  };
+
+  const assertCaps = (mesh, label) => {
+    const positions = mesh.geometry.getAttribute("position");
+    const normals = mesh.geometry.getAttribute("normal");
+    const indices = mesh.geometry.getIndex();
+    const { capVertexRanges } = mesh.geometry.userData.sweep;
+    assert.equal(capVertexRanges.length, 2, `${label} has both sweep caps`);
+    const reference = new THREE.Vector3();
+    const normal = new THREE.Vector3();
+    const triangleA = new THREE.Vector3();
+    const triangleB = new THREE.Vector3();
+    const triangleC = new THREE.Vector3();
+    const geometricNormal = new THREE.Vector3();
+    for (const range of capVertexRanges) {
+      reference.fromBufferAttribute(normals, range.start);
+      assert.ok(Math.abs(reference.length() - 1) < 1e-5, `${label} cap normal is normalized`);
+      for (let index = range.start + 1; index < range.start + range.count; index++) {
+        normal.fromBufferAttribute(normals, index);
+        assert.ok(Number.isFinite(normal.x + normal.y + normal.z), `${label} cap normal is finite`);
+        assert.ok(reference.dot(normal) > .99999, `${label} cap uses a flat tangent normal`);
+      }
+      const center = range.start + range.count - 1;
+      let outwardTriangleFound = false;
+      for (let index = 0; index < indices.count; index += 3) {
+        const a = indices.getX(index);
+        const b = indices.getX(index + 1);
+        const c = indices.getX(index + 2);
+        if (a !== center && b !== center && c !== center) continue;
+        triangleA.fromBufferAttribute(positions, a);
+        triangleB.fromBufferAttribute(positions, b);
+        triangleC.fromBufferAttribute(positions, c);
+        geometricNormal
+          .crossVectors(triangleB.clone().sub(triangleA), triangleC.clone().sub(triangleA))
+          .normalize();
+        outwardTriangleFound = geometricNormal.dot(reference) > .999;
+        break;
+      }
+      assert.ok(outwardTriangleFound, `${label} cap triangles face their stored outward normal`);
+    }
+  };
+
+  const assertContinuous = (label) => {
+    for (const [side, arm] of [["left", rig.left], ["right", rig.right]]) {
+      const upper = arm.getObjectByName("continuous-upper-arm");
+      const wrist = arm.getObjectByName("continuous-wrist-blend");
+      const forearm = arm.getObjectByName("continuous-forearm-sweep");
+      const paw = arm.getObjectByName("continuous-paw-sweep");
+      for (const object of [upper, wrist, forearm, paw]) assert.ok(object, `${side} ${label} mesh exists`);
+      upper.geometry.computeBoundingBox();
+      assert.ok(upper.geometry.boundingBox.min.y <= -.45, `${side} ${label} arm begins below the camera mount`);
+      assert.ok(upper.geometry.boundingBox.max.y >= .34, `${side} ${label} arm reaches the elbow without a root seam`);
+      const forearmRings = overlappingSweepRings(wrist, forearm);
+      const pawRings = overlappingSweepRings(wrist, paw);
+      const forearmLastRing = forearm.geometry.userData.sweep.segments;
+      assert.ok(forearmRings.length >= 2 && forearmRings.some(ring => ring < forearmLastRing), `${side} ${label} forearm penetrates beyond its endpoint ring`);
+      assert.ok(pawRings.length >= 2 && pawRings.some(ring => ring > 0), `${side} ${label} paw penetrates beyond its endpoint ring`);
+      assertCaps(upper, `${side} ${label} upper arm`);
+      assertCaps(forearm, `${side} ${label} forearm`);
+      assertCaps(paw, `${side} ${label} paw`);
+    }
+  };
+
+  const poses = [
+    ["neutral", "none", 0, 0, 0, 0, false],
+    ["walking", "none", 0, 0, 0, 4, false],
+    ["gripping", "none", 0, 0, 0, 2, true],
+    ["cart-left", "cart", -1, 0, 0, 0, false],
+    ["cart-right", "cart", 1, 0, 0, 0, false],
+    ["rowboat-idle", "rowboat", 0, 0, 0, 0, false],
+    ["rowboat-catch", "rowboat", -.7, 0, 1, 0, false],
+    ["rowboat-drive", "rowboat", .7, Math.PI / 2, .8, 0, false],
+    ["rowboat-finish", "rowboat", 0, Math.PI, 1, 0, false],
+  ];
+
+  for (const [label, mode, steering, oarPhase, rowingEffort, speed, gripping] of poses) {
+    const gripTargets = mode === "none" ? undefined : {
+      left: new THREE.Vector3(-.24 + steering * .025, -.36 + Math.sin(oarPhase) * .03, -.51),
+      right: new THREE.Vector3(.24 + steering * .025, -.36 + Math.sin(oarPhase) * .03, -.51),
+    };
+    rig.setVehiclePose(mode, steering, oarPhase, rowingEffort, gripTargets);
+    rig.animate(1.7, speed, gripping);
+    assertContinuous(label);
+    if (mode === "none") continue;
+
+    rig.root.updateMatrixWorld(true);
+    const leftWrist = rig.left.userData.joints.wrist.getWorldPosition(new THREE.Vector3());
+    const rightWrist = rig.right.userData.joints.wrist.getWorldPosition(new THREE.Vector3());
+    assert.ok(leftWrist.x < rightWrist.x, `${label} wrists remain on their authored sides`);
+    assert.ok(rightWrist.x - leftWrist.x > .08, `${label} wrists never collapse into one another`);
+
+    assert.ok(leftWrist.distanceTo(gripTargets.left) < 1e-5, `${label} left paw follows its supplied vehicle grip`);
+    assert.ok(rightWrist.distanceTo(gripTargets.right) < 1e-5, `${label} right paw follows its supplied vehicle grip`);
+  }
 });
