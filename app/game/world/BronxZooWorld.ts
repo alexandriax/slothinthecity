@@ -181,12 +181,11 @@ export class BronxZooWorld {
     addFriend(this.root, textures, this.ownedTextures, quality, 6.7, -.15, Math.PI - .28, "#756b5c", 3);
     const attendant = createPremiumHuman({
       role: "attendant", quality, variant: 24, coat: "#315747", trousers: "#252c2a", skin: "#9a684f", accessory: "radio", pose: "waving",
-      faceAtlasUrl: "/game/characters/npc-face-atlas-v1.webp", clothingAtlasUrl: "/game/characters/npc-cloth-atlas-v1.webp",
     });
     this.attendant = attendant.root; this.attendant.name = "bronx-zoo-arrival-attendant"; this.attendant.userData.dialogue = "Welcome to the Bronx Zoo — your friends are waiting at Asia Gate.";
     this.attendant.position.set(this.attendantPosition.x, 0, this.attendantPosition.z); this.attendant.rotation.y = Math.PI; this.root.add(this.attendant); this.ownedTextures.push(...attendant.ownedTextures);
     const guestData = [[-8.2, 5.7, -.2, "#516d76", "#343a3c", "#b77e61"], [10.3, 5.3, .24, "#875a48", "#30383d", "#7b503d"], [14.2, -1.3, 2.7, "#667a4e", "#383438", "#cf9d78"]] as const;
-    guestData.slice(0, quality < .62 ? 1 : quality < .82 ? 2 : 3).forEach((data, index) => { const result = createPremiumHuman({ role: "visitor", quality, variant: index + 11, coat: data[3], trousers: data[4], skin: data[5], accessory: index === 1 ? "camera" : "backpack", pose: index === 1 ? "photographing" : "neutral", faceAtlasUrl: "/game/characters/npc-face-atlas-v1.webp", clothingAtlasUrl: "/game/characters/npc-cloth-atlas-v1.webp" }); result.root.position.set(data[0], 0, data[1]); result.root.rotation.y = data[2]; this.root.add(result.root); this.ownedTextures.push(...result.ownedTextures); });
+    guestData.slice(0, quality < .62 ? 1 : quality < .82 ? 2 : 3).forEach((data, index) => { const result = createPremiumHuman({ role: "visitor", quality, variant: index + 11, coat: data[3], trousers: data[4], skin: data[5], accessory: index === 1 ? "camera" : "backpack", pose: index === 1 ? "photographing" : "neutral" }); result.root.position.set(data[0], 0, data[1]); result.root.rotation.y = data[2]; this.root.add(result.root); this.ownedTextures.push(...result.ownedTextures); });
     const glow = new THREE.PointLight("#e5f3b9", 34, 23, 1.45); glow.position.set(0, 7.2, -3); this.root.add(glow);
   }
 
