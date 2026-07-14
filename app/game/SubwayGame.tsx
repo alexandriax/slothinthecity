@@ -77,8 +77,8 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
       if (!boarded) return;
       if (!boarded.correct) { audio.playFailure(); checkpoint(currentStation, `Wrong train — checkpoint restored at ${currentStation === "FIFTH_AV" ? "5 Av / 59 St" : "Lexington Av / 59 St"}. Wait for the next correct service.`, true, false, true); return; }
       audio.playQuestComplete();
-      if (currentStation === "FIFTH_AV") checkpoint("LEXINGTON", "Lexington Av / 59 St — transfer down to the uptown 5 express platform", false, true);
-      else checkpoint("WEST_FARMS", "West Farms Sq–E Tremont Av — follow the north exit toward the Bronx Zoo", false, true);
+      if (currentStation === "FIFTH_AV") checkpoint("LEXINGTON", "Lexington Av / 59 St — transfer down to the uptown 5 express platform", false, true, true);
+      else checkpoint("WEST_FARMS", "West Farms Sq–E Tremont Av — follow the north exit toward the Bronx Zoo", false, true, true);
     }
     function failRide(event: Extract<TrainInteriorEvent, { type: "PUSHED_OUT" | "MISSED_STOP" }>) {
       audio.playFailure(); const message = event.type === "PUSHED_OUT" ? `The crowd carried you onto the platform at ${event.stop}. Checkpoint restored — wait for the next train.` : `You missed ${event.stop}. Checkpoint restored — wait for the next train.`; checkpoint(currentStation, message, true, false, true);
@@ -112,7 +112,8 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
     }
 
     const qaInput = ["localhost", "127.0.0.1"].includes(location.hostname) ? new URLSearchParams(location.search).get("qa") : null;
-    if (qaInput === "lexington" || qaInput === "trainride5") checkpoint("LEXINGTON", "QA checkpoint · Lexington Av / 59 St");
+    if (qaInput === "lexingtontransfer") checkpoint("LEXINGTON", "QA checkpoint · paid-area transfer platform", false, false, true);
+    else if (qaInput === "lexington" || qaInput === "trainride5") checkpoint("LEXINGTON", "QA checkpoint · Lexington Av / 59 St");
     else if (["westfarms", "finale"].includes(qaInput ?? "")) checkpoint("WEST_FARMS", "QA checkpoint · West Farms Sq–E Tremont Av");
     if (["subway", "subwayplatform", "lexington"].includes(qaInput ?? "") && stationWorld) { stationClock = 6; stationWorld.update(stationClock); }
     if (["subwayplatform", "lexington"].includes(qaInput ?? "")) {

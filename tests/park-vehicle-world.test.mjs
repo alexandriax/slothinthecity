@@ -52,18 +52,38 @@ test("Bow Bridge and each timber pier provide dry, elevated player support", asy
   ]);
 
   assert.match(campaign, /BOW_BRIDGE_YAW = -\.43/);
-  assert.match(campaign, /BOW_BRIDGE_DECK_BASE_Y = -1\.12/);
+  assert.match(campaign, /BOW_BRIDGE_DECK_BASE_Y = -\.68/);
   assert.match(campaign, /Math\.max\(BOW_BRIDGE_DECK_BASE_Y/);
   assert.match(campaign, /bow-bridge-abutment-mounted-plaque/);
   assert.match(campaign, /const rotation = BOW_BRIDGE_YAW/);
   assert.match(campaign, /length: length \+ 5\.2/);
+  assert.match(campaign, /bow-bridge-dry-elevated-deck/);
+  assert.match(campaign, /bow-bridge-solid-underside/);
+  assert.match(campaign, /bow-bridge-visible-side-fascia/);
   assert.match(world, /function bowBridgeSupportsPlayer/);
   assert.match(world, /export function lakeDockSurfaceHeightAt/);
+  assert.match(world, /shoulderBlend = 1 - THREE\.MathUtils\.smoothstep/);
   assert.match(world, /shoreInset === 0 && \(bowBridgeSupportsPlayer\(x, z\) \|\| lakeDockSurfaceHeightAt\(x, z\) !== null\)/);
   assert.match(world, /dummy\.position\.y = dockTopAt\(definition, amount\) - \.0525/);
   assert.match(world, /return lakeDockSurfaceHeightAt\(x, z\) \?\? baseTerrainY\(x, z\)/);
   assert.match(world, /new THREE\.Vector3\(-20\.1, THE_LAKE_SURFACE_Y - \.04, -138\.2\)/);
   assert.match(world, /new THREE\.Vector3\(194\.7, THE_LAKE_SURFACE_Y - \.04, -295\.8\)/);
+});
+
+test("lake shore support, bridge approaches, and the subway excavation share authored terrain", async () => {
+  const [game, world, campaign] = await Promise.all([
+    readFile(new URL("../app/game/GameClient.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/world/RealisticWorld.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/world/CampaignLandmarks.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(world, /approachDatum = BOW_BRIDGE_DECK_BASE_Y - \.08/);
+  assert.match(world, /terrainGeometryWithSubwayCutout/);
+  assert.match(world, /insideSubwayCutout/);
+  assert.match(world, /terrainSegments = quality > \.72 \? 248 : 184/);
+  assert.match(campaign, /SUBWAY_STAIR_CUTOUT/);
+  assert.match(game, /qaInput === "shoreclimb"/);
+  assert.match(game, /terrainTargetY - \.52/);
 });
 
 test("shore forestry and first-person vehicle grips preserve visual clarity", async () => {

@@ -13,7 +13,7 @@ export const BOW_BRIDGE_YAW = -.43;
 // The inlet basin terrain sits below The Lake's water plane. The bridge deck
 // needs an authored architectural datum instead of inheriting that lake-bed
 // height, otherwise both rendering and locomotion place the span underwater.
-export const BOW_BRIDGE_DECK_BASE_Y = -1.12;
+export const BOW_BRIDGE_DECK_BASE_Y = -.68;
 // The first campaign waypoint lands on the clear east approach, where the
 // ticket quest can naturally continue down the nearby rowboat pier.
 export const BOW_BRIDGE_TARGET = new THREE.Vector3(-20.45, 0, -115.33);
@@ -27,6 +27,7 @@ export const SUBWAY_TARGET = new THREE.Vector3(345, 0, -385);
 // GameClient transitions after the player is visibly partway down the stairs.
 // It is exported separately so the waypoint can remain at street level.
 export const SUBWAY_ENTRY_TRIGGER = new THREE.Vector3(345, 0, -389.35);
+export const SUBWAY_STAIR_CUTOUT = { halfWidth: 2.95, topZ: -.35, bottomZ: -9.55 } as const;
 
 export type CampaignObstacle =
   | { id: string; kind: "circle"; x: number; z: number; radius: number; minY: number; maxY: number }
@@ -87,6 +88,20 @@ function archedDeckGeometry(length: number, width: number, segments = 36) {
   const geometry = new THREE.BufferGeometry(); geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3)); geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2)); geometry.setIndex(indices); geometry.computeVertexNormals(); return geometry;
 }
 
+function archedFasciaGeometry(length: number, width: number, side: -1 | 1, segments = 36) {
+  const positions: number[] = [], uvs: number[] = [], indices: number[] = [];
+  for (let index = 0; index <= segments; index++) {
+    const amount = index / segments, x = (amount - .5) * length, y = Math.sin(amount * Math.PI) * 1.15;
+    positions.push(x, y, side * width / 2, x, y - .24, side * width / 2);
+    uvs.push(amount * 8, 0, amount * 8, 1);
+    if (index < segments) { const base = index * 2; indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3); }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices); geometry.computeVertexNormals(); return geometry;
+}
+
 function parkPathGeometry(points: THREE.Vector3[], width: number, heightAt: (x: number, z: number) => number) {
   const positions: number[] = [], uvs: number[] = [], indices: number[] = [];
   points.forEach((point, index) => {
@@ -107,7 +122,11 @@ function sidewalkWithStairOpeningGeometry() {
   // ShapeGeometry is authored in XY then laid onto XZ. Negating local Z keeps
   // the opening aligned with the descending negative-Z stair flight.
   const opening = new THREE.Path();
-  opening.moveTo(-2.95, .35); opening.lineTo(-2.95, 9.55); opening.lineTo(2.95, 9.55); opening.lineTo(2.95, .35); opening.closePath();
+  opening.moveTo(-SUBWAY_STAIR_CUTOUT.halfWidth, -SUBWAY_STAIR_CUTOUT.topZ);
+  opening.lineTo(-SUBWAY_STAIR_CUTOUT.halfWidth, -SUBWAY_STAIR_CUTOUT.bottomZ);
+  opening.lineTo(SUBWAY_STAIR_CUTOUT.halfWidth, -SUBWAY_STAIR_CUTOUT.bottomZ);
+  opening.lineTo(SUBWAY_STAIR_CUTOUT.halfWidth, -SUBWAY_STAIR_CUTOUT.topZ);
+  opening.closePath();
   shape.holes.push(opening);
   const geometry = new THREE.ShapeGeometry(shape, 4); geometry.rotateX(-Math.PI / 2); geometry.computeVertexNormals(); return geometry;
 }
@@ -130,9 +149,13 @@ function addBowBridge(root: THREE.Group, textures: GameTextures, heightAt: (x: n
   const bridgeY = Math.max(BOW_BRIDGE_DECK_BASE_Y, heightAt(west.x, west.z) + .16, heightAt(east.x, east.z) + .16);
   bridge.position.set(BOW_BRIDGE_CENTER.x, bridgeY, BOW_BRIDGE_CENTER.z); bridge.rotation.y = rotation;
   const iron = new THREE.MeshStandardMaterial({ map: textures.stone, bumpMap: textures.stone, bumpScale: .012, color: "#ded7c5", roughness: .38, metalness: .68 });
-  const deckMaterial = new THREE.MeshStandardMaterial({ map: textures.bark, bumpMap: textures.bark, bumpScale: .035, color: "#a98f70", roughness: .84 });
+  const deckMaterial = new THREE.MeshStandardMaterial({ map: textures.bark, bumpMap: textures.bark, bumpScale: .035, color: "#d0b98f", roughness: .8 });
   const stone = new THREE.MeshStandardMaterial({ map: textures.ground, bumpMap: textures.ground, bumpScale: .055, color: "#b9aa8d", roughness: .9 });
-  const deck = new THREE.Mesh(archedDeckGeometry(length, width, 54), deckMaterial); deck.castShadow = deck.receiveShadow = true; bridge.add(deck);
+  const deck = new THREE.Mesh(archedDeckGeometry(length, width, 54), deckMaterial); deck.name = "bow-bridge-dry-elevated-deck"; deck.castShadow = deck.receiveShadow = true; bridge.add(deck);
+  const underside = new THREE.Mesh(archedDeckGeometry(length, width - .16, 54), stone); underside.name = "bow-bridge-solid-underside"; underside.position.y = -.24; underside.material.side = THREE.DoubleSide; underside.castShadow = true; bridge.add(underside);
+  for (const side of [-1, 1] as const) {
+    const fascia = new THREE.Mesh(archedFasciaGeometry(length, width, side, 54), stone); fascia.name = "bow-bridge-visible-side-fascia"; fascia.castShadow = fascia.receiveShadow = true; bridge.add(fascia);
+  }
   const postCount = 25, postGeometry = new THREE.CylinderGeometry(.052, .072, 1, 12), postDummy = new THREE.Object3D(), posts = new THREE.InstancedMesh(postGeometry, iron, postCount * 2);
   for (const side of [-1, 1]) for (let index = 0; index < postCount; index++) {
     const amount = index / (postCount - 1), x = (amount - .5) * (length - .7), deckY = Math.sin(amount * Math.PI) * 1.15;

@@ -158,7 +158,7 @@ function defaultAtlas(kind: "face" | "clothing", variant: number) {
   return paths[Math.floor(normalizedVariant(variant, availableIdentities) / PREMIUM_CHARACTER_ASSETS.tilesPerAtlas)];
 }
 
-function portraitTile(url: string, tile: number, quality: number) {
+function portraitTile(url: string, tile: number, quality: number, onSkinTone?: (cssColor: string) => void) {
   if (typeof document === "undefined") return atlasTile(url, tile, quality);
   const size = quality > .86 ? 384 : quality > .62 ? 256 : 128;
   const canvas = document.createElement("canvas"); canvas.width = canvas.height = size;
@@ -175,17 +175,35 @@ function portraitTile(url: string, tile: number, quality: number) {
     const pixels = context.getImageData(0, 0, size, size), sample = (x: number, y: number) => {
       const offset = (y * size + x) * 4; return [pixels.data[offset], pixels.data[offset + 1], pixels.data[offset + 2]] as const;
     };
+    // Sample broad cheek and jaw patches from the actual portrait. The same
+    // tone is applied to the cranium, neck, ears and hands once the image is
+    // decoded, so photographic faces no longer sit on a differently coloured
+    // procedural body like a mask.
+    const toneSamples: number[][] = [];
+    for (const [centerX, centerY] of [[.31, .55], [.69, .55], [.36, .68], [.64, .68], [.5, .79]]) {
+      const radius = Math.max(2, Math.round(size * .028));
+      for (let offsetY = -radius; offsetY <= radius; offsetY++) for (let offsetX = -radius; offsetX <= radius; offsetX++) {
+        if (offsetX * offsetX + offsetY * offsetY > radius * radius) continue;
+        const color = sample(Math.round(centerX * (size - 1)) + offsetX, Math.round(centerY * (size - 1)) + offsetY);
+        const luminance = color[0] * .2126 + color[1] * .7152 + color[2] * .0722;
+        if (luminance > 28 && luminance < 238) toneSamples.push([...color]);
+      }
+    }
+    if (toneSamples.length) {
+      const average = [0, 1, 2].map(channel => Math.round(toneSamples.reduce((sum, color) => sum + color[channel], 0) / toneSamples.length));
+      onSkinTone?.(`rgb(${average[0]} ${average[1]} ${average[2]})`);
+    }
     const corners = [sample(2, 2), sample(size - 3, 2), sample(2, size - 3), sample(size - 3, size - 3)];
     const background = [0, 1, 2].map(channel => corners.reduce((sum, color) => sum + color[channel], 0) / corners.length);
     for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
       const offset = (y * size + x) * 4;
       const distance = Math.hypot(pixels.data[offset] - background[0], pixels.data[offset + 1] - background[1], pixels.data[offset + 2] - background[2]);
-      const edgeX = Math.min(1, x / (size * .055), (size - 1 - x) / (size * .055));
-      const edgeY = Math.min(1, y / (size * .035), (size - 1 - y) / (size * .035));
+      const edgeX = Math.min(1, x / (size * .085), (size - 1 - x) / (size * .085));
+      const edgeY = Math.min(1, y / (size * .065), (size - 1 - y) / (size * .065));
       const edgeFeather = Math.max(0, Math.min(edgeX, edgeY));
       const normalizedX = (x / (size - 1) - .5) / .51, normalizedY = (y / (size - 1) - .505) / .57;
-      const portraitMask = 1 - THREE.MathUtils.smoothstep(Math.hypot(normalizedX, normalizedY), .82, 1);
-      const backgroundMask = legacy ? THREE.MathUtils.smoothstep(distance, 18, 42) : 1;
+      const portraitMask = 1 - THREE.MathUtils.smoothstep(Math.hypot(normalizedX, normalizedY), .76, 1);
+      const backgroundMask = THREE.MathUtils.smoothstep(distance, legacy ? 18 : 9, legacy ? 42 : 30);
       pixels.data[offset + 3] = Math.round(255 * edgeFeather * portraitMask * backgroundMask);
     }
     context.putImageData(pixels, 0, 0); texture.needsUpdate = true;
@@ -214,8 +232,8 @@ function anatomicalHeadGeometry(segments: number) {
  * lips and chin, so silhouettes remain human from oblique viewing angles.
  */
 function faceSurfaceGeometry(quality: number) {
-  const columns = quality > .86 ? 32 : quality > .62 ? 22 : 14;
-  const rows = quality > .86 ? 34 : quality > .62 ? 24 : 16;
+  const columns = quality > .86 ? 34 : quality > .62 ? 24 : 18;
+  const rows = quality > .86 ? 36 : quality > .62 ? 26 : 20;
   const positions: number[] = [], normals: number[] = [], uvs: number[] = [], indices: number[] = [];
   for (let row = 0; row <= rows; row++) {
     const v = row / rows, latitude = THREE.MathUtils.lerp(.96, -.99, v);
@@ -366,17 +384,23 @@ export function createPremiumHuman(options: PremiumHumanOptions): PremiumCharact
   const leatherMap = proceduralSurface("leather", options.role === "attendant" ? "#151b18" : "#5a3c2b", "#b18c63", 79 + options.variant, quality);
   const metalMap = proceduralSurface("metal", "#a8aaa2", "#f5f1dc", 97 + options.variant, quality);
   const trimMap = proceduralSurface("cloth", options.role === "attendant" ? "#e7e0cf" : "#b7a582", "#ffffff", 103 + options.variant, quality);
-  const faceAtlas = portraitTile(faceAtlasUrl, identityVariant % PREMIUM_CHARACTER_ASSETS.tilesPerAtlas, quality);
+  const skinIntegration: { tone: string; material?: THREE.MeshPhysicalMaterial } = { tone: options.skin };
+  const faceAtlas = portraitTile(faceAtlasUrl, identityVariant % PREMIUM_CHARACTER_ASSETS.tilesPerAtlas, quality, tone => {
+    skinIntegration.tone = tone;
+    skinIntegration.material?.color.setStyle(tone);
+  });
   const clothingAtlas = atlasTile(clothingAtlasUrl, wardrobeVariant % PREMIUM_CHARACTER_ASSETS.tilesPerAtlas, quality);
   const ownedTextures = [coatMap, trouserMap, skinMap, hairMap, leatherMap, metalMap, trimMap, faceAtlas, clothingAtlas];
-  const coat = atlasMaterial(clothingAtlas, coatMap, .8), trousers = texturedMaterial(trouserMap, .83), skin = texturedMaterial(skinMap, .76);
-  const faceSkin = new THREE.MeshPhysicalMaterial({ map: faceAtlas, bumpMap: skinMap, bumpScale: .004, transparent: true, alphaTest: .08, depthWrite: true, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1, roughness: .72, clearcoat: .018, clearcoatRoughness: .9, side: THREE.FrontSide });
+  const coat = atlasMaterial(clothingAtlas, coatMap, .8), trousers = texturedMaterial(trouserMap, .83);
+  const skin = new THREE.MeshPhysicalMaterial({ color: skinIntegration.tone, bumpMap: skinMap, bumpScale: .014, roughness: .76, clearcoat: .012, clearcoatRoughness: .92 }); skinIntegration.material = skin;
+  const faceSkin = new THREE.MeshPhysicalMaterial({ map: faceAtlas, bumpMap: skinMap, bumpScale: .004, transparent: true, alphaTest: .015, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1, roughness: .72, clearcoat: .018, clearcoatRoughness: .9, side: THREE.FrontSide });
   const hair = texturedMaterial(hairMap, .91), leather = texturedMaterial(leatherMap, .72), metal = texturedMaterial(metalMap, .32, { metalness: .76, clearcoat: .22 }), trim = texturedMaterial(trimMap, .72);
   const root = new THREE.Group(); root.name = options.role === "attendant" ? "central-park-zoo-attendant" : "central-park-zoo-visitor";
   root.userData.role = options.role === "attendant" ? "zoo-attendant" : "zoo-visitor";
   root.userData.characterFidelity = high ? "premium-high" : "premium-mobile";
   root.userData.faceAtlas = faceAtlasUrl;
   root.userData.faceVariant = identityVariant;
+  root.userData.skinIntegration = "face-atlas-sampled-seamless";
   root.userData.presentation = feminine ? "feminine" : "masculine";
   root.userData.clothingAtlas = clothingAtlasUrl;
   root.userData.clothingVariant = wardrobeVariant;
@@ -401,7 +425,7 @@ export function createPremiumHuman(options: PremiumHumanOptions): PremiumCharact
   }
   if (quality > .9) for (const y of [1.62, 1.48, 1.34]) { const button = new THREE.Mesh(new THREE.CylinderGeometry(.014, .014, .009, 12), metal); button.position.set(.018, y, -.316); button.rotation.x = Math.PI / 2; root.add(button); }
 
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(.105, .126, .245, segments), skin); neck.position.y = 1.985; root.add(neck);
+  const neck = new THREE.Mesh(new THREE.CapsuleGeometry(.108, .065, Math.max(8, Math.floor(segments / 2)), segments), skin); neck.name = "anatomical-head-neck-skin-transition"; neck.position.y = 1.985; neck.scale.set(1, .94, .92); root.add(neck);
   const head = new THREE.Mesh(anatomicalHeadGeometry(segments), skin); head.name = "unified-anatomical-head-and-jaw"; head.position.y = 2.23; root.add(head);
   const faceSurface = new THREE.Mesh(faceSurfaceGeometry(quality), faceSkin); faceSurface.name = "head-conforming-generated-face-surface"; faceSurface.position.y = 2.23; faceSurface.renderOrder = 4; root.add(faceSurface);
   const hairCap = new THREE.Mesh(new THREE.SphereGeometry(.278, segments, Math.max(14, Math.floor(segments * .7)), 0, Math.PI * 2, 0, Math.PI * .56), hair); hairCap.scale.set(.9, 1.04, .91); hairCap.position.y = 2.285; hairCap.rotation.y = identityVariant * .23; root.add(hairCap);

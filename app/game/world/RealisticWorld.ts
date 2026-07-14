@@ -4,11 +4,13 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import type { GameTextures } from "../rendering/textures";
 import {
   BOW_BRIDGE_CENTER,
+  BOW_BRIDGE_DECK_BASE_Y,
   BOW_BRIDGE_LENGTH,
   BOW_BRIDGE_TARGET,
   BOW_BRIDGE_WIDTH,
   BOW_BRIDGE_YAW,
   SUBWAY_TARGET,
+  SUBWAY_STAIR_CUTOUT,
   ZOO_TARGET,
 } from "./CampaignLandmarks";
 
@@ -98,7 +100,12 @@ export function lakeDockSurfaceHeightAt(x: number, z: number) {
     const amount = THREE.MathUtils.clamp(rawAmount, 0, 1);
     const nearestX = THREE.MathUtils.lerp(definition.land.x, definition.water.x, amount);
     const nearestZ = THREE.MathUtils.lerp(definition.land.z, definition.water.z, amount);
-    if (Math.hypot(x - nearestX, z - nearestZ) <= definition.width / 2 + .1) return dockTopAt(definition, amount);
+    const lateralDistance = Math.hypot(x - nearestX, z - nearestZ), halfWidth = definition.width / 2;
+    if (lateralDistance <= halfWidth + 1.35) {
+      const terrainTop = baseTerrainY(x, z), deckTop = Math.max(terrainTop, dockTopAt(definition, amount));
+      const shoulderBlend = 1 - THREE.MathUtils.smoothstep(lateralDistance, Math.max(.1, halfWidth - .08), halfWidth + 1.35);
+      return THREE.MathUtils.lerp(terrainTop, deckTop, shoulderBlend);
+    }
   }
   return null;
 }
@@ -260,17 +267,34 @@ function baseTerrainY(x: number, z: number) {
     (x - THE_LAKE_CENTER.x) / THE_LAKE_RADII.x,
     (z - THE_LAKE_CENTER.z) / THE_LAKE_RADII.y,
   );
-  const ellipseWeight = 1 - THREE.MathUtils.smoothstep(normalizedLakeDistance, .965, 1.075);
+  // Keep the basin floor at water-edge elevation until the exact swim
+  // boundary, then rise over a broad exterior shelf. Player support and the
+  // rendered bank therefore meet without a one-metre discontinuity.
+  const ellipseWeight = 1 - THREE.MathUtils.smoothstep(normalizedLakeDistance, 1, 1.16);
   const inletDistance = distanceToLakeInlet(x, z);
   const inletWeight = 1 - THREE.MathUtils.smoothstep(inletDistance, 10.6, 17.5);
   const basinWeight = Math.max(ellipseWeight, inletWeight);
   const lakeBed = -2.72 + Math.sin(x * .19 - z * .11) * .07 + Math.cos((x + z) * .13) * .045;
   let height = THREE.MathUtils.lerp(roll, Math.min(roll, lakeBed), basinWeight);
+  // Grade both bridge approaches up to the authored deck datum. This keeps
+  // the visible bank, player support, and masonry threshold on one continuous
+  // slope instead of asking the camera to jump from the lake-bed terrain to a
+  // floating bridge mesh at the final metre.
+  const bridgeDx = x - BOW_BRIDGE_CENTER.x, bridgeDz = z - BOW_BRIDGE_CENTER.z;
+  const bridgeLocalX = Math.cos(BOW_BRIDGE_YAW) * bridgeDx - Math.sin(BOW_BRIDGE_YAW) * bridgeDz;
+  const bridgeLocalZ = Math.sin(BOW_BRIDGE_YAW) * bridgeDx + Math.cos(BOW_BRIDGE_YAW) * bridgeDz;
+  const approachDistance = Math.abs(bridgeLocalX) - BOW_BRIDGE_LENGTH / 2;
+  if (approachDistance >= 0 && approachDistance <= 6.4 && Math.abs(bridgeLocalZ) <= BOW_BRIDGE_WIDTH / 2 + 3.4) {
+    const alongWeight = 1 - THREE.MathUtils.smoothstep(approachDistance, .25, 6.4);
+    const acrossWeight = 1 - THREE.MathUtils.smoothstep(Math.abs(bridgeLocalZ), BOW_BRIDGE_WIDTH / 2 + .35, BOW_BRIDGE_WIDTH / 2 + 3.4);
+    const approachDatum = BOW_BRIDGE_DECK_BASE_Y - .08 - approachDistance * .045;
+    height = THREE.MathUtils.lerp(height, Math.max(height, approachDatum), alongWeight * acrossWeight);
+  }
   // Carve the exterior Fifth Avenue stairwell into the terrain itself. The
   // local sidewalk mesh has a matching aperture, while this depression keeps
   // both rendered ground and player support below each descending tread.
   const subwayLocalX = Math.abs(x - SUBWAY_TARGET.x), subwayLocalZ = z - SUBWAY_TARGET.z;
-  if (subwayLocalX <= 3.02 && subwayLocalZ <= -.65 && subwayLocalZ >= -9.65) {
+  if (subwayLocalX <= SUBWAY_STAIR_CUTOUT.halfWidth + .07 && subwayLocalZ <= SUBWAY_STAIR_CUTOUT.topZ - .3 && subwayLocalZ >= SUBWAY_STAIR_CUTOUT.bottomZ - .1) {
     const streetY = Math.sin(SUBWAY_TARGET.x * .037) * 1.5 + Math.cos(SUBWAY_TARGET.z * .042) * 1.1 + Math.sin((SUBWAY_TARGET.x + SUBWAY_TARGET.z) * .071) * .45;
     const descent = THREE.MathUtils.clamp((-subwayLocalZ - .85) / (19 * .43), 0, 1);
     height = streetY - descent * (19 * .165);
@@ -286,6 +310,34 @@ function baseTerrainY(x: number, z: number) {
 
 export function terrainY(x: number, z: number) {
   return lakeDockSurfaceHeightAt(x, z) ?? baseTerrainY(x, z);
+}
+
+function terrainGeometryWithSubwayCutout(width: number, depth: number, segments: number, centerX: number, centerZ: number) {
+  const minX = centerX - width / 2, maxX = centerX + width / 2, minZ = centerZ - depth / 2, maxZ = centerZ + depth / 2;
+  const xCoordinates = Array.from({ length: segments + 1 }, (_, index) => THREE.MathUtils.lerp(minX, maxX, index / segments));
+  const zCoordinates = Array.from({ length: segments + 1 }, (_, index) => THREE.MathUtils.lerp(minZ, maxZ, index / segments));
+  xCoordinates.push(SUBWAY_TARGET.x - SUBWAY_STAIR_CUTOUT.halfWidth, SUBWAY_TARGET.x + SUBWAY_STAIR_CUTOUT.halfWidth);
+  zCoordinates.push(SUBWAY_TARGET.z + SUBWAY_STAIR_CUTOUT.bottomZ, SUBWAY_TARGET.z + SUBWAY_STAIR_CUTOUT.topZ);
+  const uniqueSorted = (values: number[]) => [...new Set(values.map(value => Math.round(value * 10000) / 10000))].sort((a, b) => a - b);
+  const xs = uniqueSorted(xCoordinates), zs = uniqueSorted(zCoordinates), positions: number[] = [], uvs: number[] = [], indices: number[] = [];
+  for (const z of zs) for (const x of xs) {
+    positions.push(x, terrainY(x, z), z);
+    uvs.push((x - minX) / width, (z - minZ) / depth);
+  }
+  const stride = xs.length;
+  for (let zIndex = 0; zIndex < zs.length - 1; zIndex++) for (let xIndex = 0; xIndex < xs.length - 1; xIndex++) {
+    const midpointX = (xs[xIndex] + xs[xIndex + 1]) / 2, midpointZ = (zs[zIndex] + zs[zIndex + 1]) / 2;
+    const insideSubwayCutout = Math.abs(midpointX - SUBWAY_TARGET.x) < SUBWAY_STAIR_CUTOUT.halfWidth
+      && midpointZ > SUBWAY_TARGET.z + SUBWAY_STAIR_CUTOUT.bottomZ
+      && midpointZ < SUBWAY_TARGET.z + SUBWAY_STAIR_CUTOUT.topZ;
+    if (insideSubwayCutout) continue;
+    const near = zIndex * stride + xIndex, far = near + stride;
+    indices.push(near, far, near + 1, near + 1, far, far + 1);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices); geometry.computeVertexNormals(); return geometry;
 }
 
 function trailRibbon(curve: THREE.CatmullRomCurve3) {
@@ -1125,11 +1177,11 @@ function addLakeEcology(scene: THREE.Scene, textures: GameTextures, quality: num
 
 export function buildRealisticWorld(scene: THREE.Scene, textures: GameTextures, quality: number): RealisticWorld {
   addSky(scene);
-  const terrainSegments = quality > .72 ? 190 : 124;
-  const terrain = new THREE.PlaneGeometry(820, 820, terrainSegments, terrainSegments); terrain.rotateX(-Math.PI / 2); terrain.translate(80, 0, -140);
-  const positions = terrain.attributes.position as THREE.BufferAttribute;
-  for (let i = 0; i < positions.count; i++) positions.setY(i, terrainY(positions.getX(i), positions.getZ(i)));
-  terrain.computeVertexNormals();
+  // Shorelines need enough tessellation to agree with the analytic movement
+  // surface on mobile. The non-uniform grid also inserts exact stairwell
+  // boundaries, then omits those cells so the exterior station is excavated.
+  const terrainSegments = quality > .72 ? 248 : 184;
+  const terrain = terrainGeometryWithSubwayCutout(820, 820, terrainSegments, 80, -140);
   const groundMaterial = new THREE.MeshStandardMaterial({ map: textures.ground, bumpMap: textures.ground, bumpScale: .14, color: "#d0c6b5", roughness: .95, metalness: 0 });
   const ground = new THREE.Mesh(terrain, groundMaterial); ground.receiveShadow = true; scene.add(ground);
 

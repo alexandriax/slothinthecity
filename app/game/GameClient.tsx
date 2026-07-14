@@ -384,7 +384,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
       raf = requestAnimationFrame(frame); if (timestamp !== undefined) quality.reportFrame(timestamp); timer.update(timestamp); const delta = Math.min(timer.getDelta(), .05);
       if (phaseRef.current === "playing") {
         gameTime += delta;
-        if (!qaPrepared && (["autoclimb", "autobranch", "autotransfer", "autodrop", "autoflow", "cart", "treecollision", "watercollision", "swim", "energy", "rest", "hawk", "bridgewalk", "bowbridge", "rowboat", "ticketisland", "ticket", "zoo", "subwayentrance"].includes(qaInput ?? ""))) {
+        if (!qaPrepared && (["autoclimb", "autobranch", "autotransfer", "autodrop", "autoflow", "cart", "treecollision", "watercollision", "swim", "shoreclimb", "energy", "rest", "hawk", "bridgewalk", "bowbridge", "rowboat", "ticketisland", "ticket", "zoo", "subwayentrance"].includes(qaInput ?? ""))) {
           const testTree = nearestTree(player);
           if (qaInput === "autoflow") {
             const flowRoute = world.canopyCorridors[0]?.routeIds[0] !== undefined ? world.branches[world.canopyCorridors[0].routeIds[0]] : undefined;
@@ -404,6 +404,12 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
             player.set(world.lakeCenter.x, groundHeight(world.lakeCenter.x, world.lakeCenter.z + world.lakeRadii.y + 6), world.lakeCenter.z + world.lakeRadii.y + 6); yaw = 0; keys.add("KeyW"); qaPrepared = true;
           } else if (qaInput === "swim") {
             player.set(world.lakeCenter.x - 48, waterSurfaceY + .58, world.lakeCenter.z); yaw = 0; keys.add("KeyW"); energy = 72; qaPrepared = true;
+          } else if (qaInput === "shoreclimb") {
+            ticketCollected = true; world.setTicketCollected(true); parkStage = "ZOO"; alert = 5; nextHawkPassAt = Number.POSITIVE_INFINITY;
+            const dockToShore = world.southeastShoreLanding.clone().sub(world.southeastBoatDock).setY(0).normalize();
+            const besidePier = new THREE.Vector3(-dockToShore.z, 0, dockToShore.x);
+            player.copy(world.southeastBoatDock).lerp(world.southeastShoreLanding, .16).addScaledVector(besidePier, 3.2); player.y = waterSurfaceY + .58;
+            const shoreDirection = world.southeastShoreLanding.clone().sub(player); yaw = Math.atan2(-shoreDirection.x, -shoreDirection.z); keys.add("KeyW"); qaPrepared = true;
           } else if (qaInput === "energy") {
             energy = 72; keys.add("KeyW"); qaPrepared = true;
           } else if (qaInput === "rest") {
@@ -412,7 +418,12 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
             world.buds.slice(0, 5).forEach((bud, index) => { collected.current.add(index); bud.visible = false; });
             alert = 5; nextHawkPassAt = Number.POSITIVE_INFINITY;
             if (qaInput === "rowboat") { parkStage = "LAKE_TICKET"; rowboats[0].getWorldEntryPosition(player); player.y = waterSurfaceY + .58; actionRequested = true; }
-            else if (qaInput === "bowbridge") { parkStage = "BOW_BRIDGE"; player.set(BOW_BRIDGE_TARGET.x - 9, groundHeight(BOW_BRIDGE_TARGET.x - 9, BOW_BRIDGE_TARGET.z + 8), BOW_BRIDGE_TARGET.z + 8); yaw = -1.01; }
+            else if (qaInput === "bowbridge") {
+              parkStage = "BOW_BRIDGE";
+              const bridge = campaign.bowBridgeSurface, localX = bridge.length / 2 + 1.15;
+              player.set(bridge.center.x + Math.cos(bridge.yaw) * localX, 0, bridge.center.z - Math.sin(bridge.yaw) * localX);
+              player.y = groundHeight(player.x, player.z); yaw = bridge.yaw + Math.PI / 2;
+            }
             else if (qaInput === "ticketisland") { parkStage = "LAKE_TICKET"; player.copy(world.ticketIslandLanding); player.y = groundHeight(player.x, player.z); yaw = 0; }
             else if (qaInput === "ticket") { parkStage = "LAKE_TICKET"; player.copy(world.ticketTarget); player.z += 2.4; player.y = groundHeight(player.x, player.z); yaw = 0; }
             else if (qaInput === "zoo") { ticketCollected = true; world.setTicketCollected(true); parkStage = "ZOO"; campaign.attendant.getWorldPosition(player); player.z += 3.6; player.y = groundHeight(player.x, player.z); yaw = 0; }
@@ -643,7 +654,12 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
               player.y = THREE.MathUtils.lerp(player.y, waterSurfaceY + .58 + swimBob, 1 - Math.exp(-delta * 5));
               energy = THREE.MathUtils.clamp(energy + (moving ? -2.35 : 2.4) * delta, 0, 100);
             } else {
-              player.y = groundHeight(player.x, player.z) + Math.sin(gameTime * 5.5) * Math.min(.025, velocity.length() * .006);
+              const terrainTargetY = groundHeight(player.x, player.z) + Math.sin(gameTime * 5.5) * Math.min(.025, velocity.length() * .006);
+              const terrainFollow = 1 - Math.exp(-delta * 8.5);
+              // Follow sloped banks continuously while keeping the eye line
+              // safely above the rendered surface. This removes the one-frame
+              // under-terrain view and the subsequent vertical pop at shore.
+              player.y = Math.max(THREE.MathUtils.lerp(player.y, terrainTargetY, terrainFollow), terrainTargetY - .52);
               energy = THREE.MathUtils.clamp(energy + (moving ? -1.65 : 6.2) * delta, 0, 100);
               groundTreeTarget = nearestTree(player, 1.35);
             }
@@ -888,7 +904,7 @@ export function GameClient() {
   }, [audio, quality]);
   useEffect(() => {
     if (!["localhost", "127.0.0.1"].includes(location.hostname)) return;
-    if (!["subway", "subwayplatform", "trainride", "trainride5", "lexington", "westfarms", "finale"].includes(new URLSearchParams(location.search).get("qa") ?? "")) return;
+    if (!["subway", "subwayplatform", "trainride", "trainride5", "lexington", "lexingtontransfer", "westfarms", "finale"].includes(new URLSearchParams(location.search).get("qa") ?? "")) return;
     const frame = requestAnimationFrame(() => setLevel("subway"));
     return () => cancelAnimationFrame(frame);
   }, []);
