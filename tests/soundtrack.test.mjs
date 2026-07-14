@@ -23,3 +23,29 @@ test("authored soundtrack files are streamed in album order and loop after the f
     assert.ok(info.size > 100_000, `${track} should contain a real authored soundtrack file`);
   }
 });
+
+test("authored vehicle, wildlife, and transit audio is resiliently decoded and event-driven", async () => {
+  const [director, park, subway] = await Promise.all([
+    readFile(new URL("../app/game/systems/audio/PremiumAudioDirector.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/GameClient.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/SubwayGame.tsx", import.meta.url), "utf8"),
+  ]);
+
+  for (const path of [
+    "/audio/sfx/cart-motor-loop.mp3",
+    "/audio/sfx/hawk-near-screech.mp3",
+    "/audio/sfx/hawk-dive-pass.mp3",
+    ...["fifth_nr_platform", "fifth_nr_boarding", "lex_arrival_transfer", "lex_5_platform", "lex_5_boarding", "stop_86", "stop_125", "stop_e180", "west_farms_arrival", "stand_clear_doors"].map(name => `/audio/announcements/${name}.mp3`),
+  ]) assert.match(director, new RegExp(path.replaceAll("/", "\\/")));
+
+  assert.match(director, /fetch\(path\)/);
+  assert.match(director, /decodeAudioData\(data\.slice\(0\)\)/);
+  assert.match(director, /source\.loop = true/);
+  assert.match(director, /this\.announcementQueue\.shift\(\)/);
+  assert.match(director, /this\.announcementSource \? \.38 : 1/);
+  assert.match(park, /audio\.setCartMotor\(true, traversalSpeed\)/);
+  assert.match(park, /audio\.playHawkCue\("near"\)/);
+  assert.match(park, /audio\.playHawkCue\("dive"\)/);
+  assert.match(subway, /playTransitAnnouncement/);
+  for (const cue of ["fifth_nr_platform", "fifth_nr_boarding", "lex_arrival_transfer", "lex_5_platform", "lex_5_boarding", "stop_86", "stop_125", "stop_e180", "west_farms_arrival", "stand_clear_doors"]) assert.match(subway, new RegExp(`"${cue}"`));
+});
