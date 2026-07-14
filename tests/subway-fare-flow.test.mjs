@@ -55,3 +55,28 @@ test("street stairs blend daylight into the mezzanine without a fake initial loa
   assert.match(game, /scene\.fog\.color\.copy\(fogInterior\)\.lerp\(fogStreet, streetMix\)/);
   assert.match(game, /Now entering/);
 });
+
+test("failed rides restore the paid platform checkpoint without replaying door audio", async () => {
+  const [world, game] = await Promise.all([readFile(worldUrl, "utf8"), readFile(gameUrl, "utf8")]);
+
+  assert.match(world, /export type SubwayProgressState/);
+  assert.match(world, /get progressState\(\): SubwayProgressState/);
+  assert.match(world, /restoreProgressState\(progress: SubwayProgressState\)/);
+  assert.match(world, /checkpointSpawn\(platform = false\)/);
+  assert.match(game, /let subwayProgress = stationWorld\.progressState/);
+  assert.match(game, /subwayProgress = stationWorld\.progressState; stationWorld\.dispose\(\)/);
+  assert.match(game, /checkpoint\(currentStation, message, true, false, true\)/);
+  assert.match(game, /stationWorld\.checkpointSpawn\(resumeAtPlatform\)/);
+  assert.match(game, /stationWorld\.update\(stationClock\); previousTrainPhase = stationWorld\.trainPhase; previousDoorsOpen = stationWorld\.doorsOpen/);
+});
+
+test("subway stations stream one active world and dispose the previous station", async () => {
+  const world = await readFile(worldUrl, "utf8");
+
+  assert.match(world, /initialStation\?: SubwayStationId/);
+  assert.match(world, /this\.stationId = options\.initialStation \?\? "FIFTH_AV"/);
+  assert.match(world, /for \(const stationId of \[\.\.\.this\.stations\.keys\(\)\]\) if \(stationId !== id\) this\.disposeStation\(stationId\)/);
+  assert.match(world, /private disposeStation\(id: SubwayStationId\)/);
+  assert.match(world, /this\.stationOwnedTextures\.delete\(id\); this\.stations\.delete\(id\)/);
+  assert.doesNotMatch(world, /for \(const id of \["FIFTH_AV", "LEXINGTON", "WEST_FARMS"\]/);
+});

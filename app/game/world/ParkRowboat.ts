@@ -28,6 +28,13 @@ export type ParkRowboatOar = {
   blade: THREE.Mesh;
 };
 
+export type ParkRowboatGripTransforms = {
+  leftPosition: THREE.Vector3;
+  leftQuaternion: THREE.Quaternion;
+  rightPosition: THREE.Vector3;
+  rightQuaternion: THREE.Quaternion;
+};
+
 type RowboatMaterials = {
   hull: THREE.MeshPhysicalMaterial;
   innerHull: THREE.MeshStandardMaterial;
@@ -461,6 +468,7 @@ export class ParkRowboat {
   readonly maxForwardSpeed = 4.8;
   readonly maxReverseSpeed = 2.15;
   readonly oars: [ParkRowboatOar, ParkRowboatOar];
+  readonly gripAnchors: readonly [THREE.Object3D, THREE.Object3D];
 
   private readonly ownedTextures: THREE.Texture[];
   private readonly wakeGroup = new THREE.Group();
@@ -478,6 +486,7 @@ export class ParkRowboat {
     const built = buildBoat(textures, quality, options.boatNumber ?? 7);
     this.body = built.body;
     this.oars = built.oars;
+    this.gripAnchors = [built.oars[0].gripAnchor, built.oars[1].gripAnchor];
     this.ownedTextures = built.ownedTextures;
 
     this.root.name = options.name ?? "central-park-lake-rowboat";
@@ -554,6 +563,15 @@ export class ParkRowboat {
     this.cameraTransform.getWorldPosition(position);
     this.cameraTransform.getWorldQuaternion(quaternion);
     return { position, quaternion };
+  }
+
+  getWorldGripTransforms(target: ParkRowboatGripTransforms) {
+    this.root.updateMatrixWorld(true);
+    this.gripAnchors[0].getWorldPosition(target.leftPosition);
+    this.gripAnchors[0].getWorldQuaternion(target.leftQuaternion);
+    this.gripAnchors[1].getWorldPosition(target.rightPosition);
+    this.gripAnchors[1].getWorldQuaternion(target.rightQuaternion);
+    return target;
   }
 
   setPose(position: THREE.Vector3, rotationY = this.root.rotation.y) {

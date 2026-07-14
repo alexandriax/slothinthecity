@@ -43,6 +43,9 @@ test("authored vehicle, wildlife, and transit audio is resiliently decoded and e
   assert.match(director, /source\.loop = true/);
   assert.match(director, /this\.announcementQueue\.shift\(\)/);
   assert.match(director, /this\.announcementSource \? \.38 : 1/);
+  assert.doesNotMatch(director, /preloadAuthoredAudio/);
+  assert.doesNotMatch(director, /Object\.values\(TRANSIT_ANNOUNCEMENTS\)/);
+  assert.match(director, /loadAuthoredBuffer\(TRANSIT_ANNOUNCEMENTS\[next\.cue\]\)/);
   assert.match(park, /audio\.setCartMotor\(true, traversalSpeed\)/);
   assert.match(park, /audio\.playHawkCue\("near"\)/);
   assert.match(park, /audio\.playHawkCue\("dive"\)/);

@@ -473,7 +473,6 @@ export class PremiumAudioDirector {
     this.masterBus = master; this.musicBus = music; this.ambienceBus = ambience; this.sfxBus = sfx; this.compressor = compressor;
     this.noiseBuffer = this.makeNoiseBuffer(context);
     this.createSoundtrack(context);
-    void this.preloadAuthoredAudio();
     for (const scene of ["central-park", "subway-station", "moving-train", "west-farms", "finale"] satisfies AudioScene[]) this.layers.set(scene, this.createSceneLayer(scene));
     this.applyMix(0.01);
     this.setScene(this.snapshot.scene, { transitionSeconds: 0.12, intensity: this.snapshot.intensity });
@@ -532,11 +531,6 @@ export class PremiumAudioDirector {
     this.soundtrackSource = context.createMediaElementSource(element);
     this.soundtrackSource.connect(this.musicBus);
     this.loadSoundtrack(0);
-  }
-
-  private async preloadAuthoredAudio() {
-    const paths = [...Object.values(AUTHORED_SFX), ...Object.values(TRANSIT_ANNOUNCEMENTS)];
-    await Promise.allSettled(paths.map(path => this.loadAuthoredBuffer(path)));
   }
 
   private loadAuthoredBuffer(path: string) {

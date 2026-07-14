@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import * as THREE from "three";
 import { createSlothRig } from "../app/game/player/SlothRig.ts";
+import { createParkRowboat } from "../app/game/world/ParkRowboat.ts";
+import { createParkUtilityCart } from "../app/game/world/ParkUtilityCart.ts";
 
 test("both lake shores provide usable boats and field-services carts", async () => {
   const [game, world] = await Promise.all([
@@ -60,19 +62,93 @@ test("Bow Bridge and each timber pier provide dry, elevated player support", asy
 });
 
 test("shore forestry and first-person vehicle grips preserve visual clarity", async () => {
-  const [game, world, sloth] = await Promise.all([
+  const [game, world, sloth, cart, rowboat] = await Promise.all([
     readFile(new URL("../app/game/GameClient.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/game/world/RealisticWorld.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/game/player/SlothRig.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/world/ParkUtilityCart.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/world/ParkRowboat.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(world, /containsLakeWater\(x, z, -radius - 6\.5\)/);
   assert.match(world, /containsLakeWater\(x, z, -8\)/);
   assert.match(game, /layoutDepth/);
-  assert.match(game, /setVehiclePose\("cart", -cart\.steeringAngleRadians \/ \.54\)/);
-  assert.match(game, /setVehiclePose\("rowboat", activeBoat\.steeringAngleRadians \/ \.62, activeBoat\.oarStrokePhaseRadians, activeBoat\.rowingEffort\)/);
+  assert.match(game, /getWorldGripTransforms\(vehicleGripTransforms\)/);
+  assert.match(game, /camera\.worldToLocal\(vehicleGripTargets\.left\)/);
+  assert.match(game, /camera\.worldToLocal\(vehicleGripTargets\.right\)/);
+  assert.match(game, /setVehiclePose\("cart", -cart\.steeringAngleRadians \/ \.54, 0, 0, vehicleGripTargets\)/);
+  assert.match(game, /setVehiclePose\("rowboat", activeBoat\.steeringAngleRadians \/ \.62, activeBoat\.oarStrokePhaseRadians, activeBoat\.rowingEffort, vehicleGripTargets\)/);
+  assert.match(cart, /steering-wheel-left-hand-grip/);
+  assert.match(cart, /steering-wheel-right-hand-grip/);
+  assert.match(cart, /getWorldGripTransforms/);
+  assert.match(rowboat, /getWorldGripTransforms/);
   assert.match(sloth, /vehicleMode === "cart"/);
   assert.match(sloth, /vehicleMode === "rowboat"/);
+  assert.doesNotMatch(sloth, /wheelCenterX|gripWorldY|cameraTiltCosine/);
+});
+
+test("mobile vehicle braking emits Space and cart audio follows pause and resume", async () => {
+  const [game, touch] = await Promise.all([
+    readFile(new URL("../app/game/GameClient.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/mobile/TouchControls.tsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(touch, /\(vehicle \|\| arboreal\)/);
+  assert.match(touch, /setHeld\(vehicle \? "Space" : "ShiftLeft", true\)/);
+  assert.match(touch, /\["ShiftLeft", "Space"\]/);
+  assert.match(game, /if \(next === "playing" && cartMotorStateRef\.current\.driving\) audio\.setCartMotor\(true, cartMotorStateRef\.current\.speed\)/);
+  assert.match(game, /else if \(next !== "playing"\) audio\.setCartMotor\(false\)/);
+  assert.match(game, /cartMotorState\.speed = traversalSpeed/);
+});
+
+test("cart and rowboat expose live grip transforms that remain camera-relative during free-look", () => {
+  const texture = new THREE.Texture();
+  const textures = new Proxy({}, { get: () => texture });
+  const cart = createParkUtilityCart(textures, { position: new THREE.Vector3(7, 2, -4), rotationY: .38 });
+  const rowboat = createParkRowboat(textures, { position: new THREE.Vector3(-5, 1, 8), rotationY: -.27 });
+  for (let index = 0; index < 24; index++) {
+    cart.update(1 / 60, { throttle: 0, steering: .8 });
+    rowboat.update(1 / 60, { throttle: .7, steering: -.55 });
+  }
+
+  const transforms = {
+    leftPosition: new THREE.Vector3(), leftQuaternion: new THREE.Quaternion(),
+    rightPosition: new THREE.Vector3(), rightQuaternion: new THREE.Quaternion(),
+  };
+  const cameraPosition = new THREE.Vector3();
+  const cameraQuaternion = new THREE.Quaternion();
+  const camera = new THREE.PerspectiveCamera();
+  camera.rotation.order = "YXZ";
+  const rig = createSlothRig(texture);
+  rig.root.scale.setScalar(.78);
+  rig.left.userData.layoutZ = -.74;
+  rig.right.userData.layoutZ = .74;
+
+  const assertAttached = (label, vehicle, mode, steering, oarPhase = 0, rowingEffort = 0) => {
+    vehicle.getWorldGripTransforms(transforms);
+    vehicle.getWorldCameraTransform(cameraPosition, cameraQuaternion);
+    camera.position.copy(cameraPosition);
+    camera.rotation.set(.31, vehicle.root.rotation.y + 1.08, 0);
+    camera.updateMatrixWorld(true);
+    const targets = {
+      left: camera.worldToLocal(transforms.leftPosition.clone()),
+      right: camera.worldToLocal(transforms.rightPosition.clone()),
+    };
+    rig.setVehiclePose(mode, steering, oarPhase, rowingEffort, targets);
+    rig.animate(2.35, 1.2, false);
+    rig.root.updateMatrixWorld(true);
+    const leftWrist = rig.left.userData.joints.wrist.getWorldPosition(new THREE.Vector3());
+    const rightWrist = rig.right.userData.joints.wrist.getWorldPosition(new THREE.Vector3());
+    assert.ok(leftWrist.distanceTo(targets.left) < 1e-5, `${label} left paw follows the live anchor in free-look`);
+    assert.ok(rightWrist.distanceTo(targets.right) < 1e-5, `${label} right paw follows the live anchor in free-look`);
+    assert.ok(leftWrist.distanceTo(rightWrist) > .16, `${label} paws retain physical separation`);
+  };
+
+  assertAttached("cart", cart, "cart", -cart.steeringAngleRadians / .54);
+  assertAttached("rowboat", rowboat, "rowboat", rowboat.steeringAngleRadians / .62, rowboat.oarStrokePhaseRadians, rowboat.rowingEffort);
+  cart.dispose();
+  rowboat.dispose();
+  texture.dispose();
 });
 
 test("first-person sloth arms use watertight sweeps and overlapping articulated joins", async () => {
@@ -194,7 +270,11 @@ test("wrist volumes remain deeply overlapped and sweep caps shade correctly in e
   ];
 
   for (const [label, mode, steering, oarPhase, rowingEffort, speed, gripping] of poses) {
-    rig.setVehiclePose(mode, steering, oarPhase, rowingEffort);
+    const gripTargets = mode === "none" ? undefined : {
+      left: new THREE.Vector3(-.24 + steering * .025, -.36 + Math.sin(oarPhase) * .03, -.51),
+      right: new THREE.Vector3(.24 + steering * .025, -.36 + Math.sin(oarPhase) * .03, -.51),
+    };
+    rig.setVehiclePose(mode, steering, oarPhase, rowingEffort, gripTargets);
     rig.animate(1.7, speed, gripping);
     assertContinuous(label);
     if (mode === "none") continue;
@@ -205,25 +285,7 @@ test("wrist volumes remain deeply overlapped and sweep caps shade correctly in e
     assert.ok(leftWrist.x < rightWrist.x, `${label} wrists remain on their authored sides`);
     assert.ok(rightWrist.x - leftWrist.x > .08, `${label} wrists never collapse into one another`);
 
-    if (mode === "cart") {
-      const turn = steering * 1.161, cosine = Math.cos(turn), sine = Math.sin(turn);
-      const expectedLeft = new THREE.Vector3(-.01 - .185 * cosine, -.342 - .185 * sine * .948, -.522 + .185 * sine * -.319);
-      const expectedRight = new THREE.Vector3(-.01 + .185 * cosine, -.342 + .185 * sine * .948, -.522 - .185 * sine * -.319);
-      assert.ok(leftWrist.distanceTo(expectedLeft) < 1e-5, `${label} left paw is planted on the steering-wheel rim`);
-      assert.ok(rightWrist.distanceTo(expectedRight) < 1e-5, `${label} right paw is planted on the steering-wheel rim`);
-    } else {
-      const effort = rowingEffort;
-      const sweep = Math.sin(oarPhase) * (.08 + effort * .47);
-      const dip = Math.max(0, Math.cos(oarPhase) * effort);
-      const yaw = -.04 + sweep, roll = -.075 - dip * .11;
-      const x = .63 - .45 * Math.cos(yaw) * Math.cos(roll);
-      const worldY = .625 - .45 * Math.cos(yaw) * Math.sin(roll);
-      const worldZ = .2 + .45 * Math.sin(yaw);
-      const deltaY = worldY - 1.34, deltaZ = worldZ - .96;
-      const expectedY = Math.cos(.045) * deltaY - Math.sin(.045) * deltaZ;
-      const expectedZ = Math.sin(.045) * deltaY + Math.cos(.045) * deltaZ;
-      assert.ok(leftWrist.distanceTo(new THREE.Vector3(-x, expectedY, expectedZ)) < 1e-5, `${label} left paw follows its oar grip`);
-      assert.ok(rightWrist.distanceTo(new THREE.Vector3(x, expectedY, expectedZ)) < 1e-5, `${label} right paw follows its oar grip`);
-    }
+    assert.ok(leftWrist.distanceTo(gripTargets.left) < 1e-5, `${label} left paw follows its supplied vehicle grip`);
+    assert.ok(rightWrist.distanceTo(gripTargets.right) < 1e-5, `${label} right paw follows its supplied vehicle grip`);
   }
 });

@@ -13,6 +13,13 @@ export type SubwayQuality = "mobile" | "balanced" | "ultra";
 export type SubwayWorldOptions = {
   /** Scales cosmetic geometry and local lights without changing traversal or progression. */
   quality?: SubwayQuality;
+  /** Builds only the station being entered; later stations stream in through setStation. */
+  initialStation?: SubwayStationId;
+};
+
+export type SubwayProgressState = {
+  hasMetroCard: boolean;
+  fifthAvenueFarePaid: boolean;
 };
 
 type SubwayDetail = {
@@ -73,6 +80,7 @@ type StationRig = {
   fareReaders: THREE.MeshBasicMaterial[];
   metroCard: THREE.Group | null;
   passengerFlows: StationPassengerFlow[];
+  platformCheckpoint: THREE.Vector3;
   root: THREE.Group;
   spawn: THREE.Vector3;
   turnstileRotors: THREE.Group[];
@@ -855,7 +863,8 @@ function buildStation(id: SubwayStationId, textures: GameTextures, adTextures: T
   const fifthEntryY = THREE.MathUtils.lerp(CONCOURSE_FLOOR_Y, STREET_FLOOR_Y, .5) + 1.48;
   const spawn = id === "FIFTH_AV" ? new THREE.Vector3(0, fifthEntryY, fifthEntryZ) : id === "LEXINGTON" ? new THREE.Vector3(0, CONCOURSE_FLOOR_Y + 1.48, 26) : new THREE.Vector3(-6, 1.48, -10);
   const waypoint = id === "WEST_FARMS" ? new THREE.Vector3(0, STREET_FLOOR_Y, 46) : new THREE.Vector3(-6, 0, TRAIN_STOP_Z);
-  return { fareReaders, metroCard, passengerFlows, root, spawn, turnstileRotors, waypoint } satisfies StationRig;
+  const platformCheckpoint = id === "WEST_FARMS" ? spawn.clone() : new THREE.Vector3(-6, 1.48, -3.6);
+  return { fareReaders, metroCard, passengerFlows, platformCheckpoint, root, spawn, turnstileRotors, waypoint } satisfies StationRig;
 }
 
 export class SubwayWorld {
@@ -865,6 +874,10 @@ export class SubwayWorld {
   readonly wrongTrain: TrainRig;
   readonly ownedTextures: THREE.Texture[] = [];
   readonly quality: SubwayQuality;
+  private readonly gameTextures: GameTextures;
+  private readonly adTextures: THREE.Texture[];
+  private readonly bronxMosaicTexture: THREE.Texture;
+  private readonly stationOwnedTextures = new Map<SubwayStationId, THREE.Texture[]>();
   stationId: SubwayStationId = "FIFTH_AV";
   trainPhase: TrainPhase = "APPROACHING";
   secondsToTrain = 4;
@@ -876,17 +889,18 @@ export class SubwayWorld {
 
   constructor(scene: THREE.Scene, textures: GameTextures, options: SubwayWorldOptions = {}) {
     this.quality = options.quality ?? "balanced";
+    this.gameTextures = textures;
+    this.stationId = options.initialStation ?? "FIFTH_AV";
     const detail = SUBWAY_DETAIL[this.quality];
     this.root.name = "premium-nyc-subway-campaign"; scene.add(this.root);
     const loader = new THREE.TextureLoader();
-    const adTextures = [
+    this.adTextures = [
       loader.load("/game/ads/slow-superpower.webp"), loader.load("/game/ads/branch-out.webp"),
       loader.load("/game/ads/canopy-commute.webp"), loader.load("/game/ads/slow-fashion.webp"),
       loader.load("/game/ads/bronx-bound.webp"), loader.load("/game/ads/ramble-after-dark.webp"),
     ];
-    adTextures.forEach(texture => { texture.colorSpace = THREE.SRGBColorSpace; texture.anisotropy = this.quality === "ultra" ? 8 : 4; }); this.ownedTextures.push(...adTextures);
-    const bronxMosaicTexture = loader.load("/game/subway/bronx-zoo-mosaic.webp"); bronxMosaicTexture.colorSpace = THREE.SRGBColorSpace; bronxMosaicTexture.anisotropy = this.quality === "ultra" ? 8 : 4; this.ownedTextures.push(bronxMosaicTexture);
-    for (const id of ["FIFTH_AV", "LEXINGTON", "WEST_FARMS"] as const) { const station = buildStation(id, textures, adTextures, bronxMosaicTexture, this.ownedTextures, this.quality); station.root.visible = false; this.stations.set(id, station); this.root.add(station.root); }
+    this.adTextures.forEach(texture => { texture.colorSpace = THREE.SRGBColorSpace; texture.anisotropy = this.quality === "ultra" ? 8 : 4; }); this.ownedTextures.push(...this.adTextures);
+    this.bronxMosaicTexture = loader.load("/game/subway/bronx-zoo-mosaic.webp"); this.bronxMosaicTexture.colorSpace = THREE.SRGBColorSpace; this.bronxMosaicTexture.anisotropy = this.quality === "ultra" ? 8 : 4; this.ownedTextures.push(this.bronxMosaicTexture);
     this.correctTrain = buildTrain(textures, "N", "QUEENS-BOUND", true, -1.1, this.quality, this.ownedTextures); this.wrongTrain = buildTrain(textures, "W", "DOWNTOWN / BROOKLYN", false, 1.1, this.quality, this.ownedTextures); this.root.add(this.correctTrain.root, this.wrongTrain.root);
     const ambient = new THREE.HemisphereLight("#e9eee5", "#394039", 1.08), fill = new THREE.AmbientLight("#c8d1c7", .48);
     this.root.add(ambient, fill);
@@ -900,7 +914,7 @@ export class SubwayWorld {
       const concourseStrip = new THREE.Mesh(new RoundedBoxGeometry(9.4, .07, .22, 2, .025), fluorescent); concourseStrip.position.set(0, z < 32 ? 7.15 : 9.95, z); this.root.add(concourseStrip);
       if (z < 32 || this.quality !== "mobile") for (const x of [-4.6, 4.6]) { const fixture = new THREE.PointLight("#e5f1d3", z < 32 ? 34 : 26, 16, 1.25); fixture.position.set(x, z < 32 ? 6.9 : 9.7, z); this.root.add(fixture); }
     }
-    this.setStation("FIFTH_AV");
+    this.setStation(this.stationId);
   }
 
   get spawn() { return this.stations.get(this.stationId)!.spawn; }
@@ -914,8 +928,30 @@ export class SubwayWorld {
     return this.stations.get(this.stationId)!.waypoint;
   }
 
+  get progressState(): SubwayProgressState {
+    return { hasMetroCard: this.hasMetroCard, fifthAvenueFarePaid: this.farePaidByStation.get("FIFTH_AV") === true };
+  }
+
+  restoreProgressState(progress: SubwayProgressState) {
+    this.hasMetroCard = progress.hasMetroCard || progress.fifthAvenueFarePaid;
+    this.farePaidByStation.set("FIFTH_AV", progress.fifthAvenueFarePaid);
+    this.applyFareState();
+    return this;
+  }
+
+  checkpointSpawn(platform = false) {
+    const station = this.stations.get(this.stationId)!;
+    return (platform ? station.platformCheckpoint : station.spawn).clone();
+  }
+
   setStation(id: SubwayStationId) {
-    this.stationId = id; for (const [stationId, station] of this.stations) station.root.visible = stationId === id;
+    for (const stationId of [...this.stations.keys()]) if (stationId !== id) this.disposeStation(stationId);
+    if (!this.stations.has(id)) {
+      const stationTextures: THREE.Texture[] = [];
+      const station = buildStation(id, this.gameTextures, this.adTextures, this.bronxMosaicTexture, stationTextures, this.quality);
+      this.stations.set(id, station); this.stationOwnedTextures.set(id, stationTextures); this.root.add(station.root);
+    }
+    this.stationId = id;
     const westFarms = id === "WEST_FARMS"; this.correctTrain.root.visible = this.wrongTrain.root.visible = !westFarms; this.serviceCycle = -1;
     if (id === "LEXINGTON") {
       this.configureTrain(this.correctTrain, "5", "UPTOWN / BRONX", true, "#00933c");
@@ -927,6 +963,20 @@ export class SubwayWorld {
     this.setDoorAmount(this.correctTrain, 0); this.setDoorAmount(this.wrongTrain, 0); this.doorOpenAmount = 0; this.doorsOpen = false; this.applyFareState();
     this.correctTrain.root.position.z = -TRAIN_APPROACH_DISTANCE; this.wrongTrain.root.position.z = TRAIN_APPROACH_DISTANCE;
     this.root.updateMatrixWorld(true); return this;
+  }
+
+  private disposeStation(id: SubwayStationId) {
+    const station = this.stations.get(id); if (!station) return;
+    const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
+    station.root.traverse(object => {
+      if (!(object instanceof THREE.Mesh)) return;
+      geometries.add(object.geometry);
+      const meshMaterials = Array.isArray(object.material) ? object.material : [object.material];
+      meshMaterials.forEach(material => materials.add(material));
+    });
+    station.root.removeFromParent(); geometries.forEach(geometry => geometry.dispose()); materials.forEach(material => material.dispose());
+    new Set(this.stationOwnedTextures.get(id) ?? []).forEach(texture => texture.dispose());
+    this.stationOwnedTextures.delete(id); this.stations.delete(id);
   }
 
   private configureTrain(train: TrainRig, route: string, direction: string, correct: boolean, color: string) {
@@ -1142,6 +1192,7 @@ export class SubwayWorld {
   }
 
   dispose() {
+    for (const stationId of [...this.stations.keys()]) this.disposeStation(stationId);
     this.root.removeFromParent();
     const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
     this.root.traverse(object => { if (!(object instanceof THREE.Mesh)) return; geometries.add(object.geometry); const meshMaterials = Array.isArray(object.material) ? object.material : [object.material]; meshMaterials.forEach(material => materials.add(material)); });

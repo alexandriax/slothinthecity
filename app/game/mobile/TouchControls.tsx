@@ -56,8 +56,8 @@ export function TouchControls({ arboreal, prompt, showSense = true, vehicle }: T
 
   useEffect(() => {
     // A mode change can unmount Grip / Brake before iOS delivers pointerup.
-    // Release Shift at the state boundary so it can never remain latched.
-    if (held.current.delete("ShiftLeft")) emitKey("ShiftLeft", false);
+    // Release either held action at the state boundary so it cannot latch.
+    for (const code of ["ShiftLeft", "Space"]) if (held.current.delete(code)) emitKey(code, false);
   }, [arboreal, vehicle]);
 
   return <div className={`touch-ui ${expanded ? "expanded" : "collapsed"}`}>
@@ -68,7 +68,7 @@ export function TouchControls({ arboreal, prompt, showSense = true, vehicle }: T
       <div className="touch-stick" aria-label="Movement joystick" onPointerDown={(event) => { try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch {} moveStick(event); }} onPointerMove={(event) => { if (typeof event.currentTarget.hasPointerCapture !== "function" || event.currentTarget.hasPointerCapture(event.pointerId)) moveStick(event); }} onPointerUp={stopStick} onPointerCancel={stopStick} onLostPointerCapture={stopStick}><span /></div>
       <div className="touch-look" aria-label="Look area" onPointerDown={(event) => { try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch {} lookPoint.current = { x: event.clientX, y: event.clientY }; }} onPointerMove={(event) => { if (typeof event.currentTarget.hasPointerCapture !== "function" || event.currentTarget.hasPointerCapture(event.pointerId)) moveLook(event); }} onPointerUp={() => { lookPoint.current = null; }} onPointerCancel={() => { lookPoint.current = null; }} onLostPointerCapture={() => { lookPoint.current = null; }}/>
       {actionLabel && <button className="touch-action" aria-label={vehicle ? `Exit ${vehicle === "cart" ? "field-services cart" : "rowboat"}` : prompt} onClick={() => { emitKey("KeyE", true); emitKey("KeyE", false); }}>{actionLabel}</button>}
-      {(vehicle === "cart" || arboreal) && <button className="touch-grip" aria-label={vehicle === "cart" ? "Hold cart brake" : "Hold grip"} onPointerDown={(event) => { try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch {} setHeld("ShiftLeft", true); }} onPointerUp={() => setHeld("ShiftLeft", false)} onPointerCancel={() => setHeld("ShiftLeft", false)} onLostPointerCapture={() => setHeld("ShiftLeft", false)}>{vehicle === "cart" ? "Brake" : "Grip"}</button>}
+      {(vehicle || arboreal) && <button className="touch-grip" aria-label={vehicle ? `Hold ${vehicle} brake` : "Hold grip"} onPointerDown={(event) => { try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch {} setHeld(vehicle ? "Space" : "ShiftLeft", true); }} onPointerUp={() => setHeld(vehicle ? "Space" : "ShiftLeft", false)} onPointerCancel={() => setHeld(vehicle ? "Space" : "ShiftLeft", false)} onLostPointerCapture={() => setHeld(vehicle ? "Space" : "ShiftLeft", false)}>{vehicle ? "Brake" : "Grip"}</button>}
       {arboreal && <button className="touch-down" aria-label="Descend from canopy" onClick={() => { emitKey("ControlLeft", true); emitKey("ControlLeft", false); }}>Down</button>}
       {!vehicle && showSense && <button className="touch-sense" aria-label="Toggle scent vision" onClick={() => { emitKey("KeyC", true); emitKey("KeyC", false); }}>Sense</button>}
     </>}

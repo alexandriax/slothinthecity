@@ -65,6 +65,18 @@ test("train doors create real passages and walking through the lit exit complete
   assert.match(source, /CAR_HALF_WIDTH \+ \.62/);
 });
 
+test("passenger exchange recycles riders off-car and restores authored poses", async () => {
+  const source = await readFile(sourceUrl, "utf8");
+
+  assert.match(source, /baseRotation: number/);
+  assert.match(source, /passenger\.baseRotation = placement\.rotation/);
+  assert.match(source, /const recycleFromPlatform = passenger\.movable && !passenger\.group\.visible/);
+  assert.match(source, /recycleFromPlatform \? "BOARD"/);
+  assert.match(source, /passenger\.group\.position\.set\(this\.currentStop\.side \* \(CAR_HALF_WIDTH \+ \.58\)[\s\S]{0,160}passenger\.group\.visible = true/);
+  assert.match(source, /passenger\.group\.visible = passenger\.flow !== "ALIGHT"[\s\S]{0,180}passenger\.group\.rotation\.y = passenger\.baseRotation/);
+  assert.doesNotMatch(source, /phase === "APPROACHING"[\s\S]{0,320}passenger\.group\.visible = true/);
+});
+
 test("onboard wayfinding reflects the authored MTA route and transfer topology", async () => {
   const source = await readFile(sourceUrl, "utf8");
 

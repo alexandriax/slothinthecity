@@ -196,7 +196,9 @@ test("park and finale landmarks use complete campuses and textured articulated c
 test("subway service cycles every 30 seconds and presents route-correct trains", async () => {
   const world = await readFile(new URL("../app/game/world/SubwayWorld.ts", import.meta.url), "utf8");
 
-  assert.match(world, /"FIFTH_AV", "LEXINGTON", "WEST_FARMS"/);
+  assert.match(world, /SubwayStationId = "FIFTH_AV" \| "LEXINGTON" \| "WEST_FARMS"/);
+  assert.match(world, /initialStation\?: SubwayStationId/);
+  assert.match(world, /private disposeStation\(id: SubwayStationId\)/);
   assert.match(world, /SUBWAY_TRAIN_INTERVAL_SECONDS = 30/);
   assert.match(world, /const cycle = elapsed % SUBWAY_TRAIN_INTERVAL_SECONDS/);
   assert.match(world, /cycle < 4[\s\S]{0,240}cycle < 16[\s\S]{0,240}cycle < 21/);
@@ -248,9 +250,10 @@ test("wrong trains restore the current station checkpoint and correct trains adv
   const checkpoint = subway.slice(checkpointStart, finishRideStart);
   const finishRide = subway.slice(finishRideStart, frameStart);
 
-  assert.match(checkpoint, /stationWorld\.setStation\(station\)/);
-  assert.match(checkpoint, /player\.copy\(stationWorld\.spawn\)/);
+  assert.match(checkpoint, /stationWorld\.setStation\(station\)\.restoreProgressState\(subwayProgress\)/);
+  assert.match(checkpoint, /player\.copy\(stationWorld\.checkpointSpawn\(resumeAtPlatform\)\)/);
   assert.match(checkpoint, /stationClock = waitForNextTrain \? 18 : 0/);
+  assert.match(checkpoint, /previousDoorsOpen = stationWorld\.doorsOpen/);
   assert.match(checkpoint, /boarded = null/);
   assert.match(finishRide, /if \(!boarded\.correct\)[\s\S]{0,220}checkpoint\(currentStation/);
   assert.match(finishRide, /Wrong train — checkpoint restored/);
@@ -292,7 +295,7 @@ test("train boarding streams a dedicated interior world with crowd and door game
   ]);
 
   assert.match(subway, /stationWorld\.dispose\(\); stationWorld = null; interiorWorld = new TrainInteriorWorld/);
-  assert.match(subway, /stationWorld \?\?= createStationWorld\(\)/);
+  assert.match(subway, /stationWorld \?\?= createStationWorld\(station\)/);
   assert.match(subway, /new TrainInteriorWorld\(scene, textures/);
   assert.match(subway, /data-loaded-world=\{stage === "RIDING" \? "train-interior"/);
   assert.match(subway, /boardThroughOpenDoor\(option\)/);

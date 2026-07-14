@@ -79,6 +79,7 @@ type PassengerRig = {
   armRight: THREE.Group;
   armRightBaseX: number;
   base: THREE.Vector3;
+  baseRotation: number;
   flow: "ALIGHT" | "BOARD" | "STAY";
   flowDoorZ: number;
   group: THREE.Group;
@@ -256,7 +257,7 @@ function createPassenger(index: number, quality: TrainInteriorQuality, pose: "ho
   const inertLeft = new THREE.Group(), inertRight = new THREE.Group(), inertHead = new THREE.Group();
   return {
     armLeft: inertLeft, armLeftBaseX: 0, armRight: inertRight, armRightBaseX: 0, base: new THREE.Vector3(), group, head: inertHead,
-    flow: "STAY", flowDoorZ: 0, movable: pose !== "seated", phase: index * 1.73, seated: pose === "seated",
+    baseRotation: 0, flow: "STAY", flowDoorZ: 0, movable: pose !== "seated", phase: index * 1.73, seated: pose === "seated",
   } satisfies PassengerRig;
 }
 
@@ -459,12 +460,15 @@ export class TrainInteriorWorld {
       { pose: "seated", rotation: Math.PI / 2, x: 1.02, z: -7.12 }, { pose: "standing", rotation: Math.PI + .15, x: -.42, z: -7.75 },
     ];
     for (let index = 0; index < count; index++) {
-      const placement = placements[index], passenger = createPassenger(index, this.quality, placement.pose, this.ownedTextures); passenger.base.set(placement.x, 0, placement.z); passenger.group.position.copy(passenger.base); passenger.group.rotation.y = placement.rotation; this.passengers.push(passenger); this.root.add(passenger.group);
+      const placement = placements[index], passenger = createPassenger(index, this.quality, placement.pose, this.ownedTextures); passenger.base.set(placement.x, 0, placement.z); passenger.baseRotation = placement.rotation; passenger.group.position.copy(passenger.base); passenger.group.rotation.y = passenger.baseRotation; this.passengers.push(passenger); this.root.add(passenger.group);
     }
   }
 
   reset() {
     this.phase = "CRUISING"; this.phaseTime = 0; this.elapsed = 0; this.stopIndex = 0; this.pendingEvent = null; this.doorsOpenAmount = 0; this.cameraOffset.set(0, 0, 0); this.cameraRoll = 0; this.wrongDoorNotified = false;
+    this.passengers.forEach(passenger => {
+      passenger.flow = "STAY"; passenger.group.visible = true; passenger.group.position.copy(passenger.base); passenger.group.rotation.y = passenger.baseRotation; passenger.group.rotation.z = 0;
+    });
     this.setDoorAmount(0); return this;
   }
 
@@ -493,15 +497,20 @@ export class TrainInteriorWorld {
   private enterPhase(phase: TrainInteriorPhase) {
     this.phase = phase; this.phaseTime = 0; this.wrongDoorNotified = false;
     if (phase === "APPROACHING") {
-      // Re-seed the visible car before each stop. Riders who exited at the last
-      // station are replaced by the next station's boarding cohort off-camera.
-      this.passengers.forEach(passenger => { passenger.group.visible = true; passenger.group.position.copy(passenger.base); passenger.flow = "STAY"; });
+      // Keep riders who alighted at the previous stop off-car. They become the
+      // next platform's boarding cohort only once the doors open, rather than
+      // visibly popping back into their old seats during the approach.
+      this.passengers.forEach(passenger => { passenger.flow = "STAY"; passenger.group.rotation.y = passenger.baseRotation; });
     }
     if (phase === "DWELL") {
       this.passengers.forEach((passenger, index) => {
-        passenger.flow = !passenger.movable ? "STAY" : (index + this.stopIndex) % 3 === 0 ? "ALIGHT" : (index + this.stopIndex) % 3 === 1 ? "BOARD" : "STAY";
+        const recycleFromPlatform = passenger.movable && !passenger.group.visible;
+        passenger.flow = !passenger.movable ? "STAY" : recycleFromPlatform ? "BOARD" : (index + this.stopIndex) % 3 === 0 ? "ALIGHT" : "STAY";
         passenger.flowDoorZ = DOOR_Z[(index + this.stopIndex) % DOOR_Z.length] + (index % 2 ? .25 : -.25);
-        if (passenger.flow === "BOARD") passenger.group.position.set(this.currentStop.side * (CAR_HALF_WIDTH + .58), 0, passenger.flowDoorZ);
+        if (passenger.flow === "BOARD") {
+          passenger.group.position.set(this.currentStop.side * (CAR_HALF_WIDTH + .58), 0, passenger.flowDoorZ);
+          passenger.group.visible = true;
+        } else passenger.group.rotation.y = passenger.baseRotation;
       });
       this.pendingEvent = this.isDestination ? { type: "DESTINATION_READY", stop: this.currentStop.name } : { type: "INTERMEDIATE_STOP", stop: this.currentStop.name };
     }
@@ -509,6 +518,7 @@ export class TrainInteriorWorld {
       this.passengers.forEach(passenger => {
         passenger.group.visible = passenger.flow !== "ALIGHT";
         if (passenger.flow === "BOARD") passenger.group.position.copy(passenger.base);
+        passenger.group.rotation.y = passenger.baseRotation;
       });
     }
   }
