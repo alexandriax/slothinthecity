@@ -70,6 +70,14 @@ test("failed rides restore the paid platform checkpoint without replaying door a
   assert.match(game, /stationWorld\.update\(stationClock\); previousTrainPhase = stationWorld\.trainPhase; previousDoorsOpen = stationWorld\.doorsOpen/);
 });
 
+test("successful transfers arrive on the paid platform side of fare control", async () => {
+  const game = await readFile(gameUrl, "utf8");
+
+  assert.match(game, /checkpoint\("LEXINGTON", "Lexington Av \/ 59 St — transfer down to the uptown 5 express platform", false, true, true\)/);
+  assert.match(game, /qaInput === "lexingtontransfer"/);
+  assert.match(game, /paid-area transfer platform/);
+});
+
 test("subway stations stream one active world and dispose the previous station", async () => {
   const world = await readFile(worldUrl, "utf8");
 

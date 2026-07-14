@@ -118,7 +118,8 @@ test("foraging opens the Bow Bridge, island ticket, zoo, and subway campaign wit
   assert.match(landmarks, /subway-sidewalk-with-true-stairwell-cutout/);
   assert.match(landmarks, /position\.set\(0, -\.085 - step \* \.165/);
   assert.match(landmarks, /subway-mid-descent-transition-step/);
-  assert.match(world, /subwayLocalX <= 3\.02 && subwayLocalZ <= -\.65 && subwayLocalZ >= -9\.65/);
+  assert.match(world, /subwayLocalX <= SUBWAY_STAIR_CUTOUT\.halfWidth \+ \.07/);
+  assert.match(world, /terrainGeometryWithSubwayCutout/);
   assert.match(landmarks, /UPTOWN  ·  DOWNTOWN  ·  QUEENS  VIA CONCOURSE/);
   assert.doesNotMatch(landmarks, /QUEENS & ASTORIA/);
   assert.doesNotMatch(game, /qaInput === "gate"|gatecomplete|Follow the marker to sanctuary/);

@@ -19,6 +19,11 @@ test("premium humans use twenty identities and head-conforming photographic faci
   assert.match(human, /clothingVariant/);
   assert.match(human, /continuous-tailored-human-arm/);
   assert.match(human, /continuous-tailored-human-leg/);
+  assert.match(source, /onSkinTone\?\./);
+  assert.match(source, /backgroundMask = THREE\.MathUtils\.smoothstep/);
+  assert.match(human, /face-atlas-sampled-seamless/);
+  assert.match(human, /depthWrite: false/);
+  assert.match(human, /anatomical-head-neck-skin-transition/);
   assert.doesNotMatch(human, /elbowBlend|kneeBlend|ConeGeometry/);
   assert.doesNotMatch(human, /eyeWhite|noseBridge|photoreal-generated-face-albedo|const lips =/);
 });
@@ -36,8 +41,8 @@ test("zoo sloth friends use continuous anatomical silhouettes", async () => {
 test("premium character detail scales with the active quality tier", async () => {
   const source = await readFile(new URL("../app/game/world/PremiumCharacter.ts", import.meta.url), "utf8");
 
-  assert.match(source, /quality > \.86 \? 32 : quality > \.62 \? 22 : 14/);
-  assert.match(source, /quality > \.86 \? 34 : quality > \.62 \? 24 : 16/);
+  assert.match(source, /quality > \.86 \? 34 : quality > \.62 \? 24 : 18/);
+  assert.match(source, /quality > \.86 \? 36 : quality > \.62 \? 26 : 20/);
   assert.match(source, /quality > \.86 \? 384 : quality > \.62 \? 256 : 128/);
   assert.match(source, /quality > \.92 \? 40 : quality > \.68 \? 28 : 18/);
 });
