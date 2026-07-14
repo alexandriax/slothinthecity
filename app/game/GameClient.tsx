@@ -384,7 +384,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
       raf = requestAnimationFrame(frame); if (timestamp !== undefined) quality.reportFrame(timestamp); timer.update(timestamp); const delta = Math.min(timer.getDelta(), .05);
       if (phaseRef.current === "playing") {
         gameTime += delta;
-        if (!qaPrepared && (["autoclimb", "autobranch", "autotransfer", "autodrop", "autoflow", "cart", "treecollision", "watercollision", "swim", "energy", "rest", "hawk", "bridgewalk", "bowbridge", "rowboat", "ticketisland", "zoo", "subwayentrance"].includes(qaInput ?? ""))) {
+        if (!qaPrepared && (["autoclimb", "autobranch", "autotransfer", "autodrop", "autoflow", "cart", "treecollision", "watercollision", "swim", "energy", "rest", "hawk", "bridgewalk", "bowbridge", "rowboat", "ticketisland", "ticket", "zoo", "subwayentrance"].includes(qaInput ?? ""))) {
           const testTree = nearestTree(player);
           if (qaInput === "autoflow") {
             const flowRoute = world.canopyCorridors[0]?.routeIds[0] !== undefined ? world.branches[world.canopyCorridors[0].routeIds[0]] : undefined;
@@ -408,12 +408,13 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
             energy = 72; keys.add("KeyW"); qaPrepared = true;
           } else if (qaInput === "rest") {
             energy = 38; qaPrepared = true;
-          } else if (["bowbridge", "rowboat", "ticketisland", "zoo", "subwayentrance"].includes(qaInput ?? "")) {
+          } else if (["bowbridge", "rowboat", "ticketisland", "ticket", "zoo", "subwayentrance"].includes(qaInput ?? "")) {
             world.buds.slice(0, 5).forEach((bud, index) => { collected.current.add(index); bud.visible = false; });
             alert = 5; nextHawkPassAt = Number.POSITIVE_INFINITY;
             if (qaInput === "rowboat") { parkStage = "LAKE_TICKET"; rowboats[0].getWorldEntryPosition(player); player.y = waterSurfaceY + .58; actionRequested = true; }
             else if (qaInput === "bowbridge") { parkStage = "BOW_BRIDGE"; player.set(BOW_BRIDGE_TARGET.x - 9, groundHeight(BOW_BRIDGE_TARGET.x - 9, BOW_BRIDGE_TARGET.z + 8), BOW_BRIDGE_TARGET.z + 8); yaw = -1.01; }
             else if (qaInput === "ticketisland") { parkStage = "LAKE_TICKET"; player.copy(world.ticketIslandLanding); player.y = groundHeight(player.x, player.z); yaw = 0; }
+            else if (qaInput === "ticket") { parkStage = "LAKE_TICKET"; player.copy(world.ticketTarget); player.z += 2.4; player.y = groundHeight(player.x, player.z); yaw = 0; }
             else if (qaInput === "zoo") { ticketCollected = true; world.setTicketCollected(true); parkStage = "ZOO"; campaign.attendant.getWorldPosition(player); player.z += 3.6; player.y = groundHeight(player.x, player.z); yaw = 0; }
             else { ticketCollected = true; world.setTicketCollected(true); parkStage = "SUBWAY_ENTRANCE"; player.set(SUBWAY_TARGET.x, groundHeight(SUBWAY_TARGET.x, SUBWAY_TARGET.z + 5), SUBWAY_TARGET.z + 5); yaw = 0; }
             qaPrepared = true;
@@ -869,7 +870,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
       </div>
     </section>}
     {phase === "paused" && <section className="screen"><div className="pause-card"><div className="eyebrow">Field session paused · P</div><h2>Listen to the park.</h2><p>Your progress is safe. The hawk will keep circling, but the canopy is patient.</p><div className="actions"><button className="primary" onClick={resume}>Return to trail <b>→</b></button><button className="secondary" onClick={() => audio.toggleMuted()}>{audioState.muted ? "Enable sound" : "Mute sound"}</button></div></div></section>}
-    {phase === "playing" && <TouchControls arboreal={hud.arboreal} prompt={hud.prompt} vehicle={hud.vehicle} />}
+    {phase === "playing" && <TouchControls arboreal={hud.arboreal} prompt={hud.prompt} promptKey={hud.promptKey} showPause vehicle={hud.vehicle} />}
   </main>;
 }
 

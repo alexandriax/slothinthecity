@@ -140,11 +140,12 @@ button { font: inherit; }
 .touch-stick:before { width:1px; top:14px; bottom:14px; left:50%; }.touch-stick:after { height:1px; left:14px; right:14px; top:50%; }
 .touch-stick span { position:absolute; left:50%; top:50%; width:38px; height:38px; transform:translate(calc(-50% + var(--stick-x)),calc(-50% + var(--stick-y))); border:1px solid rgba(217,239,139,.46); border-radius:50%; background:rgba(19,34,25,.72); box-shadow:0 6px 18px rgba(0,0,0,.26),inset 0 0 12px rgba(217,239,139,.07); transition:transform .06s linear; }
 .touch-look { position:absolute; inset:0 0 0 42%; z-index:1; }
-.touch-action,.touch-grip,.touch-down,.touch-sense { position:absolute; z-index:3; display:grid; place-items:center; border:1px solid rgba(233,240,215,.21); border-radius:50%; background:rgba(7,18,14,.48); color:var(--ink); box-shadow:0 10px 26px rgba(0,0,0,.2),inset 0 1px rgba(255,255,255,.035); backdrop-filter:blur(10px); font-size:8px; font-weight:750; letter-spacing:.08em; text-transform:uppercase; }
+.touch-action,.touch-grip,.touch-down,.touch-sense,.touch-pause { position:absolute; z-index:3; display:grid; place-items:center; border:1px solid rgba(233,240,215,.21); border-radius:50%; background:rgba(7,18,14,.48); color:var(--ink); box-shadow:0 10px 26px rgba(0,0,0,.2),inset 0 1px rgba(255,255,255,.035); backdrop-filter:blur(10px); font-size:8px; font-weight:750; letter-spacing:.08em; text-transform:uppercase; }
 .touch-action { right:max(14px,env(safe-area-inset-right)); bottom:max(96px,calc(env(safe-area-inset-bottom) + 88px)); width:64px; height:64px; border-color:rgba(217,239,139,.44); color:var(--acid); }
 .touch-grip { right:max(16px,env(safe-area-inset-right)); bottom:max(16px,calc(env(safe-area-inset-bottom) + 10px)); width:52px; height:52px; }
 .touch-down { right:max(80px,calc(env(safe-area-inset-right) + 64px)); bottom:max(80px,calc(env(safe-area-inset-bottom) + 72px)); width:48px; height:48px; color:var(--amber); }
 .touch-sense { right:max(82px,calc(env(safe-area-inset-right) + 66px)); bottom:max(18px,calc(env(safe-area-inset-bottom) + 12px)); width:44px; height:44px; color:rgba(242,240,223,.62); font-size:7px; }
+.touch-pause { right:max(134px,calc(env(safe-area-inset-right) + 118px)); bottom:max(18px,calc(env(safe-area-inset-bottom) + 12px)); width:44px; height:44px; color:rgba(242,240,223,.52); font-size:7px; }
 
 @media(max-width:760px){
   .screen-content{grid-template-columns:1fr;align-items:center}.briefing{display:none}.field-note{display:none}.hero-copy{margin-top:28px}.hero-title{font-size:20vw}.screen{background:rgba(3,10,8,.9)}
@@ -175,6 +176,7 @@ button { font: inherit; }
   .touch-grip{right:max(12px,env(safe-area-inset-right));bottom:max(8px,env(safe-area-inset-bottom));width:48px;height:48px}
   .touch-down{right:max(70px,calc(env(safe-area-inset-right) + 58px));bottom:max(62px,calc(env(safe-area-inset-bottom) + 54px));width:46px;height:46px}
   .touch-sense{right:max(72px,calc(env(safe-area-inset-right) + 60px));bottom:max(10px,env(safe-area-inset-bottom));width:44px;height:44px}
+  .touch-pause{right:max(124px,calc(env(safe-area-inset-right) + 112px));bottom:max(10px,env(safe-area-inset-bottom));width:44px;height:44px}
 }
 @media(max-height:500px) and (orientation:landscape) and (max-width:900px), (max-height:500px) and (orientation:landscape) and (pointer:coarse){.toast{top:max(48px,calc(env(safe-area-inset-top) + 43px))}.game-shell[data-buds="5"] .toast{top:max(82px,calc(env(safe-area-inset-top) + 77px))}}
 @media(max-height:500px) and (orientation:landscape){.game-shell[data-touch-capable="true"] .toast{top:max(48px,calc(env(safe-area-inset-top) + 43px))}.game-shell[data-touch-capable="true"][data-buds="5"] .toast{top:max(82px,calc(env(safe-area-inset-top) + 77px))}}

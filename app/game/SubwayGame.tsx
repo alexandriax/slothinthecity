@@ -192,7 +192,7 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
     {stage !== "COMPLETE" && <MobileHud alert={stage === "RIDING" ? 0 : 8} buds={5} driving={false} energy={100} hawkPhase="PATROL" motion={hud.motion} objectiveShort={hud.objectiveShort} objectiveValue={hud.value} showMotion={false} speed={0} swimming={false}/>}
     {stage !== "COMPLETE" && <GoalWayfinder active={hud.wayfinding} bearing={hud.bearing} distance={hud.distance} label={hud.waypoint}/>}
     {stage !== "COMPLETE" && <div className={`crosshair ${hud.prompt ? "targeted" : ""}`}/>} {toast && stage !== "COMPLETE" && <div className="toast" role="status" aria-live="polite">{toast}</div>}
-    {stage !== "COMPLETE" && <TouchControls arboreal={false} prompt={hud.prompt} showSense={false} vehicle={null}/>}
+    {stage !== "COMPLETE" && <TouchControls arboreal={false} prompt={hud.prompt} promptKey={hud.promptKey} showSense={false} vehicle={null}/>}
     {stage === "COMPLETE" && <section className="screen finale-screen"><div className="pause-card"><div className="eyebrow">Bronx Zoo · Asia Gate</div><h2>Mission complete.</h2><p>You crossed the Ramble, rowed The Lake, navigated two subway stations, emerged into the Bronx, and checked in with the attendant before reuniting with your friends.</p><div className="actions"><button className="primary" onClick={() => location.reload()}>Play again <b>↻</b></button></div></div></section>}
   </main>;
 }
