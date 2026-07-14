@@ -266,6 +266,15 @@ function baseTerrainY(x: number, z: number) {
   const basinWeight = Math.max(ellipseWeight, inletWeight);
   const lakeBed = -2.72 + Math.sin(x * .19 - z * .11) * .07 + Math.cos((x + z) * .13) * .045;
   let height = THREE.MathUtils.lerp(roll, Math.min(roll, lakeBed), basinWeight);
+  // Carve the exterior Fifth Avenue stairwell into the terrain itself. The
+  // local sidewalk mesh has a matching aperture, while this depression keeps
+  // both rendered ground and player support below each descending tread.
+  const subwayLocalX = Math.abs(x - SUBWAY_TARGET.x), subwayLocalZ = z - SUBWAY_TARGET.z;
+  if (subwayLocalX <= 3.02 && subwayLocalZ <= -.65 && subwayLocalZ >= -9.65) {
+    const streetY = Math.sin(SUBWAY_TARGET.x * .037) * 1.5 + Math.cos(SUBWAY_TARGET.z * .042) * 1.1 + Math.sin((SUBWAY_TARGET.x + SUBWAY_TARGET.z) * .071) * .45;
+    const descent = THREE.MathUtils.clamp((-subwayLocalZ - .85) / (19 * .43), 0, 1);
+    height = streetY - descent * (19 * .165);
+  }
   // The ticket island is genuine dry terrain for locomotion, not a prop
   // floating over water. A broad stone shelf provides a forgiving boat exit.
   const islandDistance = Math.hypot(x - TICKET_ISLAND_TARGET.x, z - TICKET_ISLAND_TARGET.z);
@@ -1145,11 +1154,11 @@ export function buildRealisticWorld(scene: THREE.Scene, textures: GameTextures, 
   ticket.userData.anchorY = ticket.position.y;
 
   const rowboatSpawns: RowboatSpawn[] = [
-    { position: new THREE.Vector3(-25.6, THE_LAKE_SURFACE_Y - .04, -136.3), rotationY: .12, boatNumber: 5, name: "Bow Bridge checkpoint rowboat 5" },
-    { position: new THREE.Vector3(-16.8, THE_LAKE_SURFACE_Y - .04, -154.4), rotationY: -.32, boatNumber: 7, name: "Bow Bridge rowboat 7" },
-    { position: new THREE.Vector3(-22.5, THE_LAKE_SURFACE_Y - .04, -156.3), rotationY: -.18, boatNumber: 12, name: "Bow Bridge rowboat 12" },
-    { position: new THREE.Vector3(187.7, THE_LAKE_SURFACE_Y - .04, -290.8), rotationY: 2.34, boatNumber: 18, name: "Southeast shore rowboat 18" },
-    { position: new THREE.Vector3(197, THE_LAKE_SURFACE_Y - .04, -293), rotationY: 2.5, boatNumber: 23, name: "Southeast shore rowboat 23" },
+    { position: new THREE.Vector3(-23.8, THE_LAKE_SURFACE_Y - .04, -134.7), rotationY: .08, boatNumber: 5, name: "Bow Bridge checkpoint rowboat 5" },
+    { position: new THREE.Vector3(-20.1, THE_LAKE_SURFACE_Y - .04, -138.2), rotationY: -.18, boatNumber: 7, name: "Bow Bridge rowboat 7" },
+    { position: new THREE.Vector3(-17.15, THE_LAKE_SURFACE_Y - .04, -140.4), rotationY: -.28, boatNumber: 12, name: "Bow Bridge rowboat 12" },
+    { position: new THREE.Vector3(190.2, THE_LAKE_SURFACE_Y - .04, -293.2), rotationY: 2.36, boatNumber: 18, name: "Southeast shore rowboat 18" },
+    { position: new THREE.Vector3(194.7, THE_LAKE_SURFACE_Y - .04, -295.8), rotationY: 2.48, boatNumber: 23, name: "Southeast shore rowboat 23" },
   ];
 
   const buds: THREE.Group[] = [], rings: THREE.Mesh[] = [];

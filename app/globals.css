@@ -79,8 +79,8 @@ button { font: inherit; }
 .intro-screen.exiting { opacity:0; pointer-events:none; }
 .intro-art { position:absolute; inset:0; z-index:0; width:100%; height:100%; object-fit:cover; object-position:50% 45%; transform:scale(1.001); animation:introPush 16s ease-out both; }
 .intro-scrim { position:absolute; inset:0; z-index:1; background:linear-gradient(90deg,rgba(3,8,6,.78) 0%,rgba(3,8,6,.36) 26%,transparent 58%),linear-gradient(0deg,rgba(3,8,6,.78),transparent 48%); }
-.intro-location { position:absolute; z-index:2; top:30px; right:38px; font-size:9px; font-weight:650; letter-spacing:.25em; color:rgba(241,233,214,.72); }
-.intro-ui { position:absolute; z-index:2; left:clamp(28px,4.5vw,84px); bottom:clamp(32px,7vh,84px); width:min(440px,calc(100% - 56px)); animation:introUi .8s .12s ease-out both; }
+.intro-location { position:absolute; z-index:2; top:max(22px,calc(env(safe-area-inset-top) + 12px)); left:50%; max-width:calc(100% - 160px); overflow:hidden; transform:translateX(-50%); color:rgba(241,233,214,.72); font-size:9px; font-weight:650; letter-spacing:.25em; text-overflow:ellipsis; white-space:nowrap; }
+.intro-ui { position:absolute; z-index:2; left:max(clamp(28px,4.5vw,84px),calc(env(safe-area-inset-left) + 22px)); bottom:max(clamp(28px,6vh,72px),calc(env(safe-area-inset-bottom) + 20px)); width:min(500px,calc(100% - 56px - env(safe-area-inset-left) - env(safe-area-inset-right))); animation:introUi .8s .12s ease-out both; }
 .intro-ui p { width:min(420px,100%); margin:0 0 24px; color:rgba(241,233,214,.78); font-size:14px; line-height:1.65; text-shadow:0 2px 18px #000; }
 .intro-ui small { display:block; margin-top:14px; color:rgba(241,233,214,.46); font-size:9px; letter-spacing:.15em; text-transform:uppercase; }
 .cinematic-cta { position:relative; width:270px; height:54px; padding:0 19px; cursor:pointer; overflow:hidden; border:1px solid rgba(241,233,214,.32); background:rgba(4,10,7,.58); backdrop-filter:blur(14px); color:#f1e9d6; text-align:left; font-size:10px; font-weight:760; letter-spacing:.2em; transition:transform .2s,border-color .2s,background .2s; }
@@ -89,9 +89,9 @@ button { font: inherit; }
 .cinematic-cta:not(:disabled):hover { transform:translateY(-2px); border-color:rgba(241,233,214,.7); background:rgba(7,17,12,.76); }
 .cinematic-cta:disabled { cursor:wait; color:rgba(241,233,214,.52); }
 .cinematic-cta:not(:disabled) span { animation:none; width:32px; }
-.mobile-wordmark { display:none; color:#f1e9d6; font-family:Georgia,serif; font-size:42px; line-height:.88; letter-spacing:-.04em; margin-bottom:22px; }
+.mobile-wordmark { display:block; width:max-content; max-width:100%; margin-bottom:20px; color:#f1e9d6; font-family:Georgia,serif; font-size:clamp(58px,7.4vw,108px); line-height:.72; letter-spacing:-.055em; text-shadow:0 3px 28px rgba(0,0,0,.72); }
 .mobile-wordmark span { display:block; }
-.mobile-wordmark i { display:block; margin:8px 0 7px 2px; color:#b7cf73; font-family:Arial,sans-serif; font-size:12px; font-style:normal; font-weight:700; letter-spacing:.28em; }
+.mobile-wordmark i { display:block; margin:8px 0 7px 4px; color:#b7cf73; font-family:Arial,sans-serif; font-size:clamp(10px,1vw,13px); font-style:normal; font-weight:700; letter-spacing:.28em; line-height:1; }
 @keyframes introPush { to { transform:scale(1.026); } }
 @keyframes introUi { from { opacity:0; transform:translateY(13px); } to { opacity:1; transform:translateY(0); } }
 @keyframes loadLine { 0%{transform:scaleX(.08)} 50%{transform:scaleX(.72)} 100%{transform:scaleX(.08);transform-origin:right} }
@@ -148,7 +148,13 @@ button { font: inherit; }
 
 @media(max-width:760px){
   .screen-content{grid-template-columns:1fr;align-items:center}.briefing{display:none}.field-note{display:none}.hero-copy{margin-top:28px}.hero-title{font-size:20vw}.screen{background:rgba(3,10,8,.9)}
-  .intro-screen{background:#050907}.intro-art{object-position:66% center}.intro-scrim{background:linear-gradient(0deg,rgba(3,8,6,.92) 0%,rgba(3,8,6,.48) 42%,rgba(3,8,6,.08) 74%)}.intro-location{top:18px;right:18px;font-size:7px}.intro-ui{left:24px;bottom:30px;width:calc(100% - 48px)}.intro-ui p{font-size:13px;line-height:1.55}.cinematic-cta{width:100%}.mobile-wordmark{display:block}
+  .intro-screen{background:#050907}.intro-art{object-position:66% center}.intro-scrim{background:linear-gradient(0deg,rgba(3,8,6,.92) 0%,rgba(3,8,6,.48) 42%,rgba(3,8,6,.08) 74%)}.intro-location{top:max(16px,calc(env(safe-area-inset-top) + 8px));max-width:calc(100% - 112px);font-size:7px}.intro-ui{left:max(24px,calc(env(safe-area-inset-left) + 18px));bottom:max(30px,calc(env(safe-area-inset-bottom) + 18px));width:calc(100% - 48px - env(safe-area-inset-left) - env(safe-area-inset-right))}.intro-ui p{font-size:13px;line-height:1.55}.cinematic-cta{width:100%}.mobile-wordmark{font-size:clamp(46px,17vw,76px)}
+}
+@media(max-height:650px){
+  .intro-ui{bottom:max(18px,calc(env(safe-area-inset-bottom) + 12px))}.mobile-wordmark{margin-bottom:12px;font-size:clamp(44px,10vh,68px);line-height:.7}.mobile-wordmark i{margin:5px 0 4px 3px;font-size:9px}.intro-ui p{margin-bottom:14px;font-size:12px;line-height:1.42}.intro-ui small{margin-top:9px}.cinematic-cta{height:48px}
+}
+@media(max-height:460px) and (orientation:landscape){
+  .intro-art{object-position:58% 48%}.intro-scrim{background:linear-gradient(90deg,rgba(3,8,6,.9),rgba(3,8,6,.28) 55%,transparent),linear-gradient(0deg,rgba(3,8,6,.68),transparent 68%)}.intro-location{top:max(10px,env(safe-area-inset-top));font-size:7px}.intro-ui{left:max(18px,calc(env(safe-area-inset-left) + 12px));bottom:max(10px,env(safe-area-inset-bottom));width:min(420px,calc(100% - 36px - env(safe-area-inset-left) - env(safe-area-inset-right)))}.mobile-wordmark{margin-bottom:7px;font-size:clamp(32px,12vh,46px);line-height:.68}.mobile-wordmark i{display:inline-block;margin:3px 8px 3px 3px;font-size:7px}.intro-ui p{max-width:390px;margin-bottom:8px;font-size:10px;line-height:1.32}.intro-ui small{display:none}.cinematic-cta{width:min(270px,100%);height:42px}
 }
 @media(max-width:900px), (pointer:coarse){
   .desktop-hud{display:none}.mobile-hud{display:block}.touch-ui{display:block}.mouse-resume{display:none}

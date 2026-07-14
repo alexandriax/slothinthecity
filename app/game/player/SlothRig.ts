@@ -14,8 +14,8 @@ export type SlothRig = {
 };
 
 type ArmJoints = {
-  elbow: THREE.Group;
-  wrist: THREE.Group;
+  elbow: THREE.Bone;
+  wrist: THREE.Bone;
   digits: THREE.Group[];
 };
 
@@ -37,6 +37,7 @@ function sweptGeometry(
   colorAt?: (t: number, target: THREE.Color) => THREE.Color,
   capStart = true,
   capEnd = true,
+  uvVAt?: (t: number) => number,
 ) {
   const frames = curve.computeFrenetFrames(segments, false);
   const positions: number[] = [];
@@ -73,7 +74,7 @@ function sweptGeometry(
       surfaceNormal.copy(frames.normals[segment]).multiplyScalar(cosine / ellipse);
       surfaceNormal.addScaledVector(frames.binormals[segment], sine).normalize();
       normals.push(surfaceNormal.x, surfaceNormal.y, surfaceNormal.z);
-      uvs.push(u, t);
+      uvs.push(u, uvVAt ? uvVAt(t) : t);
 
       if (colorAt) {
         colorAt(t, color);
@@ -88,9 +89,8 @@ function sweptGeometry(
     }
   }
 
-  // Close both tube ends. The viewmodel uses articulated overlapping sweeps,
-  // and an uncapped ring can become a conspicuous sky-colored hole as a child
-  // joint rotates—especially in the tighter portrait framing.
+  // Close the two external ends of each sweep so the shoulder mount and claw
+  // roots remain watertight in the tighter portrait framing.
   const addCap = (segment: number, t: number, direction: -1 | 1) => {
     curve.getPointAt(t, point);
     curve.getTangentAt(t, tangent).normalize().multiplyScalar(direction);
@@ -153,81 +153,97 @@ function sweptGeometry(
   return geometry;
 }
 
-function furSegment(
-  end: THREE.Vector3,
-  bendA: THREE.Vector3,
-  bendB: THREE.Vector3,
-  baseRadius: number,
-  tipRadius: number,
-  material: THREE.Material,
-  segments = 36,
-  start = new THREE.Vector3(),
-) {
-  const curve = new THREE.CubicBezierCurve3(start, bendA, bendB, end);
+function anatomicalArmGeometry(side: number, elbowPivot: THREE.Vector3, wristEnd: THREE.Vector3) {
+  const proximalStart = new THREE.Vector3(side * .05, -.46, .075);
+  const wristPivot = elbowPivot.clone().add(wristEnd);
+  const wristRotation = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(0, side * .12, -side * .34));
+  const wristPoint = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z).applyMatrix4(wristRotation).add(wristPivot);
+  const forearmControlA = elbowPivot.clone().add(new THREE.Vector3(-side * .015, .105, -.008));
+  const forearmControlB = elbowPivot.clone().add(new THREE.Vector3(-side * .038, .265, -.052));
+  const elbowTangent = forearmControlA.clone().sub(elbowPivot);
+  const wristTangent = wristPivot.clone().sub(forearmControlB);
+  const upperCurve = new THREE.CubicBezierCurve3(
+    proximalStart,
+    new THREE.Vector3(side * .035, -.24, .05),
+    elbowPivot.clone().addScaledVector(elbowTangent, -.9),
+    elbowPivot,
+  );
+  const forearmCurve = new THREE.CubicBezierCurve3(
+    elbowPivot,
+    forearmControlA,
+    forearmControlB,
+    wristPivot,
+  );
+  const pawCurve = new THREE.CubicBezierCurve3(
+    wristPivot,
+    wristPivot.clone().addScaledVector(wristTangent, .58),
+    wristPoint(-side * .018, .145, -.018),
+    wristPoint(-side * .019, .212, -.035),
+  );
+  const curve = new THREE.CurvePath<THREE.Vector3>();
+  curve.add(upperCurve); curve.add(forearmCurve); curve.add(pawCurve);
+  const upperLength = upperCurve.getLength();
+  const forearmLength = forearmCurve.getLength();
+  const totalLength = upperLength + forearmLength + pawCurve.getLength();
+  const elbowT = upperLength / totalLength;
+  const wristT = (upperLength + forearmLength) / totalLength;
+  const segments = 104;
+  const radialSegments = 34;
   const geometry = sweptGeometry(
     curve,
     segments,
-    28,
+    radialSegments,
     (t) => {
-      const taper = THREE.MathUtils.smootherstep(t, 0, 1);
-      const muscle = Math.sin(Math.PI * t) * baseRadius * .12;
-      return THREE.MathUtils.lerp(baseRadius, tipRadius, taper) + muscle;
+      if (t <= elbowT) {
+        const local = THREE.MathUtils.smootherstep(t / elbowT, 0, 1);
+        return THREE.MathUtils.lerp(.15, .103, local) + Math.sin(Math.PI * local) * .012;
+      }
+      if (t <= wristT) {
+        const local = THREE.MathUtils.smootherstep((t - elbowT) / (wristT - elbowT), 0, 1);
+        return THREE.MathUtils.lerp(.103, .071, local) + Math.sin(Math.PI * local) * .007;
+      }
+      const local = THREE.MathUtils.smootherstep((t - wristT) / (1 - wristT), 0, 1);
+      return THREE.MathUtils.lerp(.071, .052, local) + Math.sin(Math.PI * local) * .013;
     },
-    .82,
+    .78,
+    undefined,
+    true,
+    true,
+    (t) => t,
   );
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.castShadow = true;
-  mesh.receiveShadow = false;
-  return mesh;
-}
 
-function pawSegment(side: number, material: THREE.Material) {
-  const curve = new THREE.CubicBezierCurve3(
-    // Begin behind the wrist pivot so the palm remains embedded in its blend
-    // volume throughout the full articulated rotation range.
-    new THREE.Vector3(side * .004, -.052, .012),
-    new THREE.Vector3(-side * .004, .038, .002),
-    new THREE.Vector3(-side * .018, .145, -.018),
-    new THREE.Vector3(-side * .019, .205, -.031),
-  );
-  const geometry = sweptGeometry(
-    curve,
-    54,
-    34,
-    (t) => {
-      // Tendon at the wrist, a single muscular palm bulge, then the compact
-      // distal pad from which all three hooks emerge.
-      const wrist = THREE.MathUtils.lerp(.094, .058, t);
-      return wrist + Math.sin(Math.PI * t) * .024 + Math.sin(Math.PI * Math.min(1, t * 1.35)) * .005;
-    },
-    .7,
-  );
-  const paw = new THREE.Mesh(geometry, material);
-  paw.castShadow = true;
-  paw.receiveShadow = false;
-  paw.frustumCulled = false;
-  return paw;
-}
-
-function addFurShell(parent: THREE.Object3D, mesh: THREE.Mesh, fringe: THREE.Material) {
-  parent.add(mesh);
-  const shell = new THREE.Mesh(mesh.geometry, fringe);
-  shell.scale.set(1.045, 1, 1.045);
-  shell.castShadow = true;
-  shell.frustumCulled = false;
-  shell.renderOrder = 21;
-  parent.add(shell);
-}
-
-function addEllipsoidShell(parent: THREE.Object3D, mesh: THREE.Mesh, fringe: THREE.Material) {
-  const shell = new THREE.Mesh(mesh.geometry, fringe);
-  shell.position.copy(mesh.position);
-  shell.rotation.copy(mesh.rotation);
-  shell.scale.copy(mesh.scale).multiplyScalar(1.045);
-  shell.castShadow = true;
-  shell.frustumCulled = false;
-  shell.renderOrder = 21;
-  parent.add(shell);
+  // Blend the single surface across two compact deformation zones. The broad
+  // spans remain rigid enough to preserve sloth proportions, while elbow and
+  // wrist motion bend the same vertices instead of rotating intersecting
+  // meshes through one another.
+  const skinIndices: number[] = [];
+  const skinWeights: number[] = [];
+  const sideVertexCount = geometry.userData.sweep.sideVertexCount as number;
+  const { capVertexRanges } = geometry.userData.sweep as { capVertexRanges: Array<{ start: number; count: number }> };
+  const vertexCount = geometry.getAttribute("position").count;
+  const elbowBlend = .075;
+  const wristDeformSpan = .06;
+  for (let vertex = 0; vertex < vertexCount; vertex++) {
+    let t = 0;
+    if (vertex < sideVertexCount) t = Math.floor(vertex / (radialSegments + 1)) / segments;
+    else if (capVertexRanges[1] && vertex >= capVertexRanges[1].start) t = 1;
+    if (t < elbowT - elbowBlend) {
+      skinIndices.push(0, 0, 0, 0); skinWeights.push(1, 0, 0, 0);
+    } else if (t < elbowT + elbowBlend) {
+      const blend = THREE.MathUtils.smoothstep(t, elbowT - elbowBlend, elbowT + elbowBlend);
+      skinIndices.push(0, 1, 0, 0); skinWeights.push(1 - blend, blend, 0, 0);
+    } else if (t < wristT - wristDeformSpan) {
+      skinIndices.push(1, 0, 0, 0); skinWeights.push(1, 0, 0, 0);
+    } else if (t < wristT + wristDeformSpan) {
+      const blend = THREE.MathUtils.smoothstep(t, wristT - wristDeformSpan, wristT + wristDeformSpan);
+      skinIndices.push(1, 2, 0, 0); skinWeights.push(1 - blend, blend, 0, 0);
+    } else {
+      skinIndices.push(2, 0, 0, 0); skinWeights.push(1, 0, 0, 0);
+    }
+  }
+  geometry.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(skinIndices, 4));
+  geometry.setAttribute("skinWeight", new THREE.Float32BufferAttribute(skinWeights, 4));
+  return geometry;
 }
 
 function clawColor(t: number, target: THREE.Color) {
@@ -284,85 +300,39 @@ function makeArm(
   side: number,
   fur: THREE.Material,
   keratin: THREE.Material,
-  fringe: THREE.Material,
 ) {
   const shoulder = new THREE.Group();
-  // A single uninterrupted sweep now runs from below the camera mount to the
-  // elbow. Besides removing two permanent viewmodel draw calls per arm, this
-  // makes the proximal silhouette truly contiguous rather than merely hidden
-  // by an overlap sphere.
-  const proximalStart = new THREE.Vector3(side * .05, -.46, .075);
-  const upperEnd = new THREE.Vector3(-side * .018, .35, -.046);
-  const upperArm = furSegment(
-    upperEnd,
-    new THREE.Vector3(side * .035, -.24, .05),
-    new THREE.Vector3(-side * .008, .19, .008),
-    .195,
-    .119,
-    fur,
-    54,
-    proximalStart,
-  );
-  upperArm.name = "continuous-upper-arm";
-  upperArm.frustumCulled = false;
-  addFurShell(shoulder, upperArm, fringe);
-
-  const elbow = new THREE.Group();
-  elbow.position.copy(upperEnd);
-  const elbowMass = new THREE.Mesh(new THREE.SphereGeometry(1, 34, 24), fur);
-  elbowMass.scale.set(.116, .16, .096);
-  elbowMass.castShadow = true;
-  elbowMass.receiveShadow = false;
-  elbowMass.frustumCulled = false;
-  elbow.add(elbowMass);
-  addEllipsoidShell(elbow, elbowMass, fringe);
-  shoulder.add(elbow);
-
+  const elbowPivot = new THREE.Vector3(-side * .018, .35, -.046);
   const wristEnd = new THREE.Vector3(-side * .032, .36, -.10);
-  const forearm = furSegment(
-    wristEnd,
-    new THREE.Vector3(-side * .015, .105, -.008),
-    new THREE.Vector3(-side * .038, .265, -.052),
-    .125,
-    .086,
-    fur,
-    42,
-  );
-  forearm.name = "continuous-forearm-sweep";
-  forearm.frustumCulled = false;
-  addFurShell(elbow, forearm, fringe);
-
-  // This textured blend volume overlaps both the forearm's closed end and the
-  // paw's extended root. Because it lives at the articulation pivot, wrist
-  // rotation can no longer tear a wedge-shaped hole through the silhouette.
-  const wristBlend = new THREE.Mesh(new THREE.SphereGeometry(1, 42, 30), fur);
-  wristBlend.name = "continuous-wrist-blend";
-  wristBlend.position.copy(wristEnd);
-  wristBlend.scale.set(.108, .135, .10);
-  wristBlend.castShadow = true;
-  wristBlend.frustumCulled = false;
-  elbow.add(wristBlend);
-  addEllipsoidShell(elbow, wristBlend, fringe);
-
-  const wrist = new THREE.Group();
+  const rootBone = new THREE.Bone();
+  rootBone.name = "viewmodel-shoulder-bone";
+  const elbow = new THREE.Bone();
+  elbow.name = "anatomical-elbow-bone";
+  elbow.position.copy(elbowPivot);
+  const wrist = new THREE.Bone();
+  wrist.name = "anatomical-wrist-bone";
   wrist.position.copy(wristEnd);
   wrist.rotation.y = side * .12;
   wrist.rotation.z = -side * .34;
+  rootBone.add(elbow);
   elbow.add(wrist);
+  shoulder.add(rootBone);
 
-  // One continuous swept paw replaces the former wrist/palm/digit ellipsoid
-  // stack. Its overlap with the forearm is hidden in the same fur shell, so
-  // bright station lighting no longer reveals toy-like seams.
-  const paw = pawSegment(side, fur);
-  paw.name = "continuous-paw-sweep";
-  wrist.add(paw);
-  addFurShell(wrist, paw, fringe);
+  const arm = new THREE.SkinnedMesh(anatomicalArmGeometry(side, elbowPivot, wristEnd), fur);
+  arm.name = "continuous-skinned-anatomical-arm";
+  arm.castShadow = true;
+  arm.receiveShadow = false;
+  arm.frustumCulled = false;
+  shoulder.add(arm);
+  shoulder.updateMatrixWorld(true);
+  arm.bind(new THREE.Skeleton([rootBone, elbow, wrist]));
+  arm.normalizeSkinWeights();
 
   const digits: THREE.Group[] = [];
   for (let index = -1; index <= 1; index++) {
     const claw = makeClaw(index, side, keratin);
-    // Roots overlap the fur cap so the hooks emerge from the paw rather than
-    // appearing glued onto a visible set of human-like fingers.
+    // Roots emerge directly from the tapered paw end rather than a separate
+    // palm or finger primitive.
     claw.position.set(-side * .019 + index * .027, .198 - Math.abs(index) * .007, -.039 + (index === 0 ? -.008 : 0));
     wrist.add(claw);
     digits.push(claw);
@@ -383,32 +353,26 @@ export function createSlothRig(furTexture: THREE.Texture): SlothRig {
   // camera-space drop. GameClient already handles arm placement and scaling.
   root.position.set(0, .012, -.02);
 
+  // The world texture repeats vertically for large creature meshes. A private
+  // clamped viewmodel sampler maps it once along each arm so a tile boundary
+  // can never masquerade as a dark wrist or elbow joint.
+  const viewmodelFur = furTexture.clone();
+  viewmodelFur.wrapS = THREE.RepeatWrapping;
+  viewmodelFur.wrapT = THREE.ClampToEdgeWrapping;
+  viewmodelFur.repeat.set(1.1, .92);
+  viewmodelFur.offset.set(.03, .04);
   const fur = new THREE.MeshPhysicalMaterial({
-    map: furTexture,
-    bumpMap: furTexture,
-    bumpScale: .032,
-    color: "#b7aa98",
+    map: viewmodelFur,
+    bumpMap: viewmodelFur,
+    bumpScale: .024,
+    color: "#aaa08f",
     roughness: .96,
     sheen: .32,
     sheenColor: new THREE.Color("#8d8373"),
     sheenRoughness: .9,
-    emissive: new THREE.Color("#2a241e"),
-    emissiveIntensity: .055,
-  });
-  const fringe = new THREE.MeshPhysicalMaterial({
-    map: furTexture,
-    alphaMap: furTexture,
-    bumpMap: furTexture,
-    bumpScale: .012,
-    color: "#b8aa97",
-    roughness: .98,
-    sheen: .9,
-    sheenColor: new THREE.Color("#938670"),
-    sheenRoughness: .9,
-    alphaTest: .3,
-    transparent: true,
-    opacity: .52,
-    depthWrite: false,
+    emissive: new THREE.Color("#766c5d"),
+    emissiveMap: viewmodelFur,
+    emissiveIntensity: .72,
   });
   const keratin = new THREE.MeshPhysicalMaterial({
     color: "#fff9e9",
@@ -418,8 +382,8 @@ export function createSlothRig(furTexture: THREE.Texture): SlothRig {
     clearcoatRoughness: .5,
   });
 
-  const left = makeArm(-1, fur, keratin, fringe);
-  const right = makeArm(1, fur, keratin, fringe);
+  const left = makeArm(-1, fur, keratin);
+  const right = makeArm(1, fur, keratin);
   root.add(left, right);
 
   const joints = (arm: THREE.Group) => arm.userData.joints as ArmJoints;

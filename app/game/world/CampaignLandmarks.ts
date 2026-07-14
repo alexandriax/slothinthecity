@@ -10,6 +10,10 @@ export const BOW_BRIDGE_WIDTH = 4.15;
 // yaw shared with the water-support code prevents the bridge deck and its
 // dry gameplay footprint from drifting apart.
 export const BOW_BRIDGE_YAW = -.43;
+// The inlet basin terrain sits below The Lake's water plane. The bridge deck
+// needs an authored architectural datum instead of inheriting that lake-bed
+// height, otherwise both rendering and locomotion place the span underwater.
+export const BOW_BRIDGE_DECK_BASE_Y = -1.12;
 // The first campaign waypoint lands on the clear east approach, where the
 // ticket quest can naturally continue down the nearby rowboat pier.
 export const BOW_BRIDGE_TARGET = new THREE.Vector3(-20.45, 0, -115.33);
@@ -97,6 +101,17 @@ function parkPathGeometry(points: THREE.Vector3[], width: number, heightAt: (x: 
   const geometry = new THREE.BufferGeometry(); geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3)); geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2)); geometry.setIndex(indices); geometry.computeVertexNormals(); return geometry;
 }
 
+function sidewalkWithStairOpeningGeometry() {
+  const shape = new THREE.Shape();
+  shape.moveTo(-9, -8.2); shape.lineTo(9, -8.2); shape.lineTo(9, 9.8); shape.lineTo(-9, 9.8); shape.closePath();
+  // ShapeGeometry is authored in XY then laid onto XZ. Negating local Z keeps
+  // the opening aligned with the descending negative-Z stair flight.
+  const opening = new THREE.Path();
+  opening.moveTo(-2.95, .35); opening.lineTo(-2.95, 9.55); opening.lineTo(2.95, 9.55); opening.lineTo(2.95, .35); opening.closePath();
+  shape.holes.push(opening);
+  const geometry = new THREE.ShapeGeometry(shape, 4); geometry.rotateX(-Math.PI / 2); geometry.computeVertexNormals(); return geometry;
+}
+
 function addSouthboundParkPath(root: THREE.Group, textures: GameTextures, heightAt: (x: number, z: number) => number) {
   const points = [
     BOW_BRIDGE_TARGET.clone(), new THREE.Vector3(-18, 0, -105), new THREE.Vector3(38, 0, -96), new THREE.Vector3(105, 0, -98),
@@ -112,7 +127,7 @@ function addBowBridge(root: THREE.Group, textures: GameTextures, heightAt: (x: n
   const rotation = BOW_BRIDGE_YAW, length = BOW_BRIDGE_LENGTH, width = BOW_BRIDGE_WIDTH;
   const west = new THREE.Vector3(-length / 2, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), rotation).add(BOW_BRIDGE_CENTER);
   const east = new THREE.Vector3(length / 2, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), rotation).add(BOW_BRIDGE_CENTER);
-  const bridgeY = Math.max(heightAt(west.x, west.z), heightAt(east.x, east.z), heightAt(BOW_BRIDGE_CENTER.x, BOW_BRIDGE_CENTER.z)) + .16;
+  const bridgeY = Math.max(BOW_BRIDGE_DECK_BASE_Y, heightAt(west.x, west.z) + .16, heightAt(east.x, east.z) + .16);
   bridge.position.set(BOW_BRIDGE_CENTER.x, bridgeY, BOW_BRIDGE_CENTER.z); bridge.rotation.y = rotation;
   const iron = new THREE.MeshStandardMaterial({ map: textures.stone, bumpMap: textures.stone, bumpScale: .012, color: "#ded7c5", roughness: .38, metalness: .68 });
   const deckMaterial = new THREE.MeshStandardMaterial({ map: textures.bark, bumpMap: textures.bark, bumpScale: .035, color: "#a98f70", roughness: .84 });
@@ -138,11 +153,11 @@ function addBowBridge(root: THREE.Group, textures: GameTextures, heightAt: (x: n
     for (const side of [-1, 1]) {
       const pier = new THREE.Mesh(new RoundedBoxGeometry(2.25, 2.65, .96, 7, .2), stone);
       pier.name = "bow-bridge-side-abutment";
-      pier.position.set(end * (length / 2 + .6), .74, side * (width / 2 + .82));
+      pier.position.set(end * (length / 2 + .6), .74, side * (width / 2 + .46));
       pier.castShadow = pier.receiveShadow = true;
       bridge.add(pier);
       const cap = new THREE.Mesh(new RoundedBoxGeometry(2.55, .27, 1.22, 5, .09), iron);
-      cap.position.set(end * (length / 2 + .6), 2.08, side * (width / 2 + .82));
+      cap.position.set(end * (length / 2 + .6), 2.08, side * (width / 2 + .46));
       bridge.add(cap);
     }
     const approach = new THREE.Mesh(new RoundedBoxGeometry(4.4, .16, width, 4, .06), deckMaterial);
@@ -153,7 +168,7 @@ function addBowBridge(root: THREE.Group, textures: GameTextures, heightAt: (x: n
   }
   const bridgePlaqueTexture = signTexture("BOW BRIDGE", "THE LAKE  ·  CENTRAL PARK  ·  1862", "#e5c46c"); ownedTextures.push(bridgePlaqueTexture);
   for (const end of [-1, 1]) {
-    const plaque = new THREE.Mesh(new RoundedBoxGeometry(2.9, .74, .12, 4, .045), new THREE.MeshStandardMaterial({ map: bridgePlaqueTexture, roughness: .48 })); plaque.position.set(end * (length / 2 + .62), 1.16, -width / 2 - .83); plaque.rotation.y = end < 0 ? Math.PI / 2 : -Math.PI / 2; bridge.add(plaque);
+    const plaque = new THREE.Mesh(new RoundedBoxGeometry(2.9, .74, .12, 4, .045), new THREE.MeshStandardMaterial({ map: bridgePlaqueTexture, roughness: .48 })); plaque.name = "bow-bridge-abutment-mounted-plaque"; plaque.position.set(end * (length / 2 + 1.82), 1.16, -width / 2 - .46); plaque.rotation.y = end < 0 ? Math.PI / 2 : -Math.PI / 2; bridge.add(plaque);
   }
   const surface: BowBridgeSurface = {
     center: new THREE.Vector3(BOW_BRIDGE_CENTER.x, bridgeY, BOW_BRIDGE_CENTER.z), yaw: rotation, length: length + 5.2, width, archHeight: 1.15, baseY: bridgeY,
@@ -268,15 +283,15 @@ function addZoo(root: THREE.Group, textures: GameTextures, heightAt: (x: number,
   }
   for (const x of [-15.5, -5.2, 5.2, 15.5]) texturedShrub(gate, textures, x, 6.8 + Math.abs(x) * .15, .9 + Math.abs(x % 3) * .08, quality);
 
-  const attendantResult = createPremiumHuman({ role: "attendant", quality, variant: 0, coat: "#2e503c", trousers: "#17211d", skin: "#9c6c4e", accessory: "radio", pose: "neutral" });
+  const attendantResult = createPremiumHuman({ role: "attendant", quality, variant: 0, faceVariant: 14, coat: "#2e503c", trousers: "#17211d", skin: "#9c6c4e", accessory: "radio", pose: "neutral" });
   const attendant = attendantResult.root; ownedTextures.push(...attendantResult.ownedTextures); attendant.position.set(-3, .06, 9); attendant.rotation.y = Math.PI + .05; gate.add(attendant);
   const visitorData = [
-    [-.2, 8.7, -.24, "#8d6549", "#303d43", "#c28e69", "camera", "photographing"], [3.8, 11.6, 2.72, "#426475", "#343a3c", "#79503d", "backpack", "checking-map"],
-    [-8.6, 12.9, .4, "#727c4c", "#3d3937", "#d0a27f", "tote", "neutral"], [9.1, 9.8, -2.8, "#7f4b55", "#273a43", "#8f6048", "backpack", "waving"],
-    [13.4, 15.5, 2.9, "#4e6371", "#302f31", "#b87f5f", "camera", "neutral"], [-13, 17, .2, "#9a754f", "#37433d", "#704937", "tote", "checking-map"],
+    [-.2, 8.7, -.24, "#8d6549", "#303d43", "#c28e69", "camera", "photographing", 12], [3.8, 11.6, 2.72, "#426475", "#343a3c", "#79503d", "backpack", "checking-map", 15],
+    [-8.6, 12.9, .4, "#727c4c", "#3d3937", "#d0a27f", "tote", "neutral", 16], [9.1, 9.8, -2.8, "#7f4b55", "#273a43", "#8f6048", "backpack", "waving", 17],
+    [13.4, 15.5, 2.9, "#4e6371", "#302f31", "#b87f5f", "camera", "neutral", 18], [-13, 17, .2, "#9a754f", "#37433d", "#704937", "tote", "checking-map", 19],
   ] as const;
   visitorData.slice(0, quality < .58 ? 3 : quality < .82 ? 4 : 6).forEach((data, index) => {
-    const result = createPremiumHuman({ role: "visitor", quality, variant: index + 1, coat: data[3], trousers: data[4], skin: data[5], accessory: data[6], pose: data[7] });
+    const result = createPremiumHuman({ role: "visitor", quality, variant: index + 1, faceVariant: data[8], coat: data[3], trousers: data[4], skin: data[5], accessory: data[6], pose: data[7] });
     result.root.position.set(data[0], .04, data[1]); result.root.rotation.y = data[2]; gate.add(result.root); ownedTextures.push(...result.ownedTextures);
   });
 
@@ -296,25 +311,23 @@ function addSubwayEntrance(root: THREE.Group, textures: GameTextures, heightAt: 
   const green = new THREE.MeshPhysicalMaterial({ map: textures.stone, color: "#69a271", emissive: "#7fd18a", emissiveIntensity: 1.3, roughness: .2, clearcoat: .7 });
   const subwayTexture = signTexture("SUBWAY", "5 AV / 59 ST   ·   N  R  W", "#f0c94c");
   const directionTexture = signTexture("N  R  W TRAINS", "UPTOWN  ·  DOWNTOWN  ·  QUEENS  VIA CONCOURSE", "#f0c94c"); ownedTextures.push(subwayTexture, directionTexture);
-  const sidewalk = new THREE.Mesh(new RoundedBoxGeometry(18, .18, 15, 6, .14), street); sidewalk.position.set(0, -.06, 2.3); sidewalk.receiveShadow = true; entrance.add(sidewalk);
-  const stairOpening = new THREE.Mesh(new RoundedBoxGeometry(6.8, .16, 10.7, 5, .08), iron); stairOpening.position.set(0, .055, -4.55); entrance.add(stairOpening);
-  // The park terrain is a continuous heightfield, so the visible stairwell is
-  // built as a raised, shadowed shaft before the streamed subway world takes
-  // over midway down. This keeps the landscape from visually filling the well.
-  const stairVoid = new THREE.Mesh(new RoundedBoxGeometry(5.75, .13, 9.8, 4, .07), new THREE.MeshStandardMaterial({ map: textures.stone, color: "#050807", roughness: .98 })); stairVoid.position.set(0, .145, -4.55); stairVoid.receiveShadow = true; entrance.add(stairVoid);
+  const sidewalk = new THREE.Mesh(sidewalkWithStairOpeningGeometry(), street); sidewalk.name = "subway-sidewalk-with-true-stairwell-cutout"; sidewalk.position.y = .018; sidewalk.receiveShadow = true; entrance.add(sidewalk);
+  const stairwellDark = new THREE.MeshStandardMaterial({ map: textures.stone, color: "#090d0c", roughness: .98 });
+  const bottomLanding = new THREE.Mesh(new RoundedBoxGeometry(5.6, .14, 1.15, 3, .035), stairwellDark); bottomLanding.position.set(0, -3.23, -9.25); bottomLanding.receiveShadow = true; entrance.add(bottomLanding);
+  const stairwellBack = new THREE.Mesh(new RoundedBoxGeometry(5.78, 3.55, .14, 3, .035), stairwellDark); stairwellBack.position.set(0, -1.48, -9.78); entrance.add(stairwellBack);
   for (let step = 0; step < 20; step++) {
     const stair = new THREE.Mesh(new RoundedBoxGeometry(5.45, .17, .52, 3, .028), stone);
     stair.name = step === 8 ? "subway-mid-descent-transition-step" : "subway-descending-step";
-    stair.position.set(0, .63 - Math.min(step, 11) * .047, -.85 - step * .43);
+    stair.position.set(0, -.085 - step * .165, -.85 - step * .43);
     stair.receiveShadow = true;
     entrance.add(stair);
   }
   for (const side of [-1, 1]) {
-    const curb = new THREE.Mesh(new RoundedBoxGeometry(.6, 1.35, 10.9, 5, .08), stone); curb.position.set(side * 3.18, .53, -4.55); curb.castShadow = curb.receiveShadow = true; entrance.add(curb);
-    const innerTile = new THREE.Mesh(new RoundedBoxGeometry(.18, 2.2, 9.7, 3, .04), tile); innerTile.position.set(side * 2.86, .3, -4.55); entrance.add(innerTile);
-    for (let index = 0; index < 12; index++) { const post = new THREE.Mesh(new THREE.CylinderGeometry(.038, .05, 1.35, 10), iron); post.position.set(side * 3.22, 1.26, -.3 - index * .78); entrance.add(post); }
-    const topRail = new THREE.Mesh(new RoundedBoxGeometry(.1, .1, 10.2, 3, .025), iron); topRail.position.set(side * 3.22, 1.92, -4.55); entrance.add(topRail);
-    const handrailStart = new THREE.Vector3(side * 2.68, 1.18, -.65), handrailEnd = new THREE.Vector3(side * 2.68, .47, -9.15), direction = handrailEnd.clone().sub(handrailStart);
+    const curb = new THREE.Mesh(new RoundedBoxGeometry(.6, .38, 10.9, 5, .08), stone); curb.position.set(side * 3.18, .19, -4.55); curb.castShadow = curb.receiveShadow = true; entrance.add(curb);
+    const innerTile = new THREE.Mesh(new RoundedBoxGeometry(.18, 3.6, 9.7, 3, .04), tile); innerTile.position.set(side * 2.86, -1.72, -4.55); entrance.add(innerTile);
+    for (let index = 0; index < 12; index++) { const post = new THREE.Mesh(new THREE.CylinderGeometry(.038, .05, 1.05, 10), iron); post.position.set(side * 3.22, .84, -.3 - index * .78); entrance.add(post); }
+    const topRail = new THREE.Mesh(new RoundedBoxGeometry(.1, .1, 10.2, 3, .025), iron); topRail.position.set(side * 3.22, 1.38, -4.55); entrance.add(topRail);
+    const handrailStart = new THREE.Vector3(side * 2.68, 1.08, -.55), handrailEnd = new THREE.Vector3(side * 2.68, -2.58, -9.15), direction = handrailEnd.clone().sub(handrailStart);
     const handrail = new THREE.Mesh(new THREE.CylinderGeometry(.047, .047, direction.length(), 11), iron); handrail.position.copy(handrailStart).add(handrailEnd).multiplyScalar(.5); handrail.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize()); entrance.add(handrail);
     const globePost = new THREE.Mesh(new THREE.CylinderGeometry(.085, .105, 2.55, 14), iron); globePost.position.set(side * 3.7, 1.28, .5); entrance.add(globePost);
     const globe = new THREE.Mesh(new THREE.SphereGeometry(.31, high ? 28 : 18, 16), green); globe.position.set(side * 3.7, 2.7, .5); entrance.add(globe);
@@ -322,7 +335,7 @@ function addSubwayEntrance(root: THREE.Group, textures: GameTextures, heightAt: 
   const canopy = new THREE.Mesh(new RoundedBoxGeometry(7.6, .28, 5.1, 7, .1), iron); canopy.position.set(0, 3.35, -1.7); canopy.castShadow = true; entrance.add(canopy);
   for (const x of [-3.25, 3.25]) for (const z of [-.15, -3.45]) { const support = new THREE.Mesh(new THREE.CylinderGeometry(.075, .095, 3.25, 12), iron); support.position.set(x, 1.68, z); entrance.add(support); }
   const subwaySign = new THREE.Mesh(new RoundedBoxGeometry(6.7, 1.3, .25, 5, .08), new THREE.MeshStandardMaterial({ map: subwayTexture, roughness: .48 })); subwaySign.position.set(0, 2.7, .62); entrance.add(subwaySign);
-  const directionSign = new THREE.Mesh(new RoundedBoxGeometry(4.8, 1.02, .14, 4, .055), new THREE.MeshStandardMaterial({ map: directionTexture, roughness: .5 })); directionSign.position.set(0, 1.52, -4.55); directionSign.rotation.x = -.1; entrance.add(directionSign);
+  const directionSign = new THREE.Mesh(new RoundedBoxGeometry(4.8, 1.02, .14, 4, .055), new THREE.MeshStandardMaterial({ map: directionTexture, roughness: .5 })); directionSign.position.set(0, 2.56, -4.15); directionSign.rotation.x = -.045; entrance.add(directionSign);
   const lightMaterial = new THREE.MeshPhysicalMaterial({ map: textures.stone, color: "#fff1c8", emissive: "#ffe8a8", emissiveIntensity: 2.1, roughness: .2 });
   for (let index = 0; index < (high ? 5 : 3); index++) { const light = new THREE.Mesh(new RoundedBoxGeometry(3.7, .07, .18, 3, .025), lightMaterial); light.position.set(0, 2.7 - index * .48, -2.8 - index * 1.45); light.rotation.x = -.16; entrance.add(light); }
   const newsbox = new THREE.Mesh(new RoundedBoxGeometry(1.05, 1.45, .72, 5, .09), new THREE.MeshStandardMaterial({ map: directionTexture, roughness: .66 })); newsbox.position.set(5.65, .74, 2.3); newsbox.rotation.y = -.12; entrance.add(newsbox);
@@ -344,7 +357,7 @@ export function createCampaignLandmarks(scene: THREE.Scene, textures: GameTextur
   const zooWestBooth = zooGate.localToWorld(new THREE.Vector3(-10.4, 0, 5.1));
   const zooEastBooth = zooGate.localToWorld(new THREE.Vector3(10.4, 0, 5.1));
   for (const end of [-1, 1]) for (const side of [-1, 1]) {
-    const abutment = bowBridge.localToWorld(new THREE.Vector3(end * (BOW_BRIDGE_LENGTH / 2 + .6), 0, side * (BOW_BRIDGE_WIDTH / 2 + .82)));
+    const abutment = bowBridge.localToWorld(new THREE.Vector3(end * (BOW_BRIDGE_LENGTH / 2 + .6), 0, side * (BOW_BRIDGE_WIDTH / 2 + .46)));
     obstacles.push({ id: `bow-bridge-abutment-${end}-${side}`, kind: "circle", x: abutment.x, z: abutment.z, radius: .68, minY: -5, maxY: 8 });
   }
   obstacles.push(
