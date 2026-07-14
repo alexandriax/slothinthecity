@@ -5,7 +5,7 @@ export type SlothRig = {
   left: THREE.Group;
   right: THREE.Group;
   animate(time: number, speed: number, gripping: boolean): void;
-  setVehiclePose(mode: "none" | "cart" | "rowboat", steering?: number, oarPhase?: number): void;
+  setVehiclePose(mode: "none" | "cart" | "rowboat", steering?: number, oarPhase?: number, rowingEffort?: number): void;
 };
 
 type ArmJoints = {
@@ -423,15 +423,38 @@ export function createSlothRig(furTexture: THREE.Texture): SlothRig {
   let vehicleMode: "none" | "cart" | "rowboat" = "none";
   let vehicleSteering = 0;
   let vehicleOarPhase = 0;
+  let vehicleRowingEffort = 0;
+  const vehicleTarget = new THREE.Vector3();
+  const vehicleChain = new THREE.Vector3();
+
+  /**
+   * Positions an articulated wrist at an authored camera-space grip point.
+   * Solving the short two-joint chain from its live rotations avoids the old
+   * hard-coded shoulder offsets, which let the paws cross at steering and
+   * rowing extremes and drift away from the object they were meant to hold.
+   */
+  const placeWristAt = (arm: THREE.Group, armJoints: ArmJoints, x: number, y: number, z: number) => {
+    vehicleTarget.set(
+      (x - root.position.x) / Math.max(.001, root.scale.x),
+      (y - root.position.y) / Math.max(.001, root.scale.y),
+      (z - root.position.z) / Math.max(.001, root.scale.z),
+    );
+    vehicleChain.copy(armJoints.wrist.position)
+      .applyEuler(armJoints.elbow.rotation)
+      .add(armJoints.elbow.position)
+      .applyEuler(arm.rotation);
+    arm.position.copy(vehicleTarget).sub(vehicleChain);
+  };
 
   return {
     root,
     left,
     right,
-    setVehiclePose(mode, steering = 0, oarPhase = 0) {
+    setVehiclePose(mode, steering = 0, oarPhase = 0, rowingEffort = 0) {
       vehicleMode = mode;
       vehicleSteering = THREE.MathUtils.clamp(steering, -1, 1);
       vehicleOarPhase = oarPhase;
+      vehicleRowingEffort = THREE.MathUtils.clamp(rowingEffort, 0, 1);
     },
     animate(time, speed, gripping) {
       const stride = Math.min(1, speed / 4);
@@ -445,6 +468,11 @@ export function createSlothRig(furTexture: THREE.Texture): SlothRig {
       const leftBaseDepth = left.userData.layoutDepth as number | undefined;
       const rightBaseDepth = right.userData.layoutDepth as number | undefined;
 
+      // Establish the viewmodel anchor before solving vehicle grip points, so
+      // locomotion bob never pulls a planted paw off a steering wheel or oar.
+      root.position.y = .012 + breath * .004 + Math.sin(time * 5.15) * .004 * stride;
+      root.position.z = -.02 - grip * .004;
+
       if (vehicleMode === "none") {
         if (leftBaseX !== undefined) left.position.x = leftBaseX;
         if (rightBaseX !== undefined) right.position.x = rightBaseX;
@@ -452,12 +480,6 @@ export function createSlothRig(furTexture: THREE.Texture): SlothRig {
         if (rightBaseY !== undefined) right.position.y = rightBaseY;
         if (leftBaseDepth !== undefined) left.position.z = leftBaseDepth;
         if (rightBaseDepth !== undefined) right.position.z = rightBaseDepth;
-      } else {
-        const targetX = vehicleMode === "cart" ? .24 : .28;
-        const targetY = vehicleMode === "cart" ? -.75 : -.72;
-        const targetDepth = vehicleMode === "cart" ? -.59 : -.63;
-        left.position.set(-targetX, targetY, targetDepth);
-        right.position.set(targetX, targetY, targetDepth);
       }
 
       left.rotation.x = -.045 + gait * .022 * stride - grip * .03;
@@ -483,37 +505,60 @@ export function createSlothRig(furTexture: THREE.Texture): SlothRig {
       }
 
       if (vehicleMode === "cart") {
-        // Hands stay opposite one another on the wheel and travel with its
-        // rotation rather than hovering above the dashboard.
-        const wheel = vehicleSteering * .24;
-        left.rotation.x = -.3 - wheel * .12;
-        right.rotation.x = -.3 + wheel * .12;
-        left.rotation.z = (left.userData.layoutZ ?? -.34) + .27 + wheel;
-        right.rotation.z = (right.userData.layoutZ ?? .34) - .27 + wheel;
-        leftJoints.elbow.rotation.x = rightJoints.elbow.rotation.x = -.2;
-        leftJoints.wrist.rotation.x = rightJoints.wrist.rotation.x = -.36;
-        leftJoints.wrist.rotation.z = .38 + wheel;
-        rightJoints.wrist.rotation.z = -.38 + wheel;
+        // ParkUtilityCart rotates the wheel through +/-1.161 radians. Follow
+        // two opposed points on its tilted rim exactly; the cosine term keeps
+        // each wrist on its own side even at full steering lock.
+        const wheelTurn = vehicleSteering * 1.161;
+        const wheelCosine = Math.cos(wheelTurn), wheelSine = Math.sin(wheelTurn);
+        const wheelCenterX = -.01, wheelCenterY = -.342, wheelCenterZ = -.522;
+        const gripRadius = .185, wheelPlaneCosine = .948, wheelPlaneSine = -.319;
+        left.rotation.set(-.22, 0, -.15);
+        right.rotation.set(-.22, 0, .15);
+        leftJoints.elbow.rotation.x = rightJoints.elbow.rotation.x = -.12;
+        placeWristAt(
+          left,
+          leftJoints,
+          wheelCenterX - gripRadius * wheelCosine,
+          wheelCenterY - gripRadius * wheelSine * wheelPlaneCosine,
+          wheelCenterZ + gripRadius * wheelSine * wheelPlaneSine,
+        );
+        placeWristAt(
+          right,
+          rightJoints,
+          wheelCenterX + gripRadius * wheelCosine,
+          wheelCenterY + gripRadius * wheelSine * wheelPlaneCosine,
+          wheelCenterZ - gripRadius * wheelSine * wheelPlaneSine,
+        );
+        leftJoints.wrist.rotation.x = rightJoints.wrist.rotation.x = -.32;
+        leftJoints.wrist.rotation.z = .34 + wheelTurn;
+        rightJoints.wrist.rotation.z = -.34 + wheelTurn;
         for (const digit of [...leftJoints.digits, ...rightJoints.digits]) digit.rotation.x = -.19;
       } else if (vehicleMode === "rowboat") {
-        // Mirrored sweep and feather phases keep each paw planted on its oar.
-        const sweep = Math.sin(vehicleOarPhase) * .22;
-        const feather = Math.cos(vehicleOarPhase) * .14;
-        left.rotation.x = right.rotation.x = -.2 - Math.abs(sweep) * .1;
-        left.rotation.z = (left.userData.layoutZ ?? -.34) + .2 + sweep;
-        right.rotation.z = (right.userData.layoutZ ?? .34) - .2 - sweep;
-        leftJoints.elbow.rotation.x = -.16 - sweep * .28;
-        rightJoints.elbow.rotation.x = -.16 + sweep * .28;
-        leftJoints.wrist.rotation.x = rightJoints.wrist.rotation.x = -.3 + feather;
-        leftJoints.wrist.rotation.z = .22 + feather;
-        rightJoints.wrist.rotation.z = -.22 - feather;
+        // Reproduce ParkRowboat's paired oar transform in camera space. The
+        // low idle amplitude reads as a hand settling on the grips; real sweep
+        // and feather motion scales in only while the player is rowing.
+        const effort = vehicleRowingEffort;
+        const sweep = Math.sin(vehicleOarPhase) * (.08 + effort * .47);
+        const dip = Math.max(0, Math.cos(vehicleOarPhase) * effort);
+        const oarYaw = -.04 + sweep, oarRoll = -.075 - dip * .11;
+        const gripX = .63 - .45 * Math.cos(oarYaw) * Math.cos(oarRoll);
+        const gripWorldY = .625 - .45 * Math.cos(oarYaw) * Math.sin(oarRoll);
+        const gripWorldZ = .2 + .45 * Math.sin(oarYaw);
+        const deltaY = gripWorldY - 1.34, deltaZ = gripWorldZ - .96;
+        const cameraTiltCosine = Math.cos(.045), cameraTiltSine = Math.sin(.045);
+        const gripY = cameraTiltCosine * deltaY - cameraTiltSine * deltaZ;
+        const gripZ = cameraTiltSine * deltaY + cameraTiltCosine * deltaZ;
+        const feather = Math.cos(vehicleOarPhase) * (.025 + effort * .115);
+        left.rotation.set(-.22, 0, -.15);
+        right.rotation.set(-.22, 0, .15);
+        leftJoints.elbow.rotation.x = rightJoints.elbow.rotation.x = -.12;
+        placeWristAt(left, leftJoints, -gripX, gripY, gripZ);
+        placeWristAt(right, rightJoints, gripX, gripY, gripZ);
+        leftJoints.wrist.rotation.x = rightJoints.wrist.rotation.x = -.28 + feather;
+        leftJoints.wrist.rotation.z = .34;
+        rightJoints.wrist.rotation.z = -.34;
         for (const digit of [...leftJoints.digits, ...rightJoints.digits]) digit.rotation.x = -.17;
       }
-
-      // Keep the viewmodel anchored to the camera. Motion is deliberately
-      // millimetric; locomotion and climbing must never push the paws offscreen.
-      root.position.y = .012 + breath * .004 + Math.sin(time * 5.15) * .004 * stride;
-      root.position.z = -.02 - grip * .004;
     },
   };
 }

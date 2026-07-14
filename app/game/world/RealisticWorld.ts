@@ -2,7 +2,15 @@ import * as THREE from "three";
 import { Sky } from "three/addons/objects/Sky.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import type { GameTextures } from "../rendering/textures";
-import { BOW_BRIDGE_TARGET, SUBWAY_TARGET, ZOO_TARGET } from "./CampaignLandmarks";
+import {
+  BOW_BRIDGE_CENTER,
+  BOW_BRIDGE_LENGTH,
+  BOW_BRIDGE_TARGET,
+  BOW_BRIDGE_WIDTH,
+  BOW_BRIDGE_YAW,
+  SUBWAY_TARGET,
+  ZOO_TARGET,
+} from "./CampaignLandmarks";
 
 export const BUDS = [
   new THREE.Vector3(-12, 0, 14), new THREE.Vector3(17, 0, -4),
@@ -24,8 +32,8 @@ export const TICKET_ISLAND_RADIUS = 11.4;
 export const TICKET_ISLAND_TARGET = new THREE.Vector3(90, 0, -220);
 export const TICKET_ISLAND_LANDING_TARGET = new THREE.Vector3(90, 0, -210);
 export const TICKET_ISLAND_BOAT_DOCK = new THREE.Vector3(90, 0, -204.7);
-export const BOW_BRIDGE_BOAT_DOCK = new THREE.Vector3(-19.5, 0, -151.5);
-export const BOW_BRIDGE_SHORE_LANDING = new THREE.Vector3(-22.35, 0, -127.85);
+export const BOW_BRIDGE_BOAT_DOCK = new THREE.Vector3(-23, 0, -134);
+export const BOW_BRIDGE_SHORE_LANDING = new THREE.Vector3(-21, 0, -120);
 export const LAKE_SOUTHEAST_BOAT_DOCK = new THREE.Vector3(192, 0, -295);
 export const LAKE_SOUTHEAST_SHORE_LANDING = new THREE.Vector3(203.5, 0, -306.2);
 export const LAKE_SOUTHEAST_CART_TARGET = new THREE.Vector3(208, 0, -306.8);
@@ -36,6 +44,18 @@ export const LAKE_INLET_CENTERLINE = [
   new THREE.Vector3(-16, 0, -155),
   new THREE.Vector3(4, 0, -170),
 ] as const;
+
+type LakeDockDefinition = {
+  land: THREE.Vector3;
+  water: THREE.Vector3;
+  width: number;
+};
+
+const LAKE_DOCK_DEFINITIONS: readonly LakeDockDefinition[] = [
+  { land: BOW_BRIDGE_SHORE_LANDING, water: BOW_BRIDGE_BOAT_DOCK, width: 2.7 },
+  { land: TICKET_ISLAND_LANDING_TARGET, water: TICKET_ISLAND_BOAT_DOCK, width: 2.25 },
+  { land: LAKE_SOUTHEAST_SHORE_LANDING, water: LAKE_SOUTHEAST_BOAT_DOCK, width: 2.5 },
+];
 /** Backwards-compatible broad-phase values. Prefer `containsLakeWater`. */
 export const LAKE_SWIM_RADIUS = THE_LAKE_RADII.x;
 export const LAKE_BOAT_RADIUS = THE_LAKE_RADII.x - 2.4;
@@ -55,8 +75,40 @@ function distanceToLakeInlet(x: number, z: number) {
   return distance;
 }
 
+function bowBridgeSupportsPlayer(x: number, z: number) {
+  const dx = x - BOW_BRIDGE_CENTER.x, dz = z - BOW_BRIDGE_CENTER.z;
+  const localX = Math.cos(BOW_BRIDGE_YAW) * dx - Math.sin(BOW_BRIDGE_YAW) * dz;
+  const localZ = Math.sin(BOW_BRIDGE_YAW) * dx + Math.cos(BOW_BRIDGE_YAW) * dz;
+  return Math.abs(localX) <= BOW_BRIDGE_LENGTH / 2 + 4.85 && Math.abs(localZ) <= BOW_BRIDGE_WIDTH / 2 + .12;
+}
+
+function dockTopAt(definition: LakeDockDefinition, amount: number) {
+  const landTop = Math.max(THE_LAKE_SURFACE_Y + .34, baseTerrainY(definition.land.x, definition.land.z) + .16);
+  const waterTop = THE_LAKE_SURFACE_Y + .32;
+  return THREE.MathUtils.lerp(landTop, waterTop, amount);
+}
+
+/** Returns the timber deck height while the point is on a playable pier. */
+export function lakeDockSurfaceHeightAt(x: number, z: number) {
+  for (const definition of LAKE_DOCK_DEFINITIONS) {
+    const dx = definition.water.x - definition.land.x, dz = definition.water.z - definition.land.z;
+    const lengthSq = dx * dx + dz * dz;
+    const rawAmount = ((x - definition.land.x) * dx + (z - definition.land.z) * dz) / Math.max(.001, lengthSq);
+    if (rawAmount < -.035 || rawAmount > 1.035) continue;
+    const amount = THREE.MathUtils.clamp(rawAmount, 0, 1);
+    const nearestX = THREE.MathUtils.lerp(definition.land.x, definition.water.x, amount);
+    const nearestZ = THREE.MathUtils.lerp(definition.land.z, definition.water.z, amount);
+    if (Math.hypot(x - nearestX, z - nearestZ) <= definition.width / 2 + .1) return dockTopAt(definition, amount);
+  }
+  return null;
+}
+
 /** Exact gameplay water test shared by swimming, boats, and shoreline logic. */
 export function containsLakeWater(x: number, z: number, shoreInset = 0) {
+  // Players stand on bridge and pier meshes even though water remains valid
+  // underneath them for rowboat navigation. Boat broad-phase calls use a
+  // positive inset and therefore deliberately bypass this dry support mask.
+  if (shoreInset === 0 && (bowBridgeSupportsPlayer(x, z) || lakeDockSurfaceHeightAt(x, z) !== null)) return false;
   const islandClearance = TICKET_ISLAND_RADIUS + Math.max(0, shoreInset);
   if (Math.hypot(x - TICKET_ISLAND_TARGET.x, z - TICKET_ISLAND_TARGET.z) <= islandClearance) return false;
   const radiusX = Math.max(1, THE_LAKE_RADII.x - shoreInset);
@@ -202,7 +254,7 @@ function seeded(seed: number) {
   return () => ((value = Math.imul(value ^ (value >>> 15), 1 | value), value ^= value + Math.imul(value ^ (value >>> 7), 61 | value), ((value ^ (value >>> 14)) >>> 0) / 4294967296));
 }
 
-export function terrainY(x: number, z: number) {
+function baseTerrainY(x: number, z: number) {
   const roll = Math.sin(x * .037) * 1.5 + Math.cos(z * .042) * 1.1 + Math.sin((x + z) * .071) * .45;
   const normalizedLakeDistance = Math.hypot(
     (x - THE_LAKE_CENTER.x) / THE_LAKE_RADII.x,
@@ -221,6 +273,10 @@ export function terrainY(x: number, z: number) {
   const islandHeight = -.56 + Math.cos(islandDistance * .31) * .06;
   height = THREE.MathUtils.lerp(height, islandHeight, islandWeight);
   return height;
+}
+
+export function terrainY(x: number, z: number) {
+  return lakeDockSurfaceHeightAt(x, z) ?? baseTerrainY(x, z);
 }
 
 function trailRibbon(curve: THREE.CatmullRomCurve3) {
@@ -917,12 +973,13 @@ function addLakeDocks(scene: THREE.Scene, textures: GameTextures, quality: numbe
   const buildDock = (name: string, land: THREE.Vector3, water: THREE.Vector3, width: number) => {
     const dock = new THREE.Group(); dock.name = name;
     const dx = water.x - land.x, dz = water.z - land.z, length = Math.hypot(dx, dz), plankCount = Math.max(7, Math.ceil(length / .42));
-    const yaw = Math.atan2(dx, dz), landY = Math.max(THE_LAKE_SURFACE_Y + .22, terrainY(land.x, land.z) + .13), waterY = THE_LAKE_SURFACE_Y + .17;
+    const yaw = Math.atan2(dx, dz), definition = { land, water, width } satisfies LakeDockDefinition;
+    const waterY = dockTopAt(definition, 1);
     const plankGeometry = new RoundedBoxGeometry(width, .105, .38, quality > .72 ? 3 : 2, .026);
     const planks = new THREE.InstancedMesh(plankGeometry, dockWood, plankCount), dummy = new THREE.Object3D();
     for (let index = 0; index < plankCount; index++) {
       const amount = (index + .5) / plankCount;
-      dummy.position.lerpVectors(land, water, amount); dummy.position.y = THREE.MathUtils.lerp(landY, waterY, amount);
+      dummy.position.lerpVectors(land, water, amount); dummy.position.y = dockTopAt(definition, amount) - .0525;
       dummy.rotation.set(0, yaw, 0); dummy.updateMatrix(); planks.setMatrixAt(index, dummy.matrix);
     }
     planks.instanceMatrix.needsUpdate = true; planks.castShadow = planks.receiveShadow = true; dock.add(planks);
@@ -941,9 +998,9 @@ function addLakeDocks(scene: THREE.Scene, textures: GameTextures, quality: numbe
     scene.add(dock); return dock;
   };
   return {
-    bow: buildDock("bow-bridge-rowboat-pier", BOW_BRIDGE_SHORE_LANDING, BOW_BRIDGE_BOAT_DOCK, 2.7),
-    island: buildDock("ticket-island-stone-and-timber-landing", TICKET_ISLAND_LANDING_TARGET, TICKET_ISLAND_BOAT_DOCK, 2.25),
-    southeast: buildDock("southeast-lake-zoo-route-pier", LAKE_SOUTHEAST_SHORE_LANDING, LAKE_SOUTHEAST_BOAT_DOCK, 2.5),
+    bow: buildDock("bow-bridge-rowboat-pier", LAKE_DOCK_DEFINITIONS[0].land, LAKE_DOCK_DEFINITIONS[0].water, LAKE_DOCK_DEFINITIONS[0].width),
+    island: buildDock("ticket-island-stone-and-timber-landing", LAKE_DOCK_DEFINITIONS[1].land, LAKE_DOCK_DEFINITIONS[1].water, LAKE_DOCK_DEFINITIONS[1].width),
+    southeast: buildDock("southeast-lake-zoo-route-pier", LAKE_DOCK_DEFINITIONS[2].land, LAKE_DOCK_DEFINITIONS[2].water, LAKE_DOCK_DEFINITIONS[2].width),
   };
 }
 
@@ -1088,6 +1145,7 @@ export function buildRealisticWorld(scene: THREE.Scene, textures: GameTextures, 
   ticket.userData.anchorY = ticket.position.y;
 
   const rowboatSpawns: RowboatSpawn[] = [
+    { position: new THREE.Vector3(-25.6, THE_LAKE_SURFACE_Y - .04, -136.3), rotationY: .12, boatNumber: 5, name: "Bow Bridge checkpoint rowboat 5" },
     { position: new THREE.Vector3(-16.8, THE_LAKE_SURFACE_Y - .04, -154.4), rotationY: -.32, boatNumber: 7, name: "Bow Bridge rowboat 7" },
     { position: new THREE.Vector3(-22.5, THE_LAKE_SURFACE_Y - .04, -156.3), rotationY: -.18, boatNumber: 12, name: "Bow Bridge rowboat 12" },
     { position: new THREE.Vector3(187.7, THE_LAKE_SURFACE_Y - .04, -290.8), rotationY: 2.34, boatNumber: 18, name: "Southeast shore rowboat 18" },

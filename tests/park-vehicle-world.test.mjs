@@ -11,6 +11,7 @@ test("both lake shores provide usable boats and field-services carts", async () 
   ]);
 
   for (const name of [
+    "Bow Bridge checkpoint rowboat 5",
     "Bow Bridge rowboat 7",
     "Bow Bridge rowboat 12",
     "Southeast shore rowboat 18",
@@ -35,6 +36,27 @@ test("rowboats are closed, dry, clearly labelled, and omit the ambiguous bow rin
   assert.doesNotMatch(rowboat, /ropeCoil|bow-mooring-rope/);
   assert.match(rowboat, /get oarStrokePhaseRadians\(\)/);
   assert.match(rowboat, /get rowingEffort\(\)/);
+  assert.match(rowboat, /port-oar-hand-grip/);
+  assert.match(rowboat, /bronze-oarlock-collar/);
+  assert.match(rowboat, /materials\.oarWood/);
+  assert.match(rowboat, /shaft\.frustumCulled = false/);
+  assert.match(rowboat, /blade\.frustumCulled = false/);
+});
+
+test("Bow Bridge and each timber pier provide dry, elevated player support", async () => {
+  const [campaign, world] = await Promise.all([
+    readFile(new URL("../app/game/world/CampaignLandmarks.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/world/RealisticWorld.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(campaign, /BOW_BRIDGE_YAW = -\.43/);
+  assert.match(campaign, /const rotation = BOW_BRIDGE_YAW/);
+  assert.match(campaign, /length: length \+ 5\.2/);
+  assert.match(world, /function bowBridgeSupportsPlayer/);
+  assert.match(world, /export function lakeDockSurfaceHeightAt/);
+  assert.match(world, /shoreInset === 0 && \(bowBridgeSupportsPlayer\(x, z\) \|\| lakeDockSurfaceHeightAt\(x, z\) !== null\)/);
+  assert.match(world, /dummy\.position\.y = dockTopAt\(definition, amount\) - \.0525/);
+  assert.match(world, /return lakeDockSurfaceHeightAt\(x, z\) \?\? baseTerrainY\(x, z\)/);
 });
 
 test("shore forestry and first-person vehicle grips preserve visual clarity", async () => {
@@ -48,7 +70,7 @@ test("shore forestry and first-person vehicle grips preserve visual clarity", as
   assert.match(world, /containsLakeWater\(x, z, -8\)/);
   assert.match(game, /layoutDepth/);
   assert.match(game, /setVehiclePose\("cart", -cart\.steeringAngleRadians \/ \.54\)/);
-  assert.match(game, /setVehiclePose\("rowboat", activeBoat\.steeringAngleRadians \/ \.62, activeBoat\.oarStrokePhaseRadians\)/);
+  assert.match(game, /setVehiclePose\("rowboat", activeBoat\.steeringAngleRadians \/ \.62, activeBoat\.oarStrokePhaseRadians, activeBoat\.rowingEffort\)/);
   assert.match(sloth, /vehicleMode === "cart"/);
   assert.match(sloth, /vehicleMode === "rowboat"/);
 });
@@ -160,19 +182,48 @@ test("wrist volumes remain deeply overlapped and sweep caps shade correctly in e
   };
 
   const poses = [
-    ["neutral", "none", 0, 0, 0, false],
-    ["walking", "none", 0, 0, 4, false],
-    ["gripping", "none", 0, 0, 2, true],
-    ["cart-left", "cart", -1, 0, 0, false],
-    ["cart-right", "cart", 1, 0, 0, false],
-    ["rowboat-catch", "rowboat", -.7, 0, 0, false],
-    ["rowboat-drive", "rowboat", .7, Math.PI / 2, 0, false],
-    ["rowboat-finish", "rowboat", 0, Math.PI, 0, false],
+    ["neutral", "none", 0, 0, 0, 0, false],
+    ["walking", "none", 0, 0, 0, 4, false],
+    ["gripping", "none", 0, 0, 0, 2, true],
+    ["cart-left", "cart", -1, 0, 0, 0, false],
+    ["cart-right", "cart", 1, 0, 0, 0, false],
+    ["rowboat-idle", "rowboat", 0, 0, 0, 0, false],
+    ["rowboat-catch", "rowboat", -.7, 0, 1, 0, false],
+    ["rowboat-drive", "rowboat", .7, Math.PI / 2, .8, 0, false],
+    ["rowboat-finish", "rowboat", 0, Math.PI, 1, 0, false],
   ];
 
-  for (const [label, mode, steering, oarPhase, speed, gripping] of poses) {
-    rig.setVehiclePose(mode, steering, oarPhase);
+  for (const [label, mode, steering, oarPhase, rowingEffort, speed, gripping] of poses) {
+    rig.setVehiclePose(mode, steering, oarPhase, rowingEffort);
     rig.animate(1.7, speed, gripping);
     assertContinuous(label);
+    if (mode === "none") continue;
+
+    rig.root.updateMatrixWorld(true);
+    const leftWrist = rig.left.userData.joints.wrist.getWorldPosition(new THREE.Vector3());
+    const rightWrist = rig.right.userData.joints.wrist.getWorldPosition(new THREE.Vector3());
+    assert.ok(leftWrist.x < rightWrist.x, `${label} wrists remain on their authored sides`);
+    assert.ok(rightWrist.x - leftWrist.x > .08, `${label} wrists never collapse into one another`);
+
+    if (mode === "cart") {
+      const turn = steering * 1.161, cosine = Math.cos(turn), sine = Math.sin(turn);
+      const expectedLeft = new THREE.Vector3(-.01 - .185 * cosine, -.342 - .185 * sine * .948, -.522 + .185 * sine * -.319);
+      const expectedRight = new THREE.Vector3(-.01 + .185 * cosine, -.342 + .185 * sine * .948, -.522 - .185 * sine * -.319);
+      assert.ok(leftWrist.distanceTo(expectedLeft) < 1e-5, `${label} left paw is planted on the steering-wheel rim`);
+      assert.ok(rightWrist.distanceTo(expectedRight) < 1e-5, `${label} right paw is planted on the steering-wheel rim`);
+    } else {
+      const effort = rowingEffort;
+      const sweep = Math.sin(oarPhase) * (.08 + effort * .47);
+      const dip = Math.max(0, Math.cos(oarPhase) * effort);
+      const yaw = -.04 + sweep, roll = -.075 - dip * .11;
+      const x = .63 - .45 * Math.cos(yaw) * Math.cos(roll);
+      const worldY = .625 - .45 * Math.cos(yaw) * Math.sin(roll);
+      const worldZ = .2 + .45 * Math.sin(yaw);
+      const deltaY = worldY - 1.34, deltaZ = worldZ - .96;
+      const expectedY = Math.cos(.045) * deltaY - Math.sin(.045) * deltaZ;
+      const expectedZ = Math.sin(.045) * deltaY + Math.cos(.045) * deltaZ;
+      assert.ok(leftWrist.distanceTo(new THREE.Vector3(-x, expectedY, expectedZ)) < 1e-5, `${label} left paw follows its oar grip`);
+      assert.ok(rightWrist.distanceTo(new THREE.Vector3(x, expectedY, expectedZ)) < 1e-5, `${label} right paw follows its oar grip`);
+    }
   }
 });
