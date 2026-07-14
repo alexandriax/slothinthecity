@@ -52,6 +52,9 @@ test("Bow Bridge and each timber pier provide dry, elevated player support", asy
   ]);
 
   assert.match(campaign, /BOW_BRIDGE_YAW = -\.43/);
+  assert.match(campaign, /BOW_BRIDGE_DECK_BASE_Y = -1\.12/);
+  assert.match(campaign, /Math\.max\(BOW_BRIDGE_DECK_BASE_Y/);
+  assert.match(campaign, /bow-bridge-abutment-mounted-plaque/);
   assert.match(campaign, /const rotation = BOW_BRIDGE_YAW/);
   assert.match(campaign, /length: length \+ 5\.2/);
   assert.match(world, /function bowBridgeSupportsPlayer/);
@@ -59,6 +62,8 @@ test("Bow Bridge and each timber pier provide dry, elevated player support", asy
   assert.match(world, /shoreInset === 0 && \(bowBridgeSupportsPlayer\(x, z\) \|\| lakeDockSurfaceHeightAt\(x, z\) !== null\)/);
   assert.match(world, /dummy\.position\.y = dockTopAt\(definition, amount\) - \.0525/);
   assert.match(world, /return lakeDockSurfaceHeightAt\(x, z\) \?\? baseTerrainY\(x, z\)/);
+  assert.match(world, /new THREE\.Vector3\(-20\.1, THE_LAKE_SURFACE_Y - \.04, -138\.2\)/);
+  assert.match(world, /new THREE\.Vector3\(194\.7, THE_LAKE_SURFACE_Y - \.04, -295\.8\)/);
 });
 
 test("shore forestry and first-person vehicle grips preserve visual clarity", async () => {
@@ -151,21 +156,23 @@ test("cart and rowboat expose live grip transforms that remain camera-relative d
   texture.dispose();
 });
 
-test("first-person sloth arms use watertight sweeps and overlapping articulated joins", async () => {
+test("first-person sloth arms use one skinned anatomical surface without bulbous joint covers", async () => {
   const sloth = await readFile(new URL("../app/game/player/SlothRig.ts", import.meta.url), "utf8");
 
   assert.match(sloth, /capStart = true/);
   assert.match(sloth, /capEnd = true/);
   assert.match(sloth, /capVertexRanges/);
-  assert.match(sloth, /continuous-upper-arm/);
-  assert.match(sloth, /continuous-wrist-blend/);
-  assert.match(sloth, /continuous-paw-sweep/);
-  assert.match(sloth, /new THREE\.Vector3\(side \* \.004, -\.052, \.012\)/);
-  assert.match(sloth, /THREE\.MathUtils\.lerp\(\.094, \.058, t\)/);
-  assert.doesNotMatch(sloth, /palmFur/);
+  assert.match(sloth, /continuous-skinned-anatomical-arm/);
+  assert.match(sloth, /new THREE\.SkinnedMesh/);
+  assert.match(sloth, /new THREE\.Skeleton\(\[rootBone, elbow, wrist\]\)/);
+  assert.match(sloth, /skinIndex/);
+  assert.match(sloth, /skinWeight/);
+  assert.match(sloth, /wrapT = THREE\.ClampToEdgeWrapping/);
+  assert.doesNotMatch(sloth, /continuous-upper-arm|continuous-anatomical-forearm-sweep|continuous-anatomical-paw-sweep/);
+  assert.doesNotMatch(sloth, /elbowMass|wristBlend|addEllipsoidShell|palmFur/);
 });
 
-test("wrist volumes remain deeply overlapped and sweep caps shade correctly in every gameplay pose", () => {
+test("skinned arm surfaces remain continuous and animated in every gameplay pose", () => {
   const rig = createSlothRig(new THREE.Texture());
   rig.root.scale.setScalar(.54);
   rig.left.position.set(-.55, -.74, -.72);
@@ -177,31 +184,12 @@ test("wrist volumes remain deeply overlapped and sweep caps shade correctly in e
   rig.left.userData.layoutZ = -.48;
   rig.right.userData.layoutZ = .48;
 
-  const overlappingSweepRings = (blend, mesh) => {
-    rig.root.updateMatrixWorld(true);
-    const positions = mesh.geometry.getAttribute("position");
-    const { segments, radialSegments } = mesh.geometry.userData.sweep;
-    const inverseBlend = new THREE.Matrix4().copy(blend.matrixWorld).invert();
-    const point = new THREE.Vector3();
-    const overlappingRings = [];
-    for (let segment = 0; segment <= segments; segment++) {
-      let overlaps = false;
-      for (let radial = 0; radial <= radialSegments; radial++) {
-        const index = segment * (radialSegments + 1) + radial;
-        point.fromBufferAttribute(positions, index).applyMatrix4(mesh.matrixWorld).applyMatrix4(inverseBlend);
-        if (point.lengthSq() <= 1.001) { overlaps = true; break; }
-      }
-      if (overlaps) overlappingRings.push(segment);
-    }
-    return overlappingRings;
-  };
-
   const assertCaps = (mesh, label) => {
     const positions = mesh.geometry.getAttribute("position");
     const normals = mesh.geometry.getAttribute("normal");
     const indices = mesh.geometry.getIndex();
     const { capVertexRanges } = mesh.geometry.userData.sweep;
-    assert.equal(capVertexRanges.length, 2, `${label} has both sweep caps`);
+    assert.equal(capVertexRanges.length, 2, `${label} caps only the shoulder and paw ends`);
     const reference = new THREE.Vector3();
     const normal = new THREE.Vector3();
     const triangleA = new THREE.Vector3();
@@ -238,22 +226,25 @@ test("wrist volumes remain deeply overlapped and sweep caps shade correctly in e
 
   const assertContinuous = (label) => {
     for (const [side, arm] of [["left", rig.left], ["right", rig.right]]) {
-      const upper = arm.getObjectByName("continuous-upper-arm");
-      const wrist = arm.getObjectByName("continuous-wrist-blend");
-      const forearm = arm.getObjectByName("continuous-forearm-sweep");
-      const paw = arm.getObjectByName("continuous-paw-sweep");
-      for (const object of [upper, wrist, forearm, paw]) assert.ok(object, `${side} ${label} mesh exists`);
-      upper.geometry.computeBoundingBox();
-      assert.ok(upper.geometry.boundingBox.min.y <= -.45, `${side} ${label} arm begins below the camera mount`);
-      assert.ok(upper.geometry.boundingBox.max.y >= .34, `${side} ${label} arm reaches the elbow without a root seam`);
-      const forearmRings = overlappingSweepRings(wrist, forearm);
-      const pawRings = overlappingSweepRings(wrist, paw);
-      const forearmLastRing = forearm.geometry.userData.sweep.segments;
-      assert.ok(forearmRings.length >= 2 && forearmRings.some(ring => ring < forearmLastRing), `${side} ${label} forearm penetrates beyond its endpoint ring`);
-      assert.ok(pawRings.length >= 2 && pawRings.some(ring => ring > 0), `${side} ${label} paw penetrates beyond its endpoint ring`);
-      assertCaps(upper, `${side} ${label} upper arm`);
-      assertCaps(forearm, `${side} ${label} forearm`);
-      assertCaps(paw, `${side} ${label} paw`);
+      const mesh = arm.getObjectByName("continuous-skinned-anatomical-arm");
+      const elbow = arm.getObjectByName("anatomical-elbow-bone");
+      const wrist = arm.getObjectByName("anatomical-wrist-bone");
+      for (const object of [mesh, elbow, wrist]) assert.ok(object, `${side} ${label} rig element exists`);
+      assert.ok(mesh.isSkinnedMesh, `${side} ${label} arm is skinned as one surface`);
+      assert.equal(mesh.skeleton.bones.length, 3, `${side} ${label} arm has shoulder, elbow, and wrist bones`);
+      mesh.geometry.computeBoundingBox();
+      assert.ok(mesh.geometry.boundingBox.min.y <= -.45, `${side} ${label} arm begins below the camera mount`);
+      assert.ok(mesh.geometry.boundingBox.max.y >= .82, `${side} ${label} surface reaches through the paw`);
+      assert.equal(mesh.geometry.getAttribute("skinIndex").count, mesh.geometry.getAttribute("position").count);
+      assert.equal(mesh.geometry.getAttribute("skinWeight").count, mesh.geometry.getAttribute("position").count);
+      const skinWeights = mesh.geometry.getAttribute("skinWeight");
+      let blendedVertices = 0;
+      for (let index = 0; index < skinWeights.count; index++) {
+        const first = skinWeights.getX(index), second = skinWeights.getY(index);
+        if (first > 0 && first < 1 && second > 0 && second < 1) blendedVertices++;
+      }
+      assert.ok(blendedVertices > 100, `${side} ${label} joints use broad deformation blends`);
+      assertCaps(mesh, `${side} ${label} anatomical arm`);
     }
   };
 

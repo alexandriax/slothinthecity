@@ -247,7 +247,7 @@ function createPassenger(index: number, quality: TrainInteriorQuality, pose: "ho
     ["#69405d", "#e0b58d", "#643c29"], ["#313e64", "#9a674d", "#24201d"], ["#4b5d45", "#c18767", "#463026"],
   ][index % 6];
   const premium = createPremiumHuman({
-    role: "visitor", quality: quality === "desktop" ? .72 : .5, variant: index + 31, coat: palettes[0], trousers: palettes[2], skin: palettes[1],
+    role: "visitor", quality: quality === "desktop" ? .72 : .5, variant: index + 31, faceVariant: [12, 15, 16, 17, 18, 19][index % 6], coat: palettes[0], trousers: palettes[2], skin: palettes[1],
     accessory: pose === "seated" ? "none" : index % 3 === 0 ? "backpack" : index % 3 === 1 ? "tote" : "none",
     pose: pose === "reading" ? "checking-map" : pose === "seated" ? "seated" : "neutral",
   });

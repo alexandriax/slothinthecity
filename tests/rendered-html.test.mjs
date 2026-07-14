@@ -32,6 +32,20 @@ test("server-renders the branded game shell", async () => {
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });
 
+test("landing wordmark remains responsive instead of relying on crop-prone image text", async () => {
+  const [css, game] = await Promise.all([
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/GameClient.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(game, /<div className="mobile-wordmark"/);
+  assert.match(css, /\.mobile-wordmark \{ display:block;/);
+  assert.match(css, /font-size:clamp\(58px,7\.4vw,108px\)/);
+  assert.match(css, /@media\(max-height:650px\)/);
+  assert.match(css, /@media\(max-height:460px\) and \(orientation:landscape\)/);
+  assert.match(css, /env\(safe-area-inset-left\)/);
+  assert.match(css, /\.intro-location \{[^}]*text-overflow:ellipsis/);
+});
+
 test("removes the disposable starter and keeps the game browser-safe", async () => {
   const [page, layout, game, quality, packageJson] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
@@ -100,7 +114,11 @@ test("foraging opens the Bow Bridge, island ticket, zoo, and subway campaign wit
   assert.match(landmarks, /bow-bridge-clear-walkable-approach/);
   assert.match(landmarks, /central-park-zoo-exterior-campus/);
   assert.match(landmarks, /5-av-59-st-full-stair-subway-entrance/);
+  assert.match(landmarks, /sidewalkWithStairOpeningGeometry/);
+  assert.match(landmarks, /subway-sidewalk-with-true-stairwell-cutout/);
+  assert.match(landmarks, /position\.set\(0, -\.085 - step \* \.165/);
   assert.match(landmarks, /subway-mid-descent-transition-step/);
+  assert.match(world, /subwayLocalX <= 3\.02 && subwayLocalZ <= -\.65 && subwayLocalZ >= -9\.65/);
   assert.match(landmarks, /UPTOWN  ·  DOWNTOWN  ·  QUEENS  VIA CONCOURSE/);
   assert.doesNotMatch(landmarks, /QUEENS & ASTORIA/);
   assert.doesNotMatch(game, /qaInput === "gate"|gatecomplete|Follow the marker to sanctuary/);

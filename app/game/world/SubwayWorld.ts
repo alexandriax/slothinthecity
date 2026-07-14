@@ -420,10 +420,12 @@ function addNpc(parent: THREE.Group, x: number, z: number, palette: [string, str
   if (!surfaceMaps) return addLegacyNpc(parent, x, z, palette, facing, variant, quality, surfaceMaps);
   const trouserColors = ["#171b1e", "#292a35", "#2d382f", "#443b35", "#182c3d"];
   const accessories = ["backpack", "none", "tote", "none", "backpack"] as const;
+  const faceVariants = [12, 15, 13, 16, 19, 14, 17, 18, 11, 0] as const;
   const result = createPremiumHuman({
     role,
     quality: quality === "mobile" ? .48 : quality === "ultra" ? .82 : .64,
     variant,
+    faceVariant: faceVariants[variant % faceVariants.length],
     coat: palette[0],
     trousers: trouserColors[variant % trouserColors.length],
     skin: palette[1],

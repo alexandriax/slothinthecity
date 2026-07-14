@@ -32,11 +32,13 @@ export const PREMIUM_CHARACTER_ASSETS = {
   columns: 2,
   rows: 2,
   tilesPerAtlas: 4,
-  identityCount: 12,
+  identityCount: 20,
   faceAtlases: [
     "/game/characters/npc-face-atlas-v2-01.webp",
     "/game/characters/npc-face-atlas-v2-02.webp",
     "/game/characters/npc-face-atlas-v2-03.webp",
+    "/game/characters/npc-face-atlas-v3-01.webp",
+    "/game/characters/npc-face-atlas-v3-02.webp",
   ],
   clothingAtlases: [
     "/game/characters/npc-cloth-atlas-v2-01.webp",
@@ -146,13 +148,14 @@ function atlasTile(url: string, tile: number, quality: number) {
   return texture;
 }
 
-function normalizedVariant(variant: number, count = PREMIUM_CHARACTER_ASSETS.identityCount) {
+function normalizedVariant(variant: number, count: number = PREMIUM_CHARACTER_ASSETS.identityCount) {
   return ((Math.floor(variant) % count) + count) % count;
 }
 
 function defaultAtlas(kind: "face" | "clothing", variant: number) {
   const paths = kind === "face" ? PREMIUM_CHARACTER_ASSETS.faceAtlases : PREMIUM_CHARACTER_ASSETS.clothingAtlases;
-  return paths[Math.floor(normalizedVariant(variant) / PREMIUM_CHARACTER_ASSETS.tilesPerAtlas)];
+  const availableIdentities = paths.length * PREMIUM_CHARACTER_ASSETS.tilesPerAtlas;
+  return paths[Math.floor(normalizedVariant(variant, availableIdentities) / PREMIUM_CHARACTER_ASSETS.tilesPerAtlas)];
 }
 
 function portraitTile(url: string, tile: number, quality: number) {
@@ -165,7 +168,7 @@ function portraitTile(url: string, tile: number, quality: number) {
   const image = new Image(); image.decoding = "async";
   image.onload = () => {
     const index = ((tile % 4) + 4) % 4, tileWidth = image.naturalWidth / 2, tileHeight = image.naturalHeight / 2;
-    const legacy = url.includes("-v1."), cropX = legacy ? .07 : .035, cropY = legacy ? .015 : .035, cropWidth = legacy ? .86 : .93, cropHeight = legacy ? .84 : .91;
+    const legacy = url.includes("-v1."), cropX = legacy ? .07 : .055, cropY = legacy ? .015 : .018, cropWidth = legacy ? .86 : .89, cropHeight = legacy ? .84 : .94;
     const sourceX = (index % 2) * tileWidth + tileWidth * cropX, sourceY = (index < 2 ? 0 : tileHeight) + tileHeight * cropY;
     context.clearRect(0, 0, size, size);
     context.drawImage(image, sourceX, sourceY, tileWidth * cropWidth, tileHeight * cropHeight, 0, 0, size, size);
@@ -180,7 +183,10 @@ function portraitTile(url: string, tile: number, quality: number) {
       const edgeX = Math.min(1, x / (size * .055), (size - 1 - x) / (size * .055));
       const edgeY = Math.min(1, y / (size * .035), (size - 1 - y) / (size * .035));
       const edgeFeather = Math.max(0, Math.min(edgeX, edgeY));
-      pixels.data[offset + 3] = Math.round(255 * edgeFeather * (legacy ? THREE.MathUtils.smoothstep(distance, 18, 42) : 1));
+      const normalizedX = (x / (size - 1) - .5) / .51, normalizedY = (y / (size - 1) - .505) / .57;
+      const portraitMask = 1 - THREE.MathUtils.smoothstep(Math.hypot(normalizedX, normalizedY), .82, 1);
+      const backgroundMask = legacy ? THREE.MathUtils.smoothstep(distance, 18, 42) : 1;
+      pixels.data[offset + 3] = Math.round(255 * edgeFeather * portraitMask * backgroundMask);
     }
     context.putImageData(pixels, 0, 0); texture.needsUpdate = true;
   };
@@ -259,16 +265,17 @@ function atlasMaterial(atlas: THREE.Texture, relief: THREE.Texture, roughness: n
   });
 }
 
-function profiledTorsoGeometry(segments: number, role: PremiumHumanRole) {
+function profiledTorsoGeometry(segments: number, role: PremiumHumanRole, feminine: boolean) {
   const attendant = role === "attendant";
+  const shoulderScale = feminine ? .91 : 1;
   const levels = [
-    { y: -.55, x: .245, z: .19 },
-    { y: -.46, x: .305, z: .22 },
-    { y: -.2, x: .318, z: .232 },
-    { y: .08, x: .325, z: .24 },
-    { y: .3, x: attendant ? .375 : .36, z: .235 },
-    { y: .42, x: attendant ? .415 : .392, z: .22 },
-    { y: .52, x: .235, z: .17 },
+    { y: -.55, x: feminine ? .275 : .245, z: .19 },
+    { y: -.46, x: feminine ? .32 : .305, z: .22 },
+    { y: -.2, x: feminine ? .295 : .318, z: .232 },
+    { y: .08, x: feminine ? .305 : .325, z: .24 },
+    { y: .3, x: (attendant ? .375 : .36) * shoulderScale, z: .235 },
+    { y: .42, x: (attendant ? .415 : .392) * shoulderScale, z: .22 },
+    { y: .52, x: .225, z: .17 },
   ];
   const ringSegments = Math.max(18, segments), positions: number[] = [], uvs: number[] = [], indices: number[] = [];
   for (let level = 0; level < levels.length; level++) {
@@ -288,12 +295,38 @@ function profiledTorsoGeometry(segments: number, role: PremiumHumanRole) {
   const geometry = new THREE.BufferGeometry(); geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3)); geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2)); geometry.setIndex(indices); geometry.computeVertexNormals(); return geometry;
 }
 
-function taperedLimbBetween(start: THREE.Vector3, end: THREE.Vector3, startRadius: number, endRadius: number, material: THREE.Material, segments: number) {
-  const direction = end.clone().sub(start), length = direction.length();
-  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(endRadius, startRadius, length, segments, Math.max(3, Math.floor(segments / 8)), false), material);
-  mesh.position.copy(start).add(end).multiplyScalar(.5);
-  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
-  return mesh;
+/**
+ * Builds one tapered anatomical sweep through every authored joint. Shoulder,
+ * elbow and wrist therefore share a silhouette instead of being assembled from
+ * cylinders and cover spheres, which used to read as toy-like bulbs and cones.
+ */
+function taperedSweepGeometry(points: THREE.Vector3[], radii: number[], segments: number, radialSegments: number, depthScale = .86) {
+  const curve = new THREE.CatmullRomCurve3(points, false, "centripetal");
+  const frames = curve.computeFrenetFrames(segments, false), ring = radialSegments + 1;
+  const positions: number[] = [], normals: number[] = [], uvs: number[] = [], indices: number[] = [];
+  const center = new THREE.Vector3(), offset = new THREE.Vector3(), normal = new THREE.Vector3();
+  for (let segment = 0; segment <= segments; segment++) {
+    const t = segment / segments, scaled = t * (radii.length - 1), radiusIndex = Math.min(radii.length - 2, Math.floor(scaled));
+    const radius = THREE.MathUtils.lerp(radii[radiusIndex], radii[radiusIndex + 1], THREE.MathUtils.smootherstep(scaled - radiusIndex, 0, 1));
+    curve.getPointAt(t, center);
+    for (let radial = 0; radial <= radialSegments; radial++) {
+      const u = radial / radialSegments, angle = u * Math.PI * 2, cosine = Math.cos(angle), sine = Math.sin(angle);
+      offset.copy(frames.normals[segment]).multiplyScalar(cosine * radius);
+      offset.addScaledVector(frames.binormals[segment], sine * radius * depthScale);
+      positions.push(center.x + offset.x, center.y + offset.y, center.z + offset.z);
+      normal.copy(frames.normals[segment]).multiplyScalar(cosine).addScaledVector(frames.binormals[segment], sine / depthScale).normalize();
+      normals.push(normal.x, normal.y, normal.z); uvs.push(u, t);
+      if (segment < segments && radial < radialSegments) {
+        const current = segment * ring + radial, next = current + ring;
+        indices.push(current, next, current + 1, current + 1, next, next + 1);
+      }
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices); geometry.computeBoundingSphere(); return geometry;
 }
 
 function addNaturalHand(root: THREE.Group, wrist: THREE.Vector3, side: number, skin: THREE.Material, segments: number, gesture: "relaxed" | "open") {
@@ -320,6 +353,9 @@ export function createPremiumHuman(options: PremiumHumanOptions): PremiumCharact
   const segments = quality > .92 ? 40 : quality > .68 ? 28 : 18;
   const identityVariant = normalizedVariant(options.faceVariant ?? options.variant);
   const wardrobeVariant = normalizedVariant(options.clothingVariant ?? options.variant + (options.role === "attendant" ? 4 : 0));
+  const feminine = identityVariant >= 12
+    ? [12, 13, 14, 16, 17, 18].includes(identityVariant)
+    : identityVariant % 2 === 1;
   const faceAtlasUrl = options.faceAtlasUrl ?? defaultAtlas("face", identityVariant);
   const clothingAtlasUrl = options.clothingAtlasUrl ?? defaultAtlas("clothing", wardrobeVariant);
   const hairColor = options.hair ?? (identityVariant % 4 === 0 ? "#241b17" : identityVariant % 4 === 1 ? "#38251d" : identityVariant % 4 === 2 ? "#5a402f" : "#17191a");
@@ -341,23 +377,20 @@ export function createPremiumHuman(options: PremiumHumanOptions): PremiumCharact
   root.userData.characterFidelity = high ? "premium-high" : "premium-mobile";
   root.userData.faceAtlas = faceAtlasUrl;
   root.userData.faceVariant = identityVariant;
+  root.userData.presentation = feminine ? "feminine" : "masculine";
   root.userData.clothingAtlas = clothingAtlasUrl;
   root.userData.clothingVariant = wardrobeVariant;
   if (options.role === "attendant") root.userData.dialogue = "There are no sloths here.";
 
   // A profiled, slightly asymmetrical torso replaces the stacked-box outline.
   const build = identityVariant % 4;
-  const hips = new THREE.Mesh(CapsuleGeometrySafe(.29, .24, segments), trousers); hips.position.y = 1.02; hips.scale.set(1.02 + build * .025, .68, .76 + (build % 2) * .035); root.add(hips);
-  const torso = new THREE.Mesh(profiledTorsoGeometry(segments, options.role), coat); torso.position.y = 1.5; torso.rotation.y = (identityVariant % 3 - 1) * .018; torso.scale.set(.96 + build * .022, 1 + (identityVariant % 2) * .018, .98 + (build % 2) * .025); root.add(torso);
+  const hips = new THREE.Mesh(CapsuleGeometrySafe(.29, .24, segments), trousers); hips.position.y = 1.02; hips.scale.set((feminine ? 1.08 : 1.02) + build * .018, .68, .76 + (build % 2) * .035); root.add(hips);
+  const torso = new THREE.Mesh(profiledTorsoGeometry(segments, options.role, feminine), coat); torso.position.y = 1.5; torso.rotation.y = (identityVariant % 3 - 1) * .018; torso.scale.set(.96 + build * .018, 1 + (identityVariant % 2) * .018, .98 + (build % 2) * .025); root.add(torso);
   const jacketHem = new THREE.Mesh(new THREE.TorusGeometry(.295, .025, Math.max(8, segments / 3), segments), coat); jacketHem.rotation.x = Math.PI / 2; jacketHem.scale.z = .74; jacketHem.position.y = .99; root.add(jacketHem);
-  for (const side of [-1, 1]) {
-    const deltoid = new THREE.Mesh(new THREE.SphereGeometry(.145, segments, Math.max(12, Math.floor(segments * .65))), coat);
-    deltoid.scale.set(1.18, .94, .85); deltoid.position.set(side * .38, 1.78, 0); root.add(deltoid);
-  }
   if (options.role === "attendant") {
     const shirt = new THREE.Mesh(new RoundedBoxGeometry(.32, .5, .045, high ? 8 : 4, .025), trim); shirt.position.set(0, 1.52, -.286); root.add(shirt);
-    for (const side of [-1, 1]) { const lapel = new THREE.Mesh(new THREE.ConeGeometry(.14, .4, 8), coat); lapel.position.set(side * .115, 1.67, -.32); lapel.rotation.set(Math.PI / 2, 0, side * -.17); root.add(lapel); }
-    const tie = new THREE.Mesh(new THREE.ConeGeometry(.044, .24, 8), leather); tie.position.set(0, 1.54, -.335); tie.rotation.x = Math.PI; root.add(tie);
+    for (const side of [-1, 1]) { const lapel = new THREE.Mesh(new RoundedBoxGeometry(.13, .37, .025, 4, .018), coat); lapel.position.set(side * .105, 1.67, -.322); lapel.rotation.z = side * -.22; root.add(lapel); }
+    const tie = new THREE.Mesh(new RoundedBoxGeometry(.055, .23, .02, 3, .012), leather); tie.position.set(0, 1.56, -.342); root.add(tie);
   } else {
     const zip = new THREE.Mesh(new RoundedBoxGeometry(.02, .72, .018, 3, .006), metal); zip.position.set(0, 1.47, -.307); root.add(zip);
     for (const side of [-1, 1]) { const seam = new THREE.Mesh(new THREE.TorusGeometry(.24, .014, 7, segments, Math.PI * .62), trim); seam.position.set(side * .045, 1.76, -.015); seam.rotation.set(Math.PI / 2, 0, side * .2); root.add(seam); }
@@ -386,7 +419,7 @@ export function createPremiumHuman(options: PremiumHumanOptions): PremiumCharact
 
   const pose = options.pose ?? "neutral";
   for (const side of [-1, 1]) {
-    const shoulder = new THREE.Vector3(side * .37, 1.64, 0);
+    const shoulder = new THREE.Vector3(side * (feminine ? .345 : .37), 1.68, 0);
     const elbow = new THREE.Vector3(
       side * (pose === "waving" && side > 0 ? .56 : pose === "seated" ? .34 : .43),
       pose === "waving" && side > 0 ? 1.9 : pose === "seated" ? 1.31 : 1.3,
@@ -397,9 +430,13 @@ export function createPremiumHuman(options: PremiumHumanOptions): PremiumCharact
       pose === "waving" && side > 0 ? 2.25 : pose === "photographing" ? 1.58 : pose === "seated" ? 1.08 : 1.02,
       pose === "checking-map" || pose === "photographing" ? -.42 : pose === "seated" ? -.34 : -.09,
     );
-    const upperArm = taperedLimbBetween(shoulder, elbow, .105, .085, coat, segments), forearm = taperedLimbBetween(elbow, wrist, .082, .06, coat, segments);
-    root.add(upperArm, forearm);
-    const elbowBlend = new THREE.Mesh(new THREE.SphereGeometry(.087, segments, 14), coat); elbowBlend.scale.set(1.03, 1.1, .92); elbowBlend.position.copy(elbow); root.add(elbowBlend);
+    const arm = new THREE.Mesh(taperedSweepGeometry([
+      new THREE.Vector3(side * (feminine ? .285 : .305), 1.72, .018),
+      shoulder,
+      elbow,
+      wrist,
+    ], [feminine ? .105 : .115, .11, .082, .057], high ? 34 : 24, Math.max(14, Math.floor(segments * .72)), .82), coat);
+    arm.name = "continuous-tailored-human-arm"; root.add(arm);
     if (options.role === "attendant") { const cuff = new THREE.Mesh(new THREE.CylinderGeometry(.068, .073, .095, segments), trim); cuff.position.copy(elbow).lerp(wrist, .78); cuff.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), wrist.clone().sub(elbow).normalize()); root.add(cuff); }
     addNaturalHand(root, wrist, side, skin, segments, pose === "waving" || pose === "photographing" ? "open" : "relaxed");
     const hip = new THREE.Vector3(side * .15, .89, 0);
@@ -407,8 +444,13 @@ export function createPremiumHuman(options: PremiumHumanOptions): PremiumCharact
       ? new THREE.Vector3(side * .17, .67, -.34)
       : new THREE.Vector3(side * (.15 + (options.variant % 2 ? .018 : 0)), .48, side * .012);
     const ankle = pose === "seated" ? new THREE.Vector3(side * .16, .22, -.52) : new THREE.Vector3(side * .15, .16, -.015);
-    root.add(taperedLimbBetween(hip, knee, .13, .105, trousers, segments), taperedLimbBetween(knee, ankle, .105, .075, trousers, segments));
-    const kneeBlend = new THREE.Mesh(new THREE.SphereGeometry(.105, segments, 14), trousers); kneeBlend.scale.set(.94, 1.07, .9); kneeBlend.position.copy(knee); root.add(kneeBlend);
+    const leg = new THREE.Mesh(taperedSweepGeometry([
+      new THREE.Vector3(side * .135, .98, .012),
+      hip,
+      knee,
+      ankle,
+    ], [feminine ? .12 : .13, .125, .101, .072], high ? 32 : 22, Math.max(14, Math.floor(segments * .72)), .9), trousers);
+    leg.name = "continuous-tailored-human-leg"; root.add(leg);
     const shoe = new THREE.Mesh(new RoundedBoxGeometry(.235, .14, .43, high ? 5 : 3, .05), leather); shoe.position.set(side * .15, pose === "seated" ? .11 : .09, pose === "seated" ? -.67 : -.11); root.add(shoe);
   }
 
@@ -442,6 +484,30 @@ function CapsuleGeometrySafe(radius: number, length: number, segments: number) {
   return new THREE.CapsuleGeometry(radius, length, Math.max(6, Math.floor(segments / 2)), segments);
 }
 
+function anatomicalSlothTorsoGeometry(segments: number) {
+  const geometry = new THREE.SphereGeometry(1, segments, Math.max(16, segments - 5));
+  const positions = geometry.getAttribute("position") as THREE.BufferAttribute;
+  for (let index = 0; index < positions.count; index++) {
+    const x = positions.getX(index), y = positions.getY(index), z = positions.getZ(index);
+    const shoulders = Math.exp(-Math.pow((y - .48) / .29, 2)), hips = Math.exp(-Math.pow((y + .5) / .36, 2));
+    const width = .46 + shoulders * .19 + hips * .055, depth = .38 + shoulders * .045 + hips * .035;
+    positions.setXYZ(index, x * width, y * 1.1, z * depth - Math.max(0, -z) * shoulders * .025);
+  }
+  positions.needsUpdate = true; geometry.computeVertexNormals(); return geometry;
+}
+
+function anatomicalSlothHeadGeometry(segments: number) {
+  const geometry = new THREE.SphereGeometry(1, segments, Math.max(16, segments - 5));
+  const positions = geometry.getAttribute("position") as THREE.BufferAttribute;
+  for (let index = 0; index < positions.count; index++) {
+    const x = positions.getX(index), y = positions.getY(index), z = positions.getZ(index);
+    const jaw = .82 + THREE.MathUtils.smoothstep(y, -.82, .24) * .18;
+    const brow = Math.exp(-Math.pow((y - .28) / .3, 2)) * .045;
+    positions.setXYZ(index, x * (.52 * jaw + brow), y * .47, z * (.44 + Math.max(0, -z) * .025));
+  }
+  positions.needsUpdate = true; geometry.computeVertexNormals(); return geometry;
+}
+
 export function createPremiumSlothFriend(textures: GameTextures, quality: number, variant: number, tint: string): PremiumCharacterResult {
   const clamped = THREE.MathUtils.clamp(quality, .42, 1.2), high = clamped > .7, segments = clamped > .9 ? 30 : high ? 22 : 15;
   const creamMap = proceduralSurface("fur", "#c7b99a", "#eee1bd", 211 + variant, clamped);
@@ -453,10 +519,9 @@ export function createPremiumSlothFriend(textures: GameTextures, quality: number
   const creamFur = texturedMaterial(creamMap, .94), darkFur = texturedMaterial(darkMap, .9), ivory = texturedMaterial(clawMap, .54, { clearcoat: .16 }), leather = texturedMaterial(leatherMap, .78);
   const eye = new THREE.MeshPhysicalMaterial({ map: darkMap, color: "#ffffff", roughness: .12, clearcoat: 1 });
   const root = new THREE.Group(); root.name = "waiting-sloth-friend"; root.userData.pose = variant;
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(.59, 1.28, Math.max(9, segments / 2), segments), fur); body.position.set(0, 1.47, .05); body.rotation.z = -.045 + variant * .018; body.scale.z = .82; root.add(body);
-  const belly = new THREE.Mesh(new THREE.SphereGeometry(.5, segments, segments - 5), creamFur); belly.scale.set(.78, 1.15, .46); belly.position.set(0, 1.48, -.49); root.add(belly);
-  const shoulders = new THREE.Mesh(new THREE.SphereGeometry(.66, segments, segments - 5), fur); shoulders.scale.set(1.02, .58, .72); shoulders.position.set(0, 2.02, -.01); root.add(shoulders);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(.55, segments, segments - 5), fur); head.scale.set(1, .91, .92); head.position.set(0, 2.62, -.1); root.add(head);
+  const body = new THREE.Mesh(anatomicalSlothTorsoGeometry(segments), fur); body.name = "continuous-anatomical-sloth-torso"; body.position.set(0, 1.42, .04); body.rotation.z = -.035 + variant * .014; root.add(body);
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(.5, segments, segments - 5), creamFur); belly.scale.set(.76, 1.08, .4); belly.position.set(0, 1.43, -.395); root.add(belly);
+  const head = new THREE.Mesh(anatomicalSlothHeadGeometry(segments), fur); head.name = "anatomical-sloth-head-and-jaw"; head.position.set(0, 2.57, -.1); root.add(head);
   const face = new THREE.Mesh(new THREE.SphereGeometry(.425, segments, segments - 7, 0, Math.PI * 2, .14, Math.PI * .73), creamFur); face.scale.set(1.07, .88, .31); face.position.set(0, 2.57, -.58); face.rotation.x = -.06; root.add(face);
   for (const side of [-1, 1]) {
     const patch = new THREE.Mesh(new THREE.SphereGeometry(.148, segments, 14), darkFur); patch.scale.set(1.52, .73, .35); patch.position.set(side * .205, 2.64, -.72); patch.rotation.z = side * .34; root.add(patch);
@@ -465,15 +530,25 @@ export function createPremiumSlothFriend(textures: GameTextures, quality: number
     const ear = new THREE.Mesh(new THREE.SphereGeometry(.11, segments, 12), fur); ear.scale.set(.55, 1, .72); ear.position.set(side * .51, 2.64, -.08); root.add(ear);
     const waving = side === (variant % 2 ? -1 : 1), arm = new THREE.Group(); arm.name = waving ? "friend-wave-arm" : "friend-rest-arm"; arm.position.set(side * .54, 1.93, 0);
     arm.rotation.z = side * (waving ? -.9 : -.3); arm.rotation.x = waving ? -.18 : .08;
-    const upper = new THREE.Mesh(new THREE.CapsuleGeometry(.185, .76, Math.max(8, segments / 2), segments), fur); upper.position.y = .18; upper.scale.z = .86; arm.add(upper);
-    const wrist = new THREE.Mesh(new THREE.CapsuleGeometry(.17, .38, Math.max(7, segments / 2), segments), fur); wrist.position.y = -.42; wrist.rotation.z = side * .08; arm.add(wrist);
-    const palm = new THREE.Mesh(new THREE.SphereGeometry(.205, segments, 15), darkFur); palm.scale.set(.9, 1.1, .68); palm.position.y = -.72; arm.add(palm);
+    const forelimb = new THREE.Mesh(taperedSweepGeometry([
+      new THREE.Vector3(0, .52, .01),
+      new THREE.Vector3(-side * .012, .14, -.005),
+      new THREE.Vector3(side * .025, -.37, -.025),
+      new THREE.Vector3(side * .035, -.78, -.09),
+    ], [.19, .176, .135, .145], high ? 36 : 24, Math.max(14, segments), .82), fur);
+    forelimb.name = "continuous-anatomical-sloth-forelimb"; arm.add(forelimb);
     for (let claw = -1; claw <= 1; claw++) {
-      const curve = new THREE.CatmullRomCurve3([new THREE.Vector3(claw * .09, -.79, -.08), new THREE.Vector3(claw * .105, -.98, -.18), new THREE.Vector3(claw * .1, -1.12, -.33)]), tube = new THREE.Mesh(new THREE.TubeGeometry(curve, high ? 14 : 8, .034, high ? 10 : 7, false), ivory); arm.add(tube);
+      const curve = new THREE.CatmullRomCurve3([new THREE.Vector3(claw * .082, -.75, -.09), new THREE.Vector3(claw * .1, -.98, -.18), new THREE.Vector3(claw * .1, -1.12, -.33)]), tube = new THREE.Mesh(new THREE.TubeGeometry(curve, high ? 14 : 8, .031, high ? 10 : 7, false), ivory); arm.add(tube);
       const tip = new THREE.Mesh(new THREE.ConeGeometry(.034, .16, high ? 10 : 7), ivory); tip.position.set(claw * .1, -1.17, -.37); tip.rotation.x = -.62; arm.add(tip);
     }
     root.add(arm);
-    const thigh = new THREE.Mesh(new THREE.CapsuleGeometry(.21, .47, 8, segments), fur); thigh.position.set(side * .31, .43, -.02); thigh.rotation.z = side * -.12; root.add(thigh);
+    const hindlimb = new THREE.Mesh(taperedSweepGeometry([
+      new THREE.Vector3(side * .27, .79, .02),
+      new THREE.Vector3(side * .33, .53, -.01),
+      new THREE.Vector3(side * .3, .24, -.055),
+      new THREE.Vector3(side * .28, .1, -.16),
+    ], [.215, .205, .155, .12], high ? 28 : 20, Math.max(13, segments), .86), fur);
+    hindlimb.name = "continuous-anatomical-sloth-hindlimb"; root.add(hindlimb);
   }
   const muzzle = new THREE.Mesh(new THREE.SphereGeometry(.16, segments, 14), creamFur); muzzle.scale.set(1.05, .58, .44); muzzle.position.set(0, 2.45, -.75); root.add(muzzle);
   const nose = new THREE.Mesh(new THREE.SphereGeometry(.098, segments, 14), darkFur); nose.scale.set(1.25, .7, .72); nose.position.set(0, 2.48, -.82); root.add(nose);
