@@ -282,10 +282,10 @@ def corrected_head_point(point: Vector, low: Vector, high: Vector, rigid: bool =
     if weight <= 0.0:
         return point.copy()
     pivot = Vector((0.0, height * 0.008, low.z + height * 0.775))
-    # The scan's neutral head is pitched sharply toward the chest. A 10°
-    # anatomical correction restores a forward gaze without tipping the chin
-    # above the horizon (the earlier 21° correction overcompensated).
-    angle = math.radians(-10.0) * weight
+    # The scan's neutral head is pitched sharply toward the chest. Fifteen
+    # degrees keeps the gaze level in the browser's lower first-person camera
+    # while avoiding the chin-up result from the earlier 21° experiment.
+    angle = math.radians(-15.0) * weight
     relative = point - pivot
     return pivot + Vector(
         (
@@ -320,7 +320,7 @@ def straighten_head_detail(obj: bpy.types.Object, body: bpy.types.Object) -> Non
     """
     low, high = object_bounds(body)
     corrected = corrected_head_point(obj.location, low, high, rigid=True)
-    rotation = Matrix.Rotation(math.radians(-10.0), 4, "X")
+    rotation = Matrix.Rotation(math.radians(-15.0), 4, "X")
     obj.location = corrected
     obj.rotation_euler.rotate(rotation.to_euler())
 
@@ -408,8 +408,12 @@ def torso_predicate(center: Vector, low: Vector, high: Vector) -> bool:
     h = high.z - low.z
     z = (center.z - low.z) / h
     x = abs(center.x) / h
-    # Torso and upper arms; ends above the wrist to preserve anatomical hands.
-    return 0.48 < z < 0.815 and (x < 0.185 or (z > 0.56 and x < 0.275))
+    # A continuous crew-neck torso plus upper arms. The slightly higher central
+    # panel closes the exposed/jagged shoulder gaps visible during animation;
+    # sleeves still end above the wrist to preserve anatomical hands.
+    torso = x < 0.19 and 0.48 < z < 0.84
+    sleeves = 0.56 < z < 0.82 and x < 0.282
+    return torso or sleeves
 
 
 def neckline_boundary(point: Vector, low: Vector, high: Vector) -> bool:
@@ -423,7 +427,7 @@ def neckline_boundary(point: Vector, low: Vector, high: Vector) -> bool:
     h = high.z - low.z
     z = (point.z - low.z) / h
     x = abs(point.x) / h
-    return z > 0.77 and x < 0.19
+    return z > 0.79 and x < 0.195
 
 
 def pants_predicate(center: Vector, low: Vector, high: Vector) -> bool:
@@ -670,6 +674,26 @@ def skin_object(obj: bpy.types.Object, rig: bpy.types.Object) -> None:
     bone_segments = {bone.name: (rig.matrix_world @ bone.head_local, rig.matrix_world @ bone.tail_local) for bone in bones}
     for vertex in obj.data.vertices:
         point = obj.matrix_world @ vertex.co
+        # Fingers, toes and the cranium are coherent anatomical volumes, not
+        # flexible ropes. Bind them rigidly to their terminal bone so nearby
+        # forearm/leg/head influences cannot stretch individual digits or pull
+        # facial vertices during a walk cycle.
+        rigid_thresholds = {
+            "Hand.L": 0.075, "Hand.R": 0.075,
+            "Foot.L": 0.12, "Foot.R": 0.12,
+            "Head": 0.16,
+        }
+        rigid = min(
+            (
+                (name, point_segment_distance(point, *bone_segments[name]))
+                for name in rigid_thresholds
+                if name in bone_segments
+            ),
+            key=lambda item: item[1],
+        )
+        if rigid[1] < rigid_thresholds[rigid[0]]:
+            groups[rigid[0]].add([vertex.index], 1.0, "REPLACE")
+            continue
         distances = sorted(
             ((name, point_segment_distance(point, start, end)) for name, (start, end) in bone_segments.items()),
             key=lambda item: item[1],
@@ -679,6 +703,37 @@ def skin_object(obj: bpy.types.Object, rig: bpy.types.Object) -> None:
         total = sum(weight for _, weight in weighted)
         for name, weight in weighted:
             groups[name].add([vertex.index], weight / total, "REPLACE")
+    modifier = obj.modifiers.new("HumanRig", "ARMATURE")
+    modifier.object = rig
+    obj.parent = rig
+    obj.matrix_parent_inverse = rig.matrix_world.inverted()
+
+
+def transfer_skin_object(obj: bpy.types.Object, source: bpy.types.Object, rig: bpy.types.Object) -> None:
+    """Copy the anatomical body's weights onto fitted surface meshes.
+
+    Recomputing weights independently for an outward-offset clothing shell can
+    choose different nearby bones along shoulders, elbows and hips. The two
+    surfaces then separate in motion and read as torn clothes or missing limbs.
+    Nearest-face interpolation keeps every garment vertex attached to the exact
+    deformation field of the contiguous body underneath it.
+    """
+    if obj.type != "MESH" or not obj.data.vertices:
+        return
+    for group in list(obj.vertex_groups):
+        obj.vertex_groups.remove(group)
+    for group in source.vertex_groups:
+        obj.vertex_groups.new(name=group.name)
+    transfer = obj.modifiers.new("Anatomical skin-weight transfer", "DATA_TRANSFER")
+    transfer.object = source
+    transfer.use_vert_data = True
+    transfer.data_types_verts = {"VGROUP_WEIGHTS"}
+    transfer.vert_mapping = "POLYINTERP_NEAREST"
+    transfer.layers_vgroup_select_src = "ALL"
+    transfer.layers_vgroup_select_dst = "NAME"
+    select_only([obj])
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.modifier_apply(modifier=transfer.name)
     modifier = obj.modifiers.new("HumanRig", "ARMATURE")
     modifier.object = rig
     obj.parent = rig
@@ -984,8 +1039,8 @@ def build_archetype(
 
     # Extra upper-shell clearance keeps modeled anatomical landmarks from
     # z-fighting through fitted cloth at close range without inflating limbs.
-    upper = make_surface_shell(body, "UpperGarment", materials["ClothUpper"], torso_predicate, 0.012, collection)
-    lower = make_surface_shell(body, "LowerGarment", materials["ClothLower"], pants_predicate, 0.008, collection)
+    upper = make_surface_shell(body, "UpperGarment", materials["ClothUpper"], torso_predicate, 0.016, collection)
+    lower = make_surface_shell(body, "LowerGarment", materials["ClothLower"], pants_predicate, 0.011, collection)
     shoes = make_surface_shell(body, "Shoes", materials["Shoe"], shoe_predicate, 0.010, collection)
     # Hair is an exact fitted scalp surface rather than an inflated primitive.
     # The underlying fully covered body vertices are recessed below, preserving
@@ -996,13 +1051,13 @@ def build_archetype(
     # plane. Only the central neckline gets a narrow finishing pass; flattening
     # wrists or scalp boundaries stretched alternating triangles into the
     # pointy chest and shoulder fragments seen in review.
-    level_surface_boundary(upper, body, neckline_boundary, 0.815)
+    level_surface_boundary(upper, body, neckline_boundary, 0.84)
     for obj in (upper, lower, shoes, hair):
         apply_modifiers(obj)
     recess_body_under_shells(
         body,
         (torso_predicate, pants_predicate, shoe_predicate, hair_predicate(archetype.hair)),
-        clearance=0.014,
+        clearance=0.018,
     )
 
     eye_details = add_eye_details(archetype.source, source_location, archetype, materials, collection)
@@ -1023,7 +1078,11 @@ def build_archetype(
         # after the armature was added baked the bind pose and silently stripped
         # JOINTS_0/WEIGHTS_0 from the exported GLB.
         triangulate_and_smooth(obj)
-        skin_object(obj, rig)
+    skin_mesh = next(obj for obj in meshes if obj.name == "Skin")
+    skin_object(skin_mesh, rig)
+    for obj in meshes:
+        if obj is not skin_mesh:
+            transfer_skin_object(obj, skin_mesh, rig)
         obj["sloth_city_authored_human"] = True
         obj["archetype"] = archetype.slug
     actions = (add_idle_action(rig), add_walk_action(rig))

@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import type { GameTextures } from "../rendering/textures";
 import { createPremiumHuman, markPremiumCharactersDisposed } from "./PremiumCharacter";
-import { updateAuthoredHumanMotion } from "./characters/AuthoredHumanAssets";
+import { prepareAuthoredHumanLocomotion, updateAuthoredHumanMotion } from "./characters/AuthoredHumanAssets";
 
 export type TrainInteriorQuality = "mobile" | "desktop";
 export type TrainInteriorPhase = "CRUISING" | "APPROACHING" | "DWELL" | "DEPARTING" | "COMPLETE" | "FAILED";
@@ -251,8 +251,9 @@ function createPassenger(index: number, quality: TrainInteriorQuality, pose: "ho
   const premium = createPremiumHuman({
     role: "visitor", quality: quality === "desktop" ? 1 : .58, variant: index + 31, faceVariant: [12, 15, 16, 17, 18, 19][index % 6], coat: palettes[0], trousers: palettes[2], skin: palettes[1],
     accessory: pose === "seated" ? "none" : index % 3 === 0 ? "backpack" : index % 3 === 1 ? "tote" : "none",
-    pose: pose === "reading" ? "checking-map" : pose === "seated" ? "seated" : "neutral",
+    pose: pose === "seated" ? "seated" : "neutral",
   });
+  if (pose !== "seated") prepareAuthoredHumanLocomotion(premium.root);
   premium.root.scale.setScalar(.88);
   if (pose === "seated") premium.root.position.y = -.3;
   group.add(premium.root); ownedTextures.push(...premium.ownedTextures);
@@ -544,6 +545,7 @@ export class TrainInteriorWorld {
       const previous = passenger.group.position.clone();
       const target = passenger.base.clone();
       let flowPosition: THREE.Vector3 | null = null;
+      let locomoting = false;
       if (this.phase === "DWELL" && passenger.flow !== "STAY") {
         // Riders alight as soon as the doors have a readable opening. Boarding
         // begins only after that stream reaches the aisle, then finishes before
@@ -557,6 +559,7 @@ export class TrainInteriorWorld {
         if (passenger.flow === "BOARD") flowPosition = flow < .48 ? outside.clone().lerp(threshold, flow / .48) : threshold.clone().lerp(passenger.base, (flow - .48) / .52);
         else flowPosition = flow < .48 ? passenger.base.clone().lerp(threshold, flow / .48) : threshold.clone().lerp(outside, (flow - .48) / .52);
         passenger.group.rotation.y = passenger.flow === "BOARD" ? -this.currentStop.side * Math.PI / 2 : this.currentStop.side * Math.PI / 2;
+        locomoting = flow > .015 && flow < .985;
       } else if (stopActivity && passenger.movable && index < Math.ceil(this.passengers.length * .68)) {
         const doorIndex = this.isDestination ? (index % 2 ? 0 : 2) : index % DOOR_Z.length;
         target.x = this.currentStop.side * (.68 + index % 2 * .12); target.z = DOOR_Z[doorIndex] + (index % 3 - 1) * .3;
@@ -565,6 +568,7 @@ export class TrainInteriorWorld {
       if (passenger.movable && playerDistance < .82) { const part = passenger.group.position.x <= player.x ? -1 : 1; target.x += part * (.82 - playerDistance) * .6; }
       if (flowPosition) passenger.group.position.lerp(flowPosition, 1 - Math.exp(-delta * 7.5));
       else passenger.group.position.lerp(target, 1 - Math.exp(-delta * (stopActivity ? 2.8 : 1.3)));
+      if (!flowPosition && passenger.movable) locomoting = passenger.group.position.distanceTo(target) > .025;
       passenger.group.position.y = Math.sin(this.elapsed * (passenger.seated ? 1.3 : 2.4) + passenger.phase) * (passenger.seated ? .002 : .006);
       passenger.group.rotation.z = Math.sin(this.elapsed * 2.1 + passenger.phase) * .008 + this.cameraRoll * .36;
       passenger.head.rotation.y = Math.sin(this.elapsed * .38 + passenger.phase) * .16;
@@ -575,7 +579,7 @@ export class TrainInteriorWorld {
         passenger.armRight.rotation.x += (rightTarget - passenger.armRight.rotation.x) * Math.min(1, delta * 4);
       }
       const distance = previous.distanceTo(passenger.group.position);
-      updateAuthoredHumanMotion(passenger.humanRoot, delta, passenger.group.visible && !passenger.seated && distance > .0005 ? "walk" : "idle", THREE.MathUtils.clamp(distance / Math.max(delta, .001) / 1.05, .65, 1.45));
+      updateAuthoredHumanMotion(passenger.humanRoot, delta, passenger.group.visible && !passenger.seated && locomoting ? "walk" : "idle", THREE.MathUtils.clamp(distance / Math.max(delta, .001) / 1.05, .65, 1.35));
     });
     return pressure;
   }

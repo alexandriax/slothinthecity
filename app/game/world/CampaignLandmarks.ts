@@ -377,9 +377,11 @@ export function createCampaignLandmarks(scene: THREE.Scene, textures: GameTextur
   const { gate: zooGate, attendant, visitors } = addZoo(root, textures, heightAt, ownedTextures, quality);
   const visitorAgents: AmbientHumanAgent[] = visitors.map((visitor, index) => createAmbientHumanAgent(visitor, {
     axis: new THREE.Vector3(index % 2 ? 1 : -.35, 0, index % 2 ? .25 : 1),
-    travel: 1.15 + index % 3 * .34,
-    speed: .72 + index % 2 * .12,
-    pauseSeconds: 2.2 + index % 3 * .85,
+    // Long, readable promenades make the zoo forecourt feel inhabited and
+    // ensure walk cycles are visible rather than appearing as stationary fidgets.
+    travel: 3.4 + index % 3 * .72,
+    speed: .78 + index % 2 * .12,
+    pauseSeconds: 1.8 + index % 3 * .62,
     phase: index * 1.83,
   }));
   const subwayEntrance = addSubwayEntrance(root, textures, heightAt, ownedTextures, quality);

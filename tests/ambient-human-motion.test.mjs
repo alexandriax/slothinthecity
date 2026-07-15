@@ -13,6 +13,7 @@ test("ambient humans have explicit walk and pause windows with idle during a sto
   assert.match(source, /const walking = moving && distance > \.00008/);
   assert.match(source, /walking \? "walk" : "idle"/);
   assert.match(source, /yawDelta \* \(1 - Math\.exp\(-delta \* 7\)\)/);
+  assert.match(source, /prepareAuthoredHumanLocomotion\(root\)/);
 });
 
 test("park, station, and zoo worlds advance authored walker state every frame", async () => {
@@ -28,6 +29,6 @@ test("park, station, and zoo worlds advance authored walker state every frame", 
   assert.match(zoo, /guestAgents\.forEach\(agent => updateAmbientHumanAgent\(agent, elapsed, delta\)\)/);
   assert.match(subway, /mode: "ALIGHT" \| "AMBIENT" \| "BOARD" \| "WAIT"/);
   assert.match(subway, /const walkSeconds = 2\.7/);
-  assert.match(subway, /distance > \.0005 \? "walk" : "idle"/);
+  assert.match(subway, /flow\.group\.visible && locomoting \? "walk" : "idle"/);
   assert.match(subway, /this\.updateStationPassengerFlows\(elapsed % SUBWAY_TRAIN_INTERVAL_SECONDS, delta\)/);
 });

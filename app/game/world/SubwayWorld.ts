@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import type { GameTextures } from "../rendering/textures";
 import { createPremiumHuman, markPremiumCharactersDisposed, type PremiumHumanRole } from "./PremiumCharacter";
-import { updateAuthoredHumanMotion } from "./characters/AuthoredHumanAssets";
+import { prepareAuthoredHumanLocomotion, updateAuthoredHumanMotion } from "./characters/AuthoredHumanAssets";
 
 export type SubwayStationId = "FIFTH_AV" | "LEXINGTON" | "WEST_FARMS";
 export type TrainPhase = "AWAY" | "APPROACHING" | "BOARDING" | "DEPARTING";
@@ -345,7 +345,10 @@ function addNpc(parent: THREE.Group, x: number, z: number, palette: [string, str
     trousers: trouserColors[variant % trouserColors.length],
     skin: palette[1],
     accessory: role === "attendant" ? "radio" : accessories[variant % accessories.length],
-    pose: variant % 4 === 1 ? "checking-map" : "neutral",
+    // Station passengers translate through fare-control and platform routes.
+    // Keep their authored bind pose clean; prop gestures underneath HumanWalk
+    // were the source of doubled hands and abrupt arm snaps.
+    pose: "neutral",
   });
   const npc = result.root; npc.name = role === "attendant" ? "mta-station-attendant" : `subway-passenger-${variant}`; npc.position.set(x, 0, z); npc.rotation.y = facing; npc.scale.setScalar(.9); parent.add(npc); ownedTextures?.push(...result.ownedTextures); return npc;
 }
@@ -691,7 +694,9 @@ function buildStation(id: SubwayStationId, textures: GameTextures, adTextures: T
   const boothRoof = new THREE.Mesh(new RoundedBoxGeometry(3.05, .16, 2.3, 4, .06), steel); boothRoof.position.y = 2.2; booth.add(boothRoof);
   for (const side of [-1, 1]) { const post = new THREE.Mesh(new RoundedBoxGeometry(.1, 1.45, .1, 2, .02), steel); post.position.set(side * 1.32, 1.42, 1); booth.add(post); }
   const boothWindow = new THREE.Mesh(new RoundedBoxGeometry(2.55, 1.28, .055, 3, .035), boothGlass); boothWindow.position.set(0, 1.43, 1.04); booth.add(boothWindow); root.add(booth);
-  addStationAttendant(root, 8.05, 4, 26.45, Math.PI, quality, commuterMaps, ownedTextures);
+  // Stand beside the unpaid-side booth rather than inside its opaque base, so
+  // the agent reads as a complete person instead of a floating torso.
+  addStationAttendant(root, 6.12, 4, 26.4, Math.PI, quality, commuterMaps, ownedTextures);
   let metroCard: THREE.Group | null = null;
   if (isFifth) {
     const cardTexture = metroCardTexture(); ownedTextures.push(cardTexture);
@@ -712,6 +717,7 @@ function buildStation(id: SubwayStationId, textures: GameTextures, adTextures: T
   const authoredDoorZ = [-35.95, -29.85, -23.75, -16.1, -10, -3.9, 2.2, 9.85] as const;
   npcPlacements.slice(0, detail.npcCount).forEach(([x, z, palette, facing], index) => {
     const passenger = addNpc(root, x, z, palette, facing, index + (isLex ? 3 : id === "WEST_FARMS" ? 6 : 0), quality, commuterMaps, ownedTextures);
+    prepareAuthoredHumanLocomotion(passenger);
     const doorZ = authoredDoorZ.reduce((nearest, candidate) => Math.abs(candidate - z) < Math.abs(nearest - z) ? candidate : nearest, authoredDoorZ[0]);
     passengerFlows.push({
       base: passenger.position.clone(),
@@ -1075,6 +1081,7 @@ export class SubwayWorld {
     station.passengerFlows.forEach((flow, index) => {
       const previous = flow.group.position.clone();
       const doorway = new THREE.Vector3(flow.side * 2.5, flow.base.y, flow.doorZ + (index % 2 ? .24 : -.24));
+      let locomoting = false;
       if (flow.mode === "AMBIENT" || (flow.mode === "WAIT" && !exchangeActive)) {
         // Concourse and waiting passengers use a real walk/pause cycle rather
         // than sliding continuously. WAIT riders keep their patrol tight so
@@ -1087,6 +1094,7 @@ export class SubwayWorld {
         const eased = amount * amount * (3 - 2 * amount), travel = flow.mode === "WAIT" ? .58 : 1.42 + index % 3 * .22;
         flow.group.visible = true;
         flow.group.position.copy(flow.base); flow.group.position.z += eased * travel;
+        locomoting = outbound || returning;
         if (outbound || returning) {
           const targetYaw = returning ? Math.PI : 0;
           const yawDelta = Math.atan2(
@@ -1099,16 +1107,19 @@ export class SubwayWorld {
         const waitingToBoard = flow.mode === "BOARD" && cycle < 13.2;
         const hasAlighted = flow.mode === "ALIGHT" && cycle >= 6;
         flow.group.visible = flow.mode === "WAIT" || waitingToBoard || hasAlighted;
-        flow.group.position.lerp(flow.base, .16);
+        flow.group.position.lerp(flow.base, 1 - Math.exp(-delta * 7));
+        locomoting = flow.group.visible && flow.group.position.distanceTo(flow.base) > .025;
       } else if (flow.mode === "BOARD") {
         flow.group.visible = boardProgress < .96; flow.group.position.lerpVectors(flow.base, doorway, boardProgress);
         flow.group.rotation.y = flow.side < 0 ? -Math.PI / 2 : Math.PI / 2;
+        locomoting = boardProgress > .015 && boardProgress < .955;
       } else {
         flow.group.visible = true; flow.group.position.lerpVectors(doorway, flow.base, alightProgress);
         flow.group.rotation.y = flow.side < 0 ? Math.PI / 2 : -Math.PI / 2;
+        locomoting = alightProgress > .015 && alightProgress < .985;
       }
       const distance = previous.distanceTo(flow.group.position);
-      updateAuthoredHumanMotion(flow.group, delta, flow.group.visible && distance > .0005 ? "walk" : "idle", THREE.MathUtils.clamp(distance / Math.max(delta, .001) / 1.15, .65, 1.45));
+      updateAuthoredHumanMotion(flow.group, delta, flow.group.visible && locomoting ? "walk" : "idle", THREE.MathUtils.clamp(distance / Math.max(delta, .001) / 1.15, .65, 1.35));
     });
   }
 

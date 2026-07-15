@@ -21,6 +21,8 @@ type HydrationState = {
     action?: THREE.AnimationAction;
     clipName?: string;
     mixer: THREE.AnimationMixer;
+    requestedClipName?: string;
+    requestedSeconds: number;
   };
   ownedTextures: THREE.Texture[];
 };
@@ -421,7 +423,10 @@ async function hydrate(
     pendingInstance = instance;
     instance.name = `authored-human-${archetype}`;
     remapMaterials(instance, options, textures);
-    poseSkeleton(instance, options.pose);
+    // Locomoting characters must begin from the authored neutral bind pose.
+    // Layering the legacy map/phone/wave overrides under HumanWalk produced
+    // doubled hands, long fingers, hunched shoulders and violent limb arcs.
+    poseSkeleton(instance, host.userData.authoredHumanLocomotion ? "neutral" : options.pose);
     // Blender's authored bodies face -Y. The glTF Y-up conversion maps that
     // to +Z, while every existing game placement expects a -Z-facing model.
     // Rotate only the authored child so host transforms and interaction roots
@@ -515,7 +520,21 @@ export function updateAuthoredHumanMotion(
   const clip = hydrated.animations.find(candidate => candidate.name === desired)
     ?? hydrated.animations.find(candidate => candidate.name.toLowerCase().includes(motion))
     ?? hydrated.animations[0];
-  state.motion ??= { mixer: new THREE.AnimationMixer(hydrated) };
+  state.motion ??= { mixer: new THREE.AnimationMixer(hydrated), requestedSeconds: 0 };
+  if (state.motion.requestedClipName !== clip.name) {
+    state.motion.requestedClipName = clip.name;
+    state.motion.requestedSeconds = 0;
+  } else {
+    state.motion.requestedSeconds += Math.min(Math.max(delta, 0), .08);
+  }
+  // Route easing and collision correction can move an otherwise stationary
+  // NPC by fractions of a millimetre. A short hysteresis window prevents those
+  // changes from restarting opposing crossfades every frame.
+  const settleSeconds = motion === "walk" ? .1 : .18;
+  if (state.motion.clipName && state.motion.clipName !== clip.name && state.motion.requestedSeconds < settleSeconds) {
+    state.motion.mixer.update(Math.min(Math.max(delta, 0), .08));
+    return;
+  }
   if (state.motion.clipName !== clip.name) {
     const next = state.motion.mixer.clipAction(clip).reset().setLoop(THREE.LoopRepeat, Infinity);
     next.enabled = true;
@@ -523,9 +542,19 @@ export function updateAuthoredHumanMotion(
     state.motion.action?.fadeOut(.16);
     state.motion.action = next;
     state.motion.clipName = clip.name;
+    state.motion.requestedSeconds = 0;
   }
   state.motion.mixer.timeScale = THREE.MathUtils.clamp(speed, .45, 1.65);
   state.motion.mixer.update(Math.min(Math.max(delta, 0), .08));
+}
+
+/**
+ * Declares that a premium human will translate through the world. This is set
+ * synchronously, before its GLB finishes loading, so hydration never applies a
+ * static gesture underneath the walk cycle.
+ */
+export function prepareAuthoredHumanLocomotion(host: THREE.Group) {
+  host.userData.authoredHumanLocomotion = true;
 }
 
 /** Marks every premium human below a streamed world root before teardown. */

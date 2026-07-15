@@ -42,7 +42,8 @@ test("station doors ease and platform passengers visibly exchange", async () => 
   assert.match(world, /transparent-exterior-door-window/);
   assert.match(world, /transparent-exterior-side-window/);
   assert.match(world, /updateStationPassengerFlows\(cycle, delta\)/);
-  assert.match(world, /updateAuthoredHumanMotion\(flow\.group, delta, flow\.group\.visible && distance > \.0005 \? "walk" : "idle"/);
+  assert.match(world, /updateAuthoredHumanMotion\(flow\.group, delta, flow\.group\.visible && locomoting \? "walk" : "idle"/);
+  assert.match(world, /prepareAuthoredHumanLocomotion\(passenger\)/);
   assert.match(world, /mode: z > 11 \|\| id === "WEST_FARMS" \? "AMBIENT" : index % 3 === 0 \? "BOARD" : index % 3 === 1 \? "ALIGHT"/);
   assert.match(world, /const alightProgress = THREE\.MathUtils\.smoothstep\(cycle, 6, 9\.35\)/);
   assert.match(world, /const boardProgress = THREE\.MathUtils\.smoothstep\(cycle, 8\.85, 12\.75\)/);

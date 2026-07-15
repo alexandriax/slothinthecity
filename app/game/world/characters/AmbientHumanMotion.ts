@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { updateAuthoredHumanMotion } from "./AuthoredHumanAssets";
+import { prepareAuthoredHumanLocomotion, updateAuthoredHumanMotion } from "./AuthoredHumanAssets";
 
 export type AmbientHumanAgent = {
   root: THREE.Group;
@@ -31,6 +31,7 @@ export function createAmbientHumanAgent(
   root: THREE.Group,
   options: AmbientHumanAgentOptions = {},
 ): AmbientHumanAgent {
+  prepareAuthoredHumanLocomotion(root);
   const axis = (options.axis ?? new THREE.Vector3(0, 0, 1)).clone().setY(0);
   if (axis.lengthSq() < .0001) axis.set(0, 0, 1);
   axis.normalize();

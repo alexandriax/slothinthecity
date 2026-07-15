@@ -42,6 +42,10 @@ test("authored pipeline rejects primitive face and body remnants", async () => {
   assert.match(pipeline, /straighten_head_and_neck/);
   assert.match(pipeline, /straighten_head_detail/);
   assert.match(pipeline, /add_walk_action/);
+  assert.match(pipeline, /transfer_skin_object/);
+  assert.match(pipeline, /Anatomical skin-weight transfer/);
+  assert.match(runtime, /requestedSeconds/);
+  assert.match(runtime, /prepareAuthoredHumanLocomotion/);
   assert.match(runtime, /replaceFallbackWithAuthored/);
   assert.match(runtime, /authoredHumanExclusive = true/);
   assert.match(runtime, /host\.visible = false/);
