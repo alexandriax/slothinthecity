@@ -17,8 +17,15 @@ type HydrationState = {
   fallbackChildren: THREE.Object3D[];
   fallbackTextures: THREE.Texture[];
   hydrated?: THREE.Group;
+  motion?: {
+    action?: THREE.AnimationAction;
+    clipName?: string;
+    mixer: THREE.AnimationMixer;
+  };
   ownedTextures: THREE.Texture[];
 };
+
+export type AuthoredHumanMotion = "idle" | "walk";
 
 const AUTHORED_HUMAN_ROOT = "/game/characters/authored";
 const DRACO_DECODER_ROOT = "/game/draco/";
@@ -480,6 +487,7 @@ export function markAuthoredHumanDisposed(host: THREE.Group) {
   const state = hydrationStates.get(host);
   if (!state || state.disposed) return;
   state.disposed = true;
+  state.motion?.mixer.stopAllAction();
   if (state.hydrated) {
     host.remove(state.hydrated);
     disposeInstance(state.hydrated);
@@ -487,6 +495,37 @@ export function markAuthoredHumanDisposed(host: THREE.Group) {
   }
   host.animations = [];
   hydrationStates.delete(host);
+}
+
+/**
+ * Advances an authored character clip from world-space motion. Callers pass
+ * their actual movement state, so feet cycle only while the NPC translates
+ * instead of the former ice-skating/sliding presentation.
+ */
+export function updateAuthoredHumanMotion(
+  host: THREE.Group,
+  delta: number,
+  motion: AuthoredHumanMotion,
+  speed = 1,
+) {
+  const state = hydrationStates.get(host);
+  const hydrated = state?.hydrated;
+  if (!state || state.disposed || !hydrated || !hydrated.animations.length) return;
+  const desired = motion === "walk" ? "HumanWalk" : "HumanIdle";
+  const clip = hydrated.animations.find(candidate => candidate.name === desired)
+    ?? hydrated.animations.find(candidate => candidate.name.toLowerCase().includes(motion))
+    ?? hydrated.animations[0];
+  state.motion ??= { mixer: new THREE.AnimationMixer(hydrated) };
+  if (state.motion.clipName !== clip.name) {
+    const next = state.motion.mixer.clipAction(clip).reset().setLoop(THREE.LoopRepeat, Infinity);
+    next.enabled = true;
+    next.fadeIn(.16).play();
+    state.motion.action?.fadeOut(.16);
+    state.motion.action = next;
+    state.motion.clipName = clip.name;
+  }
+  state.motion.mixer.timeScale = THREE.MathUtils.clamp(speed, .45, 1.65);
+  state.motion.mixer.update(Math.min(Math.max(delta, 0), .08));
 }
 
 /** Marks every premium human below a streamed world root before teardown. */

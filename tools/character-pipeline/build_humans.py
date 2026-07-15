@@ -257,6 +257,72 @@ def deform_body(obj: bpy.types.Object, archetype: Archetype) -> None:
     low, high = object_bounds(obj)
     for vertex in obj.data.vertices:
         vertex.co.z = low.z + (vertex.co.z - low.z) * archetype.stature
+    obj.data.update()
+    straighten_head_and_neck(obj)
+
+
+def smoothstep(edge0: float, edge1: float, value: float) -> float:
+    t = max(0.0, min(1.0, (value - edge0) / max(edge1 - edge0, 1e-9)))
+    return t * t * (3.0 - 2.0 * t)
+
+
+def corrected_head_point(point: Vector, low: Vector, high: Vector, rigid: bool = False) -> Vector:
+    """Return a point corrected from the source's forward-head rest sculpt."""
+    height = high.z - low.z
+    normalized_z = (point.z - low.z) / height
+    normalized_x = abs(point.x) / height
+    if rigid:
+        weight = 1.0
+    elif normalized_z <= 0.755 or normalized_x >= 0.155:
+        return point.copy()
+    else:
+        vertical = smoothstep(0.755, 0.885, normalized_z)
+        central = 1.0 - smoothstep(0.105, 0.155, normalized_x)
+        weight = vertical * central
+    if weight <= 0.0:
+        return point.copy()
+    pivot = Vector((0.0, height * 0.008, low.z + height * 0.775))
+    # The scan's neutral head is pitched sharply toward the chest. A 10°
+    # anatomical correction restores a forward gaze without tipping the chin
+    # above the horizon (the earlier 21° correction overcompensated).
+    angle = math.radians(-10.0) * weight
+    relative = point - pivot
+    return pivot + Vector(
+        (
+            relative.x,
+            relative.y * math.cos(angle) - relative.z * math.sin(angle),
+            relative.y * math.sin(angle) + relative.z * math.cos(angle),
+        )
+    )
+
+
+def straighten_head_and_neck(body: bpy.types.Object) -> None:
+    """Correct the source bundle's pronounced forward-head sculpt.
+
+    The realistic CC0 figures are modeled with their chin and cranium pitched
+    toward the chest. That is useful as a sculpting reference, but reads as a
+    severe hunch once the figures are standing and walking in game. Rotate the
+    central neck/head anatomy about the cervicothoracic junction with a smooth
+    falloff. Shoulders and arms are intentionally excluded, preserving the
+    source silhouette and the shared skeleton's relaxed stance.
+    """
+    low, high = object_bounds(body)
+    for vertex in body.data.vertices:
+        vertex.co = corrected_head_point(vertex.co, low, high)
+    body.data.update()
+
+
+def straighten_head_detail(obj: bpy.types.Object, body: bpy.types.Object) -> None:
+    """Rigidly carry eye parts with the corrected cranium.
+
+    Eye objects are separate source meshes, so changing only the anatomical
+    body would leave sclera, iris and pupils at the old hunched pose.
+    """
+    low, high = object_bounds(body)
+    corrected = corrected_head_point(obj.location, low, high, rigid=True)
+    rotation = Matrix.Rotation(math.radians(-10.0), 4, "X")
+    obj.location = corrected
+    obj.rotation_euler.rotate(rotation.to_euler())
 
 
 def assign_material(obj: bpy.types.Object, material: bpy.types.Material) -> None:
@@ -344,6 +410,20 @@ def torso_predicate(center: Vector, low: Vector, high: Vector) -> bool:
     x = abs(center.x) / h
     # Torso and upper arms; ends above the wrist to preserve anatomical hands.
     return 0.48 < z < 0.815 and (x < 0.185 or (z > 0.56 and x < 0.275))
+
+
+def neckline_boundary(point: Vector, low: Vector, high: Vector) -> bool:
+    """Select only the central top edge of the upper garment.
+
+    Wrist openings follow the arm anatomy and must not be flattened in world
+    Z. Keeping this selector central and high removes scan-triangle teeth at
+    the neckline without recreating the stretched torso spikes seen in the
+    earlier broad boundary pass.
+    """
+    h = high.z - low.z
+    z = (point.z - low.z) / h
+    x = abs(point.x) / h
+    return z > 0.77 and x < 0.19
 
 
 def pants_predicate(center: Vector, low: Vector, high: Vector) -> bool:
@@ -531,8 +611,11 @@ def make_armature(body: bpy.types.Object, collection: bpy.types.Collection, sour
     bone("Hips", (0, 0, z0 + h * 0.475), (0, 0, z0 + h * 0.535))
     bone("Spine", (0, 0, z0 + h * 0.535), (0, 0, z0 + h * 0.650), "Hips", True)
     bone("Chest", (0, 0, z0 + h * 0.650), (0, 0, z0 + h * 0.775), "Spine", True)
-    bone("Neck", (0, 0, z0 + h * 0.815), (0, 0, z0 + h * 0.855), "Chest")
-    bone("Head", (0, 0, z0 + h * 0.855), (0, 0, z0 + h * 0.985), "Neck", True)
+    neck_head = corrected_head_point(Vector((0, 0, z0 + h * 0.815)), low, high)
+    neck_tail = corrected_head_point(Vector((0, 0, z0 + h * 0.855)), low, high)
+    head_tail = corrected_head_point(Vector((0, 0, z0 + h * 0.985)), low, high)
+    bone("Neck", neck_head, neck_tail, "Chest")
+    bone("Head", neck_tail, head_tail, "Neck", True)
 
     landmarks = {
         "male": {
@@ -602,8 +685,17 @@ def skin_object(obj: bpy.types.Object, rig: bpy.types.Object) -> None:
     obj.matrix_parent_inverse = rig.matrix_world.inverted()
 
 
-def add_idle_action(rig: bpy.types.Object) -> None:
+def reset_pose(rig: bpy.types.Object) -> None:
+    for pose_bone in rig.pose.bones:
+        pose_bone.location = (0.0, 0.0, 0.0)
+        pose_bone.rotation_mode = "XYZ"
+        pose_bone.rotation_euler = (0.0, 0.0, 0.0)
+        pose_bone.scale = (1.0, 1.0, 1.0)
+
+
+def add_idle_action(rig: bpy.types.Object) -> bpy.types.Action:
     bpy.context.view_layer.objects.active = rig
+    reset_pose(rig)
     action = bpy.data.actions.new("HumanIdle")
     rig.animation_data_create()
     rig.animation_data.action = action
@@ -621,6 +713,75 @@ def add_idle_action(rig: bpy.types.Object) -> None:
         for keyframe in fcurve.keyframe_points:
             keyframe.interpolation = "SINE"
     action.use_fake_user = True
+    return action
+
+
+def add_walk_action(rig: bpy.types.Object) -> bpy.types.Action:
+    """Author a compact, looping walk with opposing limbs and planted cadence."""
+    bpy.context.view_layer.objects.active = rig
+    reset_pose(rig)
+    action = bpy.data.actions.new("HumanWalk")
+    rig.animation_data_create()
+    rig.animation_data.action = action
+    keyframes = (
+        (1, 0.0, 1.0),
+        (7, 1.0, 0.0),
+        (13, 0.0, -1.0),
+        (19, 1.0, 0.0),
+        (25, 0.0, 1.0),
+    )
+    hips = rig.pose.bones.get("Hips")
+    chest = rig.pose.bones.get("Chest")
+    for frame, bounce, stride in keyframes:
+        if hips:
+            hips.location.z = 0.011 * bounce
+            hips.rotation_euler.z = math.radians(1.6) * stride
+            hips.keyframe_insert("location", frame=frame, group="HumanWalk")
+            hips.keyframe_insert("rotation_euler", frame=frame, group="HumanWalk")
+        if chest:
+            chest.rotation_euler.z = math.radians(-2.2) * stride
+            chest.keyframe_insert("rotation_euler", frame=frame, group="HumanWalk")
+        for side, direction in (("L", 1.0), ("R", -1.0)):
+            upper_leg = rig.pose.bones.get(f"UpperLeg.{side}")
+            lower_leg = rig.pose.bones.get(f"LowerLeg.{side}")
+            upper_arm = rig.pose.bones.get(f"UpperArm.{side}")
+            lower_arm = rig.pose.bones.get(f"LowerArm.{side}")
+            phase = stride * direction
+            if upper_leg:
+                upper_leg.rotation_euler.x = math.radians(23.0) * phase
+                upper_leg.keyframe_insert("rotation_euler", frame=frame, group="HumanWalk")
+            if lower_leg:
+                # Flex the trailing knee most at mid-stride without hyperextension.
+                lower_leg.rotation_euler.x = math.radians(-13.0) * max(0.0, -phase) - math.radians(5.0) * bounce
+                lower_leg.keyframe_insert("rotation_euler", frame=frame, group="HumanWalk")
+            if upper_arm:
+                upper_arm.rotation_euler.x = math.radians(-16.0) * phase
+                upper_arm.keyframe_insert("rotation_euler", frame=frame, group="HumanWalk")
+            if lower_arm:
+                lower_arm.rotation_euler.x = math.radians(-8.0) * (0.35 + max(0.0, phase))
+                lower_arm.keyframe_insert("rotation_euler", frame=frame, group="HumanWalk")
+    for fcurve in action.fcurves:
+        for keyframe in fcurve.keyframe_points:
+            keyframe.interpolation = "BEZIER"
+    action.use_fake_user = True
+    reset_pose(rig)
+    return action
+
+
+def install_animation_tracks(rig: bpy.types.Object, actions: Sequence[bpy.types.Action]) -> None:
+    """Expose each authored action as its own glTF clip through NLA tracks."""
+    rig.animation_data_create()
+    rig.animation_data.action = None
+    for existing in list(rig.animation_data.nla_tracks):
+        rig.animation_data.nla_tracks.remove(existing)
+    for action in actions:
+        track = rig.animation_data.nla_tracks.new()
+        track.name = action.name
+        strip = track.strips.new(action.name, int(action.frame_range[0]), action)
+        strip.action_frame_start = action.frame_range[0]
+        strip.action_frame_end = action.frame_range[1]
+        strip.use_auto_blend = False
+    reset_pose(rig)
 
 
 def triangulate_and_smooth(obj: bpy.types.Object) -> None:
@@ -705,7 +866,7 @@ def gltf_export(filepath: Path, objects: Sequence[bpy.types.Object]) -> None:
         export_animations=True,
         export_frame_range=True,
         export_force_sampling=False,
-        export_nla_strips=False,
+        export_nla_strips=True,
         export_optimize_animation_size=True,
         export_draco_mesh_compression_enable=True,
         export_draco_mesh_compression_level=6,
@@ -824,19 +985,11 @@ def build_archetype(
     # a continuous silhouette with no helmet rim or detached style pieces.
     hair = make_surface_shell(body, "HairCap", materials["Hair"], hair_predicate(archetype.hair), 0.0, collection)
 
-    level_surface_boundary(
-        upper,
-        body,
-        lambda point, low, high: (point.z - low.z) / (high.z - low.z) > 0.70
-        and abs(point.x) / (high.z - low.z) < 0.19,
-        0.805,
-    )
-    level_surface_boundary(
-        hair,
-        body,
-        lambda point, low, high: 0.88 < (point.z - low.z) / (high.z - low.z) < 0.972,
-        0.948,
-    )
+    # Keep the fitted source boundary rather than forcing it onto a single Z
+    # plane. Only the central neckline gets a narrow finishing pass; flattening
+    # wrists or scalp boundaries stretched alternating triangles into the
+    # pointy chest and shoulder fragments seen in review.
+    level_surface_boundary(upper, body, neckline_boundary, 0.815)
     for obj in (upper, lower, shoes, hair):
         apply_modifiers(obj)
     recess_body_under_shells(
@@ -845,7 +998,9 @@ def build_archetype(
         clearance=0.014,
     )
 
-    add_eye_details(archetype.source, source_location, archetype, materials, collection)
+    eye_details = add_eye_details(archetype.source, source_location, archetype, materials, collection)
+    for detail in eye_details:
+        straighten_head_detail(detail, body)
     # The source head already contains continuous eyelids, brows, nose and
     # modeled lips. Do not layer the legacy curve-tube mouth/brow primitives
     # over that anatomy; those were the visible browser "squigglies".
@@ -864,7 +1019,8 @@ def build_archetype(
         skin_object(obj, rig)
         obj["sloth_city_authored_human"] = True
         obj["archetype"] = archetype.slug
-    add_idle_action(rig)
+    actions = (add_idle_action(rig), add_walk_action(rig))
+    install_animation_tracks(rig, actions)
 
     lod0_path = output_dir / f"{archetype.slug}-lod0.glb"
     gltf_export(lod0_path, meshes + [rig])
@@ -893,6 +1049,11 @@ def build_archetype(
     for obj in list(collection.objects):
         bpy.data.objects.remove(obj, do_unlink=True)
     bpy.data.collections.remove(collection)
+    # Prevent animation datablocks from accumulating suffixed copies between
+    # archetypes. Every GLB must expose one unambiguous HumanIdle/HumanWalk pair.
+    for action in actions:
+        action.use_fake_user = False
+        bpy.data.actions.remove(action)
     return stats
 
 

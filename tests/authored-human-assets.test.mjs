@@ -154,8 +154,13 @@ test("all eight GLBs stay Draco-compressed, truly skinned, animated, and draw-ca
       const skin = json.skins[0];
       assert.ok(Number.isInteger(skin.inverseBindMatrices), `${contract.file} should carry inverse bind matrices`);
       assert.deepEqual(skin.joints.map(node => json.nodes[node].name).toSorted(), BONES);
-      assert.ok((json.animations?.length ?? 0) >= 1, `${contract.file} should remain animation-ready`);
-      assert.ok(json.animations.some(animation => animation.channels.length >= 2), `${contract.file} should carry the authored idle clip`);
+      assert.deepEqual(
+        (json.animations ?? []).map(animation => animation.name),
+        ["HumanIdle", "HumanWalk"],
+        `${contract.file} should expose one unambiguous idle/walk pair`,
+      );
+      assert.equal(json.animations[0].channels.length, 2, `${contract.file} should carry the breathing/head idle channels`);
+      assert.ok(json.animations[1].channels.length >= 11, `${contract.file} should carry the full opposing-limb walk cycle`);
 
       const triangles = gltfTriangleCount(json);
       const vertices = gltfVertexCount(json);
@@ -218,5 +223,8 @@ test("runtime loader points at the packaged LODs, atlases, Draco decoder, and sk
   assert.match(source, /loader\.setDRACOLoader\(draco\)/);
   assert.match(source, /cloneSkeleton\(template\.scene\)/);
   assert.match(source, /preferredLod === "lod0" \? "lod2" : "lod0"/);
+  assert.match(source, /updateAuthoredHumanMotion/);
+  assert.match(source, /"HumanWalk"/);
+  assert.match(source, /new THREE\.AnimationMixer\(hydrated\)/);
   assert.match(source, /name\.includes\("lip"\)/);
 });
