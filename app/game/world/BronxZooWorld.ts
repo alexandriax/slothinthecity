@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import type { GameTextures } from "../rendering/textures";
 import { createPremiumHuman, createPremiumSlothFriend, markPremiumCharactersDisposed } from "./PremiumCharacter";
+import { createAmbientHumanAgent, idleAuthoredHuman, updateAmbientHumanAgent, type AmbientHumanAgent } from "./characters/AmbientHumanMotion";
 
 function canvasTexture(width: number, height: number, draw: (context: CanvasRenderingContext2D, width: number, height: number) => void) {
   if (typeof document === "undefined") {
@@ -114,6 +115,7 @@ export class BronxZooWorld {
   readonly cameraTarget = new THREE.Vector3(0, 3.6, -10);
   readonly attendant: THREE.Group;
   private ownedTextures: THREE.Texture[] = [];
+  private readonly guestAgents: AmbientHumanAgent[] = [];
 
   constructor(scene: THREE.Scene, textures: GameTextures, quality = 1) {
     this.root.name = "bronx-zoo-finale-world"; scene.add(this.root);
@@ -185,16 +187,28 @@ export class BronxZooWorld {
     this.attendant = attendant.root; this.attendant.name = "bronx-zoo-arrival-attendant"; this.attendant.userData.dialogue = "Welcome to the Bronx Zoo — your friends are waiting at Asia Gate.";
     this.attendant.position.set(this.attendantPosition.x, 0, this.attendantPosition.z); this.attendant.rotation.y = Math.PI; this.root.add(this.attendant); this.ownedTextures.push(...attendant.ownedTextures);
     const guestData = [[-8.2, 5.7, -.2, "#516d76", "#343a3c", "#b77e61"], [10.3, 5.3, .24, "#875a48", "#30383d", "#7b503d"], [14.2, -1.3, 2.7, "#667a4e", "#383438", "#cf9d78"]] as const;
-    guestData.slice(0, quality < .62 ? 1 : quality < .82 ? 2 : 3).forEach((data, index) => { const result = createPremiumHuman({ role: "visitor", quality, variant: index + 11, faceVariant: [12, 16, 18][index], coat: data[3], trousers: data[4], skin: data[5], accessory: index === 1 ? "camera" : "backpack", pose: index === 1 ? "photographing" : "neutral" }); result.root.position.set(data[0], 0, data[1]); result.root.rotation.y = data[2]; this.root.add(result.root); this.ownedTextures.push(...result.ownedTextures); });
+    guestData.slice(0, quality < .62 ? 1 : quality < .82 ? 2 : 3).forEach((data, index) => {
+      const result = createPremiumHuman({ role: "visitor", quality, variant: index + 11, faceVariant: [12, 16, 18][index], coat: data[3], trousers: data[4], skin: data[5], accessory: index === 1 ? "camera" : "backpack", pose: index === 1 ? "photographing" : "neutral" });
+      result.root.position.set(data[0], 0, data[1]); result.root.rotation.y = data[2]; this.root.add(result.root); this.ownedTextures.push(...result.ownedTextures);
+      this.guestAgents.push(createAmbientHumanAgent(result.root, {
+        axis: new THREE.Vector3(index % 2 ? -1 : .25, 0, index % 2 ? .2 : 1),
+        travel: 1.3 + index * .28,
+        speed: .76 + index * .05,
+        pauseSeconds: 2.4 + index * .7,
+        phase: index * 2.15,
+      }));
+    });
     const glow = new THREE.PointLight("#e5f3b9", 34, 23, 1.45); glow.position.set(0, 7.2, -3); this.root.add(glow);
   }
 
-  update(elapsed: number) {
+  update(elapsed: number, delta = 1 / 60) {
     this.root.traverse(object => {
       if (object.name === "waiting-sloth-friend") object.rotation.z = Math.sin(elapsed * .9 + object.position.x) * .018;
       else if (object.name === "friend-wave-arm") object.rotation.x = -.22 + Math.sin(elapsed * 2.35 + object.parent!.position.x) * .22;
     });
     this.attendant.rotation.z = Math.sin(elapsed * .72) * .008;
+    idleAuthoredHuman(this.attendant, delta);
+    this.guestAgents.forEach(agent => updateAmbientHumanAgent(agent, elapsed, delta));
   }
 
   attendantNearby(player: THREE.Vector3, distance = 2.35) {

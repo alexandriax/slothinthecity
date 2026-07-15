@@ -136,6 +136,8 @@ After every rebuild:
 5. Verify the LODs share footprint, height, facing direction, bone names, and material slots.
 6. Test representative crowds on desktop and mobile quality settings; check both frame time and memory.
 7. Visit every use site: park/zoo exterior, station concourse/platform, train exterior/interior, and final Bronx Zoo scene.
+8. Let `HumanWalk` loop for at least ten cycles and inspect the seam at normal and slow speed; automatic Bézier handles are not permitted on the short gait loop because they can overshoot limb rotation.
+9. Verify an ambient walker stops translating and switches completely to `HumanIdle` during each route pause.
 
 The procedural character is only a loading/error fallback. If it remains visible after the authored GLB has loaded, treat that as a failure rather than an acceptable quality tier.
 

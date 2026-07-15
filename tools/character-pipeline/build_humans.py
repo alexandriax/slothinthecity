@@ -717,7 +717,14 @@ def add_idle_action(rig: bpy.types.Object) -> bpy.types.Action:
 
 
 def add_walk_action(rig: bpy.types.Object) -> bpy.types.Action:
-    """Author a compact, looping walk with opposing limbs and planted cadence."""
+    """Author a compact, looping walk with restrained, loop-safe arm motion.
+
+    Automatic Bezier handles can overshoot between opposing limb keys, most
+    visibly when the final pose wraps to frame one. That reads as an occasional
+    violent arm flick in the browser even though the keyed angles themselves
+    are modest. Linear keys keep the cadence deterministic across Blender/glTF
+    samplers; the deliberately smaller arm arc suits a crowded game world.
+    """
     bpy.context.view_layer.objects.active = rig
     reset_pose(rig)
     action = bpy.data.actions.new("HumanWalk")
@@ -755,14 +762,14 @@ def add_walk_action(rig: bpy.types.Object) -> bpy.types.Action:
                 lower_leg.rotation_euler.x = math.radians(-13.0) * max(0.0, -phase) - math.radians(5.0) * bounce
                 lower_leg.keyframe_insert("rotation_euler", frame=frame, group="HumanWalk")
             if upper_arm:
-                upper_arm.rotation_euler.x = math.radians(-16.0) * phase
+                upper_arm.rotation_euler.x = math.radians(-9.5) * phase
                 upper_arm.keyframe_insert("rotation_euler", frame=frame, group="HumanWalk")
             if lower_arm:
-                lower_arm.rotation_euler.x = math.radians(-8.0) * (0.35 + max(0.0, phase))
+                lower_arm.rotation_euler.x = math.radians(-4.0) * (0.25 + max(0.0, phase))
                 lower_arm.keyframe_insert("rotation_euler", frame=frame, group="HumanWalk")
     for fcurve in action.fcurves:
         for keyframe in fcurve.keyframe_points:
-            keyframe.interpolation = "BEZIER"
+            keyframe.interpolation = "LINEAR"
     action.use_fake_user = True
     reset_pose(rig)
     return action

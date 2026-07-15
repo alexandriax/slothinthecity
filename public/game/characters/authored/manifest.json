@@ -4,7 +4,7 @@
       "id": "human-male-short",
       "license": "CC0-1.0",
       "lod0": {
-        "bytes": 471840,
+        "bytes": 470044,
         "file": "human-male-short-lod0.glb",
         "materials": 8,
         "meshes": 8,
@@ -12,7 +12,7 @@
         "vertices": 39054
       },
       "lod2": {
-        "bytes": 209088,
+        "bytes": 207288,
         "file": "human-male-short-lod2.glb",
         "materials": 8,
         "meshes": 8,
@@ -25,7 +25,7 @@
       "id": "human-male-curly",
       "license": "CC0-1.0",
       "lod0": {
-        "bytes": 452112,
+        "bytes": 450312,
         "file": "human-male-curly-lod0.glb",
         "materials": 8,
         "meshes": 8,
@@ -33,7 +33,7 @@
         "vertices": 37530
       },
       "lod2": {
-        "bytes": 201196,
+        "bytes": 199400,
         "file": "human-male-curly-lod2.glb",
         "materials": 8,
         "meshes": 8,
@@ -46,7 +46,7 @@
       "id": "human-female-bob",
       "license": "CC0-1.0",
       "lod0": {
-        "bytes": 399888,
+        "bytes": 398084,
         "file": "human-female-bob-lod0.glb",
         "materials": 8,
         "meshes": 8,
@@ -54,7 +54,7 @@
         "vertices": 31109
       },
       "lod2": {
-        "bytes": 174456,
+        "bytes": 172656,
         "file": "human-female-bob-lod2.glb",
         "materials": 8,
         "meshes": 8,
@@ -67,7 +67,7 @@
       "id": "human-female-ponytail",
       "license": "CC0-1.0",
       "lod0": {
-        "bytes": 405476,
+        "bytes": 403688,
         "file": "human-female-ponytail-lod0.glb",
         "materials": 8,
         "meshes": 8,
@@ -75,7 +75,7 @@
         "vertices": 31884
       },
       "lod2": {
-        "bytes": 177580,
+        "bytes": 175788,
         "file": "human-female-ponytail-lod2.glb",
         "materials": 8,
         "meshes": 8,

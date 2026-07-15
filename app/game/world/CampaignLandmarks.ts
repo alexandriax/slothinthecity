@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import type { GameTextures } from "../rendering/textures";
 import { createPremiumHuman, markPremiumCharactersDisposed } from "./PremiumCharacter";
+import { createAmbientHumanAgent, idleAuthoredHuman, updateAmbientHumanAgent, type AmbientHumanAgent } from "./characters/AmbientHumanMotion";
 
 export const BOW_BRIDGE_CENTER = new THREE.Vector3(-35, 0, -122);
 export const BOW_BRIDGE_LENGTH = 28;
@@ -52,6 +53,7 @@ export type CampaignLandmarks = {
   subwayEntryTrigger: THREE.Vector3;
   zooGate: THREE.Group;
   obstacles: CampaignObstacle[];
+  update(elapsed: number, delta: number): void;
   dispose(): void;
 };
 
@@ -308,6 +310,7 @@ function addZoo(root: THREE.Group, textures: GameTextures, heightAt: (x: number,
 
   const attendantResult = createPremiumHuman({ role: "attendant", quality, variant: 0, faceVariant: 14, coat: "#2e503c", trousers: "#17211d", skin: "#9c6c4e", accessory: "radio", pose: "neutral" });
   const attendant = attendantResult.root; ownedTextures.push(...attendantResult.ownedTextures); attendant.position.set(-3, .06, 9); attendant.rotation.y = Math.PI + .05; gate.add(attendant);
+  const visitors: THREE.Group[] = [];
   const visitorData = [
     [-.2, 8.7, -.24, "#8d6549", "#303d43", "#c28e69", "camera", "photographing", 12], [3.8, 11.6, 2.72, "#426475", "#343a3c", "#79503d", "backpack", "checking-map", 15],
     [-8.6, 12.9, .4, "#727c4c", "#3d3937", "#d0a27f", "tote", "neutral", 16], [9.1, 9.8, -2.8, "#7f4b55", "#273a43", "#8f6048", "backpack", "waving", 17],
@@ -315,12 +318,12 @@ function addZoo(root: THREE.Group, textures: GameTextures, heightAt: (x: number,
   ] as const;
   visitorData.slice(0, quality < .58 ? 3 : quality < .82 ? 4 : 6).forEach((data, index) => {
     const result = createPremiumHuman({ role: "visitor", quality, variant: index + 1, faceVariant: data[8], coat: data[3], trousers: data[4], skin: data[5], accessory: data[6], pose: data[7] });
-    result.root.position.set(data[0], .04, data[1]); result.root.rotation.y = data[2]; gate.add(result.root); ownedTextures.push(...result.ownedTextures);
+    result.root.position.set(data[0], .04, data[1]); result.root.rotation.y = data[2]; gate.add(result.root); visitors.push(result.root); ownedTextures.push(...result.ownedTextures);
   });
 
   const benchWood = new THREE.MeshStandardMaterial({ map: textures.bark, bumpMap: textures.bark, bumpScale: .025, color: "#795b43", roughness: .83 });
   for (const side of [-1, 1]) { const bench = new THREE.Group(); bench.position.set(side * 14.5, .42, 18.5); bench.rotation.y = side * -.16; for (let slat = 0; slat < 5; slat++) { const board = new THREE.Mesh(new RoundedBoxGeometry(3.4, .11, .22, 3, .03), benchWood); board.position.set(0, slat < 3 ? slat * .15 : .5 + (slat - 3) * .2, slat < 3 ? (slat - 1) * .24 : .38); if (slat >= 3) board.rotation.x = -.15; bench.add(board); } for (const x of [-1.35, 1.35]) { const leg = new THREE.Mesh(new RoundedBoxGeometry(.1, .7, .1, 2, .02), iron); leg.position.set(x, -.18, 0); bench.add(leg); } gate.add(bench); }
-  root.add(gate); return { gate, attendant };
+  root.add(gate); return { gate, attendant, visitors };
 }
 
 function addSubwayEntrance(root: THREE.Group, textures: GameTextures, heightAt: (x: number, z: number) => number, ownedTextures: THREE.Texture[], quality: number) {
@@ -371,7 +374,14 @@ export function createCampaignLandmarks(scene: THREE.Scene, textures: GameTextur
   const ownedTextures: THREE.Texture[] = [], obstacles: CampaignObstacle[] = [];
   addSouthboundParkPath(root, textures, heightAt);
   const { bridge: bowBridge, surface: bowBridgeSurface } = addBowBridge(root, textures, heightAt, ownedTextures);
-  const { gate: zooGate, attendant } = addZoo(root, textures, heightAt, ownedTextures, quality);
+  const { gate: zooGate, attendant, visitors } = addZoo(root, textures, heightAt, ownedTextures, quality);
+  const visitorAgents: AmbientHumanAgent[] = visitors.map((visitor, index) => createAmbientHumanAgent(visitor, {
+    axis: new THREE.Vector3(index % 2 ? 1 : -.35, 0, index % 2 ? .25 : 1),
+    travel: 1.15 + index % 3 * .34,
+    speed: .72 + index % 2 * .12,
+    pauseSeconds: 2.2 + index % 3 * .85,
+    phase: index * 1.83,
+  }));
   const subwayEntrance = addSubwayEntrance(root, textures, heightAt, ownedTextures, quality);
   bowBridge.updateMatrixWorld(true);
   zooGate.updateMatrixWorld(true);
@@ -394,7 +404,10 @@ export function createCampaignLandmarks(scene: THREE.Scene, textures: GameTextur
     { id: "subway-railing-west", kind: "aabb", minX: SUBWAY_TARGET.x - 3.55, maxX: SUBWAY_TARGET.x - 2.85, minZ: SUBWAY_TARGET.z - 10, maxZ: SUBWAY_TARGET.z + .7, minY: -5, maxY: 4 },
     { id: "subway-railing-east", kind: "aabb", minX: SUBWAY_TARGET.x + 2.85, maxX: SUBWAY_TARGET.x + 3.55, minZ: SUBWAY_TARGET.z - 10, maxZ: SUBWAY_TARGET.z + .7, minY: -5, maxY: 4 },
   );
-  return { root, attendant, bowBridge, bowBridgeSurface, subwayEntrance, subwayEntryTrigger: SUBWAY_ENTRY_TRIGGER.clone(), zooGate, obstacles, dispose() {
+  return { root, attendant, bowBridge, bowBridgeSurface, subwayEntrance, subwayEntryTrigger: SUBWAY_ENTRY_TRIGGER.clone(), zooGate, obstacles, update(elapsed, delta) {
+    idleAuthoredHuman(attendant, delta);
+    visitorAgents.forEach(agent => updateAmbientHumanAgent(agent, elapsed, delta));
+  }, dispose() {
     markPremiumCharactersDisposed(root);
     scene.remove(root); root.traverse(object => { if (!(object instanceof THREE.Mesh)) return; object.geometry.dispose(); const materials = Array.isArray(object.material) ? object.material : [object.material]; materials.forEach(material => material.dispose()); }); ownedTextures.forEach(texture => texture.dispose());
   } };

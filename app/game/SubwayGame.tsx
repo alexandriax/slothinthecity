@@ -50,7 +50,7 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
     const createStationWorld = (initialStation: SubwayStationId = "FIFTH_AV") => new SubwayWorld(scene, textures, { quality: subwayDetail, initialStation });
     let stationWorld: SubwayWorld | null = createStationWorld();
     let subwayProgress = stationWorld.progressState;
-    const player = stationWorld.spawn.clone(), velocity = new THREE.Vector3(), keys = new Set<string>(); previousStreetMix = stationWorld.streetEnvironmentMix(player);
+    const player = stationWorld.spawn.clone(), playerBeforeMovement = new THREE.Vector3(), velocity = new THREE.Vector3(), keys = new Set<string>(); previousStreetMix = stationWorld.streetEnvironmentMix(player);
     const sloth = createSlothRig(textures.fur); const layoutSloth = () => { const mobile = innerWidth < 760; sloth.root.scale.setScalar(mobile ? .54 : .72); sloth.left.position.x = mobile ? -.55 : -.84; sloth.right.position.x = mobile ? .55 : .84; sloth.left.position.y = sloth.right.position.y = -.8; }; layoutSloth(); camera.add(sloth.root); scene.add(camera);
     const timer = new THREE.Timer(); timer.connect(document); audio.setScene("subway-station", { transitionSeconds: 1.4, intensity: .58 }); audio.playTransitAnnouncement("fifth_nr_platform", { delaySeconds: .65, dedupeSeconds: 0 });
     const showTransition = (message: string) => { setTransition(message); if (transitionTimer !== null) clearTimeout(transitionTimer); transitionTimer = window.setTimeout(() => { setTransition(""); transitionTimer = null; }, 880); };
@@ -151,12 +151,13 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
         previousTrainPhase = stationWorld.trainPhase; previousDoorsOpen = stationWorld.doorsOpen;
         const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)), right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)), wish = new THREE.Vector3();
         if (keys.has("KeyW") || keys.has("ArrowUp")) wish.add(forward); if (keys.has("KeyS") || keys.has("ArrowDown")) wish.sub(forward); if (keys.has("KeyD") || keys.has("ArrowRight")) wish.add(right); if (keys.has("KeyA") || keys.has("ArrowLeft")) wish.sub(right);
+        playerBeforeMovement.copy(player);
         const moving = wish.lengthSq() > 0; if (moving) wish.normalize(); velocity.lerp(wish.multiplyScalar(2.65), 1 - Math.exp(-delta * (moving ? 9 : 6))); player.addScaledVector(velocity, delta); stationWorld.resolvePlayer(player, velocity);
         const streetMix = stationWorld.streetEnvironmentMix(player); (scene.background as THREE.Color).copy(interiorColor).lerp(streetColor, streetMix); if (scene.fog instanceof THREE.FogExp2) { scene.fog.color.copy(fogInterior).lerp(fogStreet, streetMix); scene.fog.density = THREE.MathUtils.lerp(.009, .0048, streetMix); } renderer.toneMappingExposure = THREE.MathUtils.lerp(1.18, 1.32, streetMix);
         if (currentStation === "FIFTH_AV" && previousStreetMix >= .55 && streetMix < .55) { showTransition("5 Av / 59 St mezzanine"); showToast("Fare control ahead — collect a MetroCard at the blue machine, then swipe at a turnstile.", 5200); }
         previousStreetMix = streetMix;
         if (moving && gameTime - lastFootstep > .48) { lastFootstep = gameTime; audio.playFootstep("stone", Math.min(1, velocity.length() / 2.65)); }
-        const option = stationWorld.boardingOption(player), boardingHint = stationWorld.boardingHint(player), fareInteraction = stationWorld.interactionHint(player), target = stationWorld.waypoint, targetX = target.x - player.x, targetZ = target.z - player.z, distance = Math.hypot(targetX, targetZ), ahead = targetX * -Math.sin(yaw) + targetZ * -Math.cos(yaw), side = targetX * Math.cos(yaw) - targetZ * Math.sin(yaw), bearing = THREE.MathUtils.radToDeg(Math.atan2(side, ahead));
+        const option = stationWorld.boardingOption(player, playerBeforeMovement), boardingHint = stationWorld.boardingHint(player), fareInteraction = stationWorld.interactionHint(player), target = stationWorld.waypoint, targetX = target.x - player.x, targetZ = target.z - player.z, distance = Math.hypot(targetX, targetZ), ahead = targetX * -Math.sin(yaw) + targetZ * -Math.cos(yaw), side = targetX * Math.cos(yaw) - targetZ * Math.sin(yaw), bearing = THREE.MathUtils.radToDeg(Math.atan2(side, ahead));
         let prompt = "", promptKey = ""; if (fareInteraction) { prompt = fareInteraction.label; promptKey = "E"; } else if (boardingHint) prompt = `WALK THROUGH OPEN ${boardingHint.route} DOORS · ${boardingHint.direction}`; else if (currentStation === "WEST_FARMS" && distance < 4.4) prompt = "WALK UP TO THE BRONX ZOO EXIT";
         // Boarding and the final street exit are spatial actions: once the sloth
         // crosses a physically open doorway, the streamed world changes without
@@ -171,7 +172,7 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
       } else if (transitStage === "BRONX_ZOO" && zooWorld) {
         const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)), right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)), wish = new THREE.Vector3();
         if (keys.has("KeyW") || keys.has("ArrowUp")) wish.add(forward); if (keys.has("KeyS") || keys.has("ArrowDown")) wish.sub(forward); if (keys.has("KeyD") || keys.has("ArrowRight")) wish.add(right); if (keys.has("KeyA") || keys.has("ArrowLeft")) wish.sub(right);
-        const moving = wish.lengthSq() > 0; if (moving) wish.normalize(); velocity.lerp(wish.multiplyScalar(2.5), 1 - Math.exp(-delta * (moving ? 9 : 6))); player.addScaledVector(velocity, delta); zooWorld.resolvePlayer(player, velocity); zooWorld.update(gameTime);
+        const moving = wish.lengthSq() > 0; if (moving) wish.normalize(); velocity.lerp(wish.multiplyScalar(2.5), 1 - Math.exp(-delta * (moving ? 9 : 6))); player.addScaledVector(velocity, delta); zooWorld.resolvePlayer(player, velocity); zooWorld.update(gameTime, delta);
         if (moving && gameTime - lastFootstep > .5) { lastFootstep = gameTime; audio.playFootstep("stone", Math.min(1, velocity.length() / 2.5)); }
         const target = zooWorld.attendantPosition, targetX = target.x - player.x, targetZ = target.z - player.z, distance = Math.hypot(targetX, targetZ), ahead = targetX * -Math.sin(yaw) + targetZ * -Math.cos(yaw), side = targetX * Math.cos(yaw) - targetZ * Math.sin(yaw), bearing = THREE.MathUtils.radToDeg(Math.atan2(side, ahead));
         const nearby = zooWorld.attendantNearby(player), prompt = nearby ? "SPEAK WITH BRONX ZOO ATTENDANT" : "";

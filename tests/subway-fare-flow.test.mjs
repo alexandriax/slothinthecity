@@ -43,9 +43,21 @@ test("station doors ease and platform passengers visibly exchange", async () => 
   assert.match(world, /transparent-exterior-side-window/);
   assert.match(world, /updateStationPassengerFlows\(cycle, delta\)/);
   assert.match(world, /updateAuthoredHumanMotion\(flow\.group, delta, flow\.group\.visible && distance > \.0005 \? "walk" : "idle"/);
-  assert.match(world, /mode: index % 3 === 0 \? "BOARD" : index % 3 === 1 \? "ALIGHT"/);
+  assert.match(world, /mode: z > 11 \|\| id === "WEST_FARMS" \? "AMBIENT" : index % 3 === 0 \? "BOARD" : index % 3 === 1 \? "ALIGHT"/);
   assert.match(world, /const alightProgress = THREE\.MathUtils\.smoothstep\(cycle, 6, 9\.35\)/);
   assert.match(world, /const boardProgress = THREE\.MathUtils\.smoothstep\(cycle, 8\.85, 12\.75\)/);
+});
+
+test("boarding requires a platform-level crossing through one open doorway", async () => {
+  const [world, game] = await Promise.all([readFile(worldUrl, "utf8"), readFile(gameUrl, "utf8")]);
+
+  assert.match(world, /boardingOption\(player: THREE\.Vector3, previousPlayer: THREE\.Vector3\)/);
+  assert.match(world, /Math\.abs\(player\.y - 1\.48\) > \.48/);
+  assert.match(world, /const previousDepth =/);
+  assert.match(world, /previousDepth > \.09 \|\| depth < \.09/);
+  assert.match(world, /boardingHint[\s\S]{0,220}Math\.abs\(player\.y - 1\.48\) > \.58/);
+  assert.match(game, /playerBeforeMovement\.copy\(player\)/);
+  assert.match(game, /boardingOption\(player, playerBeforeMovement\)/);
 });
 
 test("street stairs blend daylight into the mezzanine without a fake initial loading card", async () => {

@@ -161,6 +161,10 @@ test("all eight GLBs stay Draco-compressed, truly skinned, animated, and draw-ca
       );
       assert.equal(json.animations[0].channels.length, 2, `${contract.file} should carry the breathing/head idle channels`);
       assert.ok(json.animations[1].channels.length >= 11, `${contract.file} should carry the full opposing-limb walk cycle`);
+      assert.ok(
+        json.animations[1].samplers.every(sampler => sampler.interpolation === "LINEAR"),
+        `${contract.file} walk keys should be linear so loop handles cannot overshoot limb rotations`,
+      );
 
       const triangles = gltfTriangleCount(json);
       const vertices = gltfVertexCount(json);

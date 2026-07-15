@@ -92,7 +92,8 @@ type StationPassengerFlow = {
   base: THREE.Vector3;
   doorZ: number;
   group: THREE.Group;
-  mode: "ALIGHT" | "BOARD" | "WAIT";
+  mode: "ALIGHT" | "AMBIENT" | "BOARD" | "WAIT";
+  phase: number;
   side: -1 | 1;
 };
 
@@ -711,9 +712,15 @@ function buildStation(id: SubwayStationId, textures: GameTextures, adTextures: T
   const authoredDoorZ = [-35.95, -29.85, -23.75, -16.1, -10, -3.9, 2.2, 9.85] as const;
   npcPlacements.slice(0, detail.npcCount).forEach(([x, z, palette, facing], index) => {
     const passenger = addNpc(root, x, z, palette, facing, index + (isLex ? 3 : id === "WEST_FARMS" ? 6 : 0), quality, commuterMaps, ownedTextures);
-    if (z > 11 || id === "WEST_FARMS") return;
     const doorZ = authoredDoorZ.reduce((nearest, candidate) => Math.abs(candidate - z) < Math.abs(nearest - z) ? candidate : nearest, authoredDoorZ[0]);
-    passengerFlows.push({ base: passenger.position.clone(), doorZ, group: passenger, mode: index % 3 === 0 ? "BOARD" : index % 3 === 1 ? "ALIGHT" : "WAIT", side: x < 0 ? -1 : 1 });
+    passengerFlows.push({
+      base: passenger.position.clone(),
+      doorZ,
+      group: passenger,
+      mode: z > 11 || id === "WEST_FARMS" ? "AMBIENT" : index % 3 === 0 ? "BOARD" : index % 3 === 1 ? "ALIGHT" : "WAIT",
+      phase: index * 2.27 + (isLex ? 1.1 : id === "WEST_FARMS" ? 2.2 : 0),
+      side: x < 0 ? -1 : 1,
+    });
   });
   if (id === "WEST_FARMS") {
     const artWallMaterial = new THREE.MeshStandardMaterial({ color: "#26312f", roughness: .72, map: paintMap, bumpMap: paintMap, bumpScale: .012 });
@@ -1019,7 +1026,16 @@ export class SubwayWorld {
   update(elapsed: number) {
     const delta = Math.min(Math.max(elapsed - this.lastUpdateElapsed, 0), .08);
     this.lastUpdateElapsed = elapsed;
-    if (this.stationId === "WEST_FARMS") { this.trainPhase = "AWAY"; this.doorsOpen = false; this.secondsToTrain = 0; this.correctTrain.root.visible = this.wrongTrain.root.visible = false; return; }
+    if (this.stationId === "WEST_FARMS") {
+      this.trainPhase = "AWAY";
+      this.doorsOpen = false;
+      this.secondsToTrain = 0;
+      this.correctTrain.root.visible = this.wrongTrain.root.visible = false;
+      // The terminal has no active train, but its visitors still need the same
+      // walk/pause state machine as every other station.
+      this.updateStationPassengerFlows(elapsed % SUBWAY_TRAIN_INTERVAL_SECONDS, delta);
+      return;
+    }
     const cycleNumber = Math.floor(elapsed / SUBWAY_TRAIN_INTERVAL_SECONDS);
     if (this.stationId === "FIFTH_AV" && cycleNumber !== this.serviceCycle) {
       // Successive 30-second arrivals alternate the two valid Broadway-line
@@ -1059,7 +1075,27 @@ export class SubwayWorld {
     station.passengerFlows.forEach((flow, index) => {
       const previous = flow.group.position.clone();
       const doorway = new THREE.Vector3(flow.side * 2.5, flow.base.y, flow.doorZ + (index % 2 ? .24 : -.24));
-      if (!exchangeActive || flow.mode === "WAIT") {
+      if (flow.mode === "AMBIENT" || (flow.mode === "WAIT" && !exchangeActive)) {
+        // Concourse and waiting passengers use a real walk/pause cycle rather
+        // than sliding continuously. WAIT riders keep their patrol tight so
+        // they still line up with the authored train doorway when it arrives.
+        const walkSeconds = 2.7 + index % 3 * .38, pauseSeconds = 2.1 + index % 2 * .9;
+        const routeSeconds = (walkSeconds + pauseSeconds) * 2;
+        const local = ((this.lastUpdateElapsed + flow.phase) % routeSeconds + routeSeconds) % routeSeconds;
+        const outbound = local < walkSeconds, returning = local >= walkSeconds + pauseSeconds && local < walkSeconds * 2 + pauseSeconds;
+        const amount = outbound ? local / walkSeconds : returning ? 1 - (local - walkSeconds - pauseSeconds) / walkSeconds : local < walkSeconds + pauseSeconds ? 1 : 0;
+        const eased = amount * amount * (3 - 2 * amount), travel = flow.mode === "WAIT" ? .58 : 1.42 + index % 3 * .22;
+        flow.group.visible = true;
+        flow.group.position.copy(flow.base); flow.group.position.z += eased * travel;
+        if (outbound || returning) {
+          const targetYaw = returning ? Math.PI : 0;
+          const yawDelta = Math.atan2(
+            Math.sin(targetYaw - flow.group.rotation.y),
+            Math.cos(targetYaw - flow.group.rotation.y),
+          );
+          flow.group.rotation.y += yawDelta * (1 - Math.exp(-delta * 7));
+        }
+      } else if (!exchangeActive || flow.mode === "WAIT") {
         const waitingToBoard = flow.mode === "BOARD" && cycle < 13.2;
         const hasAlighted = flow.mode === "ALIGHT" && cycle >= 6;
         flow.group.visible = flow.mode === "WAIT" || waitingToBoard || hasAlighted;
@@ -1090,12 +1126,17 @@ export class SubwayWorld {
     train.root.updateMatrixWorld(true);
   }
 
-  boardingOption(player: THREE.Vector3): BoardingOption | null {
+  boardingOption(player: THREE.Vector3, previousPlayer: THREE.Vector3): BoardingOption | null {
     if (!this.doorsOpen || this.stationId === "WEST_FARMS") return null;
+    // Boarding is a platform-level threshold crossing, not merely proximity to
+    // a door's X/Z footprint. The elevation guard prevents the mezzanine or
+    // fare-control collision correction from matching a train below it.
+    if (Math.abs(player.y - 1.48) > .48 || Math.abs(previousPlayer.y - 1.48) > .48) return null;
     let boarded: { depth: number; train: TrainRig } | null = null;
     for (const train of [this.correctTrain, this.wrongTrain]) for (const door of this.platformDoorPositions(train)) {
       const depth = train.platformSide < 0 ? player.x - door.x : door.x - player.x;
-      if (depth < .09 || depth > .86 || Math.abs(player.z - door.z) > .46) continue;
+      const previousDepth = train.platformSide < 0 ? previousPlayer.x - door.x : door.x - previousPlayer.x;
+      if (previousDepth > .09 || depth < .09 || depth > .86 || Math.abs(player.z - door.z) > .46) continue;
       if (!boarded || depth < boarded.depth) boarded = { depth, train };
     }
     return boarded ? { correct: boarded.train.correct, direction: boarded.train.direction, route: boarded.train.route, station: this.stationId } : null;
@@ -1104,6 +1145,7 @@ export class SubwayWorld {
   /** A wider non-boarding zone for optional UI hints; crossing the threshold is handled by boardingOption. */
   boardingHint(player: THREE.Vector3): BoardingOption | null {
     if (!this.doorsOpen || this.stationId === "WEST_FARMS") return null;
+    if (Math.abs(player.y - 1.48) > .58) return null;
     let nearest: { distance: number; train: TrainRig } | null = null;
     for (const train of [this.correctTrain, this.wrongTrain]) for (const door of this.platformDoorPositions(train)) {
       const distance = Math.hypot(player.x - door.x, player.z - door.z);
