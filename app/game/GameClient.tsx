@@ -14,6 +14,7 @@ import { createSlothRig } from "./player/SlothRig";
 import { loadGameTextures } from "./rendering/textures";
 import { AudioQualitySettings, createAdaptiveQualityManager, createPremiumAudioDirector, type AdaptiveQualityManager, type PremiumAudioDirector } from "./systems";
 import { SubwayGame } from "./SubwayGame";
+import { checkpointUsesSubway, debugSceneName, isDirectDebugSession, requestedGameCheckpoint } from "./debugCheckpoints";
 import { BOW_BRIDGE_TARGET, createCampaignLandmarks, SUBWAY_TARGET, ZOO_TARGET } from "./world/CampaignLandmarks";
 import { createParkRowboat, ROWBOAT_ROOT_WATERLINE_OFFSET, type ParkRowboat } from "./world/ParkRowboat";
 import { createParkUtilityCart, type ParkUtilityCart } from "./world/ParkUtilityCart";
@@ -49,7 +50,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
   const audioState = useSyncExternalStore(audio.subscribe, audio.getSnapshot, audio.getSnapshot);
   const [mouseCaptured, setMouseCaptured] = useState(false);
   const [touchCapable, setTouchCapable] = useState(false);
-  const [pointerLockAvailable] = useState(() => typeof window !== "undefined" && !hasTouchInput() && typeof HTMLCanvasElement.prototype.requestPointerLock === "function" && matchMedia("(pointer: fine)").matches && !new URLSearchParams(location.search).has("qa"));
+  const [pointerLockAvailable] = useState(() => typeof window !== "undefined" && !hasTouchInput() && typeof HTMLCanvasElement.prototype.requestPointerLock === "function" && matchMedia("(pointer: fine)").matches && !isDirectDebugSession(location.search, location.hostname));
   const [hud, setHud] = useState<HudState>({ energy: 100, alert: 6, buds: 0, ticketCollected: false, objective: "Forage five buds across trail and canopy", objectiveShort: "FORAGE", prompt: "", promptKey: "", heading: "N", motion: "ON GROUND", hint: "E climbs a nearby trunk · W / S moves · Shift grips", threat: "PATROL DISTANT", hawkPhase: "PATROL", swimming: false, driving: false, speed: 0, x: START.x, y: 0, z: START.z, branchId: -1, branchProgress: 0, arboreal: false, goalDistance: Math.hypot(BOW_BRIDGE_TARGET.x - START.x, BOW_BRIDGE_TARGET.z - START.z), goalBearing: 0, parkStage: "FORAGE", targetActive: false, vehicle: null, waypointLabel: "Bow Bridge" });
   const setPhase = useCallback((next: Phase) => {
     phaseRef.current = next;
@@ -108,7 +109,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
 
     const timer = new THREE.Timer(); timer.connect(document);
     const keys = new Set<string>(), velocity = new THREE.Vector3(), player = START.clone();
-    const qaInput = ["localhost", "127.0.0.1"].includes(location.hostname) ? new URLSearchParams(location.search).get("qa") : null;
+    const qaInput = requestedGameCheckpoint(location.search, location.hostname);
     if (qaInput === "autowalk") keys.add("KeyW");
     player.y = terrainY(player.x, player.z) + 1.48; camera.position.copy(player);
     const sloth = createSlothRig(textures.fur);
@@ -152,7 +153,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
       return distance <= 9.25 ? nearest : null;
     }
 
-    const requestLock = () => { if (phaseRef.current !== "playing" || new URLSearchParams(location.search).has("qa")) return; requestPointerLockSafely(renderer.domElement); };
+    const requestLock = () => { if (phaseRef.current !== "playing" || isDirectDebugSession(location.search, location.hostname)) return; requestPointerLockSafely(renderer.domElement); };
     const pointer = (event: PointerEvent) => { if (event.pointerType === "touch") { dragging = true; lastTouchX = event.clientX; lastTouchY = event.clientY; try { renderer.domElement.setPointerCapture?.(event.pointerId); } catch {} } else requestLock(); };
     const applyLook = (dx: number, dy: number, xScale: number, yScale: number) => {
       if (drivingCart || activeBoat) vehicleLookYaw = THREE.MathUtils.clamp(vehicleLookYaw - dx * xScale, -1.5, 1.5);
@@ -837,7 +838,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
     window.scrollTo(0, 0);
   }, []);
   const safeLock = useCallback(() => {
-    if (!pointerLockAvailable || phaseRef.current !== "playing" || new URLSearchParams(location.search).has("qa")) return;
+    if (!pointerLockAvailable || phaseRef.current !== "playing" || isDirectDebugSession(location.search, location.hostname)) return;
     requestPointerLockSafely(mount.current?.querySelector("canvas") ?? null);
   }, [pointerLockAvailable]);
   const begin = useCallback(() => {
@@ -853,9 +854,14 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
   }, [audio, ready, exiting, resetViewportScroll, safeLock, setPhase, showToast]);
   const resume = () => { setPhase("playing"); safeLock(); };
   useEffect(() => {
-    const frame = requestAnimationFrame(() => setTouchCapable(hasTouchInput()));
+    const frame = requestAnimationFrame(() => setTouchCapable(hasTouchInput() || debugSceneName(location.search) === "mobile"));
     return () => cancelAnimationFrame(frame);
   }, []);
+  useEffect(() => {
+    if (!ready || !debugSceneName(location.search)) return;
+    const frame = requestAnimationFrame(() => setPhase("playing"));
+    return () => cancelAnimationFrame(frame);
+  }, [ready, setPhase]);
   useEffect(() => () => {
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
   }, []);
@@ -903,8 +909,11 @@ export function GameClient() {
     return () => { disarmAudio(); void audio.dispose(); quality.dispose(); };
   }, [audio, quality]);
   useEffect(() => {
-    if (!["localhost", "127.0.0.1"].includes(location.hostname)) return;
-    if (!["subway", "subwayplatform", "trainride", "trainride5", "lexington", "lexingtontransfer", "westfarms", "finale"].includes(new URLSearchParams(location.search).get("qa") ?? "")) return;
+    if (new URLSearchParams(location.search).get("debug") === "characters") {
+      location.replace("/debug/characters");
+      return;
+    }
+    if (!checkpointUsesSubway(requestedGameCheckpoint(location.search, location.hostname))) return;
     const frame = requestAnimationFrame(() => setLevel("subway"));
     return () => cancelAnimationFrame(frame);
   }, []);
