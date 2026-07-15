@@ -1,0 +1,106 @@
+{
+  "archetypes": [
+    {
+      "id": "human-male-short",
+      "license": "CC0-1.0",
+      "lod0": {
+        "bytes": 460232,
+        "file": "human-male-short-lod0.glb",
+        "materials": 8,
+        "meshes": 8,
+        "triangles": 77360,
+        "vertices": 38741
+      },
+      "lod2": {
+        "bytes": 200784,
+        "file": "human-male-short-lod2.glb",
+        "materials": 8,
+        "meshes": 8,
+        "triangles": 21896,
+        "vertices": 10988
+      },
+      "source": "male"
+    },
+    {
+      "id": "human-male-curly",
+      "license": "CC0-1.0",
+      "lod0": {
+        "bytes": 452076,
+        "file": "human-male-curly-lod0.glb",
+        "materials": 8,
+        "meshes": 8,
+        "triangles": 75528,
+        "vertices": 37804
+      },
+      "lod2": {
+        "bytes": 200612,
+        "file": "human-male-curly-lod2.glb",
+        "materials": 8,
+        "meshes": 8,
+        "triangles": 21566,
+        "vertices": 10823
+      },
+      "source": "male"
+    },
+    {
+      "id": "human-female-bob",
+      "license": "CC0-1.0",
+      "lod0": {
+        "bytes": 388536,
+        "file": "human-female-bob-lod0.glb",
+        "materials": 8,
+        "meshes": 8,
+        "triangles": 60644,
+        "vertices": 30390
+      },
+      "lod2": {
+        "bytes": 170908,
+        "file": "human-female-bob-lod2.glb",
+        "materials": 8,
+        "meshes": 8,
+        "triangles": 17215,
+        "vertices": 8660
+      },
+      "source": "female"
+    },
+    {
+      "id": "human-female-ponytail",
+      "license": "CC0-1.0",
+      "lod0": {
+        "bytes": 395644,
+        "file": "human-female-ponytail-lod0.glb",
+        "materials": 8,
+        "meshes": 8,
+        "triangles": 61516,
+        "vertices": 30839
+      },
+      "lod2": {
+        "bytes": 174916,
+        "file": "human-female-ponytail-lod2.glb",
+        "materials": 8,
+        "meshes": 8,
+        "triangles": 17460,
+        "vertices": 8793
+      },
+      "source": "female"
+    }
+  ],
+  "generator": "tools/character-pipeline/build_humans.py",
+  "materials": [
+    "Skin",
+    "ClothUpper",
+    "ClothLower",
+    "Hair",
+    "Shoe",
+    "EyeWhite",
+    "Iris",
+    "Pupil"
+  ],
+  "schemaVersion": 1,
+  "source": {
+    "license": "CC0-1.0",
+    "name": "Blender Studio Human Base Meshes bundle v1.0.0",
+    "sha256": "46a912c0524072ac3b78c35d5d2471df7b8df102394a050ca8cd7184e3393648",
+    "url": "https://download.blender.org/demo/bundles/bundles-3.6/human-base-meshes-bundle-v1.0.0.zip"
+  }
+}
