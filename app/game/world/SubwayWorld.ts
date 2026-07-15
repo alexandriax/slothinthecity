@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import type { GameTextures } from "../rendering/textures";
 import { createPremiumHuman, markPremiumCharactersDisposed, type PremiumHumanRole } from "./PremiumCharacter";
+import { updateAuthoredHumanMotion } from "./characters/AuthoredHumanAssets";
 
 export type SubwayStationId = "FIFTH_AV" | "LEXINGTON" | "WEST_FARMS";
 export type TrainPhase = "AWAY" | "APPROACHING" | "BOARDING" | "DEPARTING";
@@ -336,7 +337,7 @@ function addNpc(parent: THREE.Group, x: number, z: number, palette: [string, str
   const faceVariants = [12, 15, 13, 16, 19, 14, 17, 18, 11, 0] as const;
   const result = createPremiumHuman({
     role,
-    quality: quality === "mobile" ? .48 : quality === "ultra" ? .82 : .64,
+    quality: quality === "mobile" ? .58 : quality === "ultra" ? 1 : .86,
     variant,
     faceVariant: faceVariants[variant % faceVariants.length],
     coat: palette[0],
@@ -798,6 +799,7 @@ export class SubwayWorld {
   secondsToTrain = 4;
   doorsOpen = false;
   private serviceCycle = -1;
+  private lastUpdateElapsed = 0;
   private doorOpenAmount = 0;
   private hasMetroCard = false;
   private readonly farePaidByStation = new Map<SubwayStationId, boolean>([["FIFTH_AV", false], ["LEXINGTON", true], ["WEST_FARMS", true]]);
@@ -1015,6 +1017,8 @@ export class SubwayWorld {
   }
 
   update(elapsed: number) {
+    const delta = Math.min(Math.max(elapsed - this.lastUpdateElapsed, 0), .08);
+    this.lastUpdateElapsed = elapsed;
     if (this.stationId === "WEST_FARMS") { this.trainPhase = "AWAY"; this.doorsOpen = false; this.secondsToTrain = 0; this.correctTrain.root.visible = this.wrongTrain.root.visible = false; return; }
     const cycleNumber = Math.floor(elapsed / SUBWAY_TRAIN_INTERVAL_SECONDS);
     if (this.stationId === "FIFTH_AV" && cycleNumber !== this.serviceCycle) {
@@ -1040,10 +1044,10 @@ export class SubwayWorld {
       train.root.position.y = -.08 + Math.sin(elapsed * 8 + (train.correct ? 0 : 1)) * .008;
       this.setDoorAmount(train, this.doorOpenAmount);
     }
-    this.updateStationPassengerFlows(cycle);
+    this.updateStationPassengerFlows(cycle, delta);
   }
 
-  private updateStationPassengerFlows(cycle: number) {
+  private updateStationPassengerFlows(cycle: number, delta: number) {
     const station = this.stations.get(this.stationId); if (!station) return;
     const exchangeActive = this.trainPhase === "BOARDING" && this.doorOpenAmount > .52;
     // The platform exchange is deliberately staged: riders appear from the car
@@ -1053,20 +1057,22 @@ export class SubwayWorld {
     const alightProgress = THREE.MathUtils.smoothstep(cycle, 6, 9.35);
     const boardProgress = THREE.MathUtils.smoothstep(cycle, 8.85, 12.75);
     station.passengerFlows.forEach((flow, index) => {
+      const previous = flow.group.position.clone();
       const doorway = new THREE.Vector3(flow.side * 2.5, flow.base.y, flow.doorZ + (index % 2 ? .24 : -.24));
       if (!exchangeActive || flow.mode === "WAIT") {
         const waitingToBoard = flow.mode === "BOARD" && cycle < 13.2;
         const hasAlighted = flow.mode === "ALIGHT" && cycle >= 6;
         flow.group.visible = flow.mode === "WAIT" || waitingToBoard || hasAlighted;
-        flow.group.position.lerp(flow.base, .16); return;
-      }
-      if (flow.mode === "BOARD") {
+        flow.group.position.lerp(flow.base, .16);
+      } else if (flow.mode === "BOARD") {
         flow.group.visible = boardProgress < .96; flow.group.position.lerpVectors(flow.base, doorway, boardProgress);
         flow.group.rotation.y = flow.side < 0 ? -Math.PI / 2 : Math.PI / 2;
       } else {
         flow.group.visible = true; flow.group.position.lerpVectors(doorway, flow.base, alightProgress);
         flow.group.rotation.y = flow.side < 0 ? Math.PI / 2 : -Math.PI / 2;
       }
+      const distance = previous.distanceTo(flow.group.position);
+      updateAuthoredHumanMotion(flow.group, delta, flow.group.visible && distance > .0005 ? "walk" : "idle", THREE.MathUtils.clamp(distance / Math.max(delta, .001) / 1.15, .65, 1.45));
     });
   }
 

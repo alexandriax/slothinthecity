@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import type { GameTextures } from "../rendering/textures";
 import { createPremiumHuman, markPremiumCharactersDisposed } from "./PremiumCharacter";
+import { updateAuthoredHumanMotion } from "./characters/AuthoredHumanAssets";
 
 export type TrainInteriorQuality = "mobile" | "desktop";
 export type TrainInteriorPhase = "CRUISING" | "APPROACHING" | "DWELL" | "DEPARTING" | "COMPLETE" | "FAILED";
@@ -83,6 +84,7 @@ type PassengerRig = {
   flow: "ALIGHT" | "BOARD" | "STAY";
   flowDoorZ: number;
   group: THREE.Group;
+  humanRoot: THREE.Group;
   head: THREE.Group;
   movable: boolean;
   phase: number;
@@ -247,7 +249,7 @@ function createPassenger(index: number, quality: TrainInteriorQuality, pose: "ho
     ["#69405d", "#e0b58d", "#643c29"], ["#313e64", "#9a674d", "#24201d"], ["#4b5d45", "#c18767", "#463026"],
   ][index % 6];
   const premium = createPremiumHuman({
-    role: "visitor", quality: quality === "desktop" ? .72 : .5, variant: index + 31, faceVariant: [12, 15, 16, 17, 18, 19][index % 6], coat: palettes[0], trousers: palettes[2], skin: palettes[1],
+    role: "visitor", quality: quality === "desktop" ? 1 : .58, variant: index + 31, faceVariant: [12, 15, 16, 17, 18, 19][index % 6], coat: palettes[0], trousers: palettes[2], skin: palettes[1],
     accessory: pose === "seated" ? "none" : index % 3 === 0 ? "backpack" : index % 3 === 1 ? "tote" : "none",
     pose: pose === "reading" ? "checking-map" : pose === "seated" ? "seated" : "neutral",
   });
@@ -257,7 +259,7 @@ function createPassenger(index: number, quality: TrainInteriorQuality, pose: "ho
   const inertLeft = new THREE.Group(), inertRight = new THREE.Group(), inertHead = new THREE.Group();
   return {
     armLeft: inertLeft, armLeftBaseX: 0, armRight: inertRight, armRightBaseX: 0, base: new THREE.Vector3(), group, head: inertHead,
-    baseRotation: 0, flow: "STAY", flowDoorZ: 0, movable: pose !== "seated", phase: index * 1.73, seated: pose === "seated",
+    baseRotation: 0, flow: "STAY", flowDoorZ: 0, humanRoot: premium.root, movable: pose !== "seated", phase: index * 1.73, seated: pose === "seated",
   } satisfies PassengerRig;
 }
 
@@ -539,6 +541,7 @@ export class TrainInteriorWorld {
     const stopActivity = this.phase === "APPROACHING" || this.phase === "DWELL";
     const pressure = stopActivity ? THREE.MathUtils.smoothstep(this.phaseTime, 0, this.phase === "DWELL" ? 2 : APPROACH_SECONDS) : 0;
     this.passengers.forEach((passenger, index) => {
+      const previous = passenger.group.position.clone();
       const target = passenger.base.clone();
       let flowPosition: THREE.Vector3 | null = null;
       if (this.phase === "DWELL" && passenger.flow !== "STAY") {
@@ -571,6 +574,8 @@ export class TrainInteriorWorld {
         passenger.armLeft.rotation.x += (leftTarget - passenger.armLeft.rotation.x) * Math.min(1, delta * 4);
         passenger.armRight.rotation.x += (rightTarget - passenger.armRight.rotation.x) * Math.min(1, delta * 4);
       }
+      const distance = previous.distanceTo(passenger.group.position);
+      updateAuthoredHumanMotion(passenger.humanRoot, delta, passenger.group.visible && !passenger.seated && distance > .0005 ? "walk" : "idle", THREE.MathUtils.clamp(distance / Math.max(delta, .001) / 1.05, .65, 1.45));
     });
     return pressure;
   }

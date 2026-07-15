@@ -10,6 +10,7 @@ import styles from "./CharacterShowroom.module.css";
 type LightingPreset = "studio" | "park" | "subway";
 type Framing = "lineup" | "body" | "face";
 type QualityPreset = "hero" | "mobile";
+type AnimationPreset = "HumanIdle" | "HumanWalk";
 type PosePreset = NonNullable<PremiumHumanOptions["pose"]>;
 type CharacterStatus = {
   status: string;
@@ -65,22 +66,22 @@ function disposeLooseSceneResources(root: THREE.Object3D) {
 
 export function CharacterShowroom() {
   const viewport = useRef<HTMLDivElement>(null);
-  const lightingRef = useRef<LightingPreset>("studio"), framingRef = useRef<Framing>("lineup"), selectedRef = useRef(0), animationRef = useRef(true);
+  const lightingRef = useRef<LightingPreset>("studio"), framingRef = useRef<Framing>("lineup"), selectedRef = useRef(0), animationRef = useRef(true), animationClipRef = useRef<AnimationPreset>("HumanWalk");
   const framingVersion = useRef(0);
   const [lighting, setLighting] = useState<LightingPreset>("studio");
   const [framing, setFraming] = useState<Framing>("lineup");
   const [quality, setQuality] = useState<QualityPreset>("hero");
   const [pose, setPose] = useState<PosePreset>("neutral");
   const [selected, setSelected] = useState(0);
-  // Start in a deterministic bind pose so silhouette and surface artifacts
-  // can be reviewed immediately; animation is opt-in from the lab controls.
-  const [animationPlaying, setAnimationPlaying] = useState(false);
+  const [animationClip, setAnimationClip] = useState<AnimationPreset>("HumanWalk");
+  const [animationPlaying, setAnimationPlaying] = useState(true);
   const [statuses, setStatuses] = useState<CharacterStatus[]>(ARCHETYPES.map(() => ({ ...EMPTY_STATUS })));
 
   useEffect(() => { lightingRef.current = lighting; }, [lighting]);
   useEffect(() => { framingRef.current = framing; framingVersion.current++; }, [framing]);
   useEffect(() => { selectedRef.current = selected; framingVersion.current++; }, [selected]);
   useEffect(() => { animationRef.current = animationPlaying; }, [animationPlaying]);
+  useEffect(() => { animationClipRef.current = animationClip; }, [animationClip]);
 
   useEffect(() => {
     const host = viewport.current;
@@ -154,7 +155,7 @@ export function CharacterShowroom() {
       stage.add(result.root);
       return result;
     });
-    const mixers = new Map<THREE.Group, THREE.AnimationMixer>();
+    const mixers = new Map<THREE.Group, { action: THREE.AnimationAction; clipName: string; mixer: THREE.AnimationMixer }>();
     const clock = new THREE.Clock();
 
     const resize = () => {
@@ -188,7 +189,6 @@ export function CharacterShowroom() {
 
     const applyFraming = () => {
       const mode = framingRef.current, index = selectedRef.current;
-      results.forEach((result, resultIndex) => { result.root.visible = mode === "lineup" || resultIndex === index; });
       const focusX = lineupCenter + (index - 1.5) * spacing;
       if (mode === "face") {
         camera.position.set(focusX, 2.2, -1.35);
@@ -212,13 +212,19 @@ export function CharacterShowroom() {
       const delta = Math.min(clock.getDelta(), .05);
       if (previousLighting !== lightingRef.current) { previousLighting = lightingRef.current; applyLighting(lightingRef.current); }
       if (appliedFramingVersion !== framingVersion.current) { appliedFramingVersion = framingVersion.current; applyFraming(); }
-      results.forEach(result => {
-        if (result.root.userData.authoredHumanStatus !== "ready" || mixers.has(result.root) || !result.root.animations.length) return;
-        const mixer = new THREE.AnimationMixer(result.root);
-        mixer.clipAction(result.root.animations[0]).reset().play();
-        mixers.set(result.root, mixer);
+      results.forEach((result, resultIndex) => {
+        const ready = result.root.userData.authoredHumanStatus === "ready";
+        result.root.visible = ready && (framingRef.current === "lineup" || resultIndex === selectedRef.current);
+        if (!ready || !result.root.animations.length) return;
+        const desired = result.root.animations.find(clip => clip.name === animationClipRef.current) ?? result.root.animations[0];
+        const current = mixers.get(result.root);
+        if (current?.clipName === desired.name) return;
+        const mixer = current?.mixer ?? new THREE.AnimationMixer(result.root);
+        const action = mixer.clipAction(desired).reset().fadeIn(.16).play();
+        current?.action.fadeOut(.16);
+        mixers.set(result.root, { action, clipName: desired.name, mixer });
       });
-      mixers.forEach(mixer => { mixer.timeScale = animationRef.current ? 1 : 0; mixer.update(delta); });
+      mixers.forEach(({ mixer }) => { mixer.timeScale = animationRef.current ? 1 : 0; mixer.update(delta); });
       const nextStatuses = results.map(result => inspectCharacter(result.root));
       const statusKey = JSON.stringify(nextStatuses);
       if (statusKey !== previousStatus) { previousStatus = statusKey; setStatuses(nextStatuses); }
@@ -231,7 +237,7 @@ export function CharacterShowroom() {
       disposed = true;
       cancelAnimationFrame(raf);
       resizeObserver.disconnect();
-      mixers.forEach(mixer => mixer.stopAllAction());
+      mixers.forEach(({ mixer }) => mixer.stopAllAction());
       results.forEach(result => {
         markPremiumHumanDisposed(result.root);
         result.ownedTextures.forEach(texture => texture.dispose());
@@ -260,8 +266,8 @@ export function CharacterShowroom() {
       </div></section>
       <section className={styles.twoColumn}><div><label>LOD</label><select value={quality} onChange={event => setQuality(event.target.value as QualityPreset)}><option value="hero">Hero · LOD0</option><option value="mobile">Mobile · LOD2</option></select></div><div><label>Pose</label><select value={pose} onChange={event => setPose(event.target.value as PosePreset)}><option value="neutral">Neutral</option><option value="waving">Waving</option><option value="checking-map">Map</option><option value="photographing">Camera</option><option value="seated">Seated</option></select></div></section>
       <section><label>Lighting</label><div className={styles.segmented}>{(["studio", "park", "subway"] as LightingPreset[]).map(value => <button key={value} className={lighting === value ? styles.active : ""} onClick={() => setLighting(value)}>{value}</button>)}</div></section>
-      <button className={styles.playButton} onClick={() => setAnimationPlaying(value => !value)}><span>{animationPlaying ? "Ⅱ" : "▶"}</span>{animationPlaying ? "Pause authored idle" : "Play authored idle"}</button>
-      <section className={styles.metrics}><label>Selected mesh</label><dl><div><dt>Status</dt><dd>{active.status}</dd></div><div><dt>LOD</dt><dd>{active.lod}</dd></div><div><dt>Triangles</dt><dd>{active.triangles.toLocaleString()}</dd></div><div><dt>Bones</dt><dd>{active.bones}</dd></div><div><dt>Roots</dt><dd>{active.visibleRoots}</dd></div><div><dt>Legacy</dt><dd className={active.legacyParts.length ? styles.warning : styles.clean}>{active.legacyParts.length ? active.legacyParts.length : "0 · clean"}</dd></div><div><dt>Clip</dt><dd>{active.clips[0] ?? "—"}</dd></div></dl>{active.legacyParts.length > 0 && <p className={styles.legacyList}>{active.legacyParts.join(" · ")}</p>}</section>
+      <section className={styles.twoColumn}><div><label>Animation</label><select value={animationClip} onChange={event => setAnimationClip(event.target.value as AnimationPreset)}><option value="HumanWalk">Natural walk</option><option value="HumanIdle">Breathing idle</option></select></div><button className={styles.playButton} onClick={() => setAnimationPlaying(value => !value)}><span>{animationPlaying ? "Ⅱ" : "▶"}</span>{animationPlaying ? "Pause" : "Play"}</button></section>
+      <section className={styles.metrics}><label>Selected mesh</label><dl><div><dt>Status</dt><dd>{active.status}</dd></div><div><dt>LOD</dt><dd>{active.lod}</dd></div><div><dt>Triangles</dt><dd>{active.triangles.toLocaleString()}</dd></div><div><dt>Bones</dt><dd>{active.bones}</dd></div><div><dt>Roots</dt><dd>{active.visibleRoots}</dd></div><div><dt>Legacy</dt><dd className={active.legacyParts.length ? styles.warning : styles.clean}>{active.legacyParts.length ? active.legacyParts.length : "0 · clean"}</dd></div><div><dt>Clip</dt><dd>{active.clips.includes(animationClip) ? animationClip : active.clips[0] ?? "—"}</dd></div></dl>{active.legacyParts.length > 0 && <p className={styles.legacyList}>{active.legacyParts.join(" · ")}</p>}</section>
     </aside>
     <nav className={styles.sceneLinks} aria-label="Direct game debug checkpoints"><span>Review in world</span><Link href="/?debug=zoo">Zoo</Link><Link href="/?debug=station">Platform</Link><Link href="/?debug=train">N train</Link><Link href="/?debug=transfer">Transfer</Link><Link href="/?debug=bronx">Bronx</Link></nav>
     <footer className={styles.footer}><span>Drag to orbit · wheel to dolly</span><Link href="/">Return to game ↗</Link></footer>

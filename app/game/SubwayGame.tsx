@@ -27,7 +27,7 @@ function requestLock(canvas: HTMLCanvasElement | null) {
 }
 
 function worldQuality(level: ReturnType<AdaptiveQualityManager["getSnapshot"]>["activeLevel"]): SubwayQuality {
-  return level === "low" ? "mobile" : level === "ultra" ? "ultra" : "balanced";
+  return level === "low" || level === "medium" ? "mobile" : level === "ultra" ? "ultra" : "balanced";
 }
 
 export function SubwayGame({ audio, quality }: SubwayGameProps) {
@@ -87,7 +87,7 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
     function startInterior(option: BoardingOption) {
       if (!stationWorld) return; const base = currentStation === "FIFTH_AV" ? TRAIN_INTERIOR_JOURNEYS.FIFTH_TO_LEXINGTON : TRAIN_INTERIOR_JOURNEYS.LEXINGTON_TO_WEST_FARMS;
       const journey: TrainInteriorJourney = { ...base, route: option.route as TrainInteriorJourney["route"] };
-      subwayProgress = stationWorld.progressState; stationWorld.dispose(); stationWorld = null; interiorWorld = new TrainInteriorWorld(scene, textures, journey, hasTouchInput() || quality.getSnapshot().activeLevel === "low" ? "mobile" : "desktop"); player.copy(interiorWorld.spawn); velocity.set(0, 0, 0); yaw = 0; pitch = -.035; keys.clear(); setTransitStage("RIDING"); audio.setScene("moving-train", { transitionSeconds: .7, intensity: .78 }); audio.playTrainChime("doors-closing"); audio.playTrainDoors("close"); audio.playTransitAnnouncement("stand_clear_doors", { delaySeconds: .35, dedupeSeconds: 4 }); showTransition(`${option.route} train · ${option.direction}`); showToast(currentStation === "FIFTH_AV" ? "Stay clear until Lexington Av. Use any illuminated platform-side door when it appears." : "Stay clear at 86 St, 125 St, and E 180 St. Use any illuminated platform-side door at West Farms.", 6200);
+      subwayProgress = stationWorld.progressState; stationWorld.dispose(); stationWorld = null; interiorWorld = new TrainInteriorWorld(scene, textures, journey, quality.getSnapshot().activeLevel === "low" || quality.getSnapshot().activeLevel === "medium" ? "mobile" : "desktop"); player.copy(interiorWorld.spawn); velocity.set(0, 0, 0); yaw = 0; pitch = -.035; keys.clear(); setTransitStage("RIDING"); audio.setScene("moving-train", { transitionSeconds: .7, intensity: .78 }); audio.playTrainChime("doors-closing"); audio.playTrainDoors("close"); audio.playTransitAnnouncement("stand_clear_doors", { delaySeconds: .35, dedupeSeconds: 4 }); showTransition(`${option.route} train · ${option.direction}`); showToast(currentStation === "FIFTH_AV" ? "Stay clear until Lexington Av. Use any illuminated platform-side door when it appears." : "Stay clear at 86 St, 125 St, and E 180 St. Use any illuminated platform-side door at West Farms.", 6200);
     }
     function boardThroughOpenDoor(option: BoardingOption) {
       if (transitStage === "RIDING") return;

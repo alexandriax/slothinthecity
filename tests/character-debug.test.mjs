@@ -14,6 +14,9 @@ test("character lab offers direct authored-human review without campaign travers
   assert.match(page, /CharacterShowroom/);
   assert.match(showroom, /Human character lab/);
   assert.match(showroom, /lineup.*body.*face/s);
+  assert.match(showroom, /Natural walk/);
+  assert.match(showroom, /HumanWalk/);
+  assert.match(showroom, /result\.root\.visible = ready/);
   assert.match(showroom, /Legacy/);
   assert.match(showroom, /\?debug=zoo/);
   assert.match(showroom, /\?debug=station/);
@@ -36,6 +39,9 @@ test("authored pipeline rejects primitive face and body remnants", async () => {
   assert.doesNotMatch(pipeline, /def add_garment_details/);
   assert.doesNotMatch(pipeline, /GarmentPlacket|UniformBadge|BobStrand|PonytailTie|Curl\./);
   assert.match(pipeline, /add_eye_disc/);
+  assert.match(pipeline, /straighten_head_and_neck/);
+  assert.match(pipeline, /straighten_head_detail/);
+  assert.match(pipeline, /add_walk_action/);
   assert.match(runtime, /replaceFallbackWithAuthored/);
   assert.match(runtime, /authoredHumanExclusive = true/);
   assert.match(runtime, /host\.visible = false/);

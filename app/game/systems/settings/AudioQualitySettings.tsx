@@ -104,7 +104,7 @@ export function AudioQualitySettings({ audio, quality, className, defaultOpen = 
       </div>
 
       <fieldset style={{ margin: "15px 0 0", padding: "12px 0 0", border: 0, borderTop: "1px solid rgba(224, 239, 192, .12)" }}>
-        <legend style={{ padding: 0, color: "rgba(238, 244, 223, .55)", fontSize: 10, fontWeight: 800, letterSpacing: ".18em", textTransform: "uppercase" }}>Graphics quality</legend>
+        <legend style={{ padding: 0, color: "rgba(238, 244, 223, .55)", fontSize: 10, fontWeight: 800, letterSpacing: ".18em", textTransform: "uppercase" }}>Character & graphics detail</legend>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 5, marginTop: 10 }}>
           {QUALITY_OPTIONS.map(({ value, label }) => {
             const selected = qualityState.mode === value;
@@ -128,7 +128,7 @@ export function AudioQualitySettings({ audio, quality, className, defaultOpen = 
           })}
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 10, color: "rgba(238, 244, 223, .56)", fontSize: 11, lineHeight: 1.4 }}>
-          <span>{qualityState.reason}</span>
+          <span>{qualityState.reason}. High is the default on desktop and mobile; choose Medium or Low for lighter authored characters.</span>
           <span style={{ flex: "0 0 auto", color: "#d9ef8b", fontWeight: 800, textTransform: "uppercase" }}>{qualityState.activeLevel}{qualityState.averageFps ? ` · ${Math.round(qualityState.averageFps)} FPS` : ""}</span>
         </div>
       </fieldset>
