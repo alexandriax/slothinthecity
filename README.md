@@ -92,6 +92,17 @@ actions tied to the current ChatGPT user. Leave public content anonymous.
 - `npm test`: build the starter and verify its rendered loading skeleton
 - `npm run db:generate`: generate Drizzle migrations after schema changes
 
+## Premium character development
+
+Human characters use a checked-in, reproducible authored-asset pipeline rather than runtime generation. Before adding an NPC archetype or changing its mesh, textures, rig, animation, LOD, loading behavior, or crowd motion, follow the repo-local [`create-premium-characters` agent skill](skills/create-premium-characters/SKILL.md). Its references cover image and texture generation, mesh-source selection (including reconstruction tools), Blender cleanup, rigging, loop-safe movement, browser integration, provenance, and focused QA.
+
+Useful entry points:
+
+- [`tools/character-pipeline/README.md`](tools/character-pipeline/README.md): pinned CC0 source and deterministic Blender rebuild.
+- [`/debug/characters`](/debug/characters): direct lineup, profile, face, idle, and walk review without campaign traversal.
+- `node skills/create-premium-characters/scripts/verify_character_contract.mjs`: verify the shipping GLB/LOD/material/skin/animation interface.
+- `node --test tests/authored-human-assets.test.mjs tests/character-debug.test.mjs`: focused asset and debug-surface regression tests.
+
 ## Learn More
 
 - [vinext Documentation](https://github.com/cloudflare/vinext)

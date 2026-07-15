@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create Premium Characters"
+  short_description: "Build photoreal, animated game characters"
+  default_prompt: "Use $create-premium-characters to add a photoreal, performance-scalable animated human character to Sloth in the City."
