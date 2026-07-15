@@ -973,7 +973,18 @@ function createHawk() {
 }
 
 function addSky(scene: THREE.Scene) {
-  const sky = new Sky(); sky.scale.setScalar(450); scene.add(sky);
+  const sky = new Sky();
+  // The playable park is larger than the original fixed 450 m sky dome. Once
+  // the player crossed The Lake the camera could leave that sphere, exposing a
+  // hard bright/dark hemisphere seam. Keep the atmospheric dome centered on
+  // the active camera so every streamed corner of the park shares one sky.
+  sky.scale.setScalar(760);
+  sky.frustumCulled = false;
+  sky.onBeforeRender = (_renderer, _scene, camera) => {
+    sky.position.copy(camera.position);
+    sky.updateMatrixWorld(true);
+  };
+  scene.add(sky);
   sky.material.uniforms.turbidity.value = 7.4; sky.material.uniforms.rayleigh.value = 2.05;
   sky.material.uniforms.mieCoefficient.value = .009; sky.material.uniforms.mieDirectionalG.value = .86;
   const sun = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(86), THREE.MathUtils.degToRad(224));

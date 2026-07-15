@@ -83,6 +83,20 @@ test("mobile entry cannot be stranded by unavailable Pointer Lock", async () => 
   assert.match(game, /requestAnimationFrame\(\(\) => setLevel\("subway"\)\)/);
 });
 
+test("mobile wayfinding stays bounded and the atmospheric sky follows the camera", async () => {
+  const [styles, world] = await Promise.all([
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/world/RealisticWorld.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(styles, /grid-template-columns:minmax\(0,1fr\) auto/);
+  assert.match(styles, /text-overflow:ellipsis/);
+  assert.match(styles, /width:min\(232px,calc\(100vw - 124px\)\)/);
+  assert.match(world, /sky\.onBeforeRender/);
+  assert.match(world, /sky\.position\.copy\(camera\.position\)/);
+  assert.match(world, /sky\.frustumCulled = false/);
+});
+
 test("foraging opens the Bow Bridge, island ticket, zoo, and subway campaign with adaptive wayfinding", async () => {
   const [game, mobileHud, wayfinder, world, landmarks] = await Promise.all([
     readFile(new URL("../app/game/GameClient.tsx", import.meta.url), "utf8"),

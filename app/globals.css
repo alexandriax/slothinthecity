@@ -60,8 +60,8 @@ button { font: inherit; }
 .goal-wayfinder { --goal-bearing:0deg; position:absolute; z-index:24; top:max(92px,calc(env(safe-area-inset-top) + 68px)); left:50%; min-width:172px; height:42px; display:flex; align-items:center; gap:10px; padding:6px 13px 6px 8px; transform:translateX(-50%); pointer-events:none; border:1px solid rgba(217,239,139,.24); border-radius:999px; background:linear-gradient(110deg,rgba(7,18,14,.82),rgba(7,18,14,.56)); box-shadow:0 12px 34px rgba(0,0,0,.24),inset 0 1px rgba(255,255,255,.04); backdrop-filter:blur(13px) saturate(1.12); text-shadow:0 2px 9px #000; }
 .goal-wayfinder-arrow { width:28px; height:28px; flex:0 0 auto; display:grid; place-items:center; border:1px solid rgba(217,239,139,.34); border-radius:50%; background:rgba(217,239,139,.07); transform:rotate(var(--goal-bearing)); transition:transform .2s ease-out; box-shadow:inset 0 0 12px rgba(217,239,139,.08); }
 .goal-wayfinder-arrow i { width:11px; height:15px; background:var(--acid); clip-path:polygon(50% 0,100% 100%,50% 74%,0 100%); filter:drop-shadow(0 0 5px rgba(217,239,139,.68)); }
-.goal-wayfinder-copy { min-width:0; display:grid; grid-template-columns:auto auto; align-items:baseline; column-gap:8px; }
-.goal-wayfinder-copy b { font-size:8px; font-weight:780; letter-spacing:.14em; text-transform:uppercase; white-space:nowrap; }
+.goal-wayfinder-copy { min-width:0; flex:1 1 auto; overflow:hidden; display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:baseline; column-gap:8px; }
+.goal-wayfinder-copy b { min-width:0; overflow:hidden; font-size:8px; font-weight:780; letter-spacing:.14em; text-overflow:ellipsis; text-transform:uppercase; white-space:nowrap; }
 .goal-wayfinder-copy small { color:var(--acid); font-size:10px; font-weight:760; white-space:nowrap; }
 .status { position:absolute; right:max(24px,env(safe-area-inset-right)); top:max(24px,env(safe-area-inset-top)); min-width:190px; padding:11px 14px 10px; border:1px solid rgba(233,240,215,.11); border-radius:3px; background:linear-gradient(225deg,rgba(7,18,14,.72),rgba(7,18,14,.32)); backdrop-filter:blur(13px); text-align:right; box-shadow:0 12px 34px rgba(0,0,0,.18); }
 .status strong { display:block; margin-top:4px; font-family:Georgia,serif; font-size:17px; line-height:1.1; font-weight:400; letter-spacing:.02em; color:var(--acid); }
@@ -119,7 +119,7 @@ button { font: inherit; }
 .mobile-telemetry { height:48px; display:grid; grid-template-columns:68px minmax(0,1fr) 68px; align-items:center; gap:8px; padding:6px 48px 6px 9px; overflow:hidden; border:1px solid rgba(233,240,215,.14); border-left:2px solid rgba(217,239,139,.72); border-radius:4px; background:linear-gradient(110deg,rgba(7,18,14,.82),rgba(7,18,14,.56)); box-shadow:0 10px 30px rgba(0,0,0,.2),inset 0 1px rgba(255,255,255,.035); backdrop-filter:blur(12px) saturate(1.12); }
 .mobile-objective,.mobile-threat { min-width:0; display:grid; align-content:center; }
 .mobile-objective span,.mobile-energy span,.mobile-threat span { color:rgba(242,240,223,.54); font-size:7px; font-weight:750; letter-spacing:.15em; line-height:1; text-transform:uppercase; }
-.mobile-objective strong,.mobile-threat strong { margin-top:3px; color:var(--acid); font-size:13px; line-height:1; letter-spacing:.04em; }
+.mobile-objective strong,.mobile-threat strong { min-width:0; margin-top:3px; overflow:hidden; color:var(--acid); font-size:13px; line-height:1; letter-spacing:.04em; text-overflow:ellipsis; white-space:nowrap; }
 .mobile-energy { min-width:0; display:grid; gap:6px; padding:0 8px; border-left:1px solid rgba(233,240,215,.09); border-right:1px solid rgba(233,240,215,.09); }
 .mobile-energy span { display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .mobile-energy b { color:var(--ink); font-size:10px; letter-spacing:0; }
@@ -159,9 +159,16 @@ button { font: inherit; }
 }
 @media(max-width:900px), (pointer:coarse){
   .desktop-hud{display:none}.mobile-hud{display:block}.touch-ui{display:block}.mouse-resume{display:none}
-  .goal-wayfinder{top:max(64px,calc(env(safe-area-inset-top) + 56px));min-width:156px;height:32px;padding:3px 10px 3px 5px;gap:7px}.goal-wayfinder-arrow{width:24px;height:24px}.goal-wayfinder-arrow i{width:9px;height:13px}
-  .toast{top:max(64px,calc(env(safe-area-inset-top) + 56px)); max-width:calc(100vw - 24px); padding:7px 11px; border-radius:999px; font-family:inherit; font-size:10px; line-height:1.25; box-shadow:0 10px 26px rgba(0,0,0,.22)}
+  .goal-wayfinder{top:max(64px,calc(env(safe-area-inset-top) + 56px));width:min(232px,calc(100vw - 124px));min-width:0;max-width:calc(100vw - 124px);height:32px;padding:3px 10px 3px 5px;gap:7px}.goal-wayfinder-arrow{width:24px;height:24px}.goal-wayfinder-arrow i{width:9px;height:13px}
+  .toast{top:max(103px,calc(env(safe-area-inset-top) + 95px)); max-width:calc(100vw - 24px); padding:7px 11px; border-radius:999px; font-family:inherit; font-size:10px; line-height:1.25; box-shadow:0 10px 26px rgba(0,0,0,.22)}
   .game-shell[data-buds="5"] .toast{top:max(103px,calc(env(safe-area-inset-top) + 95px))}
+}
+@media(max-width:430px) and (orientation:portrait){
+  .mobile-telemetry{grid-template-columns:52px minmax(86px,1fr) 46px;gap:5px;padding-right:94px}
+  .mobile-energy{gap:5px;padding:0 5px}
+  .mobile-objective strong,.mobile-threat strong{font-size:11px}
+  .mobile-threat{grid-template-columns:1fr;align-items:center;column-gap:0}
+  .mobile-threat strong{margin-top:3px}
 }
 .game-shell[data-touch-capable="true"] .desktop-hud{display:none}
 .game-shell[data-touch-capable="true"] .mobile-hud,.game-shell[data-touch-capable="true"] .touch-ui{display:block}
@@ -169,7 +176,7 @@ button { font: inherit; }
 @media(max-height:500px) and (orientation:landscape){
   .mobile-hud{top:max(5px,env(safe-area-inset-top));left:max(8px,env(safe-area-inset-left));right:max(8px,env(safe-area-inset-right))}
   .mobile-telemetry{height:40px;padding:4px 44px 4px 8px;grid-template-columns:62px minmax(0,1fr) 62px;gap:6px}.mobile-motion{top:45px;padding:5px 8px}
-  .goal-wayfinder{top:max(48px,calc(env(safe-area-inset-top) + 43px));height:28px;min-width:148px}.goal-wayfinder-arrow{width:22px;height:22px}
+  .goal-wayfinder{top:max(48px,calc(env(safe-area-inset-top) + 43px));height:28px;width:min(218px,calc(100vw - 112px));min-width:0;max-width:calc(100vw - 112px)}.goal-wayfinder-arrow{width:22px;height:22px}
   .touch-toggle{top:max(3px,env(safe-area-inset-top));right:max(9px,env(safe-area-inset-right));width:40px;height:40px}
   .touch-stick{left:max(10px,env(safe-area-inset-left));bottom:max(8px,env(safe-area-inset-bottom));width:88px;height:88px}.touch-stick span{width:34px;height:34px}
   .touch-action{right:max(10px,env(safe-area-inset-right));bottom:max(64px,calc(env(safe-area-inset-bottom) + 56px));width:56px;height:56px}
@@ -544,7 +551,9 @@ button { font: inherit; }
   }
   .subway-shell .goal-wayfinder {
     top:max(64px,calc(env(safe-area-inset-top) + 56px));
-    min-width:178px;
+    width:min(248px,calc(100vw - 124px));
+    min-width:0;
+    max-width:calc(100vw - 124px);
     height:34px;
     border-radius:2px;
   }
