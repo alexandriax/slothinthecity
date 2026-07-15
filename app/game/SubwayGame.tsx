@@ -8,6 +8,7 @@ import { TouchControls } from "./mobile/TouchControls";
 import { createSlothRig } from "./player/SlothRig";
 import { loadGameTextures } from "./rendering/textures";
 import type { AdaptiveQualityManager, PremiumAudioDirector } from "./systems";
+import { isDirectDebugSession, requestedGameCheckpoint } from "./debugCheckpoints";
 import { BronxZooWorld } from "./world/BronxZooWorld";
 import { SubwayWorld, type BoardingOption, type SubwayQuality, type SubwayStationId } from "./world/SubwayWorld";
 import { TRAIN_INTERIOR_JOURNEYS, TrainInteriorWorld, type TrainInteriorEvent, type TrainInteriorJourney } from "./world/TrainInteriorWorld";
@@ -21,7 +22,7 @@ function hasTouchInput() {
 }
 
 function requestLock(canvas: HTMLCanvasElement | null) {
-  if (!canvas || typeof canvas.requestPointerLock !== "function" || hasTouchInput()) return;
+  if (!canvas || typeof canvas.requestPointerLock !== "function" || hasTouchInput() || isDirectDebugSession(location.search, location.hostname)) return;
   try { Promise.resolve(canvas.requestPointerLock()).catch(() => undefined); } catch {}
 }
 
@@ -111,7 +112,7 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
       else if (event.type === "ARRIVED") finishRide();
     }
 
-    const qaInput = ["localhost", "127.0.0.1"].includes(location.hostname) ? new URLSearchParams(location.search).get("qa") : null;
+    const qaInput = requestedGameCheckpoint(location.search, location.hostname);
     if (qaInput === "lexingtontransfer") checkpoint("LEXINGTON", "QA checkpoint · paid-area transfer platform", false, false, true);
     else if (qaInput === "lexington" || qaInput === "trainride5") checkpoint("LEXINGTON", "QA checkpoint · Lexington Av / 59 St");
     else if (["westfarms", "finale"].includes(qaInput ?? "")) checkpoint("WEST_FARMS", "QA checkpoint · West Farms Sq–E Tremont Av");

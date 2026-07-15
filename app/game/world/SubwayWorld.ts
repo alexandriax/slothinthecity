@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import type { GameTextures } from "../rendering/textures";
-import { createPremiumHuman, type PremiumHumanRole } from "./PremiumCharacter";
+import { createPremiumHuman, markPremiumCharactersDisposed, type PremiumHumanRole } from "./PremiumCharacter";
 
 export type SubwayStationId = "FIFTH_AV" | "LEXINGTON" | "WEST_FARMS";
 export type TrainPhase = "AWAY" | "APPROACHING" | "BOARDING" | "DEPARTING";
@@ -327,97 +327,10 @@ function addCylinderBetween(parent: THREE.Group, start: THREE.Vector3, end: THRE
   return mesh;
 }
 
-function addLegacyNpc(parent: THREE.Group, x: number, z: number, palette: [string, string], facing = 0, variant = 0, quality: SubwayQuality = "balanced", surfaceMaps?: CommuterSurfaceMaps) {
-  const npc = new THREE.Group(); npc.name = `subway-passenger-${variant}`; npc.position.set(x, 0, z); npc.rotation.y = facing;
-  const segments = SUBWAY_DETAIL[quality].radialSegments;
-  const coat = new THREE.MeshStandardMaterial({ color: palette[0], roughness: .72, metalness: .015, map: surfaceMaps?.fabric ?? null, bumpMap: surfaceMaps?.fabric ?? null, bumpScale: .012 });
-  const skin = new THREE.MeshPhysicalMaterial({ color: palette[1], roughness: .78, sheen: .12, sheenRoughness: .8, map: surfaceMaps?.skin ?? null, bumpMap: surfaceMaps?.skin ?? null, bumpScale: .004 });
-  const hairColors = ["#171412", "#302019", "#65442e", "#b5aaa0", "#201d22"];
-  const hair = new THREE.MeshStandardMaterial({ color: hairColors[variant % hairColors.length], roughness: .9, map: surfaceMaps?.fabric ?? null, bumpMap: surfaceMaps?.fabric ?? null, bumpScale: .016 });
-  const trouserColors = ["#171b1e", "#292a35", "#2d382f", "#443b35", "#182c3d"];
-  const trouser = new THREE.MeshStandardMaterial({ color: trouserColors[variant % trouserColors.length], roughness: .82, map: surfaceMaps?.fabric ?? null, bumpMap: surfaceMaps?.fabric ?? null, bumpScale: .014 });
-  const leather = new THREE.MeshStandardMaterial({ color: variant % 2 ? "#30221c" : "#111515", roughness: .58, metalness: .04, map: surfaceMaps?.leather ?? null, bumpMap: surfaceMaps?.leather ?? null, bumpScale: .013 });
-  const accentColors = ["#d6aa54", "#b1463e", "#3b7089", "#7870a2", "#638a58"];
-  const accent = new THREE.MeshStandardMaterial({ color: accentColors[variant % accentColors.length], roughness: .7, map: surfaceMaps?.fabric ?? null, bumpMap: surfaceMaps?.fabric ?? null, bumpScale: .01 });
-  const eye = new THREE.MeshStandardMaterial({ color: "#161313", roughness: .36 });
-  const eyeWhite = new THREE.MeshPhysicalMaterial({ color: "#eee9dc", roughness: .32, clearcoat: .12 });
-  const metalTrim = new THREE.MeshStandardMaterial({ color: "#b8b2a2", metalness: .72, roughness: .28 });
-  const stature = 1 + ((variant % 3) - 1) * .04;
-  npc.scale.setScalar(stature);
-
-  const hips = new THREE.Mesh(new RoundedBoxGeometry(.48, .35, .31, 4, .12), trouser); hips.position.y = .83; npc.add(hips);
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(.28 + (variant % 2) * .025, .67, 8, segments), coat); torso.position.y = 1.3; npc.add(torso);
-  if (quality !== "mobile") {
-    for (const side of [-1, 1]) {
-      const lapel = new THREE.Mesh(new RoundedBoxGeometry(.13, .4, .028, 3, .02), accent); lapel.position.set(side * .095, 1.48, -.272); lapel.rotation.z = side * .28; npc.add(lapel);
-    }
-    for (const y of [1.34, 1.18, 1.02]) { const button = new THREE.Mesh(new THREE.SphereGeometry(.018, 7, 5), metalTrim); button.position.set(0, y, -.294); npc.add(button); }
-  }
-  const collar = new THREE.Mesh(new THREE.TorusGeometry(.205, .032, 7, segments), accent); collar.rotation.x = Math.PI / 2; collar.position.set(0, 1.67, -.01); npc.add(collar);
-  for (const side of [-1, 1]) {
-    const shoulder = new THREE.Group(); shoulder.position.set(side * .32, 1.48, 0); shoulder.rotation.z = side * (-.08 - (variant % 3) * .035); shoulder.rotation.x = variant % 4 === 1 ? -.46 : variant % 4 === 2 ? .18 : 0;
-    const arm = new THREE.Mesh(new THREE.CapsuleGeometry(.068, .44, 6, segments), coat); arm.position.y = -.25; shoulder.add(arm);
-    const hand = new THREE.Mesh(new THREE.SphereGeometry(.078, segments, Math.max(6, segments - 2)), skin); hand.scale.set(.78, 1.15, .72); hand.position.y = -.54; shoulder.add(hand); npc.add(shoulder);
-    const leg = new THREE.Mesh(new THREE.CapsuleGeometry(.088, .55, 6, segments), trouser); leg.position.set(side * .14, .45, variant % 4 === 3 ? side * .035 : 0); leg.rotation.x = variant % 4 === 3 ? side * .08 : 0; npc.add(leg);
-    const shoe = new THREE.Mesh(new RoundedBoxGeometry(.19, .11, .34, 3, .045), leather); shoe.position.set(side * .14, .075, -.075); npc.add(shoe);
-  }
-
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(.09, .105, .15, segments), skin); neck.position.y = 1.72; npc.add(neck);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(.225, segments + 4, segments), skin); head.scale.set(.89, 1.08, .92); head.position.y = 1.94; npc.add(head);
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(.042, segments, Math.max(6, segments - 2)), skin); nose.scale.set(.78, 1.08, 1.18); nose.position.set(0, 1.95, -.218); npc.add(nose);
-  if (quality !== "mobile") {
-    for (const side of [-1, 1]) {
-      const cheek = new THREE.Mesh(new THREE.SphereGeometry(.052, segments, Math.max(7, segments - 3)), skin); cheek.scale.set(1.1, .72, .52); cheek.position.set(side * .11, 1.91, -.194); npc.add(cheek);
-      const nostril = new THREE.Mesh(new THREE.SphereGeometry(.008, 7, 5), eye); nostril.position.set(side * .013, 1.962, -.254); npc.add(nostril);
-    }
-    const zipper = new THREE.Mesh(new RoundedBoxGeometry(.013, .48, .013, 2, .004), metalTrim); zipper.position.set(0, 1.29, -.298); npc.add(zipper);
-    for (const side of [-1, 1]) {
-      const pocket = new THREE.Mesh(new RoundedBoxGeometry(.14, .12, .018, 3, .009), coat); pocket.position.set(side * .15, 1.12, -.3); pocket.rotation.z = side * .06; npc.add(pocket);
-    }
-  }
-  for (const side of [-1, 1]) {
-    const ear = new THREE.Mesh(new THREE.SphereGeometry(.052, segments, Math.max(6, segments - 2)), skin); ear.scale.set(.48, 1, .72); ear.position.set(side * .205, 1.96, 0); npc.add(ear);
-    const sclera = new THREE.Mesh(new THREE.SphereGeometry(.03, segments, Math.max(6, segments - 2)), eyeWhite); sclera.scale.set(1.15, .82, .55); sclera.position.set(side * .076, 2.012, -.203); npc.add(sclera);
-    const eyeball = new THREE.Mesh(new THREE.SphereGeometry(.013, segments, Math.max(6, segments - 2)), eye); eyeball.position.set(side * .076, 2.012, -.224); npc.add(eyeball);
-    if (quality !== "mobile") {
-      const brow = addCylinderBetween(npc, new THREE.Vector3(side * .045, 2.06, -.213), new THREE.Vector3(side * .108, 2.052, -.203), .007, hair, 6); brow.name = "eyebrow";
-    }
-  }
-  if (quality !== "mobile") {
-    const mouth = new THREE.Mesh(new THREE.TorusGeometry(.044, .006, 5, 12, Math.PI), new THREE.MeshStandardMaterial({ color: "#794d48", roughness: .75 })); mouth.position.set(0, 1.887, -.216); mouth.rotation.z = Math.PI; npc.add(mouth);
-  }
-  if (variant % 3 === 0) {
-    const cap = new THREE.Mesh(new THREE.SphereGeometry(.232, segments + 4, segments, 0, Math.PI * 2, 0, Math.PI * .48), accent); cap.position.y = 2.075; npc.add(cap);
-    const brim = new THREE.Mesh(new RoundedBoxGeometry(.25, .025, .12, 3, .025), accent); brim.position.set(0, 2.075, -.19); npc.add(brim);
-  } else if (variant % 3 === 1) {
-    const hairCap = new THREE.Mesh(new THREE.SphereGeometry(.231, segments + 4, segments, 0, Math.PI * 2, 0, Math.PI * .6), hair); hairCap.position.y = 2.03; npc.add(hairCap);
-    for (const side of [-1, 1]) { const lock = new THREE.Mesh(new THREE.CapsuleGeometry(.025, .2, 4, 7), hair); lock.position.set(side * .19, 1.94, .02); lock.rotation.z = side * .12; npc.add(lock); }
-  } else {
-    const shortHair = new THREE.Mesh(new THREE.SphereGeometry(.23, segments + 4, segments, 0, Math.PI * 2, 0, Math.PI * .54), hair); shortHair.position.y = 2.06; npc.add(shortHair);
-  }
-
-  // Commuter props and poses make silhouettes readable without skeletal animation.
-  if (variant % 4 === 0) {
-    const backpack = new THREE.Mesh(new RoundedBoxGeometry(.43, .63, .22, 4, .08), accent); backpack.position.set(0, 1.25, .27); npc.add(backpack);
-    const pocket = new THREE.Mesh(new RoundedBoxGeometry(.3, .25, .05, 3, .035), leather); pocket.position.set(0, 1.17, .4); backpack.add(pocket);
-  } else if (variant % 4 === 1) {
-    const phone = new THREE.Mesh(new RoundedBoxGeometry(.105, .18, .025, 3, .014), new THREE.MeshStandardMaterial({ color: "#101719", metalness: .5, roughness: .22 })); phone.position.set(.32, 1.08, -.27); phone.rotation.z = -.18; npc.add(phone);
-    const screen = new THREE.Mesh(new THREE.PlaneGeometry(.078, .14), new THREE.MeshBasicMaterial({ color: "#9fd5d8", toneMapped: false })); screen.position.set(0, 0, -.014); screen.rotation.y = Math.PI; phone.add(screen);
-  } else if (variant % 4 === 2) {
-    const tote = new THREE.Mesh(new RoundedBoxGeometry(.4, .48, .12, 3, .045), accent); tote.position.set(.4, .85, .02); npc.add(tote);
-    const handle = new THREE.Mesh(new THREE.TorusGeometry(.16, .018, 6, 14, Math.PI), leather); handle.position.set(.4, 1.12, .02); npc.add(handle);
-  } else {
-    const headphones = new THREE.Mesh(new THREE.TorusGeometry(.247, .018, 6, segments, Math.PI), accent); headphones.rotation.z = Math.PI; headphones.position.set(0, 2.03, 0); npc.add(headphones);
-    for (const side of [-1, 1]) { const cup = new THREE.Mesh(new THREE.CylinderGeometry(.045, .045, .04, segments), accent); cup.rotation.z = Math.PI / 2; cup.position.set(side * .22, 1.98, 0); npc.add(cup); }
-  }
-  npc.traverse(object => { if (object instanceof THREE.Mesh) { object.castShadow = true; object.receiveShadow = true; } }); parent.add(npc); return npc;
-}
-
 function addNpc(parent: THREE.Group, x: number, z: number, palette: [string, string], facing = 0, variant = 0, quality: SubwayQuality = "balanced", surfaceMaps?: CommuterSurfaceMaps, ownedTextures?: THREE.Texture[], role: PremiumHumanRole = "visitor") {
-  // Keep the legacy rig as a deterministic emergency fallback for callers that
-  // do not provide shared station surfaces. Authored stations use the premium,
-  // atlas-backed rig at every quality tier.
-  if (!surfaceMaps) return addLegacyNpc(parent, x, z, palette, facing, variant, quality, surfaceMaps);
+  // Every station and train passenger uses the same authored character path.
+  // Missing shared station surfaces must never resurrect the disconnected
+  // procedural face or body rig.
   const trouserColors = ["#171b1e", "#292a35", "#2d382f", "#443b35", "#182c3d"];
   const accessories = ["backpack", "none", "tote", "none", "backpack"] as const;
   const faceVariants = [12, 15, 13, 16, 19, 14, 17, 18, 11, 0] as const;
@@ -969,6 +882,7 @@ export class SubwayWorld {
 
   private disposeStation(id: SubwayStationId) {
     const station = this.stations.get(id); if (!station) return;
+    markPremiumCharactersDisposed(station.root);
     const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
     station.root.traverse(object => {
       if (!(object instanceof THREE.Mesh)) return;
