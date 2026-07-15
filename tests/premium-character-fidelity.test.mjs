@@ -4,7 +4,8 @@ import { readFile } from "node:fs/promises";
 
 test("premium humans use twenty identities and head-conforming photographic facial geometry", async () => {
   const source = await readFile(new URL("../app/game/world/PremiumCharacter.ts", import.meta.url), "utf8");
-  const human = source.slice(source.indexOf("export function createPremiumHuman"), source.indexOf("// CapsuleGeometry requires"));
+  const human = source.slice(source.indexOf("function createProceduralPremiumHuman"), source.indexOf("export function createPremiumHuman"));
+  const factory = source.slice(source.indexOf("export function createPremiumHuman"), source.indexOf("// CapsuleGeometry requires"));
 
   assert.match(source, /identityCount: 20/);
   for (const index of ["01", "02", "03"]) {
@@ -26,6 +27,7 @@ test("premium humans use twenty identities and head-conforming photographic faci
   assert.match(human, /anatomical-head-neck-skin-transition/);
   assert.doesNotMatch(human, /elbowBlend|kneeBlend|ConeGeometry/);
   assert.doesNotMatch(human, /eyeWhite|noseBridge|photoreal-generated-face-albedo|const lips =/);
+  assert.match(factory, /hydrateAuthoredHuman\(result\.root/);
 });
 
 test("zoo sloth friends use continuous anatomical silhouettes", async () => {

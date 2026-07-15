@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import type { GameTextures } from "../rendering/textures";
-import { createPremiumHuman } from "./PremiumCharacter";
+import { createPremiumHuman, markPremiumCharactersDisposed } from "./PremiumCharacter";
 
 export const BOW_BRIDGE_CENTER = new THREE.Vector3(-35, 0, -122);
 export const BOW_BRIDGE_LENGTH = 28;
@@ -395,6 +395,7 @@ export function createCampaignLandmarks(scene: THREE.Scene, textures: GameTextur
     { id: "subway-railing-east", kind: "aabb", minX: SUBWAY_TARGET.x + 2.85, maxX: SUBWAY_TARGET.x + 3.55, minZ: SUBWAY_TARGET.z - 10, maxZ: SUBWAY_TARGET.z + .7, minY: -5, maxY: 4 },
   );
   return { root, attendant, bowBridge, bowBridgeSurface, subwayEntrance, subwayEntryTrigger: SUBWAY_ENTRY_TRIGGER.clone(), zooGate, obstacles, dispose() {
+    markPremiumCharactersDisposed(root);
     scene.remove(root); root.traverse(object => { if (!(object instanceof THREE.Mesh)) return; object.geometry.dispose(); const materials = Array.isArray(object.material) ? object.material : [object.material]; materials.forEach(material => material.dispose()); }); ownedTextures.forEach(texture => texture.dispose());
   } };
 }

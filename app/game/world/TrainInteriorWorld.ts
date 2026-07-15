@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import type { GameTextures } from "../rendering/textures";
-import { createPremiumHuman } from "./PremiumCharacter";
+import { createPremiumHuman, markPremiumCharactersDisposed } from "./PremiumCharacter";
 
 export type TrainInteriorQuality = "mobile" | "desktop";
 export type TrainInteriorPhase = "CRUISING" | "APPROACHING" | "DWELL" | "DEPARTING" | "COMPLETE" | "FAILED";
@@ -654,7 +654,7 @@ export class TrainInteriorWorld {
   }
 
   dispose() {
-    this.disposed = true; this.root.removeFromParent();
+    this.disposed = true; markPremiumCharactersDisposed(this.root); this.root.removeFromParent();
     const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
     this.root.traverse(object => { if (!(object instanceof THREE.Mesh)) return; geometries.add(object.geometry); (Array.isArray(object.material) ? object.material : [object.material]).forEach(material => materials.add(material)); });
     geometries.forEach(geometry => geometry.dispose()); materials.forEach(material => material.dispose()); this.ownedTextures.forEach(texture => texture.dispose());

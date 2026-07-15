@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import type { GameTextures } from "../rendering/textures";
+import { hydrateAuthoredHuman, markAuthoredHumanDisposed, markAuthoredHumansDisposed } from "./characters/AuthoredHumanAssets";
 
 type SurfaceKind = "cloth" | "skin" | "hair" | "leather" | "metal" | "ivory" | "fur";
 
@@ -366,7 +367,7 @@ function castCharacterShadows(root: THREE.Group, high: boolean) {
   root.traverse(object => { if (object instanceof THREE.Mesh) { object.castShadow = high; object.receiveShadow = false; } });
 }
 
-export function createPremiumHuman(options: PremiumHumanOptions): PremiumCharacterResult {
+function createProceduralPremiumHuman(options: PremiumHumanOptions): PremiumCharacterResult {
   const quality = THREE.MathUtils.clamp(options.quality, .42, 1.2), high = quality > .7;
   const segments = quality > .92 ? 40 : quality > .68 ? 28 : 18;
   const identityVariant = normalizedVariant(options.faceVariant ?? options.variant);
@@ -501,6 +502,23 @@ export function createPremiumHuman(options: PremiumHumanOptions): PremiumCharact
   castCharacterShadows(root, high); root.scale.setScalar(options.role === "attendant" ? 1.04 : .98 + options.variant % 3 * .025);
   return { root, ownedTextures };
 }
+
+/**
+ * World construction remains synchronous, but the procedural rig is retained
+ * only as hidden transform scaffolding. The character becomes visible after its
+ * exclusive authored, rigged GLB has decoded successfully.
+ */
+export function createPremiumHuman(options: PremiumHumanOptions): PremiumCharacterResult {
+  const result = createProceduralPremiumHuman(options);
+  hydrateAuthoredHuman(result.root, options, result.ownedTextures);
+  return result;
+}
+
+export {
+  markAuthoredHumanDisposed as markPremiumHumanDisposed,
+  markAuthoredHumansDisposed as markPremiumHumansDisposed,
+  markAuthoredHumansDisposed as markPremiumCharactersDisposed,
+};
 
 // CapsuleGeometry requires a strictly positive body length. This wrapper keeps
 // the pelvis rounded without relying on a sphere that reads as a toy primitive.
