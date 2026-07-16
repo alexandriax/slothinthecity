@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { type DebugSceneName } from "../debugCheckpoints";
+import { DEBUG_LOOK_REQUEST_EVENT, type DebugSceneName } from "../debugCheckpoints";
 
 const DEBUG_DESTINATIONS: Array<{ scene: DebugSceneName; label: string; detail: string }> = [
   { scene: "park", label: "Ramble start", detail: "Foraging trail" },
@@ -22,10 +22,15 @@ const DEBUG_DESTINATIONS: Array<{ scene: DebugSceneName; label: string; detail: 
 
 export function DebugJumpMenu({ activeScene }: { activeScene: DebugSceneName | null }) {
   const [open, setOpen] = useState(true);
+  const toggleMenu = () => {
+    const nextOpen = !open;
+    setOpen(nextOpen);
+    if (!nextOpen) document.dispatchEvent(new Event(DEBUG_LOOK_REQUEST_EVENT));
+  };
 
   return <aside className={`debug-jump-menu ${open ? "open" : "collapsed"}`} aria-label="QA scene jump menu">
-    <button className="debug-jump-toggle" type="button" onClick={() => setOpen(value => !value)} aria-expanded={open}>
-      <span>QA</span>{open ? "Close" : "Jump"}
+    <button className="debug-jump-toggle" type="button" onClick={toggleMenu} aria-expanded={open} aria-label={open ? "Close QA menu and resume mouse look" : "Open QA scene jump menu"}>
+      <span>QA</span>{open ? "Resume look" : "Jump"}
     </button>
     {open && <div className="debug-jump-panel">
       <div className="debug-jump-heading"><span>Private QA</span><strong>Jump to playable scene</strong></div>

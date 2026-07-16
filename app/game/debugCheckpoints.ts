@@ -17,6 +17,8 @@ export const DEBUG_SCENE_CHECKPOINTS = {
 
 export type DebugSceneName = keyof typeof DEBUG_SCENE_CHECKPOINTS;
 
+export const DEBUG_LOOK_REQUEST_EVENT = "sloth-debug-look-requested";
+
 const SUBWAY_CHECKPOINTS = new Set([
   "subway",
   "subwayplatform",
@@ -65,8 +67,8 @@ export function debugMenuRequested(search: string) {
   return debug === "1" || debug === "true" || persistent === "1" || persistent === "true";
 }
 
-export function isDirectDebugSession(search: string, hostname: string) {
-  return requestedGameCheckpoint(search, hostname) !== null;
+export function isAutomatedQaSession(search: string, hostname: string) {
+  return localHostname(hostname) && new URLSearchParams(search).has("qa");
 }
 
 export function checkpointUsesSubway(checkpoint: string | null) {

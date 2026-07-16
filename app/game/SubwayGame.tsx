@@ -8,7 +8,7 @@ import { TouchControls } from "./mobile/TouchControls";
 import { createSlothRig } from "./player/SlothRig";
 import { loadGameTextures } from "./rendering/textures";
 import type { AdaptiveQualityManager, PremiumAudioDirector } from "./systems";
-import { isDirectDebugSession, requestedGameCheckpoint } from "./debugCheckpoints";
+import { DEBUG_LOOK_REQUEST_EVENT, isAutomatedQaSession, requestedGameCheckpoint } from "./debugCheckpoints";
 import { BronxZooWorld } from "./world/BronxZooWorld";
 import { SubwayWorld, type BoardingOption, type SubwayQuality, type SubwayStationId } from "./world/SubwayWorld";
 import { TRAIN_INTERIOR_JOURNEYS, TrainInteriorWorld, type TrainInteriorEvent, type TrainInteriorJourney } from "./world/TrainInteriorWorld";
@@ -22,7 +22,7 @@ function hasTouchInput() {
 }
 
 function requestLock(canvas: HTMLCanvasElement | null) {
-  if (!canvas || typeof canvas.requestPointerLock !== "function" || hasTouchInput() || isDirectDebugSession(location.search, location.hostname)) return;
+  if (!canvas || typeof canvas.requestPointerLock !== "function" || hasTouchInput() || isAutomatedQaSession(location.search, location.hostname)) return;
   try { Promise.resolve(canvas.requestPointerLock()).catch(() => undefined); } catch {}
 }
 
@@ -34,6 +34,8 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
   const mount = useRef<HTMLDivElement>(null), [stage, setStage] = useState<TransitStage>("FIFTH_AV"), [toast, setToast] = useState("Walk down to the mezzanine and collect a MetroCard before entering the platform");
   const [transition, setTransition] = useState("");
   const [touchCapable, setTouchCapable] = useState(false), toastTimer = useRef<number | null>(null);
+  const [mouseCaptured, setMouseCaptured] = useState(false);
+  const [pointerLockAvailable] = useState(() => typeof window !== "undefined" && !hasTouchInput() && typeof HTMLCanvasElement.prototype.requestPointerLock === "function" && matchMedia("(pointer: fine)").matches && !isAutomatedQaSession(location.search, location.hostname));
   const [hud, setHud] = useState<TransitHud>({ bearing: 0, distance: 20, motion: "STREET LEVEL", objective: "Collect a MetroCard from the fare machine", objectiveShort: "METROCARD", prompt: "", promptKey: "", station: "5 AV / 59 ST · 7:12 PM", status: "FARE UNPAID", value: "CARD", waypoint: "Fare machine", wayfinding: true });
   const showToast = useCallback((message: string, duration = 3200) => { if (toastTimer.current !== null) clearTimeout(toastTimer.current); setToast(message); toastTimer.current = window.setTimeout(() => { setToast(""); toastTimer.current = null; }, duration); }, []);
 
@@ -63,11 +65,13 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
     const pointerUp = () => { dragging = false; };
     const mouseMove = (event: MouseEvent) => { if (document.pointerLockElement === renderer.domElement) { yaw -= event.movementX * .0018; pitch = THREE.MathUtils.clamp(pitch - event.movementY * .00155, -1.2, 1.12); } };
     const release = () => { keys.clear(); velocity.set(0, 0, 0); actionRequested = false; dragging = false; };
+    const pointerLockChanged = () => { const captured = document.pointerLockElement === renderer.domElement; setMouseCaptured(captured); if (!captured) release(); };
+    const requestDebugLook = () => requestLock(renderer.domElement);
     const visibilityChange = () => { if (document.hidden) release(); };
     const applyBudget = () => { const next = quality.getRenderBudget(); renderer.setPixelRatio(next.pixelRatio); renderer.shadowMap.enabled = next.shadows; renderer.shadowMap.type = THREE.PCFShadowMap; };
     const unsubscribeQuality = quality.subscribe(applyBudget);
     const resize = () => { quality.refreshDeviceProfile(); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); applyBudget(); renderer.setSize(innerWidth, innerHeight); layoutSloth(); };
-    renderer.domElement.addEventListener("pointerdown", pointerDown); renderer.domElement.addEventListener("pointermove", pointerMove); renderer.domElement.addEventListener("pointerup", pointerUp); renderer.domElement.addEventListener("pointercancel", pointerUp); document.addEventListener("mousemove", mouseMove); document.addEventListener("keydown", keyDown); document.addEventListener("keyup", keyUp); document.addEventListener("sloth-look", touchLook); document.addEventListener("visibilitychange", visibilityChange); window.addEventListener("blur", release); window.addEventListener("resize", resize);
+    renderer.domElement.addEventListener("pointerdown", pointerDown); renderer.domElement.addEventListener("pointermove", pointerMove); renderer.domElement.addEventListener("pointerup", pointerUp); renderer.domElement.addEventListener("pointercancel", pointerUp); document.addEventListener("mousemove", mouseMove); document.addEventListener("keydown", keyDown); document.addEventListener("keyup", keyUp); document.addEventListener("sloth-look", touchLook); document.addEventListener(DEBUG_LOOK_REQUEST_EVENT, requestDebugLook); document.addEventListener("pointerlockchange", pointerLockChanged); document.addEventListener("visibilitychange", visibilityChange); window.addEventListener("blur", release); window.addEventListener("resize", resize);
 
     function disposeInterior() { interiorWorld?.dispose(); interiorWorld = null; }
     function checkpoint(station: SubwayStationId, message: string, waitForNextTrain = false, preserveAnnouncements = false, resumeAtPlatform = false) {
@@ -202,7 +206,7 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
       renderer.render(scene, camera);
     }
     frame();
-    return () => { cancelAnimationFrame(raf); audio.cancelTransitAnnouncements(); if (transitionTimer !== null) clearTimeout(transitionTimer); renderer.domElement.removeEventListener("pointerdown", pointerDown); renderer.domElement.removeEventListener("pointermove", pointerMove); renderer.domElement.removeEventListener("pointerup", pointerUp); renderer.domElement.removeEventListener("pointercancel", pointerUp); document.removeEventListener("mousemove", mouseMove); document.removeEventListener("keydown", keyDown); document.removeEventListener("keyup", keyUp); document.removeEventListener("sloth-look", touchLook); document.removeEventListener("visibilitychange", visibilityChange); window.removeEventListener("blur", release); window.removeEventListener("resize", resize); unsubscribeQuality(); timer.dispose(); disposeInterior(); stationWorld?.dispose(); zooWorld?.dispose(); renderer.dispose(); if (host.contains(renderer.domElement)) host.removeChild(renderer.domElement); };
+    return () => { cancelAnimationFrame(raf); audio.cancelTransitAnnouncements(); if (transitionTimer !== null) clearTimeout(transitionTimer); renderer.domElement.removeEventListener("pointerdown", pointerDown); renderer.domElement.removeEventListener("pointermove", pointerMove); renderer.domElement.removeEventListener("pointerup", pointerUp); renderer.domElement.removeEventListener("pointercancel", pointerUp); document.removeEventListener("mousemove", mouseMove); document.removeEventListener("keydown", keyDown); document.removeEventListener("keyup", keyUp); document.removeEventListener("sloth-look", touchLook); document.removeEventListener(DEBUG_LOOK_REQUEST_EVENT, requestDebugLook); document.removeEventListener("pointerlockchange", pointerLockChanged); document.removeEventListener("visibilitychange", visibilityChange); window.removeEventListener("blur", release); window.removeEventListener("resize", resize); unsubscribeQuality(); timer.dispose(); disposeInterior(); stationWorld?.dispose(); zooWorld?.dispose(); renderer.dispose(); if (host.contains(renderer.domElement)) host.removeChild(renderer.domElement); };
   }, [audio, quality, showToast]);
 
   useEffect(() => { const frame = requestAnimationFrame(() => setTouchCapable(hasTouchInput())); return () => cancelAnimationFrame(frame); }, []);
@@ -214,6 +218,7 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
     {stage !== "COMPLETE" && <MobileHud alert={stage === "RIDING" ? 0 : 8} buds={5} driving={false} energy={100} hawkPhase="PATROL" motion={hud.motion} objectiveShort={hud.objectiveShort} objectiveValue={hud.value} showMotion={false} speed={0} swimming={false}/>}
     {stage !== "COMPLETE" && <GoalWayfinder active={hud.wayfinding} bearing={hud.bearing} distance={hud.distance} label={hud.waypoint}/>}
     {stage !== "COMPLETE" && <div className={`crosshair ${hud.prompt ? "targeted" : ""}`}/>} {toast && stage !== "COMPLETE" && <div className="toast" role="status" aria-live="polite">{toast}</div>}
+    {stage !== "COMPLETE" && pointerLockAvailable && !mouseCaptured && <button className="mouse-resume" type="button" onClick={() => requestLock(mount.current?.querySelector("canvas") ?? null)}><span>Mouse free</span>Click to look</button>}
     {stage !== "COMPLETE" && <TouchControls arboreal={false} prompt={hud.prompt} promptKey={hud.promptKey} showSense={false} vehicle={null}/>}
     {stage === "COMPLETE" && <section className="screen finale-screen"><div className="pause-card"><div className="eyebrow">Bronx Zoo · Asia Gate</div><h2>Mission complete.</h2><p>You crossed the Ramble, rowed The Lake, navigated two subway stations, emerged into the Bronx, and checked in with the attendant before reuniting with your friends.</p><div className="actions"><button className="primary" onClick={() => location.reload()}>Play again <b>↻</b></button></div></div></section>}
   </main>;
