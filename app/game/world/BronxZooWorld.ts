@@ -182,7 +182,7 @@ export class BronxZooWorld {
     addFriend(this.root, textures, this.ownedTextures, quality, 3.55, -2.15, Math.PI - .12, "#9a886d", 2);
     addFriend(this.root, textures, this.ownedTextures, quality, 6.7, -.15, Math.PI - .28, "#756b5c", 3);
     const attendant = createPremiumHuman({
-      role: "attendant", quality, variant: 24, faceVariant: 19, coat: "#315747", trousers: "#252c2a", skin: "#9a684f", accessory: "radio", pose: "waving",
+      role: "attendant", quality, variant: 24, faceVariant: 19, coat: "#315747", trousers: "#252c2a", skin: "#9a684f", accessory: "radio", pose: "neutral",
     });
     this.attendant = attendant.root; this.attendant.name = "bronx-zoo-arrival-attendant"; this.attendant.userData.dialogue = "Welcome to the Bronx Zoo — your friends are waiting at Asia Gate.";
     this.attendant.position.set(this.attendantPosition.x, 0, this.attendantPosition.z); this.attendant.rotation.y = Math.PI; this.root.add(this.attendant); this.ownedTextures.push(...attendant.ownedTextures);
@@ -206,7 +206,6 @@ export class BronxZooWorld {
       if (object.name === "waiting-sloth-friend") object.rotation.z = Math.sin(elapsed * .9 + object.position.x) * .018;
       else if (object.name === "friend-wave-arm") object.rotation.x = -.22 + Math.sin(elapsed * 2.35 + object.parent!.position.x) * .22;
     });
-    this.attendant.rotation.z = Math.sin(elapsed * .72) * .008;
     idleAuthoredHuman(this.attendant, delta);
     this.guestAgents.forEach(agent => updateAmbientHumanAgent(agent, elapsed, delta));
   }
