@@ -8,13 +8,14 @@ import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { GoalWayfinder } from "./GoalWayfinder";
+import { DebugJumpMenu } from "./mobile/DebugJumpMenu";
 import { MobileHud } from "./mobile/MobileHud";
 import { TouchControls } from "./mobile/TouchControls";
 import { createSlothRig } from "./player/SlothRig";
 import { loadGameTextures } from "./rendering/textures";
 import { AudioQualitySettings, createAdaptiveQualityManager, createPremiumAudioDirector, type AdaptiveQualityManager, type PremiumAudioDirector } from "./systems";
 import { SubwayGame } from "./SubwayGame";
-import { checkpointUsesSubway, debugSceneName, isDirectDebugSession, requestedGameCheckpoint } from "./debugCheckpoints";
+import { checkpointUsesSubway, debugMenuRequested, debugSceneName, isDirectDebugSession, requestedGameCheckpoint } from "./debugCheckpoints";
 import { BOW_BRIDGE_TARGET, createCampaignLandmarks, SUBWAY_TARGET, ZOO_TARGET } from "./world/CampaignLandmarks";
 import { createParkRowboat, ROWBOAT_ROOT_WATERLINE_OFFSET, type ParkRowboat } from "./world/ParkRowboat";
 import { createParkUtilityCart, type ParkUtilityCart } from "./world/ParkUtilityCart";
@@ -514,7 +515,10 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
 
         if (dropRequested && transfer) {
           descentIgnoreRouteId = branchRoute?.id ?? transfer.route.id; transfer = null; branchRoute = null; climbingTree = null;
-          controlledDescent = true; dropVelocity = -.82;
+          // Ctrl/Space is an intentional release, not a slow rappel. Enter
+          // normal gravity immediately so dropping from the canopy feels
+          // faster than crawling instead of suspending the player in air.
+          controlledDescent = false; dropVelocity = -4.2;
         }
 
         if (activeBoat) {
@@ -585,7 +589,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
           const inCanopy = player.y >= climbingTree.canopyY - .8; branchTarget = inCanopy ? branchFromTree(climbingTree) : null;
           if (["autobranch", "autotransfer", "autodrop"].includes(qaInput ?? "") && qaStage === 0 && branchTarget) { actionRequested = true; qaStage = 1; }
           if (actionRequested && branchTarget) transfer = { from: player.clone(), to: branchTarget.point.clone(), route: branchTarget.route, progress: branchTarget.amount, forwardSign: branchTarget.amount <= .5 ? 1 : -1, started: gameTime, duration: .82, kind: "REACH" };
-          if (dropRequested) { climbingTree = null; controlledDescent = true; descentIgnoreRouteId = -1; dropVelocity = -.82; }
+          if (dropRequested) { climbingTree = null; controlledDescent = false; descentIgnoreRouteId = -1; dropVelocity = -4.2; }
           energy = THREE.MathUtils.clamp(energy + (moving ? -(gripping ? 2.2 : 3.25) : gripping ? 4.6 : 2.8) * delta, 0, 100);
         } else if (branchRoute) {
           swimming = false;
@@ -613,7 +617,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
           if (qaInput === "autodrop" && qaStage === 1 && branchProgress >= .48 && lowerTarget) { dropRequested = true; qaStage = 2; }
           if (dropRequested) {
             if (lowerTarget) transfer = { from: player.clone(), to: lowerTarget.point.clone(), route: lowerTarget.route, progress: lowerTarget.amount, forwardSign: lowerTarget.amount <= .5 ? 1 : -1, started: gameTime, duration: .78, kind: "DROP" };
-            else { descentIgnoreRouteId = branchRoute.id; branchRoute = null; controlledDescent = true; dropVelocity = -.82; }
+            else { descentIgnoreRouteId = branchRoute.id; branchRoute = null; controlledDescent = false; dropVelocity = -4.2; }
           } else {
             const atForwardExit = branchForwardSign > 0 ? branchProgress >= .985 : branchProgress <= .015;
             const atBackwardExit = branchForwardSign > 0 ? branchProgress <= .015 : branchProgress >= .985;
@@ -657,7 +661,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
               energy = THREE.MathUtils.clamp(energy + (moving ? -2.35 : 2.4) * delta, 0, 100);
             } else {
               const terrainTargetY = groundHeight(player.x, player.z) + Math.sin(gameTime * 5.5) * Math.min(.025, velocity.length() * .006);
-              const terrainFollow = 1 - Math.exp(-delta * 8.5);
+              const terrainFollow = 1 - Math.exp(-delta * 24);
               // Follow sloped banks continuously while keeping the eye line
               // safely above the rendered surface. This removes the one-frame
               // under-terrain view and the subsequent vertical pop at shore.
@@ -902,6 +906,8 @@ export function GameClient() {
   // switch worlds in the effect below, after hydration, so they never surface
   // a recoverable React mismatch in development or automated screenshots.
   const [level, setLevel] = useState<"park" | "subway">("park");
+  const [showDebugMenu, setShowDebugMenu] = useState(false);
+  const [activeDebugScene, setActiveDebugScene] = useState<ReturnType<typeof debugSceneName>>(null);
   const [audio] = useState(() => createPremiumAudioDirector({ scene: "central-park" }));
   const [quality] = useState(() => createAdaptiveQualityManager());
   const enterSubway = useCallback(() => setLevel("subway"), []);
@@ -910,16 +916,21 @@ export function GameClient() {
     return () => { disarmAudio(); void audio.dispose(); quality.dispose(); };
   }, [audio, quality]);
   useEffect(() => {
-    if (new URLSearchParams(location.search).get("debug") === "characters") {
+    const search = location.search;
+    if (new URLSearchParams(search).get("debug") === "characters") {
       location.replace("/debug/characters");
       return;
     }
-    if (!checkpointUsesSubway(requestedGameCheckpoint(location.search, location.hostname))) return;
-    const frame = requestAnimationFrame(() => setLevel("subway"));
+    const frame = requestAnimationFrame(() => {
+      setShowDebugMenu(debugMenuRequested(search));
+      setActiveDebugScene(debugSceneName(search));
+      if (checkpointUsesSubway(requestedGameCheckpoint(search, location.hostname))) setLevel("subway");
+    });
     return () => cancelAnimationFrame(frame);
   }, []);
   return <>
     {level === "subway" ? <SubwayGame audio={audio} quality={quality}/> : <ParkLevel audio={audio} onEnterSubway={enterSubway} quality={quality}/>}
     <AudioQualitySettings audio={audio} quality={quality} className="experience-settings"/>
+    {showDebugMenu && <DebugJumpMenu activeScene={activeDebugScene}/>}
   </>;
 }

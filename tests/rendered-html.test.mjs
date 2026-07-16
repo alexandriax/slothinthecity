@@ -80,7 +80,7 @@ test("mobile entry cannot be stranded by unavailable Pointer Lock", async () => 
   assert.match(game, /phase === "intro" \|\| exiting/);
   assert.match(game, /data-touch-capable/);
   assert.match(game, /useState<"park" \| "subway">\("park"\)/);
-  assert.match(game, /requestAnimationFrame\(\(\) => setLevel\("subway"\)\)/);
+  assert.match(game, /const enterSubway = useCallback\(\(\) => setLevel\("subway"\), \[\]\)/);
 });
 
 test("mobile wayfinding stays bounded and the atmospheric sky follows the camera", async () => {

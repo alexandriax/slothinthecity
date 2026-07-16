@@ -10,6 +10,7 @@ export const DEBUG_SCENE_CHECKPOINTS = {
   station: "subwayplatform",
   train: "trainride",
   transfer: "lexingtontransfer",
+  "transfer-concourse": "lexingtonconcourse",
   "train-5": "trainride5",
   bronx: "finale",
 } as const;
@@ -23,6 +24,7 @@ const SUBWAY_CHECKPOINTS = new Set([
   "trainride5",
   "lexington",
   "lexingtontransfer",
+  "lexingtonconcourse",
   "westfarms",
   "finale",
 ]);
@@ -49,6 +51,18 @@ export function requestedGameCheckpoint(search: string, hostname: string) {
 export function debugSceneName(search: string) {
   const requested = new URLSearchParams(search).get("debug");
   return requested && requested in DEBUG_SCENE_CHECKPOINTS ? requested as DebugSceneName : null;
+}
+
+/**
+ * The QA jump palette is deliberately opt-in.  A secondary flag is retained
+ * after choosing a destination so reviewers can move between scenes without
+ * replaying the campaign, while normal players never see the controls.
+ */
+export function debugMenuRequested(search: string) {
+  const parameters = new URLSearchParams(search);
+  const debug = parameters.get("debug")?.toLowerCase();
+  const persistent = parameters.get("debugMenu")?.toLowerCase();
+  return debug === "1" || debug === "true" || persistent === "1" || persistent === "true";
 }
 
 export function isDirectDebugSession(search: string, hostname: string) {
