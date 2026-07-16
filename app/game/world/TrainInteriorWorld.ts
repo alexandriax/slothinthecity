@@ -581,6 +581,18 @@ export class TrainInteriorWorld {
       const distance = previous.distanceTo(passenger.group.position);
       updateAuthoredHumanMotion(passenger.humanRoot, delta, passenger.group.visible && !passenger.seated && locomoting ? "walk" : "idle", THREE.MathUtils.clamp(distance / Math.max(delta, .001) / 1.05, .65, 1.35));
     });
+    // The car is narrow enough that independently animated targets can cross.
+    // Give every standing rider a physical footprint so boarding/alighting
+    // crowds queue around each other rather than phasing through torsos.
+    const standing = this.passengers.filter(passenger => passenger.group.visible && passenger.movable && !passenger.seated);
+    for (let left = 0; left < standing.length; left++) for (let right = left + 1; right < standing.length; right++) {
+      const a = standing[left].group.position, b = standing[right].group.position;
+      const dx = b.x - a.x, dz = b.z - a.z, distance = Math.hypot(dx, dz);
+      if (distance <= .001 || distance >= .54) continue;
+      const correction = (.54 - distance) * .5 / distance;
+      a.x -= dx * correction; a.z -= dz * correction;
+      b.x += dx * correction; b.z += dz * correction;
+    }
     return pressure;
   }
 

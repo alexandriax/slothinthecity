@@ -27,6 +27,10 @@ test("fare control is wall-to-wall, booth-side correct, and guidance cones are g
   const world = await readFile(worldUrl, "utf8");
 
   assert.match(world, /unpaid-side-station-agent-booth/);
+  assert.match(world, /station-booth-front-glass/);
+  assert.match(world, /station-booth-back-glass/);
+  assert.match(world, /station-booth-side-glass/);
+  assert.match(world, /addStationAttendant\(booth, 0, 0, \.08/);
   assert.match(world, /\[\[-9\.72, -2\.42\], \[2\.42, 9\.72\]\]/);
   assert.match(world, /blockedByFare/);
   assert.match(world, /outsideTurnstileLanes/);
@@ -47,6 +51,9 @@ test("station doors ease and platform passengers visibly exchange", async () => 
   assert.match(world, /mode: z > 11 \|\| id === "WEST_FARMS" \? "AMBIENT" : index % 3 === 0 \? "BOARD" : index % 3 === 1 \? "ALIGHT"/);
   assert.match(world, /const alightProgress = THREE\.MathUtils\.smoothstep\(cycle, 6, 9\.35\)/);
   assert.match(world, /const boardProgress = THREE\.MathUtils\.smoothstep\(cycle, 8\.85, 12\.75\)/);
+  assert.match(world, /exchangeComplete: false/);
+  assert.match(world, /if \(boardProgress >= \.96\) flow\.exchangeComplete = true/);
+  assert.match(world, /visible-open-car-interior/);
 });
 
 test("boarding requires a platform-level crossing through one open doorway", async () => {
@@ -55,7 +62,8 @@ test("boarding requires a platform-level crossing through one open doorway", asy
   assert.match(world, /boardingOption\(player: THREE\.Vector3, previousPlayer: THREE\.Vector3\)/);
   assert.match(world, /Math\.abs\(player\.y - 1\.48\) > \.48/);
   assert.match(world, /const previousDepth =/);
-  assert.match(world, /previousDepth > \.09 \|\| depth < \.09/);
+  assert.match(world, /previousDepth > \.16 \|\| depth < \.06/);
+  assert.match(world, /Math\.abs\(player\.z - door\.z\) > \.78/);
   assert.match(world, /boardingHint[\s\S]{0,220}Math\.abs\(player\.y - 1\.48\) > \.58/);
   assert.match(game, /playerBeforeMovement\.copy\(player\)/);
   assert.match(game, /boardingOption\(player, playerBeforeMovement\)/);
@@ -84,12 +92,21 @@ test("failed rides restore the paid platform checkpoint without replaying door a
   assert.match(game, /stationWorld\.update\(stationClock\); previousTrainPhase = stationWorld\.trainPhase; previousDoorsOpen = stationWorld\.doorsOpen/);
 });
 
-test("successful transfers arrive on the paid platform side of fare control", async () => {
+test("successful transfers arrive on the paid Lexington concourse to choose a platform", async () => {
   const game = await readFile(gameUrl, "utf8");
 
-  assert.match(game, /checkpoint\("LEXINGTON", "Lexington Av \/ 59 St — transfer down to the uptown 5 express platform", false, true, true\)/);
+  assert.match(game, /checkpoint\("LEXINGTON", "Lexington Av \/ 59 St — follow the paid-concourse signs and choose the uptown 5 platform", false, true, false\)/);
   assert.match(game, /qaInput === "lexingtontransfer"/);
   assert.match(game, /paid-area transfer platform/);
+});
+
+test("Fifth Avenue alternates concrete N and R arrivals in geometry and HUD", async () => {
+  const [world, game] = await Promise.all([readFile(worldUrl, "utf8"), readFile(gameUrl, "utf8")]);
+
+  assert.match(world, /get arrivingService\(\) \{ return \{ direction: this\.correctTrain\.direction, route: this\.correctTrain\.route \}; \}/);
+  assert.match(game, /An uptown \$\{stationWorld\.arrivingService\.route\} train is approaching the station/);
+  assert.match(game, /Take the Queens-bound \$\{arrivingRoute\} train one stop/);
+  assert.match(game, /NEXT \$\{routeStatus\}/);
 });
 
 test("subway stations stream one active world and dispose the previous station", async () => {
