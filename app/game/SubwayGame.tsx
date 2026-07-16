@@ -101,7 +101,7 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
     }
     function enterBronxZoo() {
       if (!stationWorld || transitStage === "BRONX_ZOO" || transitStage === "COMPLETE") return;
-      stationWorld.dispose(); stationWorld = null; scene.background = new THREE.Color("#9bb5a0"); scene.fog = new THREE.FogExp2("#b9c7b2", .012); zooWorld = new BronxZooWorld(scene, textures, quality.getSnapshot().profile.foliageDensity); player.copy(zooWorld.spawn); velocity.set(0, 0, 0); yaw = 0; pitch = -.04; sloth.root.visible = true; setTransitStage("BRONX_ZOO"); audio.cancelTransitAnnouncements(); audio.setScene("finale", { transitionSeconds: 1.5, intensity: .74 }); showTransition("Bronx Zoo · Asia Gate"); showToast("Walk through the arrival plaza and speak with the Bronx Zoo attendant to meet your friends.", 5600);
+      stationWorld.dispose(); stationWorld = null; scene.background = new THREE.Color("#9bb5a0"); scene.fog = new THREE.FogExp2("#b9c7b2", .012); zooWorld = new BronxZooWorld(scene, textures, quality.getSnapshot().profile.foliageDensity); player.copy(zooWorld.spawn); if (qaInput === "finale") player.copy(zooWorld.friendReviewSpawn); velocity.set(0, 0, 0); yaw = 0; pitch = qaInput === "finale" ? -.11 : -.04; sloth.root.visible = true; setTransitStage("BRONX_ZOO"); audio.cancelTransitAnnouncements(); audio.setScene("finale", { transitionSeconds: 1.5, intensity: .74 }); showTransition("Bronx Zoo · Asia Gate"); showToast(qaInput === "finale" ? "Direct finale review · inspect the waiting sloths and authored attendant." : "Walk through the arrival plaza and speak with the Bronx Zoo attendant to meet your friends.", 5600);
     }
     function completeMission() {
       if (!zooWorld || transitStage !== "BRONX_ZOO") return;

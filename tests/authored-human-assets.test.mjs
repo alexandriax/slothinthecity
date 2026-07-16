@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import test from "node:test";
 
@@ -66,6 +67,12 @@ function primitives(json) {
   return (json.meshes ?? []).flatMap(mesh => mesh.primitives ?? []);
 }
 
+function primitiveForMaterial(json, name) {
+  const matches = primitives(json).filter(primitive => json.materials?.[primitive.material]?.name === name);
+  assert.equal(matches.length, 1, `GLB should contain exactly one ${name} primitive`);
+  return matches[0];
+}
+
 function gltfTriangleCount(json) {
   return primitives(json).reduce((total, primitive) => {
     assert.ok(Number.isInteger(primitive.indices), "authored human primitives should be indexed");
@@ -96,8 +103,12 @@ test("authored-human manifest pins complete CC0 provenance and the shipping inte
   assert.deepEqual(manifest.materials.toSorted(), MATERIALS);
   assert.deepEqual(manifest.archetypes.map(entry => entry.id).toSorted(), ARCHETYPES.toSorted());
   assert.deepEqual(manifest.source, {
+    exportCommand: "/Applications/Blender.app/Contents/MacOS/Blender --background --factory-startup --python tools/character-pipeline/build_humans.py -- --source /tmp/human-base-meshes/human_base_meshes_bundle.blend --output public/game/characters/authored --preview /tmp/human-previews",
     license: "CC0-1.0",
+    modifications: "Head/neck posture correction; fitted crew-neck garments; connected authored hair shells; shared rig, skin weights, LODs, and idle/walk clips.",
     name: "Blender Studio Human Base Meshes bundle v1.0.0",
+    publisher: "Blender Studio",
+    retrieved: "2026-07-15",
     sha256: "46a912c0524072ac3b78c35d5d2471df7b8df102394a050ca8cd7184e3393648",
     url: "https://download.blender.org/demo/bundles/bundles-3.6/human-base-meshes-bundle-v1.0.0.zip",
   });
@@ -181,6 +192,21 @@ test("all eight GLBs stay Draco-compressed, truly skinned, animated, and draw-ca
       assert.ok(vertices >= contract.vertices, `${contract.file} exported vertex count should include at least its source vertices`);
       assert.ok(vertices < contract.vertices * 1.35, `${contract.file} seam splitting should remain bounded`);
       assert.equal(buffer.length, contract.bytes, `${contract.file} manifest byte count should match`);
+      assert.equal(
+        createHash("sha256").update(buffer).digest("hex"),
+        contract.sha256,
+        `${contract.file} manifest hash should identify the exact reviewed build`,
+      );
+
+      const hair = primitiveForMaterial(json, "Hair");
+      const skinPrimitive = primitiveForMaterial(json, "Skin");
+      const hairBounds = json.accessors[hair.attributes.POSITION];
+      const skinBounds = json.accessors[skinPrimitive.attributes.POSITION];
+      const bodyHeight = skinBounds.max[1] - skinBounds.min[1];
+      const hairTriangles = json.accessors[hair.indices].count / 3;
+      assert.ok(hairBounds.max[1] >= skinBounds.max[1] + .003, `${contract.file} hair should cover and clear the crown`);
+      assert.ok(hairBounds.min[1] >= skinBounds.min[1] + bodyHeight * .72, `${contract.file} hair should remain on the head`);
+      assert.ok(hairTriangles >= (lod === "lod0" ? 1_000 : 600), `${contract.file} hair should retain an intentional silhouette`);
 
       const limits = lod === "lod0"
         ? { minTriangles: 59_000, maxTriangles: 85_000, maxBytes: 600_000 }
@@ -236,6 +262,9 @@ test("runtime loader points at the packaged LODs, atlases, Draco decoder, and sk
   assert.match(source, /loader\.setDRACOLoader\(draco\)/);
   assert.match(source, /cloneSkeleton\(template\.scene\)/);
   assert.match(source, /preferredLod === "lod0" \? "lod2" : "lod0"/);
+  assert.match(source, /fetch\(`\$\{AUTHORED_HUMAN_ROOT\}\/manifest\.json`, \{ cache: "no-cache" \}\)/);
+  assert.match(source, /authoredHumanAssetRevision/);
+  assert.match(source, /\?v=\$\{revision\}/);
   assert.match(source, /updateAuthoredHumanMotion/);
   assert.match(source, /"HumanWalk"/);
   assert.match(source, /new THREE\.AnimationMixer\(hydrated\)/);

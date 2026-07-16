@@ -19,6 +19,7 @@ surface shells rather than the disconnected capsules used by the runtime fallbac
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -42,6 +43,8 @@ MATERIAL_NAMES = (
     "Iris",
     "Pupil",
 )
+
+HEAD_PITCH_CORRECTION_DEGREES = -10.0
 
 
 @dataclass(frozen=True)
@@ -291,10 +294,10 @@ def corrected_head_point(point: Vector, low: Vector, high: Vector, rigid: bool =
     if weight <= 0.0:
         return point.copy()
     pivot = Vector((0.0, height * 0.008, low.z + height * 0.775))
-    # The source scan pitches the cranium toward the chest. Positive X brings
-    # the face back above the sternum for a level gaze. The old negative angle
-    # doubled that hunch and baked a roughly -19 degree neck into every GLB.
-    angle = math.radians(18.0) * weight
+    # The source faces -Y. A negative X rotation brings the eye line back over
+    # the sternum; the former positive angle moved the face farther forward
+    # and down, baking the screenshot's slumped neck into every exported mesh.
+    angle = math.radians(HEAD_PITCH_CORRECTION_DEGREES) * weight
     relative = point - pivot
     return pivot + Vector(
         (
@@ -329,7 +332,7 @@ def straighten_head_detail(obj: bpy.types.Object, body: bpy.types.Object) -> Non
     """
     low, high = object_bounds(body)
     corrected = corrected_head_point(obj.location, low, high, rigid=True)
-    rotation = Matrix.Rotation(math.radians(18.0), 4, "X")
+    rotation = Matrix.Rotation(math.radians(HEAD_PITCH_CORRECTION_DEGREES), 4, "X")
     obj.location = corrected
     obj.rotation_euler.rotate(rotation.to_euler())
 
@@ -350,6 +353,7 @@ def make_surface_shell(
     predicate: Callable[[Vector, Vector, Vector], bool],
     thickness: float,
     collection: bpy.types.Collection,
+    keep_largest_component: bool = False,
 ) -> bpy.types.Object:
     low, high = object_bounds(body)
     shell = body.copy()
@@ -370,6 +374,34 @@ def make_surface_shell(
             delete_faces.append(face)
     bmesh.ops.delete(bm, geom=delete_faces, context="FACES")
     bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
+    if keep_largest_component and bm.faces:
+        remaining = set(bm.faces)
+        components = []
+        while remaining:
+            seed = remaining.pop()
+            component = {seed}
+            frontier = [seed]
+            while frontier:
+                face = frontier.pop()
+                for edge in face.edges:
+                    for linked in edge.link_faces:
+                        if linked in remaining:
+                            remaining.remove(linked)
+                            component.add(linked)
+                            frontier.append(linked)
+            components.append(component)
+        crown_height = low.z + (high.z - low.z) * 0.955
+        crown_components = [
+            component
+            for component in components
+            if max(vertex.co.z for face in component for vertex in face.verts) >= crown_height
+        ]
+        # A face recess can satisfy the coordinate predicate but is never the
+        # connected crown surface. Keep one component so eye/mouth islands
+        # cannot survive as dark facial remnants.
+        kept = [max(crown_components, key=len)] if crown_components else [max(components, key=len)]
+        bmesh.ops.delete(bm, geom=[face for component in components if component not in kept for face in component], context="FACES")
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
     bm.to_mesh(mesh)
     bm.free()
     mesh.update()
@@ -413,16 +445,121 @@ def level_surface_boundary(
     shell.data.update()
 
 
-def torso_predicate(center: Vector, low: Vector, high: Vector) -> bool:
+def shape_crew_neckline(shell: bpy.types.Object, body: bpy.types.Object) -> None:
+    """Turn the source-triangle cut into one continuous crew-neck edge.
+
+    The upper shell is selected broadly for shoulder coverage. Its central top
+    boundary is projected onto a shared topology-safe plane. This keeps the
+    collar part of the garment instead of adding detached collar tubes.
+    """
+    low, high = object_bounds(body)
+    height = high.z - low.z
+    bm = bmesh.new()
+    bm.from_mesh(shell.data)
+    bm.verts.ensure_lookup_table()
+    for vertex in bm.verts:
+        if not any(len(edge.link_faces) == 1 for edge in vertex.link_edges):
+            continue
+        normalized_z = (vertex.co.z - low.z) / height
+        normalized_x = abs(vertex.co.x) / height
+        # The compact female source has alternating neckline vertices just
+        # below .79h. Include the whole upper central boundary; wrist and waist
+        # openings remain far below this band and cannot be affected.
+        if normalized_z < 0.70 or normalized_x > 0.240:
+            continue
+        # Project every front/back scan boundary onto one plane. The source
+        # edge does not traverse X monotonically, so even an X-driven curve
+        # reconnects its alternating triangles as a visible W. A level crew
+        # edge is the only topology-stable result for both source bodies.
+        target = 0.860
+        vertex.co.z = low.z + height * target
+    bm.to_mesh(shell.data)
+    bm.free()
+    shell.data.update()
+
+
+def make_authored_hair_cap(
+    body: bpy.types.Object,
+    style: str,
+    material: bpy.types.Material,
+    collection: bpy.types.Collection,
+) -> bpy.types.Object:
+    """Build one fitted scalp surface with an explicit face-safe hairline."""
+    # ``Object.bound_box`` is not synchronously refreshed after the source
+    # head/neck correction. Read the final anatomical vertices directly or a
+    # compact female head can receive the pre-correction bounds and put the
+    # hairline through the eyes while the male shell floats over the crown.
+    body_points = [body.matrix_world @ vertex.co for vertex in body.data.vertices]
+    low = Vector((
+        min(point.x for point in body_points),
+        min(point.y for point in body_points),
+        min(point.z for point in body_points),
+    ))
+    high = Vector((
+        max(point.x for point in body_points),
+        max(point.y for point in body_points),
+        max(point.z for point in body_points),
+    ))
+    height = high.z - low.z
+    back_height = {
+        "short": 0.900,
+        "curly": 0.885,
+        "bob": 0.845,
+        "ponytail": 0.870,
+    }[style]
+    front_height = 0.955
+
+    def scalp_predicate(center: Vector, _low: Vector, _high: Vector) -> bool:
+        z = (center.z - low.z) / height
+        x = abs(center.x) / height
+        y = center.y / height
+        # The figures face -Y. Raise the threshold sharply toward the face so
+        # recessed brows/eyes/mouth never qualify, while the same connected
+        # surface can descend naturally over the temples and nape.
+        face_weight = 1.0 - smoothstep(-0.030, 0.018, y)
+        side_weight = smoothstep(0.045, 0.105, x)
+        threshold = back_height + (front_height - back_height) * face_weight
+        threshold -= side_weight * (0.010 if style == "short" else 0.025)
+        return x < 0.130 and z > threshold
+
+    hair = make_surface_shell(
+        body,
+        "HairCap",
+        material,
+        scalp_predicate,
+        0.0,
+        collection,
+        keep_largest_component=True,
+    )
+    # Offset the fitted source surface a few millimetres along its own normals.
+    # This prevents z-fighting without adding a solidified helmet rim.
+    for vertex in hair.data.vertices:
+        vertex.co += vertex.normal * 0.0045
+    hair.data.update()
+    for polygon in hair.data.polygons:
+        polygon.use_smooth = True
+    hair["sloth_city_authored_hair_shell"] = style
+    return hair
+
+
+def torso_predicate(center: Vector, low: Vector, high: Vector, top_height: float = 0.875) -> bool:
     h = high.z - low.z
     z = (center.z - low.z) / h
     x = abs(center.x) / h
     # A continuous crew-neck torso plus upper arms. The slightly higher central
     # panel closes the exposed/jagged shoulder gaps visible during animation;
     # sleeves still end above the wrist to preserve anatomical hands.
-    torso = x < 0.19 and 0.48 < z < 0.84
-    sleeves = 0.56 < z < 0.82 and x < 0.282
+    torso = x < 0.19 and 0.48 < z < top_height
+    sleeves = 0.56 < z < 0.86 and x < 0.282
     return torso or sleeves
+
+
+def torso_predicate_for(source_kind: str) -> Callable[[Vector, Vector, Vector], bool]:
+    # The compact female scan needs one extra face ring above the finished .86
+    # edge; on the taller male scan that same normalized band reaches the head
+    # and adds thousands of unrelated polygons.
+    top_height = 0.895 if source_kind == "female" else 0.875
+    return lambda center, low, high: torso_predicate(center, low, high, top_height)
 
 
 def neckline_boundary(point: Vector, low: Vector, high: Vector) -> bool:
@@ -451,33 +588,6 @@ def shoe_predicate(center: Vector, low: Vector, high: Vector) -> bool:
     z = (center.z - low.z) / h
     x = abs(center.x) / h
     return z < 0.105 and x < 0.14
-
-
-def hair_predicate(style: str) -> Callable[[Vector, Vector, Vector], bool]:
-    def predicate(center: Vector, low: Vector, high: Vector) -> bool:
-        h = high.z - low.z
-        z = (center.z - low.z) / h
-        x = abs(center.x) / h
-        y = center.y / h
-        # A single contiguous scalp selection is intentionally preferred over
-        # broad height-only rules. The bundled figures face -Y, so a longer
-        # style may continue down the back of the skull but must never select
-        # forehead, eye, cheek or mouth polygons. Those facial islands were
-        # the dark "mask" remnants visible on the earlier female rigs.
-        long_style = style in {"bob", "ponytail"}
-        # Height alone is not enough: on the more compact female head the
-        # brow, eye sockets and upper cheeks also sit above 0.94. Keep the
-        # crown on/behind the hairline in depth as well.
-        # In this scan the face points toward -Y: the eye line sits near
-        # -0.067h while the scalp crown/back is at roughly -0.01h..+0.03h.
-        # The previous +Y-only cutoff removed the Hair mesh altogether; the
-        # older -0.04h cutoff reached the brow/temples and rendered as a black
-        # face mask. This narrow rear-facing band keeps a continuous cap while
-        # staying well behind every facial feature.
-        crown = z > 0.840 and y > -0.012
-        back_drop = long_style and z > 0.800 and y > 0.002
-        return x < 0.125 and (crown or back_drop)
-    return predicate
 
 
 def recess_body_under_shells(
@@ -757,6 +867,18 @@ def transfer_skin_object(obj: bpy.types.Object, source: bpy.types.Object, rig: b
     obj.matrix_parent_inverse = rig.matrix_world.inverted()
 
 
+def bind_rigid_to_head(obj: bpy.types.Object, rig: bpy.types.Object) -> None:
+    """Keep the fitted scalp shell on the cranium as one rigid volume."""
+    for group in list(obj.vertex_groups):
+        obj.vertex_groups.remove(group)
+    head = obj.vertex_groups.new(name="Head")
+    head.add([vertex.index for vertex in obj.data.vertices], 1.0, "REPLACE")
+    modifier = obj.modifiers.new("HumanRig", "ARMATURE")
+    modifier.object = rig
+    obj.parent = rig
+    obj.matrix_parent_inverse = rig.matrix_world.inverted()
+
+
 def reset_pose(rig: bpy.types.Object) -> None:
     for pose_bone in rig.pose.bones:
         pose_bone.location = (0.0, 0.0, 0.0)
@@ -934,7 +1056,10 @@ def duplicate_for_lod(objects: Sequence[bpy.types.Object], rig: bpy.types.Object
         if len(obj.data.polygons) > 320:
             decimate = obj.modifiers.new("Mobile decimation", "DECIMATE")
             decimate.decimate_type = "COLLAPSE"
-            decimate.ratio = ratio
+            material_name = obj.data.materials[0].name if obj.data.materials and obj.data.materials[0] else ""
+            # Preserve the authored hairline and crown silhouette on mobile;
+            # generic 72% collapse reduced female hair to fewer than 100 tris.
+            decimate.ratio = max(ratio, 0.58) if material_name == "Hair" else ratio
             decimate.use_collapse_triangulate = True
             decimate.use_symmetry = True
             apply_modifiers(obj)
@@ -980,6 +1105,14 @@ def gltf_export(filepath: Path, objects: Sequence[bpy.types.Object]) -> None:
         for optional in ("export_force_sampling", "export_optimize_animation_size", "export_nla_strips"):
             kwargs.pop(optional, None)
         bpy.ops.export_scene.gltf(**kwargs)
+
+
+def file_sha256(filepath: Path) -> str:
+    digest = hashlib.sha256()
+    with filepath.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def render_preview(
@@ -1074,25 +1207,20 @@ def build_archetype(
 
     # Extra upper-shell clearance keeps modeled anatomical landmarks from
     # z-fighting through fitted cloth at close range without inflating limbs.
-    upper = make_surface_shell(body, "UpperGarment", materials["ClothUpper"], torso_predicate, 0.016, collection)
+    upper_predicate = torso_predicate_for(archetype.source)
+    upper = make_surface_shell(body, "UpperGarment", materials["ClothUpper"], upper_predicate, 0.016, collection)
     lower = make_surface_shell(body, "LowerGarment", materials["ClothLower"], pants_predicate, 0.011, collection)
     shoes = make_surface_shell(body, "Shoes", materials["Shoe"], shoe_predicate, 0.010, collection)
-    # Hair is an exact fitted scalp surface rather than an inflated primitive.
-    # The underlying fully covered body vertices are recessed below, preserving
-    # a continuous silhouette with no helmet rim or detached style pieces.
-    hair = make_surface_shell(body, "HairCap", materials["Hair"], hair_predicate(archetype.hair), 0.0, collection)
+    hair = make_authored_hair_cap(body, archetype.hair, materials["Hair"], collection)
 
-    # Keep the fitted source boundary rather than forcing it onto a single Z
-    # plane. Only the central neckline gets a narrow finishing pass; flattening
-    # wrists or scalp boundaries stretched alternating triangles into the
-    # pointy chest and shoulder fragments seen in review.
-    # Preserve the source surface edge. Flattening this boundary stretched
-    # alternating triangles into the torn collar/shoulder spikes seen in QA.
-    for obj in (upper, lower, shoes, hair):
+    # Shape only the central top boundary. Wrist and scalp openings retain the
+    # fitted source surface, while the shirt gets one continuous crew-neck edge.
+    shape_crew_neckline(upper, body)
+    for obj in (upper, lower, shoes):
         apply_modifiers(obj)
     recess_body_under_shells(
         body,
-        (torso_predicate, pants_predicate, shoe_predicate, hair_predicate(archetype.hair)),
+        (upper_predicate, pants_predicate, shoe_predicate),
         clearance=0.018,
     )
 
@@ -1118,7 +1246,10 @@ def build_archetype(
     skin_object(skin_mesh, rig)
     for obj in meshes:
         if obj is not skin_mesh:
-            transfer_skin_object(obj, skin_mesh, rig)
+            if obj.name == "Hair":
+                bind_rigid_to_head(obj, rig)
+            else:
+                transfer_skin_object(obj, skin_mesh, rig)
         obj["sloth_city_authored_human"] = True
         obj["archetype"] = archetype.slug
     actions = (add_idle_action(rig), add_walk_action(rig))
@@ -1142,8 +1273,8 @@ def build_archetype(
         "id": archetype.slug,
         "source": archetype.source,
         "license": "CC0-1.0",
-        "lod0": {**mesh_stats(meshes), "bytes": lod0_path.stat().st_size, "file": lod0_path.name},
-        "lod2": {**mesh_stats(lod2_meshes), "bytes": lod2_path.stat().st_size, "file": lod2_path.name},
+        "lod0": {**mesh_stats(meshes), "bytes": lod0_path.stat().st_size, "file": lod0_path.name, "sha256": file_sha256(lod0_path)},
+        "lod2": {**mesh_stats(lod2_meshes), "bytes": lod2_path.stat().st_size, "file": lod2_path.name, "sha256": file_sha256(lod2_path)},
     }
     print("BUILT", json.dumps(stats, sort_keys=True))
 
@@ -1184,9 +1315,13 @@ def main() -> None:
         "generator": "tools/character-pipeline/build_humans.py",
         "source": {
             "name": "Blender Studio Human Base Meshes bundle v1.0.0",
+            "publisher": "Blender Studio",
             "url": "https://download.blender.org/demo/bundles/bundles-3.6/human-base-meshes-bundle-v1.0.0.zip",
             "license": "CC0-1.0",
             "sha256": "46a912c0524072ac3b78c35d5d2471df7b8df102394a050ca8cd7184e3393648",
+            "retrieved": "2026-07-15",
+            "modifications": "Head/neck posture correction; fitted crew-neck garments; connected authored hair shells; shared rig, skin weights, LODs, and idle/walk clips.",
+            "exportCommand": "/Applications/Blender.app/Contents/MacOS/Blender --background --factory-startup --python tools/character-pipeline/build_humans.py -- --source /tmp/human-base-meshes/human_base_meshes_bundle.blend --output public/game/characters/authored --preview /tmp/human-previews",
         },
         "materials": list(MATERIAL_NAMES),
         "archetypes": results,

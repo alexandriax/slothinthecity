@@ -41,6 +41,11 @@ test("authored pipeline rejects primitive face and body remnants", async () => {
   assert.match(pipeline, /add_eye_disc/);
   assert.match(pipeline, /straighten_head_and_neck/);
   assert.match(pipeline, /straighten_head_detail/);
+  assert.match(pipeline, /HEAD_PITCH_CORRECTION_DEGREES = -10\.0/);
+  assert.match(pipeline, /shape_crew_neckline\(upper, body\)/);
+  assert.match(pipeline, /def make_authored_hair_cap/);
+  assert.match(pipeline, /sloth_city_authored_hair_shell/);
+  assert.match(pipeline, /sha256.*file_sha256/s);
   assert.match(pipeline, /add_walk_action/);
   assert.match(pipeline, /transfer_skin_object/);
   assert.match(pipeline, /Anatomical skin-weight transfer/);

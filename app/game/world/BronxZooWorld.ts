@@ -110,6 +110,7 @@ function addArrivalFountain(root: THREE.Group, textures: GameTextures, quality: 
 export class BronxZooWorld {
   readonly root = new THREE.Group();
   readonly spawn = new THREE.Vector3(0, 2.5, 25.5);
+  readonly friendReviewSpawn = new THREE.Vector3(0, 1.48, 3.8);
   readonly attendantPosition = new THREE.Vector3(4.9, 1.48, -1.3);
   readonly cameraPosition = new THREE.Vector3(0, 3.1, 20.5);
   readonly cameraTarget = new THREE.Vector3(0, 3.6, -10);
@@ -203,8 +204,7 @@ export class BronxZooWorld {
 
   update(elapsed: number, delta = 1 / 60) {
     this.root.traverse(object => {
-      if (object.name === "waiting-sloth-friend") object.rotation.z = Math.sin(elapsed * .9 + object.position.x) * .018;
-      else if (object.name === "friend-wave-arm") object.rotation.x = -.22 + Math.sin(elapsed * 2.35 + object.parent!.position.x) * .22;
+      if (object.name === "friend-wave-arm") object.rotation.x = -.12 + Math.sin(elapsed * 2.05 + object.parent!.position.x) * .12;
     });
     idleAuthoredHuman(this.attendant, delta);
     this.guestAgents.forEach(agent => updateAmbientHumanAgent(agent, elapsed, delta));

@@ -12,6 +12,14 @@ type HumanTemplate = {
   animations: THREE.AnimationClip[];
 };
 
+type HumanManifest = {
+  archetypes: Array<{
+    id: HumanArchetype;
+    lod0: { file: string; sha256: string };
+    lod2: { file: string; sha256: string };
+  }>;
+};
+
 type HydrationState = {
   disposed: boolean;
   fallbackChildren: THREE.Object3D[];
@@ -43,6 +51,7 @@ const atlasPromises = new Map<string, Promise<THREE.Texture>>();
 const atlasTileTextures = new Map<string, THREE.Texture>();
 const hydrationStates = new WeakMap<THREE.Group, HydrationState>();
 let sharedGltfLoader: GLTFLoader | undefined;
+let manifestPromise: Promise<HumanManifest | undefined> | undefined;
 
 function positiveModulo(value: number, count: number) {
   return ((Math.floor(value) % count) + count) % count;
@@ -88,6 +97,23 @@ function createLoader() {
   loader.setDRACOLoader(draco);
   sharedGltfLoader = loader;
   return sharedGltfLoader;
+}
+
+function loadManifest() {
+  manifestPromise ??= fetch(`${AUTHORED_HUMAN_ROOT}/manifest.json`, { cache: "no-cache" })
+    .then(response => {
+      if (!response.ok) throw new Error(`Authored human manifest returned ${response.status}`);
+      return response.json() as Promise<HumanManifest>;
+    })
+    // Static file hosts that omit the manifest still get the stable filenames;
+    // the checked-in asset test guarantees those files remain complete.
+    .catch(() => undefined);
+  return manifestPromise;
+}
+
+function versionedAssetUrl(file: string, sha256?: string) {
+  const revision = sha256?.slice(0, 12);
+  return `${AUTHORED_HUMAN_ROOT}/${file}${revision ? `?v=${revision}` : ""}`;
 }
 
 function loadTemplate(url: string) {
@@ -183,8 +209,13 @@ function mappedMaterial(
     return material;
   };
   if (name.includes("skin")) return physical({
-    map: textures.skin,
-    color: "#ffffff",
+    // The atlas is a seamless pore/detail field, not a second identity color.
+    // Using it as albedo made UV islands turn the face nearly black while the
+    // neck stayed pale. Keep the caller's authored tone uniform and reuse the
+    // shared atlas only for small-scale surface relief.
+    bumpMap: textures.skin,
+    bumpScale: .012,
+    color: options.skin,
     roughness: .68,
     metalness: 0,
     clearcoat: .025,
@@ -411,14 +442,21 @@ async function hydrate(
   state: HydrationState,
 ) {
   const archetype = archetypeFor(options), preferredLod = lodFor(options.quality);
-  const preferredUrl = `${AUTHORED_HUMAN_ROOT}/${archetype}-${preferredLod}.glb`;
-  const fallbackUrl = `${AUTHORED_HUMAN_ROOT}/${archetype}-${preferredLod === "lod0" ? "lod2" : "lod0"}.glb`;
   host.userData.authoredHumanArchetype = archetype;
   host.userData.authoredHumanLod = preferredLod;
   host.userData.authoredHumanStatus = "loading";
 
   let pendingInstance: THREE.Group | undefined;
   try {
+    const manifest = await loadManifest();
+    const manifestEntry = manifest?.archetypes.find(entry => entry.id === archetype);
+    const fallbackLod = preferredLod === "lod0" ? "lod2" : "lod0";
+    const preferredContract = manifestEntry?.[preferredLod];
+    const fallbackContract = manifestEntry?.[fallbackLod];
+    const preferredUrl = versionedAssetUrl(preferredContract?.file ?? `${archetype}-${preferredLod}.glb`, preferredContract?.sha256);
+    const fallbackUrl = versionedAssetUrl(fallbackContract?.file ?? `${archetype}-${fallbackLod}.glb`, fallbackContract?.sha256);
+    host.userData.authoredHumanAssetRevision = preferredContract?.sha256 ?? "unversioned";
+    host.userData.authoredHumanAssetUrl = preferredUrl;
     const [loadedTemplate, skinAtlas, clothAtlas] = await Promise.all([
       loadTemplate(preferredUrl)
         .then(template => ({ template, lod: preferredLod }))

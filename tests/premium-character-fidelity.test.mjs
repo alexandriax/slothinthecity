@@ -31,13 +31,25 @@ test("premium humans use twenty identities and head-conforming photographic faci
 });
 
 test("zoo sloth friends use continuous anatomical silhouettes", async () => {
-  const source = await readFile(new URL("../app/game/world/PremiumCharacter.ts", import.meta.url), "utf8");
+  const [source, finale, game] = await Promise.all([
+    readFile(new URL("../app/game/world/PremiumCharacter.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/world/BronxZooWorld.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/SubwayGame.tsx", import.meta.url), "utf8"),
+  ]);
   const friend = source.slice(source.indexOf("export function createPremiumSlothFriend"));
 
-  for (const feature of ["continuous-anatomical-sloth-torso", "anatomical-sloth-head-and-jaw", "continuous-anatomical-sloth-forelimb", "continuous-anatomical-sloth-hindlimb"]) {
+  for (const feature of ["continuous-anatomical-sloth-torso-with-integrated-bib", "anatomical-sloth-head-jaw-and-integrated-mask", "continuous-anatomical-sloth-forelimb", "continuous-anatomical-sloth-hindlimb", "capped-anatomical-sloth-hook-claw"]) {
     assert.match(friend, new RegExp(feature));
   }
+  assert.match(source, /function paintSlothSurface/);
+  assert.match(source, /vertexColors: true/);
+  assert.match(friend, /integratedFaceAndBib = true/);
+  assert.doesNotMatch(friend, /slothFaceMaskGeometry|slothChestBibGeometry|conforming-sloth|neckMantle|overlapping-sloth-shoulder/);
+  assert.doesNotMatch(friend, /new THREE\.TubeGeometry|new THREE\.ConeGeometry/);
   assert.doesNotMatch(friend, /const upper = new THREE\.Mesh\(new THREE\.CapsuleGeometry|const wrist = new THREE\.Mesh\(new THREE\.CapsuleGeometry|const palm = new THREE\.Mesh\(new THREE\.SphereGeometry/);
+  assert.doesNotMatch(finale, /waiting-sloth-friend"\) object\.rotation\.z/);
+  assert.match(finale, /friendReviewSpawn/);
+  assert.match(game, /if \(qaInput === "finale"\) player\.copy\(zooWorld\.friendReviewSpawn\)/);
 });
 
 test("premium character detail scales with the active quality tier", async () => {
