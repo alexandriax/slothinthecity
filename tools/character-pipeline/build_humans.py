@@ -424,6 +424,80 @@ def make_surface_shell(
     return shell
 
 
+def loosen_upper_garment(shell: bpy.types.Object, body: bpy.types.Object) -> None:
+    """Give the shirt body soft ease and a relaxed, non-anatomical hem."""
+    low, high = object_bounds(body)
+    height = high.z - low.z
+    bm = bmesh.new()
+    bm.from_mesh(shell.data)
+    bm.verts.ensure_lookup_table()
+
+    # Grow the torso panel upward from its finished hem instead of selecting
+    # vertices with a lateral cutoff. A coordinate cutoff can catch the inner
+    # forearm on some bodies and pull only part of a sleeve out of alignment.
+    # The hem is the central, lowest boundary loop; following non-descending
+    # edges from it remains on the torso and cannot travel back down an arm.
+    remaining_boundary_edges = {edge for edge in bm.edges if len(edge.link_faces) == 1}
+    boundary_components: list[set[bmesh.types.BMVert]] = []
+    while remaining_boundary_edges:
+        seed = remaining_boundary_edges.pop()
+        component_edges = {seed}
+        frontier = [seed]
+        while frontier:
+            edge = frontier.pop()
+            for vertex in edge.verts:
+                for linked in vertex.link_edges:
+                    if linked in remaining_boundary_edges and len(linked.link_faces) == 1:
+                        remaining_boundary_edges.remove(linked)
+                        component_edges.add(linked)
+                        frontier.append(linked)
+        boundary_components.append({vertex for edge in component_edges for vertex in edge.verts})
+    if not boundary_components:
+        bm.free()
+        return
+    hem = min(
+        boundary_components,
+        key=lambda vertices: sum(vertex.co.z for vertex in vertices) / len(vertices),
+    )
+    shirt_torso = set(hem)
+    frontier_vertices = list(hem)
+    while frontier_vertices:
+        vertex = frontier_vertices.pop()
+        for edge in vertex.link_edges:
+            linked = edge.other_vert(vertex)
+            normalized_z = (linked.co.z - low.z) / height
+            if linked in shirt_torso or normalized_z > 0.825:
+                continue
+            if linked.co.z < vertex.co.z - height * 0.006:
+                continue
+            shirt_torso.add(linked)
+            frontier_vertices.append(linked)
+
+    # Remove the scan's abdominal landmarks from the garment surface while
+    # preserving its vertical drape and the already-authored hem height.
+    bmesh.ops.smooth_vert(
+        bm,
+        verts=list(shirt_torso),
+        factor=0.42,
+        use_axis_x=True,
+        use_axis_y=True,
+        use_axis_z=False,
+    )
+    for vertex in shirt_torso:
+        normalized_z = (vertex.co.z - low.z) / height
+        # Ease begins high on the torso and increases gradually toward the
+        # hem. A real work shirt hangs clear of the stomach without becoming
+        # a rigid trapezoid or widening abruptly at the ribs.
+        hem_ease = 1.0 - smoothstep(0.58, 0.82, normalized_z)
+        vertex.co.x *= 1.0 + 0.085 * hem_ease
+        if abs(vertex.co.y) > height * 0.003:
+            vertex.co.y += math.copysign(height * 0.014 * hem_ease, vertex.co.y)
+    bm.to_mesh(shell.data)
+    bm.free()
+    shell.data.update()
+    shell["sloth_city_loose_shirt_ease"] = True
+
+
 def level_surface_boundary(
     shell: bpy.types.Object,
     body: bpy.types.Object,
@@ -552,7 +626,7 @@ def finish_upper_garment_openings(
     bmesh.ops.bisect_plane(
         bm,
         geom=all_geometry,
-        plane_co=(0.0, 0.0, low.z + height * 0.480),
+        plane_co=(0.0, 0.0, low.z + height * 0.515),
         plane_no=(0.0, 0.0, 1.0),
         clear_inner=True,
         clear_outer=False,
@@ -708,7 +782,7 @@ def finished_upper_predicate_for(source_kind: str) -> Callable[[Vector, Vector, 
         height = high.z - low.z
         z = (center.z - low.z) / height
         x = abs(center.x) / height
-        torso = x < 0.19 and 0.48 < z < 0.82
+        torso = x < 0.19 and 0.515 < z < 0.82
         shoulder_z, wrist_z = 0.805, 0.515
         dx, dz = wrist_x - shoulder_x, wrist_z - shoulder_z
         progress = ((x - shoulder_x) * dx + (z - shoulder_z) * dz) / (dx * dx + dz * dz)
@@ -1382,6 +1456,7 @@ def build_archetype(
     # surface. Raw triangle thresholds otherwise read as frayed cloth at the
     # neckline, lower hem, and sleeve cuffs in close gameplay framing.
     finish_upper_garment_openings(upper, body, archetype.source)
+    loosen_upper_garment(upper, body)
     for obj in (upper, lower, shoes):
         apply_modifiers(obj)
     recess_body_under_shells(

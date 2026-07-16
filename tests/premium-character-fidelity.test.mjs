@@ -82,10 +82,13 @@ test("zoo populations, grounding, and fabric wardrobes stay explicit", async () 
   assert.match(finale, /zooNameTag: "Bronx Zoo"/);
   assert.match(runtime, /color: options\.coat/);
   assert.match(runtime, /color: options\.trousers/);
-  assert.match(runtime, /authored-zoo-uniform-shirt-print/);
-  assert.match(runtime, /findBone\(bones, "Chest", "Spine2", "chest"\)/);
-  assert.match(runtime, /transparent: true/);
-  assert.doesNotMatch(runtime.slice(runtime.indexOf("function addZooUniformShirtPrint"), runtime.indexOf("function disposeInstance")), /strokeRect|fillRect/);
+  const shirtPrint = runtime.slice(runtime.indexOf("function applyZooUniformShirtPrint"), runtime.indexOf("function disposeInstance"));
+  assert.match(shirtPrint, /integratedShirtPrint = true/);
+  assert.match(shirtPrint, /material\.onBeforeCompile/);
+  assert.match(shirtPrint, /diffuseColor\.rgb = mix/);
+  assert.match(shirtPrint, /zooPrintFront/);
+  assert.doesNotMatch(shirtPrint, /PlaneGeometry|new THREE\.Mesh|instance\.add|polygonOffset/);
+  assert.doesNotMatch(shirtPrint, /strokeRect|fillRect/);
   assert.match(runtime, /options\.zooNameTag\.toUpperCase\(\)/);
 });
 

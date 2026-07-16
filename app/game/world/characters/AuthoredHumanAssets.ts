@@ -388,72 +388,80 @@ function normalizeHeight(instance: THREE.Group, targetHeight: number) {
   instance.position.y -= scaledBounds.min.y;
 }
 
-function addZooUniformShirtPrint(instance: THREE.Group, options: PremiumHumanOptions) {
+function applyZooUniformShirtPrint(instance: THREE.Group, options: PremiumHumanOptions) {
   if (!options.zooNameTag) return undefined;
   const canvas = document.createElement("canvas");
-  canvas.width = 1024; canvas.height = 192;
+  canvas.width = 1024; canvas.height = 256;
   const context = canvas.getContext("2d");
   if (!context) return undefined;
   context.clearRect(0, 0, canvas.width, canvas.height);
-  // Text-only ink lets the uniform's green cloth and weave remain visible;
-  // there is no detached badge panel or border to read as a floating placard.
-  context.fillStyle = "#dce8bd";
+  context.fillStyle = "#ffffff";
   context.textAlign = "center"; context.textBaseline = "middle";
-  context.font = "700 76px Helvetica, Arial, sans-serif";
-  context.fillText(options.zooNameTag.toUpperCase(), canvas.width / 2, canvas.height / 2 + 2, canvas.width - 28);
+  context.font = "700 70px Helvetica, Arial, sans-serif";
+  context.fillText(options.zooNameTag.toUpperCase(), canvas.width / 2, canvas.height / 2, canvas.width - 36);
   const texture = new THREE.CanvasTexture(canvas);
-  texture.name = `${options.zooNameTag}-uniform-shirt-print-texture`;
+  texture.name = `${options.zooNameTag}-integrated-shirt-print-texture`;
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = options.quality > .8 ? 8 : 4;
+  texture.needsUpdate = true;
 
   const bounds = new THREE.Box3().setFromObject(instance);
   const bodyHeight = bounds.max.y - bounds.min.y;
-  let front = Number.NEGATIVE_INFINITY;
+  const printCenter = new THREE.Vector2(
+    bounds.min.x + bodyHeight * .205,
+    bounds.min.y + bodyHeight * .705,
+  );
+  const printSize = new THREE.Vector2(bodyHeight * .085, bodyHeight * .021);
+  const printColor = new THREE.Color("#c6d4a7");
+  let applied = false;
   instance.traverse(object => {
     if (!(object instanceof THREE.Mesh)) return;
     const materials = Array.isArray(object.material) ? object.material : [object.material];
-    if (!materials.some(material => canonicalMaterialName(material).includes("clothupper"))) return;
-    front = Math.max(front, new THREE.Box3().setFromObject(object).max.z);
+    materials.forEach(material => {
+      if (!(material instanceof THREE.MeshPhysicalMaterial)) return;
+      if (!canonicalMaterialName(material).includes("clothupper")) return;
+      applied = true;
+      material.userData.zooName = options.zooNameTag;
+      material.userData.integratedShirtPrint = true;
+      material.onBeforeCompile = shader => {
+        shader.uniforms.zooPrintMap = { value: texture };
+        shader.uniforms.zooPrintCenter = { value: printCenter };
+        shader.uniforms.zooPrintSize = { value: printSize };
+        shader.uniforms.zooPrintColor = { value: printColor };
+        shader.vertexShader = shader.vertexShader
+          .replace(
+            "#include <common>",
+            "#include <common>\nvarying vec3 vZooPrintPosition;\nvarying vec3 vZooPrintNormal;",
+          )
+          .replace(
+            "#include <skinnormal_vertex>",
+            "#include <skinnormal_vertex>\nvZooPrintNormal = objectNormal;",
+          )
+          .replace(
+            "#include <skinning_vertex>",
+            "#include <skinning_vertex>\nvZooPrintPosition = transformed;",
+          );
+        shader.fragmentShader = shader.fragmentShader
+          .replace(
+            "#include <common>",
+            "#include <common>\nuniform sampler2D zooPrintMap;\nuniform vec2 zooPrintCenter;\nuniform vec2 zooPrintSize;\nuniform vec3 zooPrintColor;\nvarying vec3 vZooPrintPosition;\nvarying vec3 vZooPrintNormal;",
+          )
+          .replace(
+            "#include <map_fragment>",
+            `#include <map_fragment>
+            vec2 zooPrintUv = (vZooPrintPosition.xy - zooPrintCenter) / zooPrintSize + vec2(0.5);
+            float zooPrintBounds = step(0.0, zooPrintUv.x) * step(zooPrintUv.x, 1.0)
+              * step(0.0, zooPrintUv.y) * step(zooPrintUv.y, 1.0);
+            float zooPrintFront = smoothstep(0.30, 0.72, normalize(vZooPrintNormal).z);
+            float zooPrintInk = texture2D(zooPrintMap, zooPrintUv).a * zooPrintBounds * zooPrintFront * 0.72;
+            diffuseColor.rgb = mix(diffuseColor.rgb, zooPrintColor, zooPrintInk);`,
+          );
+      };
+      material.customProgramCacheKey = () => "authored-zoo-uniform-integrated-print-v1";
+      material.needsUpdate = true;
+    });
   });
-  if (!Number.isFinite(front)) front = bounds.max.z;
-  const width = bodyHeight * .082, height = bodyHeight * .017;
-  const shirtPrint = new THREE.Mesh(
-    new THREE.PlaneGeometry(width, height),
-    new THREE.MeshStandardMaterial({
-      map: texture,
-      alphaTest: .02,
-      transparent: true,
-      depthWrite: false,
-      metalness: 0,
-      roughness: .9,
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-      polygonOffsetUnits: -2,
-    }),
-  );
-  shirtPrint.name = "authored-zoo-uniform-shirt-print";
-  shirtPrint.userData.zooName = options.zooNameTag;
-  const desiredPosition = new THREE.Vector3(
-    bounds.min.x + bodyHeight * .205,
-    bounds.min.y + bodyHeight * .705,
-    front + bodyHeight * .001,
-  );
-  const bones: THREE.Bone[] = [];
-  instance.traverse(object => { if (object instanceof THREE.Bone) bones.push(object); });
-  const chest = findBone(bones, "Chest", "Spine2", "chest");
-  if (chest) {
-    instance.updateMatrixWorld(true);
-    const chestWorldQuaternion = new THREE.Quaternion();
-    chest.getWorldQuaternion(chestWorldQuaternion);
-    shirtPrint.position.copy(chest.worldToLocal(desiredPosition.clone()));
-    shirtPrint.quaternion.copy(chestWorldQuaternion).invert();
-    chest.add(shirtPrint);
-  } else {
-    shirtPrint.position.copy(desiredPosition);
-    instance.add(shirtPrint);
-  }
-  shirtPrint.renderOrder = 2;
-  return texture;
+  return applied ? texture : undefined;
 }
 
 function disposeInstance(instance: THREE.Object3D) {
@@ -567,7 +575,7 @@ async function hydrate(
     // Layering the legacy map/phone/wave overrides under HumanWalk produced
     // doubled hands, long fingers, hunched shoulders and violent limb arcs.
     poseSkeleton(instance, host.userData.authoredHumanLocomotion ? "neutral" : options.pose);
-    const uniformShirtPrint = addZooUniformShirtPrint(instance, options);
+    const uniformShirtPrint = applyZooUniformShirtPrint(instance, options);
     if (uniformShirtPrint) state.ownedTextures.push(uniformShirtPrint);
     // Blender's authored bodies face -Y. The glTF Y-up conversion maps that
     // to +Z, while every existing game placement expects a -Z-facing model.
