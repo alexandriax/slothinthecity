@@ -136,6 +136,22 @@ export type RowboatSpawn = {
 // Hand-authored crown lines give the procedural forest a legible aerial
 // structure.  The junctions are deliberately shared so a sloth entering at
 // the western start can reach every route without touching the ground.
+function canopyPath(controlPoints: ReadonlyArray<readonly [number, number]>, maxSpacing = 8.4) {
+  const points: Array<[number, number]> = [];
+  for (let segment = 0; segment < controlPoints.length - 1; segment++) {
+    const from = controlPoints[segment], to = controlPoints[segment + 1];
+    const divisions = Math.max(1, Math.ceil(Math.hypot(to[0] - from[0], to[1] - from[1]) / maxSpacing));
+    for (let step = segment === 0 ? 0 : 1; step <= divisions; step++) {
+      const amount = step / divisions;
+      points.push([
+        Number(THREE.MathUtils.lerp(from[0], to[0], amount).toFixed(2)),
+        Number(THREE.MathUtils.lerp(from[1], to[1], amount).toFixed(2)),
+      ]);
+    }
+  }
+  return points;
+}
+
 const CANOPY_CORRIDOR_LAYOUT = [
   {
     id: "ramble-spine",
@@ -152,7 +168,22 @@ const CANOPY_CORRIDOR_LAYOUT = [
     name: "East ridge",
     points: [[-51, 25], [-43, 29], [-35, 32], [-29, 43], [-20, 43], [-11, 44], [-2, 44], [7, 43], [16, 41], [25, 38], [34, 34], [43, 29], [51, 22]],
   },
+  {
+    id: "zoo-subway-canopy",
+    name: "Zoo to Fifth Avenue canopy",
+    // This continuous eastern crown route deliberately skirts The Lake,
+    // reaches the zoo forecourt, and ends within one ground hop of the subway
+    // stairs. It gives the exposed campaign leg a genuinely arboreal option.
+    points: canopyPath([[51, 22], [100, -20], [160, -50], [220, -85], [252, -118], [255, -170], [257, -230], [266, -285], [278, -320], [292, -341], [306, -355], [321, -368], [335, -376]]),
+  },
 ] as const;
+
+function insideSubwayStairClearance(x: number, z: number, padding = 1.5) {
+  const localX = Math.abs(x - SUBWAY_TARGET.x), localZ = z - SUBWAY_TARGET.z;
+  return localX <= SUBWAY_STAIR_CUTOUT.halfWidth + padding
+    && localZ >= SUBWAY_STAIR_CUTOUT.bottomZ - padding
+    && localZ <= SUBWAY_STAIR_CUTOUT.topZ + padding;
+}
 
 export type ClimbableTree = {
   x: number;
@@ -626,11 +657,11 @@ function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number, t
       || Math.hypot(x - TICKET_ISLAND_TARGET.x, z - TICKET_ISLAND_TARGET.z) < TICKET_ISLAND_RADIUS + 4 + radius
       || Math.hypot(x - START.x, z - START.z) < 9.5 + radius
       || Math.hypot(x - BOW_BRIDGE_TARGET.x, z - BOW_BRIDGE_TARGET.z) < 10 + radius
-      || Math.hypot(x - ZOO_TARGET.x, z - ZOO_TARGET.z) < 15 + radius
-      || Math.hypot(x - SUBWAY_TARGET.x, z - SUBWAY_TARGET.z) < 8 + radius
+      || (!forced && Math.hypot(x - ZOO_TARGET.x, z - ZOO_TARGET.z) < 15 + radius)
+      || (!forced && Math.hypot(x - SUBWAY_TARGET.x, z - SUBWAY_TARGET.z) < 8 + radius)
       || Math.hypot(x - LAKE_SOUTHEAST_CART_TARGET.x, z - LAKE_SOUTHEAST_CART_TARGET.z) < 7 + radius
-      || trailDistance < 3.15 + radius
-      || campaignTrailDistance < 3.3 + radius
+      || (!forced && trailDistance < 3.15 + radius)
+      || (!forced && campaignTrailDistance < 3.3 + radius)
       || Math.hypot(x, z) < 8
       || trees.some((other) => Math.hypot(x - other.x, z - other.z) < radius + other.radius + 1.28);
     if (blocked) continue;
@@ -806,14 +837,14 @@ function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number, t
   for (let i = 0; i < scatterCount; i++) {
     const anchor = understoryAnchors[i];
     let x = anchor ? anchor[0] : randomWorldX(), z = anchor ? anchor[1] : randomWorldZ();
-    while (!anchor && containsLakeWater(x, z, -1.5)) { x = randomWorldX(); z = randomWorldZ(); }
+    while ((!anchor && containsLakeWater(x, z, -1.5)) || insideSubwayStairClearance(x, z)) { x = randomWorldX(); z = randomWorldZ(); }
     const scale = anchor ? .78 + random() * .35 : .32 + random() * .66;
     const y = terrainY(x, z) + scale * .48, angle = random() * Math.PI;
     for (let card = 0; card < 2; card++) { dummy.position.set(x, y, z); dummy.rotation.set((random() - .5) * .16, angle + card * Math.PI / 2, 0); dummy.scale.set(scale, scale * (.7 + random() * .45), 1); dummy.updateMatrix(); shrubs.setMatrixAt(i * 2 + card, dummy.matrix); }
   }
   for (let i = 0; i < rocks.count; i++) {
     let x = randomWorldX(), z = randomWorldZ();
-    while (containsLakeWater(x, z, -.8)) { x = randomWorldX(); z = randomWorldZ(); }
+    while (containsLakeWater(x, z, -.8) || insideSubwayStairClearance(x, z)) { x = randomWorldX(); z = randomWorldZ(); }
     const scale = .35 + random() * 1.15;
     dummy.position.set(x, terrainY(x, z) + scale * .22, z); dummy.rotation.set(random(), random() * Math.PI, random()); dummy.scale.set(scale, scale * (.45 + random() * .32), scale); dummy.updateMatrix(); rocks.setMatrixAt(i, dummy.matrix);
   }
@@ -821,7 +852,7 @@ function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number, t
   for (let i = 0; i < fernCount; i++) {
     const anchor = understoryAnchors[i % understoryAnchors.length], clustered = i < understoryAnchors.length * 5;
     let x = clustered ? anchor[0] + (random() - .5) * 7 : randomWorldX(), z = clustered ? anchor[1] + (random() - .5) * 7 : randomWorldZ();
-    while (!clustered && containsLakeWater(x, z, -1.2)) { x = randomWorldX(); z = randomWorldZ(); }
+    while ((!clustered && containsLakeWater(x, z, -1.2)) || insideSubwayStairClearance(x, z)) { x = randomWorldX(); z = randomWorldZ(); }
     const scale = .48 + random() * 1.08, y = terrainY(x, z) + scale * .5, angle = random() * Math.PI;
     for (let card = 0; card < 2; card++) { dummy.position.set(x, y, z); dummy.rotation.set(0, angle + card * Math.PI / 2, 0); dummy.scale.set(scale, scale * 1.2, 1); dummy.updateMatrix(); ferns.setMatrixAt(i * 2 + card, dummy.matrix); }
   }
@@ -838,7 +869,7 @@ function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number, t
   for (let i = 0; i < litterCount; i++) {
     let x = randomWorldX(), z = randomWorldZ();
     if (i < 280) { x = -43 + (random() - .5) * 34; z = 54 + (random() - .5) * 32; }
-    if (containsLakeWater(x, z, -.65)) { i--; continue; }
+    if (containsLakeWater(x, z, -.65) || insideSubwayStairClearance(x, z)) { i--; continue; }
     const scale = .48 + random() * 1.05;
     dummy.position.set(x, terrainY(x,z) + .035 + random() * .018, z);
     dummy.rotation.set(-Math.PI / 2 + (random() - .5) * .16, random() * Math.PI * 2, (random() - .5) * .12);
@@ -850,7 +881,7 @@ function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number, t
   for (let i = 0; i < 12; i++) {
     const log = new THREE.Mesh(new THREE.CylinderGeometry(.24 + random() * .18, .34 + random() * .2, 3 + random() * 3, 12), barkMaterial);
     let x = randomWorldX(), z = randomWorldZ();
-    while (containsLakeWater(x, z, -2)) { x = randomWorldX(); z = randomWorldZ(); }
+    while (containsLakeWater(x, z, -2) || insideSubwayStairClearance(x, z)) { x = randomWorldX(); z = randomWorldZ(); }
     log.rotation.set(Math.PI / 2 + (random() - .5) * .15, random() * Math.PI, 0); log.position.set(x, terrainY(x, z) + .3, z); log.castShadow = log.receiveShadow = true; scene.add(log);
   }
   return { trees, branchRoutes, branchNodes, canopyCorridors, canopyNetworkStats };
@@ -973,7 +1004,18 @@ function createHawk() {
 }
 
 function addSky(scene: THREE.Scene) {
-  const sky = new Sky(); sky.scale.setScalar(450); scene.add(sky);
+  const sky = new Sky();
+  // The playable park is larger than the original fixed 450 m sky dome. Once
+  // the player crossed The Lake the camera could leave that sphere, exposing a
+  // hard bright/dark hemisphere seam. Keep the atmospheric dome centered on
+  // the active camera so every streamed corner of the park shares one sky.
+  sky.scale.setScalar(760);
+  sky.frustumCulled = false;
+  sky.onBeforeRender = (_renderer, _scene, camera) => {
+    sky.position.copy(camera.position);
+    sky.updateMatrixWorld(true);
+  };
+  scene.add(sky);
   sky.material.uniforms.turbidity.value = 7.4; sky.material.uniforms.rayleigh.value = 2.05;
   sky.material.uniforms.mieCoefficient.value = .009; sky.material.uniforms.mieDirectionalG.value = .86;
   const sun = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(86), THREE.MathUtils.degToRad(224));

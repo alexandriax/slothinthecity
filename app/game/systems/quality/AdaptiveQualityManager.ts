@@ -52,7 +52,10 @@ export type RenderBudget = QualityProfile & {
 
 type QualityListener = (snapshot: QualitySnapshot) => void;
 
-const STORAGE_KEY = "slothpark-quality-mode-v1";
+// v2 changes the first-run policy from device-adaptive to authored High.
+// Players can still select Auto, Medium, or Low explicitly if their device
+// needs a lighter render budget.
+const STORAGE_KEY = "slothpark-quality-mode-v2";
 const LEVELS: QualityLevel[] = ["low", "medium", "high", "ultra"];
 
 export const QUALITY_PROFILES: Readonly<Record<QualityLevel, QualityProfile>> = {
@@ -122,12 +125,12 @@ function recommendedLevel(device: DeviceProfile): { level: QualityLevel; reason:
 }
 
 function loadMode(): QualityMode {
-  if (!isBrowser()) return "auto";
+  if (!isBrowser()) return "high";
   try {
     const stored = window.localStorage.getItem(STORAGE_KEY);
-    return qualityMode(stored) ? stored : "auto";
+    return qualityMode(stored) ? stored : "high";
   } catch {
-    return "auto";
+    return "high";
   }
 }
 

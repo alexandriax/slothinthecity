@@ -19,6 +19,7 @@ surface shells rather than the disconnected capsules used by the runtime fallbac
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -42,6 +43,8 @@ MATERIAL_NAMES = (
     "Iris",
     "Pupil",
 )
+
+HEAD_PITCH_CORRECTION_DEGREES = -10.0
 
 
 @dataclass(frozen=True)
@@ -229,12 +232,21 @@ def copy_source_object(source_name: str, name: str, collection: bpy.types.Collec
     clone.data = source.data.copy()
     clone.animation_data_clear()
     clone.name = name
-    clone.location = (0.0, 0.0, 0.0)
-    clone.rotation_euler = (0.0, 0.0, 0.0)
-    clone.scale = (1.0, 1.0, 1.0)
+    # A duplicated Blender object retains the source object's evaluated
+    # matrix until the next dependency-graph update.  Merely assigning
+    # ``location = 0`` left object_bounds() reading that stale translation,
+    # so every fitted-garment/scalp predicate was evaluated several metres
+    # away from the actual body.  Set the complete matrix synchronously; this
+    # keeps the anatomical mesh centred from the very first pipeline step.
+    clone.matrix_world = Matrix.Identity(4)
     for modifier in list(clone.modifiers):
         clone.modifiers.remove(modifier)
     collection.objects.link(clone)
+    # Force Blender to invalidate the source object's cached evaluated
+    # transform before any bounds-based topology selection runs.  Without
+    # this update matrix_world is identity while bound_box still reflects the
+    # translated source for one dependency-graph tick.
+    bpy.context.view_layer.update()
     return clone
 
 
@@ -257,6 +269,72 @@ def deform_body(obj: bpy.types.Object, archetype: Archetype) -> None:
     low, high = object_bounds(obj)
     for vertex in obj.data.vertices:
         vertex.co.z = low.z + (vertex.co.z - low.z) * archetype.stature
+    obj.data.update()
+    straighten_head_and_neck(obj)
+
+
+def smoothstep(edge0: float, edge1: float, value: float) -> float:
+    t = max(0.0, min(1.0, (value - edge0) / max(edge1 - edge0, 1e-9)))
+    return t * t * (3.0 - 2.0 * t)
+
+
+def corrected_head_point(point: Vector, low: Vector, high: Vector, rigid: bool = False) -> Vector:
+    """Return a point corrected from the source's forward-head rest sculpt."""
+    height = high.z - low.z
+    normalized_z = (point.z - low.z) / height
+    normalized_x = abs(point.x) / height
+    if rigid:
+        weight = 1.0
+    elif normalized_z <= 0.755 or normalized_x >= 0.155:
+        return point.copy()
+    else:
+        vertical = smoothstep(0.755, 0.885, normalized_z)
+        central = 1.0 - smoothstep(0.105, 0.155, normalized_x)
+        weight = vertical * central
+    if weight <= 0.0:
+        return point.copy()
+    pivot = Vector((0.0, height * 0.008, low.z + height * 0.775))
+    # The source faces -Y. A negative X rotation brings the eye line back over
+    # the sternum; the former positive angle moved the face farther forward
+    # and down, baking the screenshot's slumped neck into every exported mesh.
+    angle = math.radians(HEAD_PITCH_CORRECTION_DEGREES) * weight
+    relative = point - pivot
+    return pivot + Vector(
+        (
+            relative.x,
+            relative.y * math.cos(angle) - relative.z * math.sin(angle),
+            relative.y * math.sin(angle) + relative.z * math.cos(angle),
+        )
+    )
+
+
+def straighten_head_and_neck(body: bpy.types.Object) -> None:
+    """Correct the source bundle's pronounced forward-head sculpt.
+
+    The realistic CC0 figures are modeled with their chin and cranium pitched
+    toward the chest. That is useful as a sculpting reference, but reads as a
+    severe hunch once the figures are standing and walking in game. Rotate the
+    central neck/head anatomy about the cervicothoracic junction with a smooth
+    falloff. Shoulders and arms are intentionally excluded, preserving the
+    source silhouette and the shared skeleton's relaxed stance.
+    """
+    low, high = object_bounds(body)
+    for vertex in body.data.vertices:
+        vertex.co = corrected_head_point(vertex.co, low, high)
+    body.data.update()
+
+
+def straighten_head_detail(obj: bpy.types.Object, body: bpy.types.Object) -> None:
+    """Rigidly carry eye parts with the corrected cranium.
+
+    Eye objects are separate source meshes, so changing only the anatomical
+    body would leave sclera, iris and pupils at the old hunched pose.
+    """
+    low, high = object_bounds(body)
+    corrected = corrected_head_point(obj.location, low, high, rigid=True)
+    rotation = Matrix.Rotation(math.radians(HEAD_PITCH_CORRECTION_DEGREES), 4, "X")
+    obj.location = corrected
+    obj.rotation_euler.rotate(rotation.to_euler())
 
 
 def assign_material(obj: bpy.types.Object, material: bpy.types.Material) -> None:
@@ -275,6 +353,8 @@ def make_surface_shell(
     predicate: Callable[[Vector, Vector, Vector], bool],
     thickness: float,
     collection: bpy.types.Collection,
+    keep_largest_component: bool = False,
+    strict_boundary: bool = False,
 ) -> bpy.types.Object:
     low, high = object_bounds(body)
     shell = body.copy()
@@ -291,10 +371,43 @@ def make_surface_shell(
     delete_faces = []
     for face in bm.faces:
         center = sum((v.co for v in face.verts), Vector()) / len(face.verts)
-        if not predicate(center, low, high):
+        selected = (
+            all(predicate(vertex.co, low, high) for vertex in face.verts)
+            if strict_boundary
+            else predicate(center, low, high)
+        )
+        if not selected:
             delete_faces.append(face)
     bmesh.ops.delete(bm, geom=delete_faces, context="FACES")
     bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
+    if keep_largest_component and bm.faces:
+        remaining = set(bm.faces)
+        components = []
+        while remaining:
+            seed = remaining.pop()
+            component = {seed}
+            frontier = [seed]
+            while frontier:
+                face = frontier.pop()
+                for edge in face.edges:
+                    for linked in edge.link_faces:
+                        if linked in remaining:
+                            remaining.remove(linked)
+                            component.add(linked)
+                            frontier.append(linked)
+            components.append(component)
+        crown_height = low.z + (high.z - low.z) * 0.955
+        crown_components = [
+            component
+            for component in components
+            if max(vertex.co.z for face in component for vertex in face.verts) >= crown_height
+        ]
+        # A face recess can satisfy the coordinate predicate but is never the
+        # connected crown surface. Keep one component so eye/mouth islands
+        # cannot survive as dark facial remnants.
+        kept = [max(crown_components, key=len)] if crown_components else [max(components, key=len)]
+        bmesh.ops.delete(bm, geom=[face for component in components if component not in kept for face in component], context="FACES")
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
     bm.to_mesh(mesh)
     bm.free()
     mesh.update()
@@ -309,6 +422,80 @@ def make_surface_shell(
         bevel.segments = 2
     shell["sloth_city_surface_shell"] = True
     return shell
+
+
+def loosen_upper_garment(shell: bpy.types.Object, body: bpy.types.Object) -> None:
+    """Give the shirt body soft ease and a relaxed, non-anatomical hem."""
+    low, high = object_bounds(body)
+    height = high.z - low.z
+    bm = bmesh.new()
+    bm.from_mesh(shell.data)
+    bm.verts.ensure_lookup_table()
+
+    # Grow the torso panel upward from its finished hem instead of selecting
+    # vertices with a lateral cutoff. A coordinate cutoff can catch the inner
+    # forearm on some bodies and pull only part of a sleeve out of alignment.
+    # The hem is the central, lowest boundary loop; following non-descending
+    # edges from it remains on the torso and cannot travel back down an arm.
+    remaining_boundary_edges = {edge for edge in bm.edges if len(edge.link_faces) == 1}
+    boundary_components: list[set[bmesh.types.BMVert]] = []
+    while remaining_boundary_edges:
+        seed = remaining_boundary_edges.pop()
+        component_edges = {seed}
+        frontier = [seed]
+        while frontier:
+            edge = frontier.pop()
+            for vertex in edge.verts:
+                for linked in vertex.link_edges:
+                    if linked in remaining_boundary_edges and len(linked.link_faces) == 1:
+                        remaining_boundary_edges.remove(linked)
+                        component_edges.add(linked)
+                        frontier.append(linked)
+        boundary_components.append({vertex for edge in component_edges for vertex in edge.verts})
+    if not boundary_components:
+        bm.free()
+        return
+    hem = min(
+        boundary_components,
+        key=lambda vertices: sum(vertex.co.z for vertex in vertices) / len(vertices),
+    )
+    shirt_torso = set(hem)
+    frontier_vertices = list(hem)
+    while frontier_vertices:
+        vertex = frontier_vertices.pop()
+        for edge in vertex.link_edges:
+            linked = edge.other_vert(vertex)
+            normalized_z = (linked.co.z - low.z) / height
+            if linked in shirt_torso or normalized_z > 0.825:
+                continue
+            if linked.co.z < vertex.co.z - height * 0.006:
+                continue
+            shirt_torso.add(linked)
+            frontier_vertices.append(linked)
+
+    # Remove the scan's abdominal landmarks from the garment surface while
+    # preserving its vertical drape and the already-authored hem height.
+    bmesh.ops.smooth_vert(
+        bm,
+        verts=list(shirt_torso),
+        factor=0.42,
+        use_axis_x=True,
+        use_axis_y=True,
+        use_axis_z=False,
+    )
+    for vertex in shirt_torso:
+        normalized_z = (vertex.co.z - low.z) / height
+        # Ease begins high on the torso and increases gradually toward the
+        # hem. A real work shirt hangs clear of the stomach without becoming
+        # a rigid trapezoid or widening abruptly at the ribs.
+        hem_ease = 1.0 - smoothstep(0.58, 0.82, normalized_z)
+        vertex.co.x *= 1.0 + 0.085 * hem_ease
+        if abs(vertex.co.y) > height * 0.003:
+            vertex.co.y += math.copysign(height * 0.014 * hem_ease, vertex.co.y)
+    bm.to_mesh(shell.data)
+    bm.free()
+    shell.data.update()
+    shell["sloth_city_loose_shirt_ease"] = True
 
 
 def level_surface_boundary(
@@ -338,12 +525,285 @@ def level_surface_boundary(
     shell.data.update()
 
 
-def torso_predicate(center: Vector, low: Vector, high: Vector) -> bool:
+def shape_crew_neckline(shell: bpy.types.Object, body: bpy.types.Object) -> None:
+    """Turn the source-triangle cut into one continuous crew-neck edge.
+
+    The upper shell is selected broadly for shoulder coverage. Its central top
+    boundary is projected onto a shared topology-safe curve that continues
+    through both shoulders. This keeps the collar part of the garment instead
+    of adding detached tubes or exposing a sawtooth/frayed source-face cut.
+    """
+    low, high = object_bounds(body)
+    height = high.z - low.z
+    bm = bmesh.new()
+    bm.from_mesh(shell.data)
+    bm.verts.ensure_lookup_table()
+    for vertex in bm.verts:
+        if not any(len(edge.link_faces) == 1 for edge in vertex.link_edges):
+            continue
+        normalized_z = (vertex.co.z - low.z) / height
+        normalized_x = abs(vertex.co.x) / height
+        # Include the complete upper garment boundary across both shoulders.
+        # Wrist and waist openings remain far below this band and cannot be
+        # affected. Stopping at the old .195h threshold left the lateral
+        # shoulder triangles at alternating heights, which read as fraying.
+        if normalized_z < 0.70 or normalized_x > 0.340:
+            continue
+        # The female source edge does not traverse X monotonically; an X-based
+        # curve reconnects its alternating scan triangles as a visible W.
+        # One level, face-safe collar plane is topology-stable on both bodies.
+        target = 0.840
+        vertex.co.z = low.z + height * target
+    bm.to_mesh(shell.data)
+    bm.free()
+    shell.data.update()
+
+
+def shape_sleeve_cuffs(shell: bpy.types.Object, body: bpy.types.Object, source_kind: str) -> None:
+    """Project both raw sleeve cuts onto clean transverse cuff planes."""
+    low, high = object_bounds(body)
+    height = high.z - low.z
+    shoulder_x = 0.117 if source_kind == "female" else 0.127
+    wrist_x = 0.223 if source_kind == "female" else 0.234
+    shoulder_z, wrist_z = 0.805, 0.515
+    dx, dz = wrist_x - shoulder_x, wrist_z - shoulder_z
+    arm_length_squared = dx * dx + dz * dz
+    cuff_progress = 0.88
+    bm = bmesh.new()
+    bm.from_mesh(shell.data)
+    bm.verts.ensure_lookup_table()
+    remaining_edges = {edge for edge in bm.edges if len(edge.link_faces) == 1}
+    boundary_components = []
+    while remaining_edges:
+        seed = remaining_edges.pop()
+        component_edges = {seed}
+        frontier = [seed]
+        while frontier:
+            edge = frontier.pop()
+            for vertex in edge.verts:
+                for linked in vertex.link_edges:
+                    if linked in remaining_edges and len(linked.link_faces) == 1:
+                        remaining_edges.remove(linked)
+                        component_edges.add(linked)
+                        frontier.append(linked)
+        boundary_components.append({vertex for edge in component_edges for vertex in edge.verts})
+    for vertices in boundary_components:
+        mean_x = sum(vertex.co.x for vertex in vertices) / len(vertices)
+        mean_z = sum(vertex.co.z for vertex in vertices) / len(vertices)
+        normalized_mean_z = (mean_z - low.z) / height
+        # Collar and waist loops straddle the centre line. Each cuff is a
+        # separate lateral loop centered around the lower forearm.
+        if abs(mean_x) / height < 0.14 or not 0.42 < normalized_mean_z < 0.72:
+            continue
+        side = -1 if mean_x < 0.0 else 1
+        for vertex in vertices:
+            normalized_z = (vertex.co.z - low.z) / height
+            normalized_x = abs(vertex.co.x) / height
+            progress = (
+                (normalized_x - shoulder_x) * dx
+                + (normalized_z - shoulder_z) * dz
+            ) / arm_length_squared
+            adjustment = cuff_progress - progress
+            vertex.co.x = side * (normalized_x + adjustment * dx) * height
+            vertex.co.z = low.z + (normalized_z + adjustment * dz) * height
+    bm.to_mesh(shell.data)
+    bm.free()
+    shell.data.update()
+
+
+def finish_upper_garment_openings(
+    shell: bpy.types.Object,
+    body: bpy.types.Object,
+    source_kind: str,
+) -> None:
+    """Bisect exact collar, hem, and cuff seams before solidify/bevel."""
+    low, high = object_bounds(body)
+    height = high.z - low.z
+    bm = bmesh.new()
+    bm.from_mesh(shell.data)
+
+    all_geometry = list(bm.verts) + list(bm.edges) + list(bm.faces)
+    bmesh.ops.bisect_plane(
+        bm,
+        geom=all_geometry,
+        plane_co=(0.0, 0.0, low.z + height * 0.515),
+        plane_no=(0.0, 0.0, 1.0),
+        clear_inner=True,
+        clear_outer=False,
+    )
+    all_geometry = list(bm.verts) + list(bm.edges) + list(bm.faces)
+    bmesh.ops.bisect_plane(
+        bm,
+        geom=all_geometry,
+        plane_co=(0.0, 0.0, low.z + height * 0.820),
+        plane_no=(0.0, 0.0, 1.0),
+        clear_inner=False,
+        clear_outer=True,
+    )
+
+    shoulder_x = 0.117 if source_kind == "female" else 0.127
+    wrist_x = 0.223 if source_kind == "female" else 0.234
+    shoulder_z, wrist_z = 0.805, 0.515
+    dx, dz = wrist_x - shoulder_x, wrist_z - shoulder_z
+    cuff_progress = 0.88
+    for side in (-1, 1):
+        sleeve_faces = []
+        for face in bm.faces:
+            center = sum((vertex.co for vertex in face.verts), Vector()) / len(face.verts)
+            normalized_x = side * center.x / height
+            normalized_z = (center.z - low.z) / height
+            if normalized_x > 0.18 and normalized_z > 0.49:
+                sleeve_faces.append(face)
+        sleeve_edges = {edge for face in sleeve_faces for edge in face.edges}
+        sleeve_vertices = {vertex for face in sleeve_faces for vertex in face.verts}
+        bmesh.ops.bisect_plane(
+            bm,
+            geom=list(sleeve_vertices) + list(sleeve_edges) + sleeve_faces,
+            plane_co=(
+                side * (shoulder_x + dx * cuff_progress) * height,
+                0.0,
+                low.z + (shoulder_z + dz * cuff_progress) * height,
+            ),
+            plane_no=(side * dx, 0.0, dz),
+            clear_inner=False,
+            clear_outer=True,
+        )
+
+    bmesh.ops.delete(bm, geom=[vertex for vertex in bm.verts if not vertex.link_faces], context="VERTS")
+    bm.to_mesh(shell.data)
+    bm.free()
+    shell.data.update()
+
+
+def make_authored_hair_cap(
+    body: bpy.types.Object,
+    style: str,
+    material: bpy.types.Material,
+    collection: bpy.types.Collection,
+) -> bpy.types.Object:
+    """Build one fitted scalp surface with an explicit face-safe hairline."""
+    # ``Object.bound_box`` is not synchronously refreshed after the source
+    # head/neck correction. Read the final anatomical vertices directly or a
+    # compact female head can receive the pre-correction bounds and put the
+    # hairline through the eyes while the male shell floats over the crown.
+    body_points = [body.matrix_world @ vertex.co for vertex in body.data.vertices]
+    low = Vector((
+        min(point.x for point in body_points),
+        min(point.y for point in body_points),
+        min(point.z for point in body_points),
+    ))
+    high = Vector((
+        max(point.x for point in body_points),
+        max(point.y for point in body_points),
+        max(point.z for point in body_points),
+    ))
+    height = high.z - low.z
+    back_height = {
+        "short": 0.900,
+        "curly": 0.885,
+        "bob": 0.845,
+        "ponytail": 0.870,
+    }[style]
+    front_height = 0.955
+
+    def scalp_predicate(center: Vector, _low: Vector, _high: Vector) -> bool:
+        z = (center.z - low.z) / height
+        x = abs(center.x) / height
+        y = center.y / height
+        # The figures face -Y. Raise the threshold sharply toward the face so
+        # recessed brows/eyes/mouth never qualify, while the same connected
+        # surface can descend naturally over the temples and nape.
+        face_weight = 1.0 - smoothstep(-0.030, 0.018, y)
+        side_weight = smoothstep(0.045, 0.105, x)
+        threshold = back_height + (front_height - back_height) * face_weight
+        threshold -= side_weight * (0.010 if style == "short" else 0.025)
+        return x < 0.130 and z > threshold
+
+    hair = make_surface_shell(
+        body,
+        "HairCap",
+        material,
+        scalp_predicate,
+        0.0,
+        collection,
+        keep_largest_component=True,
+    )
+    # Offset the fitted source surface a few millimetres along its own normals.
+    # This prevents z-fighting without adding a solidified helmet rim.
+    for vertex in hair.data.vertices:
+        vertex.co += vertex.normal * 0.0045
+    hair.data.update()
+    for polygon in hair.data.polygons:
+        polygon.use_smooth = True
+    hair["sloth_city_authored_hair_shell"] = style
+    return hair
+
+
+def torso_predicate(
+    center: Vector,
+    low: Vector,
+    high: Vector,
+    top_height: float = 0.835,
+    shoulder_x: float = 0.127,
+    wrist_x: float = 0.234,
+) -> bool:
     h = high.z - low.z
     z = (center.z - low.z) / h
     x = abs(center.x) / h
-    # Torso and upper arms; ends above the wrist to preserve anatomical hands.
-    return 0.48 < z < 0.815 and (x < 0.185 or (z > 0.56 and x < 0.275))
+    # A continuous crew-neck torso plus arm-aligned sleeves. Cutting sleeves
+    # at a horizontal Z threshold left the compact female arm with long,
+    # solidified triangle strips. Progress along the shoulder-to-wrist axis
+    # creates a complete tubular sleeve and one transverse cuff opening.
+    torso = x < 0.19 and 0.46 < z < top_height
+    shoulder_z, wrist_z = 0.805, 0.515
+    dx, dz = wrist_x - shoulder_x, wrist_z - shoulder_z
+    progress = ((x - shoulder_x) * dx + (z - shoulder_z) * dz) / (dx * dx + dz * dz)
+    sleeves = 0.145 < x < 0.29 and -0.22 < progress < 1.00
+    return torso or sleeves
+
+
+def torso_predicate_for(source_kind: str) -> Callable[[Vector, Vector, Vector], bool]:
+    # Keep one disposable face ring beyond every finished seam. Exact bmesh
+    # bisection below trims that ring before solidify, so no scan teeth remain.
+    top_height = 0.865
+    shoulder_x = 0.117 if source_kind == "female" else 0.127
+    wrist_x = 0.223 if source_kind == "female" else 0.234
+    return lambda center, low, high: torso_predicate(
+        center, low, high, top_height, shoulder_x, wrist_x
+    )
+
+
+def finished_upper_predicate_for(source_kind: str) -> Callable[[Vector, Vector, Vector], bool]:
+    """Match body recessing to the post-bisect shirt, not its trim allowance."""
+    shoulder_x = 0.117 if source_kind == "female" else 0.127
+    wrist_x = 0.223 if source_kind == "female" else 0.234
+
+    def finished(center: Vector, low: Vector, high: Vector) -> bool:
+        height = high.z - low.z
+        z = (center.z - low.z) / height
+        x = abs(center.x) / height
+        torso = x < 0.19 and 0.515 < z < 0.82
+        shoulder_z, wrist_z = 0.805, 0.515
+        dx, dz = wrist_x - shoulder_x, wrist_z - shoulder_z
+        progress = ((x - shoulder_x) * dx + (z - shoulder_z) * dz) / (dx * dx + dz * dz)
+        sleeves = 0.145 < x < 0.29 and -0.22 < progress < 0.88
+        return torso or sleeves
+
+    return finished
+
+
+def neckline_boundary(point: Vector, low: Vector, high: Vector) -> bool:
+    """Select only the central top edge of the upper garment.
+
+    Wrist openings follow the arm anatomy and must not be flattened in world
+    Z. Keeping this selector central and high removes scan-triangle teeth at
+    the neckline without recreating the stretched torso spikes seen in the
+    earlier broad boundary pass.
+    """
+    h = high.z - low.z
+    z = (point.z - low.z) / h
+    x = abs(point.x) / h
+    return z > 0.79 and x < 0.195
 
 
 def pants_predicate(center: Vector, low: Vector, high: Vector) -> bool:
@@ -358,27 +818,6 @@ def shoe_predicate(center: Vector, low: Vector, high: Vector) -> bool:
     z = (center.z - low.z) / h
     x = abs(center.x) / h
     return z < 0.105 and x < 0.14
-
-
-def hair_predicate(style: str) -> Callable[[Vector, Vector, Vector], bool]:
-    def predicate(center: Vector, low: Vector, high: Vector) -> bool:
-        h = high.z - low.z
-        z = (center.z - low.z) / h
-        x = abs(center.x) / h
-        y = center.y / h
-        # A single contiguous scalp selection is intentionally preferred over
-        # broad height-only rules. The bundled figures face -Y, so a longer
-        # style may continue down the back of the skull but must never select
-        # forehead, eye, cheek or mouth polygons. Those facial islands were
-        # the dark "mask" remnants visible on the earlier female rigs.
-        long_style = style in {"bob", "ponytail"}
-        # Height alone is not enough: on the more compact female head the
-        # brow, eye sockets and upper cheeks also sit above 0.94. Keep the
-        # crown on/behind the hairline in depth as well.
-        crown = z > 0.940 and y > -0.040
-        back_drop = long_style and z > 0.895 and y > -0.004
-        return x < 0.125 and (crown or back_drop)
-    return predicate
 
 
 def recess_body_under_shells(
@@ -531,8 +970,13 @@ def make_armature(body: bpy.types.Object, collection: bpy.types.Collection, sour
     bone("Hips", (0, 0, z0 + h * 0.475), (0, 0, z0 + h * 0.535))
     bone("Spine", (0, 0, z0 + h * 0.535), (0, 0, z0 + h * 0.650), "Hips", True)
     bone("Chest", (0, 0, z0 + h * 0.650), (0, 0, z0 + h * 0.775), "Spine", True)
-    bone("Neck", (0, 0, z0 + h * 0.815), (0, 0, z0 + h * 0.855), "Chest")
-    bone("Head", (0, 0, z0 + h * 0.855), (0, 0, z0 + h * 0.985), "Neck", True)
+    # Keep the bind chain upright. The mesh correction above changes anatomy;
+    # applying it to the rig as well reintroduced a pitched neck rest pose.
+    neck_head = Vector((0, 0, z0 + h * 0.815))
+    neck_tail = Vector((0, 0, z0 + h * 0.855))
+    head_tail = Vector((0, 0, z0 + h * 0.985))
+    bone("Neck", neck_head, neck_tail, "Chest")
+    bone("Head", neck_tail, head_tail, "Neck", True)
 
     landmarks = {
         "male": {
@@ -587,6 +1031,26 @@ def skin_object(obj: bpy.types.Object, rig: bpy.types.Object) -> None:
     bone_segments = {bone.name: (rig.matrix_world @ bone.head_local, rig.matrix_world @ bone.tail_local) for bone in bones}
     for vertex in obj.data.vertices:
         point = obj.matrix_world @ vertex.co
+        # Fingers, toes and the cranium are coherent anatomical volumes, not
+        # flexible ropes. Bind them rigidly to their terminal bone so nearby
+        # forearm/leg/head influences cannot stretch individual digits or pull
+        # facial vertices during a walk cycle.
+        rigid_thresholds = {
+            "Hand.L": 0.075, "Hand.R": 0.075,
+            "Foot.L": 0.12, "Foot.R": 0.12,
+            "Head": 0.16,
+        }
+        rigid = min(
+            (
+                (name, point_segment_distance(point, *bone_segments[name]))
+                for name in rigid_thresholds
+                if name in bone_segments
+            ),
+            key=lambda item: item[1],
+        )
+        if rigid[1] < rigid_thresholds[rigid[0]]:
+            groups[rigid[0]].add([vertex.index], 1.0, "REPLACE")
+            continue
         distances = sorted(
             ((name, point_segment_distance(point, start, end)) for name, (start, end) in bone_segments.items()),
             key=lambda item: item[1],
@@ -602,25 +1066,171 @@ def skin_object(obj: bpy.types.Object, rig: bpy.types.Object) -> None:
     obj.matrix_parent_inverse = rig.matrix_world.inverted()
 
 
-def add_idle_action(rig: bpy.types.Object) -> None:
+def transfer_skin_object(obj: bpy.types.Object, source: bpy.types.Object, rig: bpy.types.Object) -> None:
+    """Copy the anatomical body's weights onto fitted surface meshes.
+
+    Recomputing weights independently for an outward-offset clothing shell can
+    choose different nearby bones along shoulders, elbows and hips. The two
+    surfaces then separate in motion and read as torn clothes or missing limbs.
+    Nearest-face interpolation keeps every garment vertex attached to the exact
+    deformation field of the contiguous body underneath it.
+    """
+    if obj.type != "MESH" or not obj.data.vertices:
+        return
+    for group in list(obj.vertex_groups):
+        obj.vertex_groups.remove(group)
+    for group in source.vertex_groups:
+        obj.vertex_groups.new(name=group.name)
+    transfer = obj.modifiers.new("Anatomical skin-weight transfer", "DATA_TRANSFER")
+    transfer.object = source
+    transfer.use_vert_data = True
+    transfer.data_types_verts = {"VGROUP_WEIGHTS"}
+    transfer.vert_mapping = "POLYINTERP_NEAREST"
+    transfer.layers_vgroup_select_src = "ALL"
+    transfer.layers_vgroup_select_dst = "NAME"
+    select_only([obj])
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.modifier_apply(modifier=transfer.name)
+    modifier = obj.modifiers.new("HumanRig", "ARMATURE")
+    modifier.object = rig
+    obj.parent = rig
+    obj.matrix_parent_inverse = rig.matrix_world.inverted()
+
+
+def bind_rigid_to_head(obj: bpy.types.Object, rig: bpy.types.Object) -> None:
+    """Keep the fitted scalp shell on the cranium as one rigid volume."""
+    for group in list(obj.vertex_groups):
+        obj.vertex_groups.remove(group)
+    head = obj.vertex_groups.new(name="Head")
+    head.add([vertex.index for vertex in obj.data.vertices], 1.0, "REPLACE")
+    modifier = obj.modifiers.new("HumanRig", "ARMATURE")
+    modifier.object = rig
+    obj.parent = rig
+    obj.matrix_parent_inverse = rig.matrix_world.inverted()
+
+
+def reset_pose(rig: bpy.types.Object) -> None:
+    for pose_bone in rig.pose.bones:
+        pose_bone.location = (0.0, 0.0, 0.0)
+        pose_bone.rotation_mode = "XYZ"
+        pose_bone.rotation_euler = (0.0, 0.0, 0.0)
+        pose_bone.scale = (1.0, 1.0, 1.0)
+
+
+def add_idle_action(rig: bpy.types.Object) -> bpy.types.Action:
     bpy.context.view_layer.objects.active = rig
+    reset_pose(rig)
     action = bpy.data.actions.new("HumanIdle")
     rig.animation_data_create()
     rig.animation_data.action = action
     for frame, breath in ((1, 0.0), (32, 0.010), (64, 0.0)):
+        hips = rig.pose.bones.get("Hips")
         chest = rig.pose.bones.get("Chest")
-        head = rig.pose.bones.get("Head")
+        if hips:
+            # Keep the root represented in the idle clip without exporting a
+            # zero-valued root rotation. glTF's coordinate conversion can
+            # interpret that rotation relative to the armature basis and flip
+            # an otherwise upright character by 180 degrees in Three.js.
+            hips.location = (0.0, 0.0, 0.0)
+            hips.keyframe_insert("location", frame=frame, group="HumanIdle")
         if chest:
             chest.scale = (1.0 + breath * 0.35, 1.0 + breath * 0.35, 1.0 + breath)
             chest.keyframe_insert("scale", frame=frame, group="HumanIdle")
-        if head:
-            head.rotation_mode = "XYZ"
-            head.rotation_euler.z = math.radians(0.8) * math.sin(frame / 64.0 * math.pi * 2.0)
-            head.keyframe_insert("rotation_euler", frame=frame, group="HumanIdle")
+        # Deliberately leave the posture chain on the corrected authored bind.
+        # Blender's glTF basis conversion turns apparently zero-valued local
+        # rotations on this imported armature into ~57-degree X rotations per
+        # parent. Keying Spine/Chest/Neck/Head therefore compounded into the
+        # familiar hunched pose (and could invert the whole body). Idle only
+        # needs a root translation channel plus a subtle breathing scale; the
+        # runtime mixer restores all unkeyed bones to the upright bind pose.
     for fcurve in action.fcurves:
         for keyframe in fcurve.keyframe_points:
             keyframe.interpolation = "SINE"
     action.use_fake_user = True
+    return action
+
+
+def add_walk_action(rig: bpy.types.Object) -> bpy.types.Action:
+    """Author a compact, looping walk with restrained, loop-safe arm motion.
+
+    Automatic Bezier handles can overshoot between opposing limb keys, most
+    visibly when the final pose wraps to frame one. That reads as an occasional
+    violent arm flick in the browser even though the keyed angles themselves
+    are modest. Linear keys keep the cadence deterministic across Blender/glTF
+    samplers; the deliberately smaller arm arc suits a crowded game world.
+    """
+    bpy.context.view_layer.objects.active = rig
+    reset_pose(rig)
+    action = bpy.data.actions.new("HumanWalk")
+    rig.animation_data_create()
+    rig.animation_data.action = action
+    keyframes = (
+        (1, 0.0, 1.0),
+        (7, 1.0, 0.0),
+        (13, 0.0, -1.0),
+        (19, 1.0, 0.0),
+        (25, 0.0, 1.0),
+    )
+    hips = rig.pose.bones.get("Hips")
+    chest = rig.pose.bones.get("Chest")
+    for frame, bounce, stride in keyframes:
+        if hips:
+            hips.location.z = 0.011 * bounce
+            hips.rotation_euler.z = math.radians(1.6) * stride
+            hips.keyframe_insert("location", frame=frame, group="HumanWalk")
+            hips.keyframe_insert("rotation_euler", frame=frame, group="HumanWalk")
+        if chest:
+            chest.rotation_euler.z = math.radians(-2.2) * stride
+            chest.keyframe_insert("rotation_euler", frame=frame, group="HumanWalk")
+        for bone_name in ("Hips", "Spine", "Neck", "Head"):
+            posture = rig.pose.bones.get(bone_name)
+            if posture:
+                posture.rotation_mode = "XYZ"
+                posture.rotation_euler.x = 0.0
+                posture.rotation_euler.y = 0.0
+                posture.rotation_euler.z = 0.0
+                posture.keyframe_insert("rotation_euler", frame=frame, group="HumanWalk")
+        for side, direction in (("L", 1.0), ("R", -1.0)):
+            upper_leg = rig.pose.bones.get(f"UpperLeg.{side}")
+            lower_leg = rig.pose.bones.get(f"LowerLeg.{side}")
+            upper_arm = rig.pose.bones.get(f"UpperArm.{side}")
+            lower_arm = rig.pose.bones.get(f"LowerArm.{side}")
+            phase = stride * direction
+            if upper_leg:
+                upper_leg.rotation_euler.x = math.radians(23.0) * phase
+                upper_leg.keyframe_insert("rotation_euler", frame=frame, group="HumanWalk")
+            if lower_leg:
+                # Flex the trailing knee most at mid-stride without hyperextension.
+                lower_leg.rotation_euler.x = math.radians(-13.0) * max(0.0, -phase) - math.radians(5.0) * bounce
+                lower_leg.keyframe_insert("rotation_euler", frame=frame, group="HumanWalk")
+            if upper_arm:
+                upper_arm.rotation_euler.x = math.radians(-9.5) * phase
+                upper_arm.keyframe_insert("rotation_euler", frame=frame, group="HumanWalk")
+            if lower_arm:
+                lower_arm.rotation_euler.x = math.radians(-4.0) * (0.25 + max(0.0, phase))
+                lower_arm.keyframe_insert("rotation_euler", frame=frame, group="HumanWalk")
+    for fcurve in action.fcurves:
+        for keyframe in fcurve.keyframe_points:
+            keyframe.interpolation = "LINEAR"
+    action.use_fake_user = True
+    reset_pose(rig)
+    return action
+
+
+def install_animation_tracks(rig: bpy.types.Object, actions: Sequence[bpy.types.Action]) -> None:
+    """Expose each authored action as its own glTF clip through NLA tracks."""
+    rig.animation_data_create()
+    rig.animation_data.action = None
+    for existing in list(rig.animation_data.nla_tracks):
+        rig.animation_data.nla_tracks.remove(existing)
+    for action in actions:
+        track = rig.animation_data.nla_tracks.new()
+        track.name = action.name
+        strip = track.strips.new(action.name, int(action.frame_range[0]), action)
+        strip.action_frame_start = action.frame_range[0]
+        strip.action_frame_end = action.frame_range[1]
+        strip.use_auto_blend = False
+    reset_pose(rig)
 
 
 def triangulate_and_smooth(obj: bpy.types.Object) -> None:
@@ -676,7 +1286,10 @@ def duplicate_for_lod(objects: Sequence[bpy.types.Object], rig: bpy.types.Object
         if len(obj.data.polygons) > 320:
             decimate = obj.modifiers.new("Mobile decimation", "DECIMATE")
             decimate.decimate_type = "COLLAPSE"
-            decimate.ratio = ratio
+            material_name = obj.data.materials[0].name if obj.data.materials and obj.data.materials[0] else ""
+            # Preserve the authored hairline and crown silhouette on mobile;
+            # generic 72% collapse reduced female hair to fewer than 100 tris.
+            decimate.ratio = max(ratio, 0.58) if material_name == "Hair" else ratio
             decimate.use_collapse_triangulate = True
             decimate.use_symmetry = True
             apply_modifiers(obj)
@@ -705,7 +1318,7 @@ def gltf_export(filepath: Path, objects: Sequence[bpy.types.Object]) -> None:
         export_animations=True,
         export_frame_range=True,
         export_force_sampling=False,
-        export_nla_strips=False,
+        export_nla_strips=True,
         export_optimize_animation_size=True,
         export_draco_mesh_compression_enable=True,
         export_draco_mesh_compression_level=6,
@@ -722,6 +1335,14 @@ def gltf_export(filepath: Path, objects: Sequence[bpy.types.Object]) -> None:
         for optional in ("export_force_sampling", "export_optimize_animation_size", "export_nla_strips"):
             kwargs.pop(optional, None)
         bpy.ops.export_scene.gltf(**kwargs)
+
+
+def file_sha256(filepath: Path) -> str:
+    digest = hashlib.sha256()
+    with filepath.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def render_preview(
@@ -816,36 +1437,37 @@ def build_archetype(
 
     # Extra upper-shell clearance keeps modeled anatomical landmarks from
     # z-fighting through fitted cloth at close range without inflating limbs.
-    upper = make_surface_shell(body, "UpperGarment", materials["ClothUpper"], torso_predicate, 0.012, collection)
-    lower = make_surface_shell(body, "LowerGarment", materials["ClothLower"], pants_predicate, 0.008, collection)
+    upper_predicate = torso_predicate_for(archetype.source)
+    finished_upper_predicate = finished_upper_predicate_for(archetype.source)
+    upper = make_surface_shell(
+        body,
+        "UpperGarment",
+        materials["ClothUpper"],
+        upper_predicate,
+        0.016,
+        collection,
+        keep_largest_component=True,
+    )
+    lower = make_surface_shell(body, "LowerGarment", materials["ClothLower"], pants_predicate, 0.011, collection)
     shoes = make_surface_shell(body, "Shoes", materials["Shoe"], shoe_predicate, 0.010, collection)
-    # Hair is an exact fitted scalp surface rather than an inflated primitive.
-    # The underlying fully covered body vertices are recessed below, preserving
-    # a continuous silhouette with no helmet rim or detached style pieces.
-    hair = make_surface_shell(body, "HairCap", materials["Hair"], hair_predicate(archetype.hair), 0.0, collection)
+    hair = make_authored_hair_cap(body, archetype.hair, materials["Hair"], collection)
 
-    level_surface_boundary(
-        upper,
-        body,
-        lambda point, low, high: (point.z - low.z) / (high.z - low.z) > 0.70
-        and abs(point.x) / (high.z - low.z) < 0.19,
-        0.805,
-    )
-    level_surface_boundary(
-        hair,
-        body,
-        lambda point, low, high: 0.88 < (point.z - low.z) / (high.z - low.z) < 0.972,
-        0.948,
-    )
-    for obj in (upper, lower, shoes, hair):
+    # Finish every visible shirt opening after selecting the fitted anatomical
+    # surface. Raw triangle thresholds otherwise read as frayed cloth at the
+    # neckline, lower hem, and sleeve cuffs in close gameplay framing.
+    finish_upper_garment_openings(upper, body, archetype.source)
+    loosen_upper_garment(upper, body)
+    for obj in (upper, lower, shoes):
         apply_modifiers(obj)
     recess_body_under_shells(
         body,
-        (torso_predicate, pants_predicate, shoe_predicate, hair_predicate(archetype.hair)),
-        clearance=0.014,
+        (finished_upper_predicate, pants_predicate, shoe_predicate),
+        clearance=0.018,
     )
 
-    add_eye_details(archetype.source, source_location, archetype, materials, collection)
+    eye_details = add_eye_details(archetype.source, source_location, archetype, materials, collection)
+    for detail in eye_details:
+        straighten_head_detail(detail, body)
     # The source head already contains continuous eyelids, brows, nose and
     # modeled lips. Do not layer the legacy curve-tube mouth/brow primitives
     # over that anatomy; those were the visible browser "squigglies".
@@ -861,10 +1483,18 @@ def build_archetype(
         # after the armature was added baked the bind pose and silently stripped
         # JOINTS_0/WEIGHTS_0 from the exported GLB.
         triangulate_and_smooth(obj)
-        skin_object(obj, rig)
+    skin_mesh = next(obj for obj in meshes if obj.name == "Skin")
+    skin_object(skin_mesh, rig)
+    for obj in meshes:
+        if obj is not skin_mesh:
+            if obj.name == "Hair":
+                bind_rigid_to_head(obj, rig)
+            else:
+                transfer_skin_object(obj, skin_mesh, rig)
         obj["sloth_city_authored_human"] = True
         obj["archetype"] = archetype.slug
-    add_idle_action(rig)
+    actions = (add_idle_action(rig), add_walk_action(rig))
+    install_animation_tracks(rig, actions)
 
     lod0_path = output_dir / f"{archetype.slug}-lod0.glb"
     gltf_export(lod0_path, meshes + [rig])
@@ -884,8 +1514,8 @@ def build_archetype(
         "id": archetype.slug,
         "source": archetype.source,
         "license": "CC0-1.0",
-        "lod0": {**mesh_stats(meshes), "bytes": lod0_path.stat().st_size, "file": lod0_path.name},
-        "lod2": {**mesh_stats(lod2_meshes), "bytes": lod2_path.stat().st_size, "file": lod2_path.name},
+        "lod0": {**mesh_stats(meshes), "bytes": lod0_path.stat().st_size, "file": lod0_path.name, "sha256": file_sha256(lod0_path)},
+        "lod2": {**mesh_stats(lod2_meshes), "bytes": lod2_path.stat().st_size, "file": lod2_path.name, "sha256": file_sha256(lod2_path)},
     }
     print("BUILT", json.dumps(stats, sort_keys=True))
 
@@ -893,6 +1523,11 @@ def build_archetype(
     for obj in list(collection.objects):
         bpy.data.objects.remove(obj, do_unlink=True)
     bpy.data.collections.remove(collection)
+    # Prevent animation datablocks from accumulating suffixed copies between
+    # archetypes. Every GLB must expose one unambiguous HumanIdle/HumanWalk pair.
+    for action in actions:
+        action.use_fake_user = False
+        bpy.data.actions.remove(action)
     return stats
 
 
@@ -921,9 +1556,13 @@ def main() -> None:
         "generator": "tools/character-pipeline/build_humans.py",
         "source": {
             "name": "Blender Studio Human Base Meshes bundle v1.0.0",
+            "publisher": "Blender Studio",
             "url": "https://download.blender.org/demo/bundles/bundles-3.6/human-base-meshes-bundle-v1.0.0.zip",
             "license": "CC0-1.0",
             "sha256": "46a912c0524072ac3b78c35d5d2471df7b8df102394a050ca8cd7184e3393648",
+            "retrieved": "2026-07-15",
+            "modifications": "Head/neck posture correction; fitted crew-neck garments; connected authored hair shells; shared rig, skin weights, LODs, and idle/walk clips.",
+            "exportCommand": "/Applications/Blender.app/Contents/MacOS/Blender --background --factory-startup --python tools/character-pipeline/build_humans.py -- --source /tmp/human-base-meshes/human_base_meshes_bundle.blend --output public/game/characters/authored --preview /tmp/human-previews",
         },
         "materials": list(MATERIAL_NAMES),
         "archetypes": results,

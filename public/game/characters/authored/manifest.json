@@ -4,20 +4,22 @@
       "id": "human-male-short",
       "license": "CC0-1.0",
       "lod0": {
-        "bytes": 460232,
+        "bytes": 383596,
         "file": "human-male-short-lod0.glb",
         "materials": 8,
         "meshes": 8,
-        "triangles": 77360,
-        "vertices": 38741
+        "sha256": "090c528671ce7799ee1c595836980c22c06949cbab0c36d4085ebfbdefd0cd13",
+        "triangles": 75728,
+        "vertices": 37947
       },
       "lod2": {
-        "bytes": 200784,
+        "bytes": 176064,
         "file": "human-male-short-lod2.glb",
         "materials": 8,
         "meshes": 8,
-        "triangles": 21896,
-        "vertices": 10988
+        "sha256": "f4d046fcfb8b1db49b3076a2e523270d0936c13621d1cd0e40d4e898435a0c67",
+        "triangles": 22050,
+        "vertices": 11105
       },
       "source": "male"
     },
@@ -25,20 +27,22 @@
       "id": "human-male-curly",
       "license": "CC0-1.0",
       "lod0": {
-        "bytes": 452076,
+        "bytes": 386864,
         "file": "human-male-curly-lod0.glb",
         "materials": 8,
         "meshes": 8,
-        "triangles": 75528,
-        "vertices": 37804
+        "sha256": "3bf2cdd0f121d19c34d884907aeec8f8c167f87b8535330ab5ca006ce1d21f6d",
+        "triangles": 76226,
+        "vertices": 38197
       },
       "lod2": {
-        "bytes": 200612,
+        "bytes": 178320,
         "file": "human-male-curly-lod2.glb",
         "materials": 8,
         "meshes": 8,
-        "triangles": 21566,
-        "vertices": 10823
+        "sha256": "b8590339e079b9d30d46ba52cd14dab83c8ea37f4d2df22bcb484202065e03cc",
+        "triangles": 22206,
+        "vertices": 11187
       },
       "source": "male"
     },
@@ -46,20 +50,22 @@
       "id": "human-female-bob",
       "license": "CC0-1.0",
       "lod0": {
-        "bytes": 388536,
+        "bytes": 318544,
         "file": "human-female-bob-lod0.glb",
         "materials": 8,
         "meshes": 8,
-        "triangles": 60644,
-        "vertices": 30390
+        "sha256": "73a9c97eff8c8e0725633eb4dc9ed0f5e679d637a3da50c13f7726ec97b31356",
+        "triangles": 60854,
+        "vertices": 30494
       },
       "lod2": {
-        "bytes": 170908,
+        "bytes": 147008,
         "file": "human-female-bob-lod2.glb",
         "materials": 8,
         "meshes": 8,
-        "triangles": 17215,
-        "vertices": 8660
+        "sha256": "7053b0f1cecc35d5e910feec0f571ad163834b8ce288c3e5cc8e4972122aa6a7",
+        "triangles": 18080,
+        "vertices": 9106
       },
       "source": "female"
     },
@@ -67,20 +73,22 @@
       "id": "human-female-ponytail",
       "license": "CC0-1.0",
       "lod0": {
-        "bytes": 395644,
+        "bytes": 318772,
         "file": "human-female-ponytail-lod0.glb",
         "materials": 8,
         "meshes": 8,
-        "triangles": 61516,
-        "vertices": 30839
+        "sha256": "fe17ad079f942ae380b10a6638956c68246c643b7b505455c1296dbb8116a754",
+        "triangles": 61062,
+        "vertices": 30595
       },
       "lod2": {
-        "bytes": 174916,
+        "bytes": 148392,
         "file": "human-female-ponytail-lod2.glb",
         "materials": 8,
         "meshes": 8,
-        "triangles": 17460,
-        "vertices": 8793
+        "sha256": "dd16a5e81ccba2e44bd12ba1ed3d78a37413e0f7300d91b8fa8bde8ee0b2200d",
+        "triangles": 18097,
+        "vertices": 9111
       },
       "source": "female"
     }
@@ -98,8 +106,12 @@
   ],
   "schemaVersion": 1,
   "source": {
+    "exportCommand": "/Applications/Blender.app/Contents/MacOS/Blender --background --factory-startup --python tools/character-pipeline/build_humans.py -- --source /tmp/human-base-meshes/human_base_meshes_bundle.blend --output public/game/characters/authored --preview /tmp/human-previews",
     "license": "CC0-1.0",
+    "modifications": "Head/neck posture correction; fitted crew-neck garments; connected authored hair shells; shared rig, skin weights, LODs, and idle/walk clips.",
     "name": "Blender Studio Human Base Meshes bundle v1.0.0",
+    "publisher": "Blender Studio",
+    "retrieved": "2026-07-15",
     "sha256": "46a912c0524072ac3b78c35d5d2471df7b8df102394a050ca8cd7184e3393648",
     "url": "https://download.blender.org/demo/bundles/bundles-3.6/human-base-meshes-bundle-v1.0.0.zip"
   }

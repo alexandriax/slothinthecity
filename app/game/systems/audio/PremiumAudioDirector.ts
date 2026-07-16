@@ -80,8 +80,10 @@ export const AUTHORED_SFX = {
 } as const;
 
 export const TRANSIT_ANNOUNCEMENTS = {
-  fifth_nr_platform: "/audio/announcements/fifth_nr_platform.mp3",
-  fifth_nr_boarding: "/audio/announcements/fifth_nr_boarding.mp3",
+  fifth_n_platform: "/audio/announcements/fifth_n_platform.mp3",
+  fifth_r_platform: "/audio/announcements/fifth_r_platform.mp3",
+  fifth_n_boarding: "/audio/announcements/fifth_n_boarding.mp3",
+  fifth_r_boarding: "/audio/announcements/fifth_r_boarding.mp3",
   lex_arrival_transfer: "/audio/announcements/lex_arrival_transfer.mp3",
   lex_5_platform: "/audio/announcements/lex_5_platform.mp3",
   lex_5_boarding: "/audio/announcements/lex_5_boarding.mp3",

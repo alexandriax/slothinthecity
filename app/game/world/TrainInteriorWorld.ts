@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import type { GameTextures } from "../rendering/textures";
 import { createPremiumHuman, markPremiumCharactersDisposed } from "./PremiumCharacter";
+import { prepareAuthoredHumanLocomotion, updateAuthoredHumanMotion } from "./characters/AuthoredHumanAssets";
 
 export type TrainInteriorQuality = "mobile" | "desktop";
 export type TrainInteriorPhase = "CRUISING" | "APPROACHING" | "DWELL" | "DEPARTING" | "COMPLETE" | "FAILED";
@@ -83,6 +84,7 @@ type PassengerRig = {
   flow: "ALIGHT" | "BOARD" | "STAY";
   flowDoorZ: number;
   group: THREE.Group;
+  humanRoot: THREE.Group;
   head: THREE.Group;
   movable: boolean;
   phase: number;
@@ -247,17 +249,18 @@ function createPassenger(index: number, quality: TrainInteriorQuality, pose: "ho
     ["#69405d", "#e0b58d", "#643c29"], ["#313e64", "#9a674d", "#24201d"], ["#4b5d45", "#c18767", "#463026"],
   ][index % 6];
   const premium = createPremiumHuman({
-    role: "visitor", quality: quality === "desktop" ? .72 : .5, variant: index + 31, faceVariant: [12, 15, 16, 17, 18, 19][index % 6], coat: palettes[0], trousers: palettes[2], skin: palettes[1],
+    role: "visitor", quality: quality === "desktop" ? 1 : .58, variant: index + 31, faceVariant: [12, 15, 16, 17, 18, 19][index % 6], coat: palettes[0], trousers: palettes[2], skin: palettes[1],
     accessory: pose === "seated" ? "none" : index % 3 === 0 ? "backpack" : index % 3 === 1 ? "tote" : "none",
-    pose: pose === "reading" ? "checking-map" : pose === "seated" ? "seated" : "neutral",
+    pose: pose === "seated" ? "seated" : "neutral",
   });
+  if (pose !== "seated") prepareAuthoredHumanLocomotion(premium.root);
   premium.root.scale.setScalar(.88);
   if (pose === "seated") premium.root.position.y = -.3;
   group.add(premium.root); ownedTextures.push(...premium.ownedTextures);
   const inertLeft = new THREE.Group(), inertRight = new THREE.Group(), inertHead = new THREE.Group();
   return {
     armLeft: inertLeft, armLeftBaseX: 0, armRight: inertRight, armRightBaseX: 0, base: new THREE.Vector3(), group, head: inertHead,
-    baseRotation: 0, flow: "STAY", flowDoorZ: 0, movable: pose !== "seated", phase: index * 1.73, seated: pose === "seated",
+    baseRotation: 0, flow: "STAY", flowDoorZ: 0, humanRoot: premium.root, movable: pose !== "seated", phase: index * 1.73, seated: pose === "seated",
   } satisfies PassengerRig;
 }
 
@@ -539,8 +542,10 @@ export class TrainInteriorWorld {
     const stopActivity = this.phase === "APPROACHING" || this.phase === "DWELL";
     const pressure = stopActivity ? THREE.MathUtils.smoothstep(this.phaseTime, 0, this.phase === "DWELL" ? 2 : APPROACH_SECONDS) : 0;
     this.passengers.forEach((passenger, index) => {
+      const previous = passenger.group.position.clone();
       const target = passenger.base.clone();
       let flowPosition: THREE.Vector3 | null = null;
+      let locomoting = false;
       if (this.phase === "DWELL" && passenger.flow !== "STAY") {
         // Riders alight as soon as the doors have a readable opening. Boarding
         // begins only after that stream reaches the aisle, then finishes before
@@ -554,6 +559,7 @@ export class TrainInteriorWorld {
         if (passenger.flow === "BOARD") flowPosition = flow < .48 ? outside.clone().lerp(threshold, flow / .48) : threshold.clone().lerp(passenger.base, (flow - .48) / .52);
         else flowPosition = flow < .48 ? passenger.base.clone().lerp(threshold, flow / .48) : threshold.clone().lerp(outside, (flow - .48) / .52);
         passenger.group.rotation.y = passenger.flow === "BOARD" ? -this.currentStop.side * Math.PI / 2 : this.currentStop.side * Math.PI / 2;
+        locomoting = flow > .015 && flow < .985;
       } else if (stopActivity && passenger.movable && index < Math.ceil(this.passengers.length * .68)) {
         const doorIndex = this.isDestination ? (index % 2 ? 0 : 2) : index % DOOR_Z.length;
         target.x = this.currentStop.side * (.68 + index % 2 * .12); target.z = DOOR_Z[doorIndex] + (index % 3 - 1) * .3;
@@ -562,6 +568,7 @@ export class TrainInteriorWorld {
       if (passenger.movable && playerDistance < .82) { const part = passenger.group.position.x <= player.x ? -1 : 1; target.x += part * (.82 - playerDistance) * .6; }
       if (flowPosition) passenger.group.position.lerp(flowPosition, 1 - Math.exp(-delta * 7.5));
       else passenger.group.position.lerp(target, 1 - Math.exp(-delta * (stopActivity ? 2.8 : 1.3)));
+      if (!flowPosition && passenger.movable) locomoting = passenger.group.position.distanceTo(target) > .025;
       passenger.group.position.y = Math.sin(this.elapsed * (passenger.seated ? 1.3 : 2.4) + passenger.phase) * (passenger.seated ? .002 : .006);
       passenger.group.rotation.z = Math.sin(this.elapsed * 2.1 + passenger.phase) * .008 + this.cameraRoll * .36;
       passenger.head.rotation.y = Math.sin(this.elapsed * .38 + passenger.phase) * .16;
@@ -571,7 +578,21 @@ export class TrainInteriorWorld {
         passenger.armLeft.rotation.x += (leftTarget - passenger.armLeft.rotation.x) * Math.min(1, delta * 4);
         passenger.armRight.rotation.x += (rightTarget - passenger.armRight.rotation.x) * Math.min(1, delta * 4);
       }
+      const distance = previous.distanceTo(passenger.group.position);
+      updateAuthoredHumanMotion(passenger.humanRoot, delta, passenger.group.visible && !passenger.seated && locomoting ? "walk" : "idle", THREE.MathUtils.clamp(distance / Math.max(delta, .001) / 1.05, .65, 1.35));
     });
+    // The car is narrow enough that independently animated targets can cross.
+    // Give every standing rider a physical footprint so boarding/alighting
+    // crowds queue around each other rather than phasing through torsos.
+    const standing = this.passengers.filter(passenger => passenger.group.visible && passenger.movable && !passenger.seated);
+    for (let left = 0; left < standing.length; left++) for (let right = left + 1; right < standing.length; right++) {
+      const a = standing[left].group.position, b = standing[right].group.position;
+      const dx = b.x - a.x, dz = b.z - a.z, distance = Math.hypot(dx, dz);
+      if (distance <= .001 || distance >= .54) continue;
+      const correction = (.54 - distance) * .5 / distance;
+      a.x -= dx * correction; a.z -= dz * correction;
+      b.x += dx * correction; b.z += dz * correction;
+    }
     return pressure;
   }
 

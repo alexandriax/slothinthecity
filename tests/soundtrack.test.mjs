@@ -35,7 +35,7 @@ test("authored vehicle, wildlife, and transit audio is resiliently decoded and e
     "/audio/sfx/cart-motor-loop.mp3",
     "/audio/sfx/hawk-near-screech.mp3",
     "/audio/sfx/hawk-dive-pass.mp3",
-    ...["fifth_nr_platform", "fifth_nr_boarding", "lex_arrival_transfer", "lex_5_platform", "lex_5_boarding", "stop_86", "stop_125", "stop_e180", "west_farms_arrival", "stand_clear_doors"].map(name => `/audio/announcements/${name}.mp3`),
+    ...["fifth_n_platform", "fifth_r_platform", "fifth_n_boarding", "fifth_r_boarding", "lex_arrival_transfer", "lex_5_platform", "lex_5_boarding", "stop_86", "stop_125", "stop_e180", "west_farms_arrival", "stand_clear_doors"].map(name => `/audio/announcements/${name}.mp3`),
   ]) assert.match(director, new RegExp(path.replaceAll("/", "\\/")));
 
   assert.match(director, /fetch\(path\)/);
@@ -50,5 +50,9 @@ test("authored vehicle, wildlife, and transit audio is resiliently decoded and e
   assert.match(park, /audio\.playHawkCue\("near"\)/);
   assert.match(park, /audio\.playHawkCue\("dive"\)/);
   assert.match(subway, /playTransitAnnouncement/);
-  for (const cue of ["fifth_nr_platform", "fifth_nr_boarding", "lex_arrival_transfer", "lex_5_platform", "lex_5_boarding", "stop_86", "stop_125", "stop_e180", "west_farms_arrival", "stand_clear_doors"]) assert.match(subway, new RegExp(`"${cue}"`));
+  for (const cue of ["lex_arrival_transfer", "lex_5_platform", "lex_5_boarding", "stop_86", "stop_125", "stop_e180", "west_farms_arrival", "stand_clear_doors"]) assert.match(subway, new RegExp(`"${cue}"`));
+  assert.match(subway, /`fifth_\$\{route\}_platform`/);
+  assert.match(subway, /`fifth_\$\{route\}_boarding`/);
+  assert.match(subway, /stationWorld\.arrivingService\.route/);
+  assert.match(subway, /train · doors open · board through any open doorway/);
 });

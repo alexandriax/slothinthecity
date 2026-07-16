@@ -80,7 +80,21 @@ test("mobile entry cannot be stranded by unavailable Pointer Lock", async () => 
   assert.match(game, /phase === "intro" \|\| exiting/);
   assert.match(game, /data-touch-capable/);
   assert.match(game, /useState<"park" \| "subway">\("park"\)/);
-  assert.match(game, /requestAnimationFrame\(\(\) => setLevel\("subway"\)\)/);
+  assert.match(game, /const enterSubway = useCallback\(\(\) => setLevel\("subway"\), \[\]\)/);
+});
+
+test("mobile wayfinding stays bounded and the atmospheric sky follows the camera", async () => {
+  const [styles, world] = await Promise.all([
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/world/RealisticWorld.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(styles, /grid-template-columns:minmax\(0,1fr\) auto/);
+  assert.match(styles, /text-overflow:ellipsis/);
+  assert.match(styles, /width:min\(232px,calc\(100vw - 124px\)\)/);
+  assert.match(world, /sky\.onBeforeRender/);
+  assert.match(world, /sky\.position\.copy\(camera\.position\)/);
+  assert.match(world, /sky\.frustumCulled = false/);
 });
 
 test("foraging opens the Bow Bridge, island ticket, zoo, and subway campaign with adaptive wayfinding", async () => {
@@ -204,7 +218,7 @@ test("park and finale landmarks use complete campuses and textured articulated c
   assert.match(characters, /proceduralSurface\("fur"/);
   assert.match(characters, /new THREE\.CapsuleGeometry/);
   assert.match(characters, /createPremiumSlothFriend/);
-  for (const feature of ["west-farms-station-exit-approach", "bronx-zoo-arrival-fountain", "bronx-zoo-ticket-and-member-pavilion", "waiting-sloth-friend"]) assert.match(finale + characters, new RegExp(feature));
+  for (const feature of ["west-farms-station-exit-approach", "bronx-zoo-arrival-fountain", "bronx-zoo-ticket-and-member-pavilion", "waiting-quadrupedal-sloth-friend"]) assert.match(finale + characters, new RegExp(feature));
   assert.match(finale, /bronx-zoo-arrival-attendant/);
   assert.match(finale, /attendantNearby\(player: THREE\.Vector3/);
   assert.match(characters, /\/game\/characters\/npc-face-atlas-v2-03\.webp/);

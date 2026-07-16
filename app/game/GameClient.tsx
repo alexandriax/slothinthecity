@@ -8,13 +8,14 @@ import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { GoalWayfinder } from "./GoalWayfinder";
+import { DebugJumpMenu } from "./mobile/DebugJumpMenu";
 import { MobileHud } from "./mobile/MobileHud";
 import { TouchControls } from "./mobile/TouchControls";
 import { createSlothRig } from "./player/SlothRig";
 import { loadGameTextures } from "./rendering/textures";
 import { AudioQualitySettings, createAdaptiveQualityManager, createPremiumAudioDirector, type AdaptiveQualityManager, type PremiumAudioDirector } from "./systems";
 import { SubwayGame } from "./SubwayGame";
-import { checkpointUsesSubway, debugSceneName, isDirectDebugSession, requestedGameCheckpoint } from "./debugCheckpoints";
+import { checkpointUsesSubway, DEBUG_LOOK_REQUEST_EVENT, debugMenuRequested, debugSceneName, isAutomatedQaSession, requestedGameCheckpoint } from "./debugCheckpoints";
 import { BOW_BRIDGE_TARGET, createCampaignLandmarks, SUBWAY_TARGET, ZOO_TARGET } from "./world/CampaignLandmarks";
 import { createParkRowboat, ROWBOAT_ROOT_WATERLINE_OFFSET, type ParkRowboat } from "./world/ParkRowboat";
 import { createParkUtilityCart, type ParkUtilityCart } from "./world/ParkUtilityCart";
@@ -50,7 +51,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
   const audioState = useSyncExternalStore(audio.subscribe, audio.getSnapshot, audio.getSnapshot);
   const [mouseCaptured, setMouseCaptured] = useState(false);
   const [touchCapable, setTouchCapable] = useState(false);
-  const [pointerLockAvailable] = useState(() => typeof window !== "undefined" && !hasTouchInput() && typeof HTMLCanvasElement.prototype.requestPointerLock === "function" && matchMedia("(pointer: fine)").matches && !isDirectDebugSession(location.search, location.hostname));
+  const [pointerLockAvailable] = useState(() => typeof window !== "undefined" && !hasTouchInput() && typeof HTMLCanvasElement.prototype.requestPointerLock === "function" && matchMedia("(pointer: fine)").matches && !isAutomatedQaSession(location.search, location.hostname));
   const [hud, setHud] = useState<HudState>({ energy: 100, alert: 6, buds: 0, ticketCollected: false, objective: "Forage five buds across trail and canopy", objectiveShort: "FORAGE", prompt: "", promptKey: "", heading: "N", motion: "ON GROUND", hint: "E climbs a nearby trunk · W / S moves · Shift grips", threat: "PATROL DISTANT", hawkPhase: "PATROL", swimming: false, driving: false, speed: 0, x: START.x, y: 0, z: START.z, branchId: -1, branchProgress: 0, arboreal: false, goalDistance: Math.hypot(BOW_BRIDGE_TARGET.x - START.x, BOW_BRIDGE_TARGET.z - START.z), goalBearing: 0, parkStage: "FORAGE", targetActive: false, vehicle: null, waypointLabel: "Bow Bridge" });
   const setPhase = useCallback((next: Phase) => {
     phaseRef.current = next;
@@ -110,6 +111,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
     const timer = new THREE.Timer(); timer.connect(document);
     const keys = new Set<string>(), velocity = new THREE.Vector3(), player = START.clone();
     const qaInput = requestedGameCheckpoint(location.search, location.hostname);
+    const automatedQa = isAutomatedQaSession(location.search, location.hostname);
     if (qaInput === "autowalk") keys.add("KeyW");
     player.y = terrainY(player.x, player.z) + 1.48; camera.position.copy(player);
     const sloth = createSlothRig(textures.fur);
@@ -153,7 +155,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
       return distance <= 9.25 ? nearest : null;
     }
 
-    const requestLock = () => { if (phaseRef.current !== "playing" || isDirectDebugSession(location.search, location.hostname)) return; requestPointerLockSafely(renderer.domElement); };
+    const requestLock = () => { if (phaseRef.current !== "playing" || automatedQa) return; requestPointerLockSafely(renderer.domElement); };
     const pointer = (event: PointerEvent) => { if (event.pointerType === "touch") { dragging = true; lastTouchX = event.clientX; lastTouchY = event.clientY; try { renderer.domElement.setPointerCapture?.(event.pointerId); } catch {} } else requestLock(); };
     const applyLook = (dx: number, dy: number, xScale: number, yScale: number) => {
       if (drivingCart || activeBoat) vehicleLookYaw = THREE.MathUtils.clamp(vehicleLookYaw - dx * xScale, -1.5, 1.5);
@@ -189,11 +191,12 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
       if (event.code === "KeyM") audio.toggleMuted();
     };
     const keyUp = (event: KeyboardEvent) => keys.delete(event.code);
-    const releaseInput = () => { if (qaInput) return; keys.clear(); velocity.set(0, 0, 0); };
+    const releaseInput = () => { if (automatedQa) return; keys.clear(); velocity.set(0, 0, 0); };
     const pointerLockChanged = () => { const captured = document.pointerLockElement === renderer.domElement; setMouseCaptured(captured); if (!captured) releaseInput(); };
     renderer.domElement.addEventListener("pointerdown", pointer); renderer.domElement.addEventListener("pointermove", pointerMove); renderer.domElement.addEventListener("pointerup", pointerUp);
     document.addEventListener("mousemove", mouse); document.addEventListener("keydown", keyDown); document.addEventListener("keyup", keyUp);
     document.addEventListener("sloth-look", touchLook);
+    document.addEventListener(DEBUG_LOOK_REQUEST_EVENT, requestLock);
     document.addEventListener("pointerlockchange", pointerLockChanged); window.addEventListener("blur", releaseInput);
     const applyRenderBudget = () => {
       const budget = quality.getRenderBudget(); renderer.setPixelRatio(budget.pixelRatio); renderer.shadowMap.enabled = budget.shadows; renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -385,6 +388,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
       raf = requestAnimationFrame(frame); if (timestamp !== undefined) quality.reportFrame(timestamp); timer.update(timestamp); const delta = Math.min(timer.getDelta(), .05);
       if (phaseRef.current === "playing") {
         gameTime += delta;
+        campaign.update(gameTime, delta);
         if (!qaPrepared && (["autoclimb", "autobranch", "autotransfer", "autodrop", "autoflow", "cart", "treecollision", "watercollision", "swim", "shoreclimb", "energy", "rest", "hawk", "bridgewalk", "bowbridge", "rowboat", "ticketisland", "ticket", "zoo", "subwayentrance"].includes(qaInput ?? ""))) {
           const testTree = nearestTree(player);
           if (qaInput === "autoflow") {
@@ -513,7 +517,10 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
 
         if (dropRequested && transfer) {
           descentIgnoreRouteId = branchRoute?.id ?? transfer.route.id; transfer = null; branchRoute = null; climbingTree = null;
-          controlledDescent = true; dropVelocity = -.82;
+          // Ctrl/Space is an intentional release, not a slow rappel. Enter
+          // normal gravity immediately so dropping from the canopy feels
+          // faster than crawling instead of suspending the player in air.
+          controlledDescent = false; dropVelocity = -4.2;
         }
 
         if (activeBoat) {
@@ -584,7 +591,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
           const inCanopy = player.y >= climbingTree.canopyY - .8; branchTarget = inCanopy ? branchFromTree(climbingTree) : null;
           if (["autobranch", "autotransfer", "autodrop"].includes(qaInput ?? "") && qaStage === 0 && branchTarget) { actionRequested = true; qaStage = 1; }
           if (actionRequested && branchTarget) transfer = { from: player.clone(), to: branchTarget.point.clone(), route: branchTarget.route, progress: branchTarget.amount, forwardSign: branchTarget.amount <= .5 ? 1 : -1, started: gameTime, duration: .82, kind: "REACH" };
-          if (dropRequested) { climbingTree = null; controlledDescent = true; descentIgnoreRouteId = -1; dropVelocity = -.82; }
+          if (dropRequested) { climbingTree = null; controlledDescent = false; descentIgnoreRouteId = -1; dropVelocity = -4.2; }
           energy = THREE.MathUtils.clamp(energy + (moving ? -(gripping ? 2.2 : 3.25) : gripping ? 4.6 : 2.8) * delta, 0, 100);
         } else if (branchRoute) {
           swimming = false;
@@ -612,7 +619,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
           if (qaInput === "autodrop" && qaStage === 1 && branchProgress >= .48 && lowerTarget) { dropRequested = true; qaStage = 2; }
           if (dropRequested) {
             if (lowerTarget) transfer = { from: player.clone(), to: lowerTarget.point.clone(), route: lowerTarget.route, progress: lowerTarget.amount, forwardSign: lowerTarget.amount <= .5 ? 1 : -1, started: gameTime, duration: .78, kind: "DROP" };
-            else { descentIgnoreRouteId = branchRoute.id; branchRoute = null; controlledDescent = true; dropVelocity = -.82; }
+            else { descentIgnoreRouteId = branchRoute.id; branchRoute = null; controlledDescent = false; dropVelocity = -4.2; }
           } else {
             const atForwardExit = branchForwardSign > 0 ? branchProgress >= .985 : branchProgress <= .015;
             const atBackwardExit = branchForwardSign > 0 ? branchProgress <= .015 : branchProgress >= .985;
@@ -656,7 +663,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
               energy = THREE.MathUtils.clamp(energy + (moving ? -2.35 : 2.4) * delta, 0, 100);
             } else {
               const terrainTargetY = groundHeight(player.x, player.z) + Math.sin(gameTime * 5.5) * Math.min(.025, velocity.length() * .006);
-              const terrainFollow = 1 - Math.exp(-delta * 8.5);
+              const terrainFollow = 1 - Math.exp(-delta * 24);
               // Follow sloped banks continuously while keeping the eye line
               // safely above the rendered surface. This removes the one-frame
               // under-terrain view and the subsequent vertical pop at shore.
@@ -826,7 +833,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
     frame();
     return () => {
       disposed = true; cartMotorState.driving = false; cartMotorState.speed = 0; audio.setCartMotor(false); cancelAnimationFrame(raf); renderer.domElement.removeEventListener("pointerdown", pointer); renderer.domElement.removeEventListener("pointermove", pointerMove); renderer.domElement.removeEventListener("pointerup", pointerUp);
-      document.removeEventListener("mousemove", mouse); document.removeEventListener("keydown", keyDown); document.removeEventListener("keyup", keyUp); document.removeEventListener("sloth-look", touchLook); document.removeEventListener("pointerlockchange", pointerLockChanged); window.removeEventListener("blur", releaseInput); removeEventListener("resize", resize);
+      document.removeEventListener("mousemove", mouse); document.removeEventListener("keydown", keyDown); document.removeEventListener("keyup", keyUp); document.removeEventListener("sloth-look", touchLook); document.removeEventListener(DEBUG_LOOK_REQUEST_EVENT, requestLock); document.removeEventListener("pointerlockchange", pointerLockChanged); window.removeEventListener("blur", releaseInput); removeEventListener("resize", resize);
       unsubscribeQuality(); carts.forEach(candidate => candidate.dispose()); rowboats.forEach(boat => boat.dispose()); campaign.dispose(); markerGeometry.dispose(); actionMarkerMaterial.dispose(); dropMarkerMaterial.dispose(); timer.dispose(); composer?.dispose(); renderer.dispose(); if (host.contains(renderer.domElement)) host.removeChild(renderer.domElement);
     };
   }, [audio, onEnterSubway, quality, setPhase, showToast]);
@@ -838,7 +845,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
     window.scrollTo(0, 0);
   }, []);
   const safeLock = useCallback(() => {
-    if (!pointerLockAvailable || phaseRef.current !== "playing" || isDirectDebugSession(location.search, location.hostname)) return;
+    if (!pointerLockAvailable || phaseRef.current !== "playing" || isAutomatedQaSession(location.search, location.hostname)) return;
     requestPointerLockSafely(mount.current?.querySelector("canvas") ?? null);
   }, [pointerLockAvailable]);
   const begin = useCallback(() => {
@@ -901,6 +908,8 @@ export function GameClient() {
   // switch worlds in the effect below, after hydration, so they never surface
   // a recoverable React mismatch in development or automated screenshots.
   const [level, setLevel] = useState<"park" | "subway">("park");
+  const [showDebugMenu, setShowDebugMenu] = useState(false);
+  const [activeDebugScene, setActiveDebugScene] = useState<ReturnType<typeof debugSceneName>>(null);
   const [audio] = useState(() => createPremiumAudioDirector({ scene: "central-park" }));
   const [quality] = useState(() => createAdaptiveQualityManager());
   const enterSubway = useCallback(() => setLevel("subway"), []);
@@ -909,16 +918,21 @@ export function GameClient() {
     return () => { disarmAudio(); void audio.dispose(); quality.dispose(); };
   }, [audio, quality]);
   useEffect(() => {
-    if (new URLSearchParams(location.search).get("debug") === "characters") {
+    const search = location.search;
+    if (new URLSearchParams(search).get("debug") === "characters") {
       location.replace("/debug/characters");
       return;
     }
-    if (!checkpointUsesSubway(requestedGameCheckpoint(location.search, location.hostname))) return;
-    const frame = requestAnimationFrame(() => setLevel("subway"));
+    const frame = requestAnimationFrame(() => {
+      setShowDebugMenu(debugMenuRequested(search));
+      setActiveDebugScene(debugSceneName(search));
+      if (checkpointUsesSubway(requestedGameCheckpoint(search, location.hostname))) setLevel("subway");
+    });
     return () => cancelAnimationFrame(frame);
   }, []);
   return <>
     {level === "subway" ? <SubwayGame audio={audio} quality={quality}/> : <ParkLevel audio={audio} onEnterSubway={enterSubway} quality={quality}/>}
     <AudioQualitySettings audio={audio} quality={quality} className="experience-settings"/>
+    {showDebugMenu && <DebugJumpMenu activeScene={activeDebugScene}/>}
   </>;
 }

@@ -7,6 +7,8 @@ type SurfaceKind = "cloth" | "skin" | "hair" | "leather" | "metal" | "ivory" | "
 
 export type PremiumHumanRole = "attendant" | "visitor";
 
+export type PremiumHumanOutfit = "zoo-uniform" | "cotton-denim" | "silk-leggings" | "knit-chinos";
+
 export type PremiumHumanOptions = {
   role: PremiumHumanRole;
   quality: number;
@@ -19,6 +21,10 @@ export type PremiumHumanOptions = {
   pose?: "neutral" | "checking-map" | "photographing" | "waving" | "seated";
   faceVariant?: number;
   clothingVariant?: number;
+  /** Material profile controls the authored atlas response as well as color. */
+  outfit?: PremiumHumanOutfit;
+  /** Printed on an authored-uniform chest tag when present. */
+  zooNameTag?: "Central Park Zoo" | "Bronx Zoo";
   /** Optional overrides keep the rig reusable in streamed worlds. */
   faceAtlasUrl?: string;
   clothingAtlasUrl?: string;
@@ -341,6 +347,23 @@ function taperedSweepGeometry(points: THREE.Vector3[], radii: number[], segments
       }
     }
   }
+  // Cap the sweep itself instead of hiding open ends inside cover spheres.
+  // The shoulder/hand joins can now overlap anatomically without exposing a
+  // hollow tube when the waving arm rotates toward the camera.
+  for (const end of [0, 1] as const) {
+    const segment = end * segments, ringStart = segment * ring;
+    curve.getPointAt(end, center);
+    const tangent = curve.getTangentAt(end).normalize().multiplyScalar(end === 0 ? -1 : 1);
+    const capCenter = positions.length / 3;
+    positions.push(center.x, center.y, center.z);
+    normals.push(tangent.x, tangent.y, tangent.z);
+    uvs.push(.5, .5);
+    for (let radial = 0; radial < radialSegments; radial++) {
+      const current = ringStart + radial, next = current + 1;
+      if (end === 0) indices.push(capCenter, next, current);
+      else indices.push(capCenter, current, next);
+    }
+  }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
@@ -405,6 +428,10 @@ function createProceduralPremiumHuman(options: PremiumHumanOptions): PremiumChar
   root.userData.presentation = feminine ? "feminine" : "masculine";
   root.userData.clothingAtlas = clothingAtlasUrl;
   root.userData.clothingVariant = wardrobeVariant;
+  root.userData.outfit = options.outfit ?? (options.role === "attendant"
+    ? "zoo-uniform"
+    : wardrobeVariant % 3 === 0 ? "cotton-denim" : wardrobeVariant % 3 === 1 ? "silk-leggings" : "knit-chinos");
+  root.userData.zooNameTag = options.zooNameTag;
   if (options.role === "attendant") root.userData.dialogue = "There are no sloths here.";
 
   // A profiled, slightly asymmetrical torso replaces the stacked-box outline.
@@ -526,75 +553,123 @@ function CapsuleGeometrySafe(radius: number, length: number, segments: number) {
   return new THREE.CapsuleGeometry(radius, length, Math.max(6, Math.floor(segments / 2)), segments);
 }
 
-function anatomicalSlothTorsoGeometry(segments: number) {
-  const geometry = new THREE.SphereGeometry(1, segments, Math.max(16, segments - 5));
+function paintSlothSurface(
+  geometry: THREE.BufferGeometry,
+  colorAt: (point: THREE.Vector3, target: THREE.Color) => THREE.Color,
+) {
   const positions = geometry.getAttribute("position") as THREE.BufferAttribute;
+  const colors: number[] = [];
+  const point = new THREE.Vector3(), color = new THREE.Color();
   for (let index = 0; index < positions.count; index++) {
-    const x = positions.getX(index), y = positions.getY(index), z = positions.getZ(index);
-    const shoulders = Math.exp(-Math.pow((y - .48) / .29, 2)), hips = Math.exp(-Math.pow((y + .5) / .36, 2));
-    const width = .46 + shoulders * .19 + hips * .055, depth = .38 + shoulders * .045 + hips * .035;
-    positions.setXYZ(index, x * width, y * 1.1, z * depth - Math.max(0, -z) * shoulders * .025);
+    point.fromBufferAttribute(positions, index);
+    colorAt(point, color);
+    colors.push(color.r, color.g, color.b);
   }
-  positions.needsUpdate = true; geometry.computeVertexNormals(); return geometry;
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  return geometry;
 }
 
-function anatomicalSlothHeadGeometry(segments: number) {
+function quadrupedalSlothTorsoGeometry(segments: number, base: THREE.Color, cream: THREE.Color) {
   const geometry = new THREE.SphereGeometry(1, segments, Math.max(16, segments - 5));
   const positions = geometry.getAttribute("position") as THREE.BufferAttribute;
   for (let index = 0; index < positions.count; index++) {
     const x = positions.getX(index), y = positions.getY(index), z = positions.getZ(index);
-    const jaw = .82 + THREE.MathUtils.smoothstep(y, -.82, .24) * .18;
-    const brow = Math.exp(-Math.pow((y - .28) / .3, 2)) * .045;
-    positions.setXYZ(index, x * (.52 * jaw + brow), y * .47, z * (.44 + Math.max(0, -z) * .025));
+    const shoulders = Math.exp(-Math.pow((z + .42) / .34, 2));
+    const hips = Math.exp(-Math.pow((z - .48) / .34, 2));
+    const belly = Math.exp(-Math.pow(z / .68, 2));
+    const width = .42 + shoulders * .08 + hips * .055 + belly * .035;
+    const height = .34 + shoulders * .035 + hips * .045 + belly * .045;
+    const length = .82 + Math.max(0, z) * .06;
+    positions.setXYZ(index, x * width, y * height, z * length);
   }
-  positions.needsUpdate = true; geometry.computeVertexNormals(); return geometry;
+  positions.needsUpdate = true; geometry.computeVertexNormals();
+  return paintSlothSurface(geometry, (point, target) => {
+    const underside = THREE.MathUtils.smoothstep(-point.y, .12, .37);
+    const naturalMottle = (.5 + .5 * Math.sin(point.z * 13 + point.x * 7)) * .08;
+    return target.copy(base).lerp(cream, underside * (.12 + naturalMottle));
+  });
+}
+
+function anatomicalSlothHeadGeometry(segments: number, base: THREE.Color, cream: THREE.Color, dark: THREE.Color) {
+  const geometry = new THREE.SphereGeometry(1, segments, Math.max(16, segments - 5));
+  const positions = geometry.getAttribute("position") as THREE.BufferAttribute;
+  for (let index = 0; index < positions.count; index++) {
+    const x = positions.getX(index), y = positions.getY(index), z = positions.getZ(index);
+    const jaw = .84 + THREE.MathUtils.smoothstep(y, -.82, .18) * .16;
+    const brow = Math.exp(-Math.pow((y - .28) / .29, 2)) * .045, crown = Math.exp(-Math.pow((y - .72) / .25, 2)) * .035;
+    positions.setXYZ(index, x * (.5 * jaw + brow), y * .45 + crown, z * (.41 + Math.max(0, -z) * .035));
+  }
+  positions.needsUpdate = true; geometry.computeVertexNormals();
+  return paintSlothSurface(geometry, (point, target) => {
+    const front = THREE.MathUtils.smoothstep(-point.z, .05, .36);
+    const faceEllipse = Math.max(0, 1 - Math.pow(point.x / .43, 2) - Math.pow((point.y + .005) / .34, 2));
+    const mantle = front * THREE.MathUtils.smoothstep(faceEllipse, .04, .42);
+    const eyePatch = front * Math.exp(
+      -Math.pow((Math.abs(point.x) - .17) / .16, 2)
+      -Math.pow((point.y - .065) / .14, 2),
+    );
+    const muzzle = front * Math.exp(-Math.pow(point.x / .17, 2) - Math.pow((point.y + .13) / .11, 2));
+    return target.copy(base).lerp(cream, mantle * .94).lerp(dark, eyePatch).lerp(cream, muzzle * .82);
+  });
 }
 
 export function createPremiumSlothFriend(textures: GameTextures, quality: number, variant: number, tint: string): PremiumCharacterResult {
   const clamped = THREE.MathUtils.clamp(quality, .42, 1.2), high = clamped > .7, segments = clamped > .9 ? 30 : high ? 22 : 15;
-  const creamMap = proceduralSurface("fur", "#c7b99a", "#eee1bd", 211 + variant, clamped);
-  const darkMap = proceduralSurface("fur", "#29231d", "#715b46", 229 + variant, clamped);
+  const darkMap = proceduralSurface("fur", "#241f19", "#5b4b3a", 229 + variant, clamped);
   const clawMap = proceduralSurface("ivory", "#e4d2a6", "#fff1c7", 241 + variant, clamped);
-  const leatherMap = proceduralSurface("leather", "#304c36", "#9eb67d", 251 + variant, clamped);
-  const ownedTextures = [creamMap, darkMap, clawMap, leatherMap];
-  const fur = new THREE.MeshStandardMaterial({ map: textures.fur, bumpMap: textures.fur, bumpScale: .09, color: tint, roughness: .94 });
-  const creamFur = texturedMaterial(creamMap, .94), darkFur = texturedMaterial(darkMap, .9), ivory = texturedMaterial(clawMap, .54, { clearcoat: .16 }), leather = texturedMaterial(leatherMap, .78);
+  const ownedTextures = [darkMap, clawMap];
+  const bodyTint = new THREE.Color(tint).multiplyScalar(.82 + variant * .035);
+  const creamTint = new THREE.Color("#c3b694").lerp(bodyTint, .12), darkTint = new THREE.Color("#201b17");
+  const fur = new THREE.MeshStandardMaterial({ bumpMap: textures.fur, bumpScale: .105, color: bodyTint, roughness: .96 });
+  const paintedFur = new THREE.MeshStandardMaterial({ bumpMap: textures.fur, bumpScale: .105, color: "#ffffff", vertexColors: true, roughness: .96 });
+  const darkFur = texturedMaterial(darkMap, .92), ivory = texturedMaterial(clawMap, .54, { clearcoat: .16 });
   const eye = new THREE.MeshPhysicalMaterial({ map: darkMap, color: "#ffffff", roughness: .12, clearcoat: 1 });
-  const root = new THREE.Group(); root.name = "waiting-sloth-friend"; root.userData.pose = variant;
-  const body = new THREE.Mesh(anatomicalSlothTorsoGeometry(segments), fur); body.name = "continuous-anatomical-sloth-torso"; body.position.set(0, 1.42, .04); body.rotation.z = -.035 + variant * .014; root.add(body);
-  const belly = new THREE.Mesh(new THREE.SphereGeometry(.5, segments, segments - 5), creamFur); belly.scale.set(.76, 1.08, .4); belly.position.set(0, 1.43, -.395); root.add(belly);
-  const head = new THREE.Mesh(anatomicalSlothHeadGeometry(segments), fur); head.name = "anatomical-sloth-head-and-jaw"; head.position.set(0, 2.57, -.1); root.add(head);
-  const face = new THREE.Mesh(new THREE.SphereGeometry(.425, segments, segments - 7, 0, Math.PI * 2, .14, Math.PI * .73), creamFur); face.scale.set(1.07, .88, .31); face.position.set(0, 2.57, -.58); face.rotation.x = -.06; root.add(face);
+  const root = new THREE.Group(); root.name = "waiting-quadrupedal-sloth-friend"; root.userData.pose = variant;
+  root.userData.locomotion = "quadrupedal";
+  root.userData.adultHeightMeters = 1.24;
+  const body = new THREE.Mesh(quadrupedalSlothTorsoGeometry(segments, bodyTint, creamTint), paintedFur);
+  body.name = "continuous-horizontal-anatomical-sloth-torso";
+  body.position.set(0, .7, .08); body.rotation.z = -.012 + variant * .006; root.add(body);
+  const head = new THREE.Mesh(anatomicalSlothHeadGeometry(segments, bodyTint, creamTint, darkTint), paintedFur);
+  head.name = "anatomical-sloth-head-jaw-and-integrated-mask";
+  head.scale.set(.82, .82, .82); head.position.set(0, .82, -.82); head.rotation.x = -.05; root.add(head);
   for (const side of [-1, 1]) {
-    const patch = new THREE.Mesh(new THREE.SphereGeometry(.148, segments, 14), darkFur); patch.scale.set(1.52, .73, .35); patch.position.set(side * .205, 2.64, -.72); patch.rotation.z = side * .34; root.add(patch);
-    const eyeball = new THREE.Mesh(new THREE.SphereGeometry(.048, 18, 14), eye); eyeball.position.set(side * .205, 2.65, -.775); root.add(eyeball);
-    const gleam = new THREE.Mesh(new THREE.SphereGeometry(.011, 10, 8), new THREE.MeshBasicMaterial({ map: creamMap, color: "#fffbe8", toneMapped: false })); gleam.position.set(side * .19, 2.668, -.816); root.add(gleam);
-    const ear = new THREE.Mesh(new THREE.SphereGeometry(.11, segments, 12), fur); ear.scale.set(.55, 1, .72); ear.position.set(side * .51, 2.64, -.08); root.add(ear);
-    const waving = side === (variant % 2 ? -1 : 1), arm = new THREE.Group(); arm.name = waving ? "friend-wave-arm" : "friend-rest-arm"; arm.position.set(side * .54, 1.93, 0);
-    arm.rotation.z = side * (waving ? -.9 : -.3); arm.rotation.x = waving ? -.18 : .08;
+    const eyeball = new THREE.Mesh(new THREE.SphereGeometry(.035, 18, 14), eye); eyeball.position.set(side * .158, .895, -1.218); root.add(eyeball);
+    const gleam = new THREE.Mesh(new THREE.SphereGeometry(.007, 9, 7), new THREE.MeshBasicMaterial({ color: "#fffbe8", toneMapped: false })); gleam.position.set(side * .148, .905, -1.246); root.add(gleam);
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(.083, segments, 12), fur); ear.scale.set(.48, .92, .63); ear.position.set(side * .39, .865, -.81); root.add(ear);
     const forelimb = new THREE.Mesh(taperedSweepGeometry([
-      new THREE.Vector3(0, .52, .01),
-      new THREE.Vector3(-side * .012, .14, -.005),
-      new THREE.Vector3(side * .025, -.37, -.025),
-      new THREE.Vector3(side * .035, -.78, -.09),
-    ], [.19, .176, .135, .145], high ? 36 : 24, Math.max(14, segments), .82), fur);
-    forelimb.name = "continuous-anatomical-sloth-forelimb"; arm.add(forelimb);
+      new THREE.Vector3(side * .31, .76, -.44),
+      new THREE.Vector3(side * .45, .54, -.53),
+      new THREE.Vector3(side * .47, .32, -.65),
+      new THREE.Vector3(side * .39, .13, -.79),
+    ], [.135, .125, .102, .075], high ? 34 : 24, Math.max(14, segments), .78), fur);
+    forelimb.name = "weight-bearing-anatomical-sloth-forelimb"; root.add(forelimb);
     for (let claw = -1; claw <= 1; claw++) {
-      const curve = new THREE.CatmullRomCurve3([new THREE.Vector3(claw * .082, -.75, -.09), new THREE.Vector3(claw * .1, -.98, -.18), new THREE.Vector3(claw * .1, -1.12, -.33)]), tube = new THREE.Mesh(new THREE.TubeGeometry(curve, high ? 14 : 8, .031, high ? 10 : 7, false), ivory); arm.add(tube);
-      const tip = new THREE.Mesh(new THREE.ConeGeometry(.034, .16, high ? 10 : 7), ivory); tip.position.set(claw * .1, -1.17, -.37); tip.rotation.x = -.62; arm.add(tip);
+      const clawMesh = new THREE.Mesh(taperedSweepGeometry([
+        new THREE.Vector3(side * .39 + claw * .035, .14, -.77),
+        new THREE.Vector3(side * .39 + claw * .039, .085, -.88),
+        new THREE.Vector3(side * .39 + claw * .041, .055, -.99),
+      ], [.022, .016, .0035], high ? 16 : 10, high ? 8 : 6, .52), ivory);
+      clawMesh.name = "ground-contact-capped-sloth-foreclaw"; root.add(clawMesh);
     }
-    root.add(arm);
     const hindlimb = new THREE.Mesh(taperedSweepGeometry([
-      new THREE.Vector3(side * .27, .79, .02),
-      new THREE.Vector3(side * .33, .53, -.01),
-      new THREE.Vector3(side * .3, .24, -.055),
-      new THREE.Vector3(side * .28, .1, -.16),
-    ], [.215, .205, .155, .12], high ? 28 : 20, Math.max(13, segments), .86), fur);
-    hindlimb.name = "continuous-anatomical-sloth-hindlimb"; root.add(hindlimb);
+      new THREE.Vector3(side * .29, .7, .49),
+      new THREE.Vector3(side * .43, .5, .58),
+      new THREE.Vector3(side * .46, .29, .69),
+      new THREE.Vector3(side * .37, .13, .77),
+    ], [.15, .137, .108, .078], high ? 32 : 22, Math.max(13, segments), .74), fur);
+    hindlimb.name = "weight-bearing-anatomical-sloth-hindlimb"; root.add(hindlimb);
+    for (let claw = -1; claw <= 1; claw++) {
+      const footClaw = new THREE.Mesh(taperedSweepGeometry([
+        new THREE.Vector3(side * .37 + claw * .035, .14, .75),
+        new THREE.Vector3(side * .37 + claw * .039, .085, .85),
+        new THREE.Vector3(side * .37 + claw * .041, .055, .95),
+      ], [.022, .016, .0035], high ? 15 : 9, high ? 8 : 6, .5), ivory);
+      footClaw.name = "ground-contact-capped-sloth-hindclaw"; root.add(footClaw);
+    }
   }
-  const muzzle = new THREE.Mesh(new THREE.SphereGeometry(.16, segments, 14), creamFur); muzzle.scale.set(1.05, .58, .44); muzzle.position.set(0, 2.45, -.75); root.add(muzzle);
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(.098, segments, 14), darkFur); nose.scale.set(1.25, .7, .72); nose.position.set(0, 2.48, -.82); root.add(nose);
-  const smile = new THREE.Mesh(new THREE.TorusGeometry(.1, .014, 7, 24, Math.PI * .74), darkFur); smile.position.set(0, 2.36, -.8); smile.rotation.z = .42; root.add(smile);
-  if (variant === 1) { const satchel = new THREE.Mesh(new RoundedBoxGeometry(.42, .5, .15, 5, .05), leather); satchel.position.set(.5, 1.38, .05); satchel.rotation.z = -.13; root.add(satchel); }
-  castCharacterShadows(root, high); root.scale.setScalar(.96 + variant * .012); return { root, ownedTextures };
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(.062, segments, 14), darkFur); nose.scale.set(1.18, .66, .66); nose.position.set(0, .76, -1.252); root.add(nose);
+  root.userData.anatomicalSurfaceCount = 6;
+  root.userData.integratedFacialMask = true;
+  castCharacterShadows(root, high); root.scale.setScalar(.94 + variant * .012); return { root, ownedTextures };
 }

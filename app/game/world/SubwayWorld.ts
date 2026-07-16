@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import type { GameTextures } from "../rendering/textures";
 import { createPremiumHuman, markPremiumCharactersDisposed, type PremiumHumanRole } from "./PremiumCharacter";
+import { prepareAuthoredHumanLocomotion, updateAuthoredHumanMotion } from "./characters/AuthoredHumanAssets";
 
 export type SubwayStationId = "FIFTH_AV" | "LEXINGTON" | "WEST_FARMS";
 export type TrainPhase = "AWAY" | "APPROACHING" | "BOARDING" | "DEPARTING";
@@ -90,8 +91,10 @@ type StationRig = {
 type StationPassengerFlow = {
   base: THREE.Vector3;
   doorZ: number;
+  exchangeComplete: boolean;
   group: THREE.Group;
-  mode: "ALIGHT" | "BOARD" | "WAIT";
+  mode: "ALIGHT" | "AMBIENT" | "BOARD" | "WAIT";
+  phase: number;
   side: -1 | 1;
 };
 
@@ -336,14 +339,17 @@ function addNpc(parent: THREE.Group, x: number, z: number, palette: [string, str
   const faceVariants = [12, 15, 13, 16, 19, 14, 17, 18, 11, 0] as const;
   const result = createPremiumHuman({
     role,
-    quality: quality === "mobile" ? .48 : quality === "ultra" ? .82 : .64,
+    quality: quality === "mobile" ? .58 : quality === "ultra" ? 1 : .86,
     variant,
     faceVariant: faceVariants[variant % faceVariants.length],
     coat: palette[0],
     trousers: trouserColors[variant % trouserColors.length],
     skin: palette[1],
     accessory: role === "attendant" ? "radio" : accessories[variant % accessories.length],
-    pose: variant % 4 === 1 ? "checking-map" : "neutral",
+    // Station passengers translate through fare-control and platform routes.
+    // Keep their authored bind pose clean; prop gestures underneath HumanWalk
+    // were the source of doubled hands and abrupt arm snaps.
+    pose: "neutral",
   });
   const npc = result.root; npc.name = role === "attendant" ? "mta-station-attendant" : `subway-passenger-${variant}`; npc.position.set(x, 0, z); npc.rotation.y = facing; npc.scale.setScalar(.9); parent.add(npc); ownedTextures?.push(...result.ownedTextures); return npc;
 }
@@ -480,27 +486,32 @@ function buildTrain(textures: GameTextures, route: string, direction: string, co
         const gasket = new THREE.Mesh(new RoundedBoxGeometry(.61, .76, .018, 3, .04), doorGasket); gasket.position.set(0, .4, .041); door.add(gasket); doorWindow.position.z = .056;
       }
     }
-    const doorway = new THREE.Mesh(new RoundedBoxGeometry(2.18, 2.35, .018, 3, .04), dark); doorway.position.z = -.006; pair.add(doorway);
+    const doorway = new THREE.Mesh(new RoundedBoxGeometry(2.18, 2.35, .018, 3, .04), dark); doorway.position.z = -.58; pair.add(doorway);
     const openInterior = new THREE.Group(); openInterior.name = "open-door-interior"; openInterior.visible = false; pair.add(openInterior);
-    // Keep the open doorway behind the sliding leaves, but far enough in front
-    // of the dark recess to avoid z-fighting. A lit vestibule, floor threshold,
-    // pole, and seat edge make boarding read as a real car interior instead of
-    // a black teleport portal from platform height.
-    const doorwayGlow = new THREE.Mesh(new RoundedBoxGeometry(1.82, 2.02, .012, 3, .025), cabinGlow); doorwayGlow.position.z = .012; openInterior.add(doorwayGlow);
-    const vestibule = new THREE.Mesh(new RoundedBoxGeometry(1.22, 1.76, .009, 3, .018), interior); vestibule.position.set(0, -.03, .021); openInterior.add(vestibule);
-    const aisle = new THREE.Mesh(new RoundedBoxGeometry(.62, 1.42, .006, 3, .012), new THREE.MeshStandardMaterial({ color: "#4a4d48", roughness: .78 })); aisle.position.set(0, -.12, .028); openInterior.add(aisle);
-    const portal = new THREE.Mesh(new RoundedBoxGeometry(1.78, 1.98, .012, 3, .024), openInteriorMaterial); portal.name = "visible-open-car-interior"; portal.position.set(0, 0, .039); openInterior.add(portal);
+    // Build real vestibule depth behind every platform-facing doorway. The old
+    // full-frame bitmap portal looked like a flat loading card; this modeled
+    // shell preserves the sightline through the car until world streaming takes
+    // over after the player crosses the threshold.
+    const modeledInterior = new THREE.Group(); modeledInterior.name = "visible-open-car-interior"; openInterior.add(modeledInterior);
+    const backWall = new THREE.Mesh(new RoundedBoxGeometry(1.82, 2.02, .055, 3, .025), cabinGlow); backWall.position.z = -.57; modeledInterior.add(backWall);
+    const vestibule = new THREE.Mesh(new RoundedBoxGeometry(1.66, .08, .62, 3, .018), new THREE.MeshStandardMaterial({ color: "#4a4d48", roughness: .78 })); vestibule.position.set(0, -1.01, -.27); modeledInterior.add(vestibule);
+    const farDoorMaterial = new THREE.MeshStandardMaterial({ color: "#d8dad7", metalness: .46, roughness: .34 });
+    for (const half of [-1, 1]) {
+      const farDoor = new THREE.Mesh(new RoundedBoxGeometry(.72, 1.72, .035, 3, .025), farDoorMaterial); farDoor.position.set(half * .38, -.03, -.605); modeledInterior.add(farDoor);
+      const farWindow = new THREE.Mesh(new RoundedBoxGeometry(.42, .54, .018, 3, .03), glass); farWindow.position.set(half * .38, .34, -.63); modeledInterior.add(farWindow);
+    }
+    const routePanel = new THREE.Mesh(new THREE.PlaneGeometry(1.08, .24), openInteriorMaterial); routePanel.position.set(0, .83, -.64); modeledInterior.add(routePanel);
     const threshold = new THREE.Mesh(new RoundedBoxGeometry(1.76, .09, .075, 2, .015), brushedSteel); threshold.position.set(0, -1.03, .045); openInterior.add(threshold);
     // Layer a modeled, side-on vestibule over the authored depth plate. The
     // geometry is shared by every door and is disabled while the leaves are shut.
-    const vestibuleFloor = new THREE.Mesh(new RoundedBoxGeometry(1.7, .18, .36, 3, .025), new THREE.MeshStandardMaterial({ color: "#424744", roughness: .86 })); vestibuleFloor.position.set(0, -.94, .09); vestibuleFloor.rotation.x = .2; openInterior.add(vestibuleFloor);
+    const vestibuleFloor = new THREE.Mesh(new RoundedBoxGeometry(1.7, .12, .58, 3, .025), new THREE.MeshStandardMaterial({ color: "#424744", roughness: .86 })); vestibuleFloor.position.set(0, -.94, -.25); openInterior.add(vestibuleFloor);
     for (const sideOffset of [-.66, .66]) {
-      const seatEdge = new THREE.Mesh(new RoundedBoxGeometry(.32, .5, .08, 5, .05), seatSilhouetteMaterial); seatEdge.position.set(sideOffset, -.54, .072); openInterior.add(seatEdge);
-      const seatBack = new THREE.Mesh(new RoundedBoxGeometry(.3, .62, .055, 5, .04), seatSilhouetteMaterial); seatBack.position.set(sideOffset, -.28, .064); openInterior.add(seatBack);
+      const seatEdge = new THREE.Mesh(new RoundedBoxGeometry(.32, .5, .18, 5, .05), seatSilhouetteMaterial); seatEdge.position.set(sideOffset, -.54, -.34); openInterior.add(seatEdge);
+      const seatBack = new THREE.Mesh(new RoundedBoxGeometry(.3, .62, .1, 5, .04), seatSilhouetteMaterial); seatBack.position.set(sideOffset, -.28, -.42); openInterior.add(seatBack);
     }
-    const headerLight = new THREE.Mesh(new RoundedBoxGeometry(1.48, .06, .028, 2, .012), warmLight); headerLight.position.set(0, .89, .04); openInterior.add(headerLight);
-    for (const poleX of [-.5, .5]) { const pole = new THREE.Mesh(new THREE.CylinderGeometry(.025, .025, 2, radial), brushedSteel); pole.position.set(poleX, 0, .075); openInterior.add(pole); }
-    const indicator = new THREE.Mesh(new THREE.SphereGeometry(.055, radial, Math.max(6, radial - 2)), new THREE.MeshBasicMaterial({ color: "#e2513f", toneMapped: false })); indicator.position.set(0, 1.25, .075); openInterior.add(indicator);
+    const headerLight = new THREE.Mesh(new RoundedBoxGeometry(1.48, .06, .18, 2, .012), warmLight); headerLight.position.set(0, .89, -.31); openInterior.add(headerLight);
+    for (const poleX of [-.5, .5]) { const pole = new THREE.Mesh(new THREE.CylinderGeometry(.025, .025, 2, radial), brushedSteel); pole.position.set(poleX, 0, -.28); openInterior.add(pole); }
+    const indicator = new THREE.Mesh(new THREE.SphereGeometry(.055, radial, Math.max(6, radial - 2)), new THREE.MeshBasicMaterial({ color: "#e2513f", toneMapped: false })); indicator.position.set(0, 1.25, -.08); openInterior.add(indicator);
     pair.userData.platformFacing = side === platformSide; root.add(pair); doors.push(pair);
   }
   for (const side of [-1, 1]) for (const z of [-8.25, -3.1, 3.1, 8.25]) {
@@ -687,9 +698,21 @@ function buildStation(id: SubwayStationId, textures: GameTextures, adTextures: T
   const boothGlass = new THREE.MeshPhysicalMaterial({ color: "#b8d1d1", transparent: true, opacity: .36, transmission: quality === "mobile" ? 0 : .36, roughness: .16 });
   const boothBase = new THREE.Mesh(new RoundedBoxGeometry(2.85, .78, 2.1, 4, .08), boothBlue); boothBase.position.y = .38; booth.add(boothBase);
   const boothRoof = new THREE.Mesh(new RoundedBoxGeometry(3.05, .16, 2.3, 4, .06), steel); boothRoof.position.y = 2.2; booth.add(boothRoof);
-  for (const side of [-1, 1]) { const post = new THREE.Mesh(new RoundedBoxGeometry(.1, 1.45, .1, 2, .02), steel); post.position.set(side * 1.32, 1.42, 1); booth.add(post); }
-  const boothWindow = new THREE.Mesh(new RoundedBoxGeometry(2.55, 1.28, .055, 3, .035), boothGlass); boothWindow.position.set(0, 1.43, 1.04); booth.add(boothWindow); root.add(booth);
-  addStationAttendant(root, 8.05, 4, 26.45, Math.PI, quality, commuterMaps, ownedTextures);
+  for (const x of [-1.32, 1.32]) for (const z of [-.98, .98]) {
+    const post = new THREE.Mesh(new RoundedBoxGeometry(.1, 1.45, .1, 2, .02), steel); post.position.set(x, 1.42, z); booth.add(post);
+  }
+  for (const z of [-1.04, 1.04]) {
+    const wall = new THREE.Mesh(new RoundedBoxGeometry(2.55, 1.28, .055, 3, .035), boothGlass); wall.name = z < 0 ? "station-booth-front-glass" : "station-booth-back-glass"; wall.position.set(0, 1.43, z); booth.add(wall);
+  }
+  for (const x of [-1.36, 1.36]) {
+    const wall = new THREE.Mesh(new RoundedBoxGeometry(.055, 1.28, 1.88, 3, .035), boothGlass); wall.name = "station-booth-side-glass"; wall.position.set(x, 1.43, 0); booth.add(wall);
+  }
+  const counter = new THREE.Mesh(new RoundedBoxGeometry(2.48, .12, .44, 3, .035), boothBlue); counter.name = "station-booth-service-counter"; counter.position.set(0, .91, .84); booth.add(counter);
+  root.add(booth);
+  // The attendant belongs inside the four glass walls on the unpaid side.
+  // Parenting the authored character to the booth prevents later layout edits
+  // from silently leaving them stranded beside the enclosure.
+  addStationAttendant(booth, 0, 0, .08, Math.PI, quality, commuterMaps, ownedTextures);
   let metroCard: THREE.Group | null = null;
   if (isFifth) {
     const cardTexture = metroCardTexture(); ownedTextures.push(cardTexture);
@@ -710,9 +733,17 @@ function buildStation(id: SubwayStationId, textures: GameTextures, adTextures: T
   const authoredDoorZ = [-35.95, -29.85, -23.75, -16.1, -10, -3.9, 2.2, 9.85] as const;
   npcPlacements.slice(0, detail.npcCount).forEach(([x, z, palette, facing], index) => {
     const passenger = addNpc(root, x, z, palette, facing, index + (isLex ? 3 : id === "WEST_FARMS" ? 6 : 0), quality, commuterMaps, ownedTextures);
-    if (z > 11 || id === "WEST_FARMS") return;
+    prepareAuthoredHumanLocomotion(passenger);
     const doorZ = authoredDoorZ.reduce((nearest, candidate) => Math.abs(candidate - z) < Math.abs(nearest - z) ? candidate : nearest, authoredDoorZ[0]);
-    passengerFlows.push({ base: passenger.position.clone(), doorZ, group: passenger, mode: index % 3 === 0 ? "BOARD" : index % 3 === 1 ? "ALIGHT" : "WAIT", side: x < 0 ? -1 : 1 });
+    passengerFlows.push({
+      base: passenger.position.clone(),
+      doorZ,
+      exchangeComplete: false,
+      group: passenger,
+      mode: z > 11 || id === "WEST_FARMS" ? "AMBIENT" : index % 3 === 0 ? "BOARD" : index % 3 === 1 ? "ALIGHT" : "WAIT",
+      phase: index * 2.27 + (isLex ? 1.1 : id === "WEST_FARMS" ? 2.2 : 0),
+      side: x < 0 ? -1 : 1,
+    });
   });
   if (id === "WEST_FARMS") {
     const artWallMaterial = new THREE.MeshStandardMaterial({ color: "#26312f", roughness: .72, map: paintMap, bumpMap: paintMap, bumpScale: .012 });
@@ -798,6 +829,7 @@ export class SubwayWorld {
   secondsToTrain = 4;
   doorsOpen = false;
   private serviceCycle = -1;
+  private lastUpdateElapsed = 0;
   private doorOpenAmount = 0;
   private hasMetroCard = false;
   private readonly farePaidByStation = new Map<SubwayStationId, boolean>([["FIFTH_AV", false], ["LEXINGTON", true], ["WEST_FARMS", true]]);
@@ -833,6 +865,7 @@ export class SubwayWorld {
   }
 
   get spawn() { return this.stations.get(this.stationId)!.spawn; }
+  get arrivingService() { return { direction: this.correctTrain.direction, route: this.correctTrain.route }; }
   get farePaid() { return this.farePaidByStation.get(this.stationId) ?? true; }
   get fareObjective() {
     if (this.stationId !== "FIFTH_AV" || this.farePaid) return null;
@@ -1015,8 +1048,22 @@ export class SubwayWorld {
   }
 
   update(elapsed: number) {
-    if (this.stationId === "WEST_FARMS") { this.trainPhase = "AWAY"; this.doorsOpen = false; this.secondsToTrain = 0; this.correctTrain.root.visible = this.wrongTrain.root.visible = false; return; }
+    const delta = Math.min(Math.max(elapsed - this.lastUpdateElapsed, 0), .08);
+    this.lastUpdateElapsed = elapsed;
+    if (this.stationId === "WEST_FARMS") {
+      this.trainPhase = "AWAY";
+      this.doorsOpen = false;
+      this.secondsToTrain = 0;
+      this.correctTrain.root.visible = this.wrongTrain.root.visible = false;
+      // The terminal has no active train, but its visitors still need the same
+      // walk/pause state machine as every other station.
+      this.updateStationPassengerFlows(elapsed % SUBWAY_TRAIN_INTERVAL_SECONDS, delta);
+      return;
+    }
     const cycleNumber = Math.floor(elapsed / SUBWAY_TRAIN_INTERVAL_SECONDS);
+    if (cycleNumber !== this.serviceCycle) {
+      this.stations.get(this.stationId)?.passengerFlows.forEach(flow => { flow.exchangeComplete = false; });
+    }
     if (this.stationId === "FIFTH_AV" && cycleNumber !== this.serviceCycle) {
       // Successive 30-second arrivals alternate the two valid Broadway-line
       // services, so the authored N / R objective is true in play as well as UI.
@@ -1040,10 +1087,10 @@ export class SubwayWorld {
       train.root.position.y = -.08 + Math.sin(elapsed * 8 + (train.correct ? 0 : 1)) * .008;
       this.setDoorAmount(train, this.doorOpenAmount);
     }
-    this.updateStationPassengerFlows(cycle);
+    this.updateStationPassengerFlows(cycle, delta);
   }
 
-  private updateStationPassengerFlows(cycle: number) {
+  private updateStationPassengerFlows(cycle: number, delta: number) {
     const station = this.stations.get(this.stationId); if (!station) return;
     const exchangeActive = this.trainPhase === "BOARDING" && this.doorOpenAmount > .52;
     // The platform exchange is deliberately staged: riders appear from the car
@@ -1053,21 +1100,61 @@ export class SubwayWorld {
     const alightProgress = THREE.MathUtils.smoothstep(cycle, 6, 9.35);
     const boardProgress = THREE.MathUtils.smoothstep(cycle, 8.85, 12.75);
     station.passengerFlows.forEach((flow, index) => {
+      const previous = flow.group.position.clone();
       const doorway = new THREE.Vector3(flow.side * 2.5, flow.base.y, flow.doorZ + (index % 2 ? .24 : -.24));
-      if (!exchangeActive || flow.mode === "WAIT") {
+      let locomoting = false;
+      if (flow.mode === "AMBIENT" || (flow.mode === "WAIT" && !exchangeActive)) {
+        // Concourse and waiting passengers use a real walk/pause cycle rather
+        // than sliding continuously. WAIT riders keep their patrol tight so
+        // they still line up with the authored train doorway when it arrives.
+        const walkSeconds = 2.7 + index % 3 * .38, pauseSeconds = 2.1 + index % 2 * .9;
+        const routeSeconds = (walkSeconds + pauseSeconds) * 2;
+        const local = ((this.lastUpdateElapsed + flow.phase) % routeSeconds + routeSeconds) % routeSeconds;
+        const outbound = local < walkSeconds, returning = local >= walkSeconds + pauseSeconds && local < walkSeconds * 2 + pauseSeconds;
+        const amount = outbound ? local / walkSeconds : returning ? 1 - (local - walkSeconds - pauseSeconds) / walkSeconds : local < walkSeconds + pauseSeconds ? 1 : 0;
+        const eased = amount * amount * (3 - 2 * amount), travel = flow.mode === "WAIT" ? .58 : 1.42 + index % 3 * .22;
+        flow.group.visible = true;
+        flow.group.position.copy(flow.base); flow.group.position.z += eased * travel;
+        locomoting = outbound || returning;
+        if (outbound || returning) {
+          const targetYaw = returning ? Math.PI : 0;
+          const yawDelta = Math.atan2(
+            Math.sin(targetYaw - flow.group.rotation.y),
+            Math.cos(targetYaw - flow.group.rotation.y),
+          );
+          flow.group.rotation.y += yawDelta * (1 - Math.exp(-delta * 7));
+        }
+      } else if (!exchangeActive || flow.mode === "WAIT") {
         const waitingToBoard = flow.mode === "BOARD" && cycle < 13.2;
         const hasAlighted = flow.mode === "ALIGHT" && cycle >= 6;
         flow.group.visible = flow.mode === "WAIT" || waitingToBoard || hasAlighted;
-        flow.group.position.lerp(flow.base, .16); return;
-      }
-      if (flow.mode === "BOARD") {
-        flow.group.visible = boardProgress < .96; flow.group.position.lerpVectors(flow.base, doorway, boardProgress);
+        flow.group.position.lerp(flow.base, 1 - Math.exp(-delta * 7));
+        locomoting = flow.group.visible && flow.group.position.distanceTo(flow.base) > .025;
+      } else if (flow.mode === "BOARD") {
+        if (boardProgress >= .96) flow.exchangeComplete = true;
+        flow.group.visible = !flow.exchangeComplete; flow.group.position.lerpVectors(flow.base, doorway, boardProgress);
         flow.group.rotation.y = flow.side < 0 ? -Math.PI / 2 : Math.PI / 2;
+        locomoting = boardProgress > .015 && boardProgress < .955;
       } else {
-        flow.group.visible = true; flow.group.position.lerpVectors(doorway, flow.base, alightProgress);
+        if (alightProgress >= .985) flow.exchangeComplete = true;
+        flow.group.visible = true; flow.group.position.lerpVectors(doorway, flow.base, flow.exchangeComplete ? 1 : alightProgress);
         flow.group.rotation.y = flow.side < 0 ? Math.PI / 2 : -Math.PI / 2;
+        locomoting = alightProgress > .015 && alightProgress < .985;
       }
+      const distance = previous.distanceTo(flow.group.position);
+      updateAuthoredHumanMotion(flow.group, delta, flow.group.visible && locomoting ? "walk" : "idle", THREE.MathUtils.clamp(distance / Math.max(delta, .001) / 1.15, .65, 1.35));
     });
+    // Resolve the small number of station NPC footprints after animation. This
+    // keeps looping patrols and doorway exchanges from visibly intersecting.
+    for (let left = 0; left < station.passengerFlows.length; left++) for (let right = left + 1; right < station.passengerFlows.length; right++) {
+      const a = station.passengerFlows[left].group, b = station.passengerFlows[right].group;
+      if (!a.visible || !b.visible) continue;
+      const dx = b.position.x - a.position.x, dz = b.position.z - a.position.z, distance = Math.hypot(dx, dz);
+      if (distance <= .001 || distance >= .68) continue;
+      const correction = (.68 - distance) * .5 / distance;
+      a.position.x -= dx * correction; a.position.z -= dz * correction;
+      b.position.x += dx * correction; b.position.z += dz * correction;
+    }
   }
 
   /** Closes the doors, hides the other service, and moves the boarded train out. */
@@ -1084,12 +1171,17 @@ export class SubwayWorld {
     train.root.updateMatrixWorld(true);
   }
 
-  boardingOption(player: THREE.Vector3): BoardingOption | null {
+  boardingOption(player: THREE.Vector3, previousPlayer: THREE.Vector3): BoardingOption | null {
     if (!this.doorsOpen || this.stationId === "WEST_FARMS") return null;
+    // Boarding is a platform-level threshold crossing, not merely proximity to
+    // a door's X/Z footprint. The elevation guard prevents the mezzanine or
+    // fare-control collision correction from matching a train below it.
+    if (Math.abs(player.y - 1.48) > .48 || Math.abs(previousPlayer.y - 1.48) > .48) return null;
     let boarded: { depth: number; train: TrainRig } | null = null;
     for (const train of [this.correctTrain, this.wrongTrain]) for (const door of this.platformDoorPositions(train)) {
       const depth = train.platformSide < 0 ? player.x - door.x : door.x - player.x;
-      if (depth < .09 || depth > .86 || Math.abs(player.z - door.z) > .46) continue;
+      const previousDepth = train.platformSide < 0 ? previousPlayer.x - door.x : door.x - previousPlayer.x;
+      if (previousDepth > .16 || depth < .06 || depth > 1.02 || Math.abs(player.z - door.z) > .78) continue;
       if (!boarded || depth < boarded.depth) boarded = { depth, train };
     }
     return boarded ? { correct: boarded.train.correct, direction: boarded.train.direction, route: boarded.train.route, station: this.stationId } : null;
@@ -1098,6 +1190,7 @@ export class SubwayWorld {
   /** A wider non-boarding zone for optional UI hints; crossing the threshold is handled by boardingOption. */
   boardingHint(player: THREE.Vector3): BoardingOption | null {
     if (!this.doorsOpen || this.stationId === "WEST_FARMS") return null;
+    if (Math.abs(player.y - 1.48) > .58) return null;
     let nearest: { distance: number; train: TrainRig } | null = null;
     for (const train of [this.correctTrain, this.wrongTrain]) for (const door of this.platformDoorPositions(train)) {
       const distance = Math.hypot(player.x - door.x, player.z - door.z);

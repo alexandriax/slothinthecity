@@ -12,13 +12,30 @@ type HumanTemplate = {
   animations: THREE.AnimationClip[];
 };
 
+type HumanManifest = {
+  archetypes: Array<{
+    id: HumanArchetype;
+    lod0: { file: string; sha256: string };
+    lod2: { file: string; sha256: string };
+  }>;
+};
+
 type HydrationState = {
   disposed: boolean;
   fallbackChildren: THREE.Object3D[];
   fallbackTextures: THREE.Texture[];
   hydrated?: THREE.Group;
+  motion?: {
+    action?: THREE.AnimationAction;
+    clipName?: string;
+    mixer: THREE.AnimationMixer;
+    requestedClipName?: string;
+    requestedSeconds: number;
+  };
   ownedTextures: THREE.Texture[];
 };
+
+export type AuthoredHumanMotion = "idle" | "walk";
 
 const AUTHORED_HUMAN_ROOT = "/game/characters/authored";
 const DRACO_DECODER_ROOT = "/game/draco/";
@@ -34,6 +51,7 @@ const atlasPromises = new Map<string, Promise<THREE.Texture>>();
 const atlasTileTextures = new Map<string, THREE.Texture>();
 const hydrationStates = new WeakMap<THREE.Group, HydrationState>();
 let sharedGltfLoader: GLTFLoader | undefined;
+let manifestPromise: Promise<HumanManifest | undefined> | undefined;
 
 function positiveModulo(value: number, count: number) {
   return ((Math.floor(value) % count) + count) % count;
@@ -79,6 +97,23 @@ function createLoader() {
   loader.setDRACOLoader(draco);
   sharedGltfLoader = loader;
   return sharedGltfLoader;
+}
+
+function loadManifest() {
+  manifestPromise ??= fetch(`${AUTHORED_HUMAN_ROOT}/manifest.json`, { cache: "no-cache" })
+    .then(response => {
+      if (!response.ok) throw new Error(`Authored human manifest returned ${response.status}`);
+      return response.json() as Promise<HumanManifest>;
+    })
+    // Static file hosts that omit the manifest still get the stable filenames;
+    // the checked-in asset test guarantees those files remain complete.
+    .catch(() => undefined);
+  return manifestPromise;
+}
+
+function versionedAssetUrl(file: string, sha256?: string) {
+  const revision = sha256?.slice(0, 12);
+  return `${AUTHORED_HUMAN_ROOT}/${file}${revision ? `?v=${revision}` : ""}`;
 }
 
 function loadTemplate(url: string) {
@@ -162,20 +197,36 @@ function canonicalMaterialName(material: THREE.Material) {
   return material.name.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+function resolvedOutfit(options: PremiumHumanOptions) {
+  if (options.outfit) return options.outfit;
+  if (options.role === "attendant") return "zoo-uniform" as const;
+  return positiveModulo(options.clothingVariant ?? options.variant, 3) === 0
+    ? "cotton-denim" as const
+    : positiveModulo(options.clothingVariant ?? options.variant, 3) === 1
+      ? "silk-leggings" as const
+      : "knit-chinos" as const;
+}
+
 function mappedMaterial(
   source: THREE.Material,
   options: PremiumHumanOptions,
   textures: { skin: THREE.Texture; clothUpper: THREE.Texture; clothLower: THREE.Texture },
 ) {
   const name = canonicalMaterialName(source);
+  const outfit = resolvedOutfit(options);
   const physical = (parameters: THREE.MeshPhysicalMaterialParameters) => {
     const material = new THREE.MeshPhysicalMaterial(parameters);
     material.name = source.name;
     return material;
   };
   if (name.includes("skin")) return physical({
-    map: textures.skin,
-    color: "#ffffff",
+    // The atlas is a seamless pore/detail field, not a second identity color.
+    // Using it as albedo made UV islands turn the face nearly black while the
+    // neck stayed pale. Keep the caller's authored tone uniform and reuse the
+    // shared atlas only for small-scale surface relief.
+    bumpMap: textures.skin,
+    bumpScale: .012,
+    color: options.skin,
     roughness: .68,
     metalness: 0,
     clearcoat: .025,
@@ -183,19 +234,24 @@ function mappedMaterial(
     sheen: .08,
   });
   if (name.includes("clothupper") || name.includes("uppercloth") || name.includes("jacket") || name.includes("shirt")) return physical({
-    map: textures.clothUpper,
-    color: "#ffffff",
-    roughness: .88,
+    bumpMap: textures.clothUpper,
+    bumpScale: outfit === "silk-leggings" ? .006 : .014,
+    color: options.coat,
+    roughness: outfit === "silk-leggings" ? .52 : outfit === "zoo-uniform" ? .74 : .88,
     metalness: 0,
-    sheen: .28,
-    sheenRoughness: .78,
+    sheen: outfit === "silk-leggings" ? .62 : outfit === "zoo-uniform" ? .38 : .2,
+    sheenRoughness: outfit === "silk-leggings" ? .48 : .76,
+    clearcoat: outfit === "silk-leggings" ? .02 : 0,
+    clearcoatRoughness: .68,
   });
   if (name.includes("clothlower") || name.includes("lowercloth") || name.includes("trouser") || name.includes("pants")) return physical({
-    map: textures.clothLower,
-    color: "#ffffff",
-    roughness: .9,
+    bumpMap: textures.clothLower,
+    bumpScale: outfit === "silk-leggings" ? .005 : outfit === "cotton-denim" ? .022 : .014,
+    color: options.trousers,
+    roughness: outfit === "silk-leggings" ? .64 : outfit === "cotton-denim" ? .94 : .84,
     metalness: 0,
-    sheen: .18,
+    sheen: outfit === "silk-leggings" ? .3 : outfit === "cotton-denim" ? .08 : .16,
+    sheenRoughness: outfit === "silk-leggings" ? .62 : .82,
   });
   if (name.includes("hair")) return physical({
     color: options.hair ?? (positiveModulo(options.variant, 4) === 2 ? "#57402e" : "#201a17"),
@@ -332,6 +388,82 @@ function normalizeHeight(instance: THREE.Group, targetHeight: number) {
   instance.position.y -= scaledBounds.min.y;
 }
 
+function applyZooUniformShirtPrint(instance: THREE.Group, options: PremiumHumanOptions) {
+  if (!options.zooNameTag) return undefined;
+  const canvas = document.createElement("canvas");
+  canvas.width = 1024; canvas.height = 256;
+  const context = canvas.getContext("2d");
+  if (!context) return undefined;
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = "#ffffff";
+  context.textAlign = "center"; context.textBaseline = "middle";
+  context.font = "700 70px Helvetica, Arial, sans-serif";
+  context.fillText(options.zooNameTag.toUpperCase(), canvas.width / 2, canvas.height / 2, canvas.width - 36);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.name = `${options.zooNameTag}-integrated-shirt-print-texture`;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = options.quality > .8 ? 8 : 4;
+  texture.needsUpdate = true;
+
+  const bounds = new THREE.Box3().setFromObject(instance);
+  const bodyHeight = bounds.max.y - bounds.min.y;
+  const printCenter = new THREE.Vector2(
+    bounds.min.x + bodyHeight * .205,
+    bounds.min.y + bodyHeight * .705,
+  );
+  const printSize = new THREE.Vector2(bodyHeight * .085, bodyHeight * .021);
+  const printColor = new THREE.Color("#c6d4a7");
+  let applied = false;
+  instance.traverse(object => {
+    if (!(object instanceof THREE.Mesh)) return;
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    materials.forEach(material => {
+      if (!(material instanceof THREE.MeshPhysicalMaterial)) return;
+      if (!canonicalMaterialName(material).includes("clothupper")) return;
+      applied = true;
+      material.userData.zooName = options.zooNameTag;
+      material.userData.integratedShirtPrint = true;
+      material.onBeforeCompile = shader => {
+        shader.uniforms.zooPrintMap = { value: texture };
+        shader.uniforms.zooPrintCenter = { value: printCenter };
+        shader.uniforms.zooPrintSize = { value: printSize };
+        shader.uniforms.zooPrintColor = { value: printColor };
+        shader.vertexShader = shader.vertexShader
+          .replace(
+            "#include <common>",
+            "#include <common>\nvarying vec3 vZooPrintPosition;\nvarying vec3 vZooPrintNormal;",
+          )
+          .replace(
+            "#include <skinnormal_vertex>",
+            "#include <skinnormal_vertex>\nvZooPrintNormal = objectNormal;",
+          )
+          .replace(
+            "#include <skinning_vertex>",
+            "#include <skinning_vertex>\nvZooPrintPosition = transformed;",
+          );
+        shader.fragmentShader = shader.fragmentShader
+          .replace(
+            "#include <common>",
+            "#include <common>\nuniform sampler2D zooPrintMap;\nuniform vec2 zooPrintCenter;\nuniform vec2 zooPrintSize;\nuniform vec3 zooPrintColor;\nvarying vec3 vZooPrintPosition;\nvarying vec3 vZooPrintNormal;",
+          )
+          .replace(
+            "#include <map_fragment>",
+            `#include <map_fragment>
+            vec2 zooPrintUv = (vZooPrintPosition.xy - zooPrintCenter) / zooPrintSize + vec2(0.5);
+            float zooPrintBounds = step(0.0, zooPrintUv.x) * step(zooPrintUv.x, 1.0)
+              * step(0.0, zooPrintUv.y) * step(zooPrintUv.y, 1.0);
+            float zooPrintFront = smoothstep(0.30, 0.72, normalize(vZooPrintNormal).z);
+            float zooPrintInk = texture2D(zooPrintMap, zooPrintUv).a * zooPrintBounds * zooPrintFront * 0.72;
+            diffuseColor.rgb = mix(diffuseColor.rgb, zooPrintColor, zooPrintInk);`,
+          );
+      };
+      material.customProgramCacheKey = () => "authored-zoo-uniform-integrated-print-v1";
+      material.needsUpdate = true;
+    });
+  });
+  return applied ? texture : undefined;
+}
+
 function disposeInstance(instance: THREE.Object3D) {
   const geometries = new Set<THREE.BufferGeometry>();
   const materials = new Set<THREE.Material>();
@@ -378,20 +510,45 @@ function replaceFallbackWithAuthored(host: THREE.Group, state: HydrationState, i
   host.userData.authoredHumanVisibleRoots = 1;
 }
 
+function seedNeutralAnimation(instance: THREE.Group, state: HydrationState) {
+  const clip = instance.animations.find(candidate => candidate.name === "HumanIdle")
+    ?? instance.animations.find(candidate => candidate.name.toLowerCase().includes("idle"));
+  if (!clip) return;
+  const mixer = new THREE.AnimationMixer(instance);
+  const action = mixer.clipAction(clip).reset().setLoop(THREE.LoopRepeat, Infinity);
+  action.enabled = true;
+  action.play();
+  mixer.update(0);
+  state.motion = {
+    action,
+    clipName: clip.name,
+    mixer,
+    requestedClipName: clip.name,
+    requestedSeconds: 0,
+  };
+}
+
 async function hydrate(
   host: THREE.Group,
   options: PremiumHumanOptions,
   state: HydrationState,
 ) {
   const archetype = archetypeFor(options), preferredLod = lodFor(options.quality);
-  const preferredUrl = `${AUTHORED_HUMAN_ROOT}/${archetype}-${preferredLod}.glb`;
-  const fallbackUrl = `${AUTHORED_HUMAN_ROOT}/${archetype}-${preferredLod === "lod0" ? "lod2" : "lod0"}.glb`;
   host.userData.authoredHumanArchetype = archetype;
   host.userData.authoredHumanLod = preferredLod;
   host.userData.authoredHumanStatus = "loading";
 
   let pendingInstance: THREE.Group | undefined;
   try {
+    const manifest = await loadManifest();
+    const manifestEntry = manifest?.archetypes.find(entry => entry.id === archetype);
+    const fallbackLod = preferredLod === "lod0" ? "lod2" : "lod0";
+    const preferredContract = manifestEntry?.[preferredLod];
+    const fallbackContract = manifestEntry?.[fallbackLod];
+    const preferredUrl = versionedAssetUrl(preferredContract?.file ?? `${archetype}-${preferredLod}.glb`, preferredContract?.sha256);
+    const fallbackUrl = versionedAssetUrl(fallbackContract?.file ?? `${archetype}-${fallbackLod}.glb`, fallbackContract?.sha256);
+    host.userData.authoredHumanAssetRevision = preferredContract?.sha256 ?? "unversioned";
+    host.userData.authoredHumanAssetUrl = preferredUrl;
     const [loadedTemplate, skinAtlas, clothAtlas] = await Promise.all([
       loadTemplate(preferredUrl)
         .then(template => ({ template, lod: preferredLod }))
@@ -414,12 +571,21 @@ async function hydrate(
     pendingInstance = instance;
     instance.name = `authored-human-${archetype}`;
     remapMaterials(instance, options, textures);
-    poseSkeleton(instance, options.pose);
+    // Locomoting characters must begin from the authored neutral bind pose.
+    // Layering the legacy map/phone/wave overrides under HumanWalk produced
+    // doubled hands, long fingers, hunched shoulders and violent limb arcs.
+    poseSkeleton(instance, host.userData.authoredHumanLocomotion ? "neutral" : options.pose);
+    const uniformShirtPrint = applyZooUniformShirtPrint(instance, options);
+    if (uniformShirtPrint) state.ownedTextures.push(uniformShirtPrint);
     // Blender's authored bodies face -Y. The glTF Y-up conversion maps that
     // to +Z, while every existing game placement expects a -Z-facing model.
     // Rotate only the authored child so host transforms and interaction roots
     // remain compatible with the synchronous procedural implementation.
     instance.rotation.y = Math.PI;
+    // Evaluate the authored neutral clip before sizing or revealing the model.
+    // Otherwise the first rendered frame exposes the (historically hunched)
+    // bind pose and the head appears to snap upright when motion first updates.
+    seedNeutralAnimation(instance, state);
     normalizeHeight(instance, options.role === "attendant" ? 2.5 : 2.43);
     if (state.disposed || host.userData.authoredHumanDisposed) {
       disposeInstance(instance);
@@ -480,6 +646,7 @@ export function markAuthoredHumanDisposed(host: THREE.Group) {
   const state = hydrationStates.get(host);
   if (!state || state.disposed) return;
   state.disposed = true;
+  state.motion?.mixer.stopAllAction();
   if (state.hydrated) {
     host.remove(state.hydrated);
     disposeInstance(state.hydrated);
@@ -487,6 +654,61 @@ export function markAuthoredHumanDisposed(host: THREE.Group) {
   }
   host.animations = [];
   hydrationStates.delete(host);
+}
+
+/**
+ * Advances an authored character clip from world-space motion. Callers pass
+ * their actual movement state, so feet cycle only while the NPC translates
+ * instead of the former ice-skating/sliding presentation.
+ */
+export function updateAuthoredHumanMotion(
+  host: THREE.Group,
+  delta: number,
+  motion: AuthoredHumanMotion,
+  speed = 1,
+) {
+  const state = hydrationStates.get(host);
+  const hydrated = state?.hydrated;
+  if (!state || state.disposed || !hydrated || !hydrated.animations.length) return;
+  const desired = motion === "walk" ? "HumanWalk" : "HumanIdle";
+  const clip = hydrated.animations.find(candidate => candidate.name === desired)
+    ?? hydrated.animations.find(candidate => candidate.name.toLowerCase().includes(motion))
+    ?? hydrated.animations[0];
+  state.motion ??= { mixer: new THREE.AnimationMixer(hydrated), requestedSeconds: 0 };
+  if (state.motion.requestedClipName !== clip.name) {
+    state.motion.requestedClipName = clip.name;
+    state.motion.requestedSeconds = 0;
+  } else {
+    state.motion.requestedSeconds += Math.min(Math.max(delta, 0), .08);
+  }
+  // Route easing and collision correction can move an otherwise stationary
+  // NPC by fractions of a millimetre. A short hysteresis window prevents those
+  // changes from restarting opposing crossfades every frame.
+  const settleSeconds = motion === "walk" ? .1 : .18;
+  if (state.motion.clipName && state.motion.clipName !== clip.name && state.motion.requestedSeconds < settleSeconds) {
+    state.motion.mixer.update(Math.min(Math.max(delta, 0), .08));
+    return;
+  }
+  if (state.motion.clipName !== clip.name) {
+    const next = state.motion.mixer.clipAction(clip).reset().setLoop(THREE.LoopRepeat, Infinity);
+    next.enabled = true;
+    next.fadeIn(.16).play();
+    state.motion.action?.fadeOut(.16);
+    state.motion.action = next;
+    state.motion.clipName = clip.name;
+    state.motion.requestedSeconds = 0;
+  }
+  state.motion.mixer.timeScale = THREE.MathUtils.clamp(speed, .45, 1.65);
+  state.motion.mixer.update(Math.min(Math.max(delta, 0), .08));
+}
+
+/**
+ * Declares that a premium human will translate through the world. This is set
+ * synchronously, before its GLB finishes loading, so hydration never applies a
+ * static gesture underneath the walk cycle.
+ */
+export function prepareAuthoredHumanLocomotion(host: THREE.Group) {
+  host.userData.authoredHumanLocomotion = true;
 }
 
 /** Marks every premium human below a streamed world root before teardown. */
