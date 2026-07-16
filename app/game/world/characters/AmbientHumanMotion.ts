@@ -11,6 +11,7 @@ export type AmbientHumanAgent = {
   pauseSeconds: number;
   phase: number;
   previous: THREE.Vector3;
+  initialized: boolean;
 };
 
 export type AmbientHumanAgentOptions = {
@@ -47,6 +48,7 @@ export function createAmbientHumanAgent(
     pauseSeconds: options.pauseSeconds ?? 2.6,
     phase: options.phase ?? 0,
     previous: root.position.clone(),
+    initialized: false,
   };
 }
 
@@ -73,6 +75,12 @@ export function updateAmbientHumanAgent(agent: AmbientHumanAgent, elapsed: numbe
   // so the gait naturally settles before each full stop.
   const eased = amount * amount * (3 - 2 * amount);
   agent.root.position.copy(agent.origin).addScaledVector(agent.axis, eased * agent.travel);
+  if (!agent.initialized) {
+    // Establish the phase position before deriving velocity. This prevents a
+    // visible origin-to-route teleport and a one-frame maximum-speed walk pose.
+    agent.previous.copy(agent.root.position);
+    agent.initialized = true;
+  }
   if (moving) {
     const facing = agent.axis.clone().multiplyScalar(direction);
     const targetYaw = Math.atan2(facing.x, facing.z);

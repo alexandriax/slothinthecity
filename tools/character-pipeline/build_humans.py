@@ -229,12 +229,21 @@ def copy_source_object(source_name: str, name: str, collection: bpy.types.Collec
     clone.data = source.data.copy()
     clone.animation_data_clear()
     clone.name = name
-    clone.location = (0.0, 0.0, 0.0)
-    clone.rotation_euler = (0.0, 0.0, 0.0)
-    clone.scale = (1.0, 1.0, 1.0)
+    # A duplicated Blender object retains the source object's evaluated
+    # matrix until the next dependency-graph update.  Merely assigning
+    # ``location = 0`` left object_bounds() reading that stale translation,
+    # so every fitted-garment/scalp predicate was evaluated several metres
+    # away from the actual body.  Set the complete matrix synchronously; this
+    # keeps the anatomical mesh centred from the very first pipeline step.
+    clone.matrix_world = Matrix.Identity(4)
     for modifier in list(clone.modifiers):
         clone.modifiers.remove(modifier)
     collection.objects.link(clone)
+    # Force Blender to invalidate the source object's cached evaluated
+    # transform before any bounds-based topology selection runs.  Without
+    # this update matrix_world is identity while bound_box still reflects the
+    # translated source for one dependency-graph tick.
+    bpy.context.view_layer.update()
     return clone
 
 
@@ -282,10 +291,10 @@ def corrected_head_point(point: Vector, low: Vector, high: Vector, rigid: bool =
     if weight <= 0.0:
         return point.copy()
     pivot = Vector((0.0, height * 0.008, low.z + height * 0.775))
-    # The scan's neutral head is pitched sharply toward the chest. Fifteen
-    # degrees keeps the gaze level in the browser's lower first-person camera
-    # while avoiding the chin-up result from the earlier 21° experiment.
-    angle = math.radians(-15.0) * weight
+    # The source scan pitches the cranium toward the chest. Positive X brings
+    # the face back above the sternum for a level gaze. The old negative angle
+    # doubled that hunch and baked a roughly -19 degree neck into every GLB.
+    angle = math.radians(18.0) * weight
     relative = point - pivot
     return pivot + Vector(
         (
@@ -320,7 +329,7 @@ def straighten_head_detail(obj: bpy.types.Object, body: bpy.types.Object) -> Non
     """
     low, high = object_bounds(body)
     corrected = corrected_head_point(obj.location, low, high, rigid=True)
-    rotation = Matrix.Rotation(math.radians(-15.0), 4, "X")
+    rotation = Matrix.Rotation(math.radians(18.0), 4, "X")
     obj.location = corrected
     obj.rotation_euler.rotate(rotation.to_euler())
 
@@ -459,8 +468,14 @@ def hair_predicate(style: str) -> Callable[[Vector, Vector, Vector], bool]:
         # Height alone is not enough: on the more compact female head the
         # brow, eye sockets and upper cheeks also sit above 0.94. Keep the
         # crown on/behind the hairline in depth as well.
-        crown = z > 0.940 and y > -0.040
-        back_drop = long_style and z > 0.895 and y > -0.004
+        # In this scan the face points toward -Y: the eye line sits near
+        # -0.067h while the scalp crown/back is at roughly -0.01h..+0.03h.
+        # The previous +Y-only cutoff removed the Hair mesh altogether; the
+        # older -0.04h cutoff reached the brow/temples and rendered as a black
+        # face mask. This narrow rear-facing band keeps a continuous cap while
+        # staying well behind every facial feature.
+        crown = z > 0.840 and y > -0.012
+        back_drop = long_style and z > 0.800 and y > 0.002
         return x < 0.125 and (crown or back_drop)
     return predicate
 
@@ -615,9 +630,11 @@ def make_armature(body: bpy.types.Object, collection: bpy.types.Collection, sour
     bone("Hips", (0, 0, z0 + h * 0.475), (0, 0, z0 + h * 0.535))
     bone("Spine", (0, 0, z0 + h * 0.535), (0, 0, z0 + h * 0.650), "Hips", True)
     bone("Chest", (0, 0, z0 + h * 0.650), (0, 0, z0 + h * 0.775), "Spine", True)
-    neck_head = corrected_head_point(Vector((0, 0, z0 + h * 0.815)), low, high)
-    neck_tail = corrected_head_point(Vector((0, 0, z0 + h * 0.855)), low, high)
-    head_tail = corrected_head_point(Vector((0, 0, z0 + h * 0.985)), low, high)
+    # Keep the bind chain upright. The mesh correction above changes anatomy;
+    # applying it to the rig as well reintroduced a pitched neck rest pose.
+    neck_head = Vector((0, 0, z0 + h * 0.815))
+    neck_tail = Vector((0, 0, z0 + h * 0.855))
+    head_tail = Vector((0, 0, z0 + h * 0.985))
     bone("Neck", neck_head, neck_tail, "Chest")
     bone("Head", neck_tail, head_tail, "Neck", True)
 
@@ -755,15 +772,25 @@ def add_idle_action(rig: bpy.types.Object) -> bpy.types.Action:
     rig.animation_data_create()
     rig.animation_data.action = action
     for frame, breath in ((1, 0.0), (32, 0.010), (64, 0.0)):
+        hips = rig.pose.bones.get("Hips")
         chest = rig.pose.bones.get("Chest")
-        head = rig.pose.bones.get("Head")
+        if hips:
+            # Keep the root represented in the idle clip without exporting a
+            # zero-valued root rotation. glTF's coordinate conversion can
+            # interpret that rotation relative to the armature basis and flip
+            # an otherwise upright character by 180 degrees in Three.js.
+            hips.location = (0.0, 0.0, 0.0)
+            hips.keyframe_insert("location", frame=frame, group="HumanIdle")
         if chest:
             chest.scale = (1.0 + breath * 0.35, 1.0 + breath * 0.35, 1.0 + breath)
             chest.keyframe_insert("scale", frame=frame, group="HumanIdle")
-        if head:
-            head.rotation_mode = "XYZ"
-            head.rotation_euler.z = math.radians(0.8) * math.sin(frame / 64.0 * math.pi * 2.0)
-            head.keyframe_insert("rotation_euler", frame=frame, group="HumanIdle")
+        # Deliberately leave the posture chain on the corrected authored bind.
+        # Blender's glTF basis conversion turns apparently zero-valued local
+        # rotations on this imported armature into ~57-degree X rotations per
+        # parent. Keying Spine/Chest/Neck/Head therefore compounded into the
+        # familiar hunched pose (and could invert the whole body). Idle only
+        # needs a root translation channel plus a subtle breathing scale; the
+        # runtime mixer restores all unkeyed bones to the upright bind pose.
     for fcurve in action.fcurves:
         for keyframe in fcurve.keyframe_points:
             keyframe.interpolation = "SINE"
@@ -803,6 +830,14 @@ def add_walk_action(rig: bpy.types.Object) -> bpy.types.Action:
         if chest:
             chest.rotation_euler.z = math.radians(-2.2) * stride
             chest.keyframe_insert("rotation_euler", frame=frame, group="HumanWalk")
+        for bone_name in ("Hips", "Spine", "Neck", "Head"):
+            posture = rig.pose.bones.get(bone_name)
+            if posture:
+                posture.rotation_mode = "XYZ"
+                posture.rotation_euler.x = 0.0
+                posture.rotation_euler.y = 0.0
+                posture.rotation_euler.z = 0.0
+                posture.keyframe_insert("rotation_euler", frame=frame, group="HumanWalk")
         for side, direction in (("L", 1.0), ("R", -1.0)):
             upper_leg = rig.pose.bones.get(f"UpperLeg.{side}")
             lower_leg = rig.pose.bones.get(f"LowerLeg.{side}")
@@ -1051,7 +1086,8 @@ def build_archetype(
     # plane. Only the central neckline gets a narrow finishing pass; flattening
     # wrists or scalp boundaries stretched alternating triangles into the
     # pointy chest and shoulder fragments seen in review.
-    level_surface_boundary(upper, body, neckline_boundary, 0.84)
+    # Preserve the source surface edge. Flattening this boundary stretched
+    # alternating triangles into the torn collar/shoulder spikes seen in QA.
     for obj in (upper, lower, shoes, hair):
         apply_modifiers(obj)
     recess_body_under_shells(

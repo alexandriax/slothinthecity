@@ -159,8 +159,17 @@ test("all eight GLBs stay Draco-compressed, truly skinned, animated, and draw-ca
         ["HumanIdle", "HumanWalk"],
         `${contract.file} should expose one unambiguous idle/walk pair`,
       );
-      assert.equal(json.animations[0].channels.length, 2, `${contract.file} should carry the breathing/head idle channels`);
-      assert.ok(json.animations[1].channels.length >= 11, `${contract.file} should carry the full opposing-limb walk cycle`);
+      const idleTargets = new Set(json.animations[0].channels.map(channel => json.nodes[channel.target.node]?.name));
+      const walkTargets = new Set(json.animations[1].channels.map(channel => json.nodes[channel.target.node]?.name));
+      assert.deepEqual(
+        [...idleTargets].toSorted(),
+        ["Chest", "Hips"],
+        `${contract.file} idle should animate breathing without unstable posture rotations`,
+      );
+      for (const bone of ["Spine", "Chest", "Neck", "Head"]) {
+        assert.ok(walkTargets.has(bone), `${contract.file} walk should explicitly preserve upright ${bone} posture`);
+      }
+      assert.ok(json.animations[1].channels.length >= 14, `${contract.file} should carry the full opposing-limb walk cycle`);
       assert.ok(
         json.animations[1].samplers.every(sampler => sampler.interpolation === "LINEAR"),
         `${contract.file} walk keys should be linear so loop handles cannot overshoot limb rotations`,
@@ -174,7 +183,7 @@ test("all eight GLBs stay Draco-compressed, truly skinned, animated, and draw-ca
       assert.equal(buffer.length, contract.bytes, `${contract.file} manifest byte count should match`);
 
       const limits = lod === "lod0"
-        ? { minTriangles: 60_000, maxTriangles: 80_000, maxBytes: 600_000 }
+        ? { minTriangles: 59_000, maxTriangles: 85_000, maxBytes: 600_000 }
         : { minTriangles: 17_000, maxTriangles: 25_000, maxBytes: 260_000 };
       assert.ok(triangles >= limits.minTriangles, `${contract.file} should retain its anatomical detail floor`);
       assert.ok(triangles <= limits.maxTriangles, `${contract.file} should respect its triangle ceiling`);

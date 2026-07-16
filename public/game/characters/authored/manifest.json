@@ -4,20 +4,20 @@
       "id": "human-male-short",
       "license": "CC0-1.0",
       "lod0": {
-        "bytes": 404120,
+        "bytes": 404644,
         "file": "human-male-short-lod0.glb",
         "materials": 8,
         "meshes": 8,
-        "triangles": 79830,
-        "vertices": 40017
+        "triangles": 77174,
+        "vertices": 38627
       },
       "lod2": {
-        "bytes": 180744,
+        "bytes": 183576,
         "file": "human-male-short-lod2.glb",
         "materials": 8,
         "meshes": 8,
-        "triangles": 22584,
-        "vertices": 11392
+        "triangles": 21976,
+        "vertices": 11028
       },
       "source": "male"
     },
@@ -25,20 +25,20 @@
       "id": "human-male-curly",
       "license": "CC0-1.0",
       "lod0": {
-        "bytes": 382496,
+        "bytes": 427400,
         "file": "human-male-curly-lod0.glb",
         "materials": 8,
         "meshes": 8,
-        "triangles": 75716,
-        "vertices": 37901
+        "triangles": 82032,
+        "vertices": 41060
       },
       "lod2": {
-        "bytes": 173784,
+        "bytes": 191816,
         "file": "human-male-curly-lod2.glb",
         "materials": 8,
         "meshes": 8,
-        "triangles": 21432,
-        "vertices": 10752
+        "triangles": 23324,
+        "vertices": 11706
       },
       "source": "male"
     },
@@ -46,20 +46,20 @@
       "id": "human-female-bob",
       "license": "CC0-1.0",
       "lod0": {
-        "bytes": 338048,
+        "bytes": 332548,
         "file": "human-female-bob-lod0.glb",
         "materials": 8,
         "meshes": 8,
-        "triangles": 64410,
-        "vertices": 32312
+        "triangles": 59952,
+        "vertices": 30026
       },
       "lod2": {
-        "bytes": 148500,
+        "bytes": 149572,
         "file": "human-female-bob-lod2.glb",
         "materials": 8,
         "meshes": 8,
-        "triangles": 18269,
-        "vertices": 9224
+        "triangles": 17023,
+        "vertices": 8555
       },
       "source": "female"
     },
@@ -67,20 +67,20 @@
       "id": "human-female-ponytail",
       "license": "CC0-1.0",
       "lod0": {
-        "bytes": 348416,
+        "bytes": 338088,
         "file": "human-female-ponytail-lod0.glb",
         "materials": 8,
         "meshes": 8,
-        "triangles": 66124,
-        "vertices": 33175
+        "triangles": 60280,
+        "vertices": 30191
       },
       "lod2": {
-        "bytes": 152372,
+        "bytes": 151320,
         "file": "human-female-ponytail-lod2.glb",
         "materials": 8,
         "meshes": 8,
-        "triangles": 18750,
-        "vertices": 9471
+        "triangles": 17114,
+        "vertices": 8601
       },
       "source": "female"
     }

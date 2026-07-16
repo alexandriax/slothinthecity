@@ -387,6 +387,24 @@ function replaceFallbackWithAuthored(host: THREE.Group, state: HydrationState, i
   host.userData.authoredHumanVisibleRoots = 1;
 }
 
+function seedNeutralAnimation(instance: THREE.Group, state: HydrationState) {
+  const clip = instance.animations.find(candidate => candidate.name === "HumanIdle")
+    ?? instance.animations.find(candidate => candidate.name.toLowerCase().includes("idle"));
+  if (!clip) return;
+  const mixer = new THREE.AnimationMixer(instance);
+  const action = mixer.clipAction(clip).reset().setLoop(THREE.LoopRepeat, Infinity);
+  action.enabled = true;
+  action.play();
+  mixer.update(0);
+  state.motion = {
+    action,
+    clipName: clip.name,
+    mixer,
+    requestedClipName: clip.name,
+    requestedSeconds: 0,
+  };
+}
+
 async function hydrate(
   host: THREE.Group,
   options: PremiumHumanOptions,
@@ -432,6 +450,10 @@ async function hydrate(
     // Rotate only the authored child so host transforms and interaction roots
     // remain compatible with the synchronous procedural implementation.
     instance.rotation.y = Math.PI;
+    // Evaluate the authored neutral clip before sizing or revealing the model.
+    // Otherwise the first rendered frame exposes the (historically hunched)
+    // bind pose and the head appears to snap upright when motion first updates.
+    seedNeutralAnimation(instance, state);
     normalizeHeight(instance, options.role === "attendant" ? 2.5 : 2.43);
     if (state.disposed || host.userData.authoredHumanDisposed) {
       disposeInstance(instance);
