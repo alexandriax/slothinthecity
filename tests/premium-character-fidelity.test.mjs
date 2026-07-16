@@ -38,18 +38,50 @@ test("zoo sloth friends use continuous anatomical silhouettes", async () => {
   ]);
   const friend = source.slice(source.indexOf("export function createPremiumSlothFriend"));
 
-  for (const feature of ["continuous-anatomical-sloth-torso-with-integrated-bib", "anatomical-sloth-head-jaw-and-integrated-mask", "continuous-anatomical-sloth-forelimb", "continuous-anatomical-sloth-hindlimb", "capped-anatomical-sloth-hook-claw"]) {
+  for (const feature of ["continuous-horizontal-anatomical-sloth-torso", "anatomical-sloth-head-jaw-and-integrated-mask", "weight-bearing-anatomical-sloth-forelimb", "weight-bearing-anatomical-sloth-hindlimb", "ground-contact-capped-sloth-foreclaw", "ground-contact-capped-sloth-hindclaw"]) {
     assert.match(friend, new RegExp(feature));
   }
   assert.match(source, /function paintSlothSurface/);
   assert.match(source, /vertexColors: true/);
-  assert.match(friend, /integratedFaceAndBib = true/);
+  assert.match(source, /function quadrupedalSlothTorsoGeometry/);
+  assert.match(friend, /locomotion = "quadrupedal"/);
+  assert.match(friend, /adultHeightMeters = 1\.24/);
+  assert.match(friend, /integratedFacialMask = true/);
+  assert.doesNotMatch(friend, /friend-wave-arm|friend-rest-arm|integrated-bib|satchel|leatherMap/);
   assert.doesNotMatch(friend, /slothFaceMaskGeometry|slothChestBibGeometry|conforming-sloth|neckMantle|overlapping-sloth-shoulder/);
   assert.doesNotMatch(friend, /new THREE\.TubeGeometry|new THREE\.ConeGeometry/);
   assert.doesNotMatch(friend, /const upper = new THREE\.Mesh\(new THREE\.CapsuleGeometry|const wrist = new THREE\.Mesh\(new THREE\.CapsuleGeometry|const palm = new THREE\.Mesh\(new THREE\.SphereGeometry/);
-  assert.doesNotMatch(finale, /waiting-sloth-friend"\) object\.rotation\.z/);
+  assert.doesNotMatch(finale, /friend-wave-arm|waiting-sloth-friend"\) object\.rotation\.z/);
   assert.match(finale, /friendReviewSpawn/);
   assert.match(game, /if \(qaInput === "finale"\) player\.copy\(zooWorld\.friendReviewSpawn\)/);
+});
+
+test("zoo populations, grounding, and fabric wardrobes stay explicit", async () => {
+  const [campaign, finale, runtime, showroom] = await Promise.all([
+    readFile(new URL("../app/game/world/CampaignLandmarks.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/world/BronxZooWorld.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/world/characters/AuthoredHumanAssets.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/debug/characters/CharacterShowroom.tsx", import.meta.url), "utf8"),
+  ]);
+  const zoo = campaign.slice(campaign.indexOf("function addZoo"), campaign.indexOf("function addSubwayEntrance"));
+  const population = zoo.slice(zoo.indexOf("const visitorData"), zoo.indexOf("] as const;") + 11);
+  assert.equal((population.match(/zone: "inside"/g) ?? []).length, 3);
+  assert.equal((population.match(/zone: "outside"/g) ?? []).length, 1);
+  assert.match(zoo, /groundedLocalY/);
+  assert.match(zoo, /heightAt\(gate\.position\.x \+ x, gate\.position\.z \+ z\)/);
+  assert.match(campaign, /walkingVisitors\.map/);
+  assert.match(campaign, /stationaryVisitors\.forEach\(visitor => idleAuthoredHuman/);
+  assert.doesNotMatch(population, /slice\(0, quality/);
+
+  for (const outfit of ["zoo-uniform", "cotton-denim", "silk-leggings", "knit-chinos"]) {
+    assert.match(`${campaign}\n${finale}\n${showroom}`, new RegExp(outfit));
+  }
+  assert.match(campaign, /zooNameTag: "Central Park Zoo"/);
+  assert.match(finale, /zooNameTag: "Bronx Zoo"/);
+  assert.match(runtime, /color: options\.coat/);
+  assert.match(runtime, /color: options\.trousers/);
+  assert.match(runtime, /authored-zoo-uniform-name-tag/);
+  assert.match(runtime, /options\.zooNameTag\.toUpperCase\(\)/);
 });
 
 test("premium character detail scales with the active quality tier", async () => {

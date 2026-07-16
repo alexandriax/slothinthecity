@@ -23,10 +23,10 @@ type CharacterStatus = {
 };
 
 const ARCHETYPES: Array<PremiumHumanOptions & { label: string }> = [
-  { label: "Male · short", role: "attendant", quality: 1, variant: 0, faceVariant: 0, coat: "#203e34", trousers: "#171d1b", skin: "#704735", hair: "#211916", accessory: "radio" },
-  { label: "Male · curly", role: "visitor", quality: 1, variant: 1, faceVariant: 1, coat: "#313a46", trousers: "#1d2329", skin: "#aa7655", hair: "#2b1d17", accessory: "tote" },
-  { label: "Female · bob", role: "visitor", quality: 1, variant: 12, faceVariant: 12, coat: "#54404b", trousers: "#232127", skin: "#7d4f39", hair: "#171719", accessory: "camera" },
-  { label: "Female · ponytail", role: "visitor", quality: 1, variant: 13, faceVariant: 13, coat: "#41564d", trousers: "#1a2421", skin: "#d0a17d", hair: "#332219", accessory: "backpack" },
+  { label: "Male · short", role: "attendant", quality: 1, variant: 0, faceVariant: 0, coat: "#315c43", trousers: "#21382d", skin: "#704735", hair: "#211916", accessory: "radio", outfit: "zoo-uniform", zooNameTag: "Central Park Zoo" },
+  { label: "Male · curly", role: "visitor", quality: 1, variant: 1, faceVariant: 1, coat: "#4f7fa4", trousers: "#315777", skin: "#aa7655", hair: "#2b1d17", accessory: "tote", outfit: "cotton-denim" },
+  { label: "Female · bob", role: "visitor", quality: 1, variant: 12, faceVariant: 12, coat: "#a05d7b", trousers: "#24252c", skin: "#7d4f39", hair: "#171719", accessory: "camera", outfit: "silk-leggings" },
+  { label: "Female · ponytail", role: "visitor", quality: 1, variant: 13, faceVariant: 13, coat: "#a95135", trousers: "#51493f", skin: "#d0a17d", hair: "#332219", accessory: "backpack", outfit: "knit-chinos" },
 ];
 
 const EMPTY_STATUS: CharacterStatus = { status: "loading", lod: "—", triangles: 0, bones: 0, clips: [], visibleRoots: 0, legacyParts: [] };

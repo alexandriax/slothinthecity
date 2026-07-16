@@ -465,13 +465,17 @@ def shape_crew_neckline(shell: bpy.types.Object, body: bpy.types.Object) -> None
         # The compact female source has alternating neckline vertices just
         # below .79h. Include the whole upper central boundary; wrist and waist
         # openings remain far below this band and cannot be affected.
-        if normalized_z < 0.70 or normalized_x > 0.240:
+        if normalized_z < 0.70 or normalized_x > 0.195:
             continue
         # Project every front/back scan boundary onto one plane. The source
         # edge does not traverse X monotonically, so even an X-driven curve
         # reconnects its alternating triangles as a visible W. A level crew
         # edge is the only topology-stable result for both source bodies.
-        target = 0.860
+        # Keep the highest garment edge below the anatomical chin/mouth band.
+        # The former .860 plane could still skin upward across the lower face
+        # during idle breathing. With the neck removed from the sleeve region,
+        # this plane lands at the anatomical neck base without a facial spike.
+        target = 0.830
         vertex.co.z = low.z + height * target
     bm.to_mesh(shell.data)
     bm.free()
@@ -542,23 +546,22 @@ def make_authored_hair_cap(
     return hair
 
 
-def torso_predicate(center: Vector, low: Vector, high: Vector, top_height: float = 0.875) -> bool:
+def torso_predicate(center: Vector, low: Vector, high: Vector, top_height: float = 0.835) -> bool:
     h = high.z - low.z
     z = (center.z - low.z) / h
     x = abs(center.x) / h
-    # A continuous crew-neck torso plus upper arms. The slightly higher central
-    # panel closes the exposed/jagged shoulder gaps visible during animation;
-    # sleeves still end above the wrist to preserve anatomical hands.
+    # A continuous crew-neck torso plus lateral upper arms. Sleeves must have a
+    # lower X bound: treating the entire central neck as a sleeve retained a
+    # vertical triangle that skinned across the mouth on the male archetypes.
     torso = x < 0.19 and 0.48 < z < top_height
-    sleeves = 0.56 < z < 0.86 and x < 0.282
+    sleeves = 0.56 < z < 0.86 and 0.16 < x < 0.282
     return torso or sleeves
 
 
 def torso_predicate_for(source_kind: str) -> Callable[[Vector, Vector, Vector], bool]:
-    # The compact female scan needs one extra face ring above the finished .86
-    # edge; on the taller male scan that same normalized band reaches the head
-    # and adds thousands of unrelated polygons.
-    top_height = 0.895 if source_kind == "female" else 0.875
+    # The compact female scan needs one extra face ring above the finished crew
+    # edge; both source bodies still stop well below the anatomical jaw.
+    top_height = 0.845 if source_kind == "female" else 0.835
     return lambda center, low, high: torso_predicate(center, low, high, top_height)
 
 

@@ -218,7 +218,7 @@ test("park and finale landmarks use complete campuses and textured articulated c
   assert.match(characters, /proceduralSurface\("fur"/);
   assert.match(characters, /new THREE\.CapsuleGeometry/);
   assert.match(characters, /createPremiumSlothFriend/);
-  for (const feature of ["west-farms-station-exit-approach", "bronx-zoo-arrival-fountain", "bronx-zoo-ticket-and-member-pavilion", "waiting-sloth-friend"]) assert.match(finale + characters, new RegExp(feature));
+  for (const feature of ["west-farms-station-exit-approach", "bronx-zoo-arrival-fountain", "bronx-zoo-ticket-and-member-pavilion", "waiting-quadrupedal-sloth-friend"]) assert.match(finale + characters, new RegExp(feature));
   assert.match(finale, /bronx-zoo-arrival-attendant/);
   assert.match(finale, /attendantNearby\(player: THREE\.Vector3/);
   assert.match(characters, /\/game\/characters\/npc-face-atlas-v2-03\.webp/);

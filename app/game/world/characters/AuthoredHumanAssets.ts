@@ -197,12 +197,23 @@ function canonicalMaterialName(material: THREE.Material) {
   return material.name.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+function resolvedOutfit(options: PremiumHumanOptions) {
+  if (options.outfit) return options.outfit;
+  if (options.role === "attendant") return "zoo-uniform" as const;
+  return positiveModulo(options.clothingVariant ?? options.variant, 3) === 0
+    ? "cotton-denim" as const
+    : positiveModulo(options.clothingVariant ?? options.variant, 3) === 1
+      ? "silk-leggings" as const
+      : "knit-chinos" as const;
+}
+
 function mappedMaterial(
   source: THREE.Material,
   options: PremiumHumanOptions,
   textures: { skin: THREE.Texture; clothUpper: THREE.Texture; clothLower: THREE.Texture },
 ) {
   const name = canonicalMaterialName(source);
+  const outfit = resolvedOutfit(options);
   const physical = (parameters: THREE.MeshPhysicalMaterialParameters) => {
     const material = new THREE.MeshPhysicalMaterial(parameters);
     material.name = source.name;
@@ -223,19 +234,24 @@ function mappedMaterial(
     sheen: .08,
   });
   if (name.includes("clothupper") || name.includes("uppercloth") || name.includes("jacket") || name.includes("shirt")) return physical({
-    map: textures.clothUpper,
-    color: "#ffffff",
-    roughness: .88,
+    bumpMap: textures.clothUpper,
+    bumpScale: outfit === "silk-leggings" ? .006 : .014,
+    color: options.coat,
+    roughness: outfit === "silk-leggings" ? .52 : outfit === "zoo-uniform" ? .74 : .88,
     metalness: 0,
-    sheen: .28,
-    sheenRoughness: .78,
+    sheen: outfit === "silk-leggings" ? .62 : outfit === "zoo-uniform" ? .38 : .2,
+    sheenRoughness: outfit === "silk-leggings" ? .48 : .76,
+    clearcoat: outfit === "silk-leggings" ? .02 : 0,
+    clearcoatRoughness: .68,
   });
   if (name.includes("clothlower") || name.includes("lowercloth") || name.includes("trouser") || name.includes("pants")) return physical({
-    map: textures.clothLower,
-    color: "#ffffff",
-    roughness: .9,
+    bumpMap: textures.clothLower,
+    bumpScale: outfit === "silk-leggings" ? .005 : outfit === "cotton-denim" ? .022 : .014,
+    color: options.trousers,
+    roughness: outfit === "silk-leggings" ? .64 : outfit === "cotton-denim" ? .94 : .84,
     metalness: 0,
-    sheen: .18,
+    sheen: outfit === "silk-leggings" ? .3 : outfit === "cotton-denim" ? .08 : .16,
+    sheenRoughness: outfit === "silk-leggings" ? .62 : .82,
   });
   if (name.includes("hair")) return physical({
     color: options.hair ?? (positiveModulo(options.variant, 4) === 2 ? "#57402e" : "#201a17"),
@@ -372,6 +388,46 @@ function normalizeHeight(instance: THREE.Group, targetHeight: number) {
   instance.position.y -= scaledBounds.min.y;
 }
 
+function addZooUniformNameTag(instance: THREE.Group, options: PremiumHumanOptions) {
+  if (!options.zooNameTag) return undefined;
+  const canvas = document.createElement("canvas");
+  canvas.width = 768; canvas.height = 216;
+  const context = canvas.getContext("2d");
+  if (!context) return undefined;
+  context.fillStyle = "#173d2b"; context.fillRect(0, 0, canvas.width, canvas.height);
+  context.strokeStyle = "#d7e4b0"; context.lineWidth = 12; context.strokeRect(7, 7, canvas.width - 14, canvas.height - 14);
+  context.fillStyle = "#f3f0dc";
+  context.textAlign = "center"; context.textBaseline = "middle";
+  context.font = "700 66px Helvetica, Arial, sans-serif";
+  context.fillText(options.zooNameTag.toUpperCase(), canvas.width / 2, canvas.height / 2 + 2, canvas.width - 52);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.name = `${options.zooNameTag}-uniform-name-tag-texture`;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = options.quality > .8 ? 8 : 4;
+
+  const bounds = new THREE.Box3().setFromObject(instance);
+  const bodyHeight = bounds.max.y - bounds.min.y;
+  let front = Number.NEGATIVE_INFINITY;
+  instance.traverse(object => {
+    if (!(object instanceof THREE.Mesh)) return;
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    if (!materials.some(material => canonicalMaterialName(material).includes("clothupper"))) return;
+    front = Math.max(front, new THREE.Box3().setFromObject(object).max.z);
+  });
+  if (!Number.isFinite(front)) front = bounds.max.z;
+  const width = bodyHeight * .145, height = bodyHeight * .04;
+  const badge = new THREE.Mesh(
+    new THREE.PlaneGeometry(width, height),
+    new THREE.MeshPhysicalMaterial({ map: texture, roughness: .56, clearcoat: .18, clearcoatRoughness: .72 }),
+  );
+  badge.name = "authored-zoo-uniform-name-tag";
+  badge.userData.zooName = options.zooNameTag;
+  badge.position.set(bounds.min.x + bodyHeight * .28, bounds.min.y + bodyHeight * .7, front + bodyHeight * .006);
+  badge.renderOrder = 2;
+  instance.add(badge);
+  return texture;
+}
+
 function disposeInstance(instance: THREE.Object3D) {
   const geometries = new Set<THREE.BufferGeometry>();
   const materials = new Set<THREE.Material>();
@@ -483,6 +539,8 @@ async function hydrate(
     // Layering the legacy map/phone/wave overrides under HumanWalk produced
     // doubled hands, long fingers, hunched shoulders and violent limb arcs.
     poseSkeleton(instance, host.userData.authoredHumanLocomotion ? "neutral" : options.pose);
+    const uniformNameTag = addZooUniformNameTag(instance, options);
+    if (uniformNameTag) state.ownedTextures.push(uniformNameTag);
     // Blender's authored bodies face -Y. The glTF Y-up conversion maps that
     // to +Z, while every existing game placement expects a -Z-facing model.
     // Rotate only the authored child so host transforms and interaction roots

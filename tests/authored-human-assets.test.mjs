@@ -199,14 +199,20 @@ test("all eight GLBs stay Draco-compressed, truly skinned, animated, and draw-ca
       );
 
       const hair = primitiveForMaterial(json, "Hair");
+      const upperGarment = primitiveForMaterial(json, "ClothUpper");
       const skinPrimitive = primitiveForMaterial(json, "Skin");
       const hairBounds = json.accessors[hair.attributes.POSITION];
+      const upperGarmentBounds = json.accessors[upperGarment.attributes.POSITION];
       const skinBounds = json.accessors[skinPrimitive.attributes.POSITION];
       const bodyHeight = skinBounds.max[1] - skinBounds.min[1];
       const hairTriangles = json.accessors[hair.indices].count / 3;
       assert.ok(hairBounds.max[1] >= skinBounds.max[1] + .003, `${contract.file} hair should cover and clear the crown`);
       assert.ok(hairBounds.min[1] >= skinBounds.min[1] + bodyHeight * .72, `${contract.file} hair should remain on the head`);
       assert.ok(hairTriangles >= (lod === "lod0" ? 1_000 : 600), `${contract.file} hair should retain an intentional silhouette`);
+      assert.ok(
+        upperGarmentBounds.max[1] <= skinBounds.min[1] + bodyHeight * .92,
+        `${contract.file} upper garment must stay below the facial crown band`,
+      );
 
       const limits = lod === "lod0"
         ? { minTriangles: 59_000, maxTriangles: 85_000, maxBytes: 600_000 }

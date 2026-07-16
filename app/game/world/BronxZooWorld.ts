@@ -111,7 +111,7 @@ export class BronxZooWorld {
   readonly root = new THREE.Group();
   readonly spawn = new THREE.Vector3(0, 2.5, 25.5);
   readonly friendReviewSpawn = new THREE.Vector3(0, 1.48, 3.8);
-  readonly attendantPosition = new THREE.Vector3(4.9, 1.48, -1.3);
+  readonly attendantPosition = new THREE.Vector3(0, 1.48, -.9);
   readonly cameraPosition = new THREE.Vector3(0, 3.1, 20.5);
   readonly cameraTarget = new THREE.Vector3(0, 3.6, -10);
   readonly attendant: THREE.Group;
@@ -178,18 +178,24 @@ export class BronxZooWorld {
     for (let index = 0; index < plantCount; index++) { const side = index % 2 ? -1 : 1, z = -8 + index / plantCount * 39 + Math.sin(index * 2.1) * 1.6, scale = .45 + (index * 17 % 11) / 15; dummy.position.set(side * (10 + (index * 13 % 10) * .62), scale * .32, z); dummy.rotation.set(index * .1, index * 1.8, 0); dummy.scale.set(scale * 1.25, scale, scale); dummy.updateMatrix(); plants.setMatrixAt(index, dummy.matrix); }
     plants.instanceMatrix.needsUpdate = true; plants.castShadow = high; this.root.add(plants);
 
-    addFriend(this.root, textures, this.ownedTextures, quality, -3.4, -2.2, Math.PI + .12, "#8d8068", 0);
-    addFriend(this.root, textures, this.ownedTextures, quality, .1, -3.35, Math.PI, "#756957", 1);
-    addFriend(this.root, textures, this.ownedTextures, quality, 3.55, -2.15, Math.PI - .12, "#9a886d", 2);
-    addFriend(this.root, textures, this.ownedTextures, quality, 6.7, -.15, Math.PI - .28, "#756b5c", 3);
+    addFriend(this.root, textures, this.ownedTextures, quality, -4.05, -2.05, Math.PI + .28, "#514536", 0);
+    addFriend(this.root, textures, this.ownedTextures, quality, -2.15, -3.15, Math.PI + .08, "#423a31", 1);
+    addFriend(this.root, textures, this.ownedTextures, quality, 2.2, -2.95, Math.PI - .12, "#594936", 2);
+    addFriend(this.root, textures, this.ownedTextures, quality, 4.15, -1.8, Math.PI - .3, "#443a30", 3);
     const attendant = createPremiumHuman({
-      role: "attendant", quality, variant: 24, faceVariant: 19, coat: "#315747", trousers: "#252c2a", skin: "#9a684f", accessory: "radio", pose: "neutral",
+      role: "attendant", quality, variant: 24, faceVariant: 19,
+      coat: "#2f6244", trousers: "#20382c", skin: "#9a684f",
+      accessory: "radio", pose: "neutral", outfit: "zoo-uniform", zooNameTag: "Bronx Zoo",
     });
     this.attendant = attendant.root; this.attendant.name = "bronx-zoo-arrival-attendant"; this.attendant.userData.dialogue = "Welcome to the Bronx Zoo — your friends are waiting at Asia Gate.";
     this.attendant.position.set(this.attendantPosition.x, 0, this.attendantPosition.z); this.attendant.rotation.y = Math.PI; this.root.add(this.attendant); this.ownedTextures.push(...attendant.ownedTextures);
-    const guestData = [[-8.2, 5.7, -.2, "#516d76", "#343a3c", "#b77e61"], [10.3, 5.3, .24, "#875a48", "#30383d", "#7b503d"], [14.2, -1.3, 2.7, "#667a4e", "#383438", "#cf9d78"]] as const;
+    const guestData = [
+      [-8.2, 5.7, -.2, "#5983a5", "#345a7d", "#b77e61", "cotton-denim"],
+      [10.3, 5.3, .24, "#a85f79", "#24252c", "#7b503d", "silk-leggings"],
+      [14.2, -1.3, 2.7, "#a95135", "#51493f", "#cf9d78", "knit-chinos"],
+    ] as const;
     guestData.slice(0, quality < .62 ? 1 : quality < .82 ? 2 : 3).forEach((data, index) => {
-      const result = createPremiumHuman({ role: "visitor", quality, variant: index + 11, faceVariant: [12, 16, 18][index], coat: data[3], trousers: data[4], skin: data[5], accessory: index === 1 ? "camera" : "backpack", pose: index === 1 ? "photographing" : "neutral" });
+      const result = createPremiumHuman({ role: "visitor", quality, variant: index + 11, faceVariant: [12, 16, 18][index], coat: data[3], trousers: data[4], skin: data[5], outfit: data[6], accessory: index === 1 ? "camera" : "backpack", pose: index === 1 ? "photographing" : "neutral" });
       result.root.position.set(data[0], 0, data[1]); result.root.rotation.y = data[2]; this.root.add(result.root); this.ownedTextures.push(...result.ownedTextures);
       this.guestAgents.push(createAmbientHumanAgent(result.root, {
         axis: new THREE.Vector3(index % 2 ? -1 : .25, 0, index % 2 ? .2 : 1),
@@ -203,9 +209,7 @@ export class BronxZooWorld {
   }
 
   update(elapsed: number, delta = 1 / 60) {
-    this.root.traverse(object => {
-      if (object.name === "friend-wave-arm") object.rotation.x = -.12 + Math.sin(elapsed * 2.05 + object.parent!.position.x) * .12;
-    });
+    void elapsed;
     idleAuthoredHuman(this.attendant, delta);
     this.guestAgents.forEach(agent => updateAmbientHumanAgent(agent, elapsed, delta));
   }
