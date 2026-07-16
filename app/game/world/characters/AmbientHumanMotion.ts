@@ -83,7 +83,10 @@ export function updateAmbientHumanAgent(agent: AmbientHumanAgent, elapsed: numbe
   }
   if (moving) {
     const facing = agent.axis.clone().multiplyScalar(direction);
-    const targetYaw = Math.atan2(facing.x, facing.z);
+    // Authored humans face local -Z at the host level. Aim that axis along
+    // the route velocity; the former +Z formula made every pedestrian play a
+    // forward walk while visually travelling backward.
+    const targetYaw = Math.atan2(-facing.x, -facing.z);
     const yawDelta = Math.atan2(
       Math.sin(targetYaw - agent.root.rotation.y),
       Math.cos(targetYaw - agent.root.rotation.y),

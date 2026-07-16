@@ -324,9 +324,9 @@ function addZoo(root: THREE.Group, textures: GameTextures, heightAt: (x: number,
   attendant.position.set(-3, groundedLocalY(-3, 9, .035), 9); attendant.rotation.y = Math.PI + .05;
   attendant.userData.zooZone = "outside"; gate.add(attendant);
 
-  const walkingVisitors: THREE.Group[] = [], stationaryVisitors: THREE.Group[] = [];
+  const walkingVisitors: THREE.Group[] = [];
   const visitorData = [
-    { x: 4.4, z: 10.8, rotation: 2.72, coat: "#c5654e", trousers: "#315477", skin: "#79503d", accessory: "backpack", pose: "checking-map", face: 15, outfit: "cotton-denim", zone: "outside" },
+    { x: 4.4, z: 10.8, rotation: 2.72, coat: "#c5654e", trousers: "#315477", skin: "#79503d", accessory: "backpack", pose: "neutral", face: 15, outfit: "cotton-denim", zone: "outside" },
     { x: -13.2, z: -8.6, rotation: .38, coat: "#52789c", trousers: "#34577a", skin: "#d0a27f", accessory: "tote", pose: "neutral", face: 16, outfit: "cotton-denim", zone: "inside" },
     { x: 12.6, z: -11.3, rotation: -2.72, coat: "#9b5271", trousers: "#24252c", skin: "#8f6048", accessory: "backpack", pose: "neutral", face: 17, outfit: "silk-leggings", zone: "inside" },
     { x: 1.8, z: -29.2, rotation: 2.94, coat: "#a95135", trousers: "#51493f", skin: "#b87f5f", accessory: "camera", pose: "neutral", face: 18, outfit: "knit-chinos", zone: "inside" },
@@ -343,12 +343,12 @@ function addZoo(root: THREE.Group, textures: GameTextures, heightAt: (x: number,
     result.root.name = data.zone === "inside" ? `central-park-zoo-inside-walker-${index}` : "central-park-zoo-outside-visitor";
     result.root.userData.zooZone = data.zone;
     gate.add(result.root); ownedTextures.push(...result.ownedTextures);
-    (data.zone === "inside" ? walkingVisitors : stationaryVisitors).push(result.root);
+    walkingVisitors.push(result.root);
   });
 
   const benchWood = new THREE.MeshStandardMaterial({ map: textures.bark, bumpMap: textures.bark, bumpScale: .025, color: "#795b43", roughness: .83 });
   for (const side of [-1, 1]) { const bench = new THREE.Group(); bench.position.set(side * 14.5, .42, 18.5); bench.rotation.y = side * -.16; for (let slat = 0; slat < 5; slat++) { const board = new THREE.Mesh(new RoundedBoxGeometry(3.4, .11, .22, 3, .03), benchWood); board.position.set(0, slat < 3 ? slat * .15 : .5 + (slat - 3) * .2, slat < 3 ? (slat - 1) * .24 : .38); if (slat >= 3) board.rotation.x = -.15; bench.add(board); } for (const x of [-1.35, 1.35]) { const leg = new THREE.Mesh(new RoundedBoxGeometry(.1, .7, .1, 2, .02), iron); leg.position.set(x, -.18, 0); bench.add(leg); } gate.add(bench); }
-  root.add(gate); return { gate, attendant, walkingVisitors, stationaryVisitors };
+  root.add(gate); return { gate, attendant, walkingVisitors };
 }
 
 function addSubwayEntrance(root: THREE.Group, textures: GameTextures, heightAt: (x: number, z: number) => number, ownedTextures: THREE.Texture[], quality: number) {
@@ -399,16 +399,21 @@ export function createCampaignLandmarks(scene: THREE.Scene, textures: GameTextur
   const ownedTextures: THREE.Texture[] = [], obstacles: CampaignObstacle[] = [];
   addSouthboundParkPath(root, textures, heightAt);
   const { bridge: bowBridge, surface: bowBridgeSurface } = addBowBridge(root, textures, heightAt, ownedTextures);
-  const { gate: zooGate, attendant, walkingVisitors, stationaryVisitors } = addZoo(root, textures, heightAt, ownedTextures, quality);
-  const visitorAgents: AmbientHumanAgent[] = walkingVisitors.map((visitor, index) => createAmbientHumanAgent(visitor, {
-    axis: new THREE.Vector3(index % 2 ? 1 : -.35, 0, index % 2 ? .25 : 1),
-    // Long, readable promenades make the zoo forecourt feel inhabited and
-    // ensure walk cycles are visible rather than appearing as stationary fidgets.
-    travel: 3.4 + index % 3 * .72,
-    speed: .78 + index % 2 * .12,
-    pauseSeconds: 1.8 + index % 3 * .62,
-    phase: index * 1.83,
-  }));
+  const { gate: zooGate, attendant, walkingVisitors } = addZoo(root, textures, heightAt, ownedTextures, quality);
+  const visitorAgents: AmbientHumanAgent[] = walkingVisitors.map((visitor, index) => {
+    const outside = visitor.userData.zooZone === "outside";
+    return createAmbientHumanAgent(visitor, {
+      // The one public-side visitor stays on the forecourt while the three
+      // interior guests use longer promenade routes beyond the gates.
+      axis: outside
+        ? new THREE.Vector3(1, 0, .12)
+        : new THREE.Vector3(index % 2 ? 1 : -.35, 0, index % 2 ? .25 : 1),
+      travel: outside ? 2.15 : 3.4 + index % 3 * .72,
+      speed: outside ? .72 : .78 + index % 2 * .12,
+      pauseSeconds: 1.8 + index % 3 * .62,
+      phase: index * 1.83,
+    });
+  });
   const subwayEntrance = addSubwayEntrance(root, textures, heightAt, ownedTextures, quality);
   bowBridge.updateMatrixWorld(true);
   zooGate.updateMatrixWorld(true);
@@ -433,7 +438,6 @@ export function createCampaignLandmarks(scene: THREE.Scene, textures: GameTextur
   );
   return { root, attendant, bowBridge, bowBridgeSurface, subwayEntrance, subwayEntryTrigger: SUBWAY_ENTRY_TRIGGER.clone(), zooGate, obstacles, update(elapsed, delta) {
     idleAuthoredHuman(attendant, delta);
-    stationaryVisitors.forEach(visitor => idleAuthoredHuman(visitor, delta));
     visitorAgents.forEach(agent => updateAmbientHumanAgent(agent, elapsed, delta));
   }, dispose() {
     markPremiumCharactersDisposed(root);

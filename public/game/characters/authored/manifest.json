@@ -4,22 +4,22 @@
       "id": "human-male-short",
       "license": "CC0-1.0",
       "lod0": {
-        "bytes": 400224,
+        "bytes": 395568,
         "file": "human-male-short-lod0.glb",
         "materials": 8,
         "meshes": 8,
-        "sha256": "ca65b8d46e069433a345111d4053ddea709806229fed0b6833efcfb6172baf6e",
-        "triangles": 78542,
-        "vertices": 39356
+        "sha256": "6af12d3290548ade296045c82ed9fd680e40a57dd027f1971ceda9e8bbcb82a0",
+        "triangles": 77606,
+        "vertices": 38886
       },
       "lod2": {
-        "bytes": 182412,
+        "bytes": 180932,
         "file": "human-male-short-lod2.glb",
         "materials": 8,
         "meshes": 8,
-        "sha256": "a759fcf5ca5bfe29b1ea41f5766cd8056b3af8709045717de718326abf01f0f1",
-        "triangles": 22838,
-        "vertices": 11501
+        "sha256": "ab09fdb814dfd8b73c2d359643758ff914ee6a197f13c8ac7cd6873b24d8fdf9",
+        "triangles": 22574,
+        "vertices": 11367
       },
       "source": "male"
     },
@@ -27,22 +27,22 @@
       "id": "human-male-curly",
       "license": "CC0-1.0",
       "lod0": {
-        "bytes": 394668,
+        "bytes": 388868,
         "file": "human-male-curly-lod0.glb",
         "materials": 8,
         "meshes": 8,
-        "sha256": "9dc0f0f5d27c925121e8aaa2eba98faeb6954b7cab2148a36088eb4bb7b0e2e6",
-        "triangles": 77976,
-        "vertices": 39072
+        "sha256": "2c69187548a15c94bac1b862305875525524c5e470cb4a25b930169cd465b91f",
+        "triangles": 76702,
+        "vertices": 38435
       },
       "lod2": {
-        "bytes": 180908,
+        "bytes": 179936,
         "file": "human-male-curly-lod2.glb",
         "materials": 8,
         "meshes": 8,
-        "sha256": "fc22e79d74d97a56fbd68e4ac4d6f29d017240cafa96f53d2f7c4feee4f23ef5",
-        "triangles": 22694,
-        "vertices": 11431
+        "sha256": "bc5c14cc372c916c5e3f5d25c1a66f082dfcefd469a604424c38f3e0cd48d15c",
+        "triangles": 22340,
+        "vertices": 11254
       },
       "source": "male"
     },
@@ -50,22 +50,22 @@
       "id": "human-female-bob",
       "license": "CC0-1.0",
       "lod0": {
-        "bytes": 335708,
+        "bytes": 322140,
         "file": "human-female-bob-lod0.glb",
         "materials": 8,
         "meshes": 8,
-        "sha256": "af6a6695943985da666a67e1c27bb413c6850fb871d11f4c61635b7765472c9d",
-        "triangles": 63864,
-        "vertices": 31997
+        "sha256": "bc7fba29a59e810ac5c93d1b76cb5575cca970b13b4aced3476bffc4c46657c8",
+        "triangles": 61396,
+        "vertices": 30763
       },
       "lod2": {
-        "bytes": 152424,
+        "bytes": 148440,
         "file": "human-female-bob-lod2.glb",
         "materials": 8,
         "meshes": 8,
-        "sha256": "1c2354a47886a85b60c5c6cbec14f3a11d62ef6fe8921ef2cc7dabd6cb5f8f73",
-        "triangles": 18924,
-        "vertices": 9526
+        "sha256": "fce5992c15a7e6d94a96fcb9e9b5e5c3a25c69deda4dda691b785fad0c9d0fd7",
+        "triangles": 18232,
+        "vertices": 9180
       },
       "source": "female"
     },
@@ -73,22 +73,22 @@
       "id": "human-female-ponytail",
       "license": "CC0-1.0",
       "lod0": {
-        "bytes": 337100,
+        "bytes": 320944,
         "file": "human-female-ponytail-lod0.glb",
         "materials": 8,
         "meshes": 8,
-        "sha256": "252fc1d9f47ac136240f4f2afc4a99013ef6e85218f39d386f158b2a96e53323",
-        "triangles": 63834,
-        "vertices": 31979
+        "sha256": "edb9fa05af8eb1fc146f9dc5df3aff43eefbde144cd38175e92deac61c31ecdd",
+        "triangles": 61472,
+        "vertices": 30798
       },
       "lod2": {
-        "bytes": 153096,
+        "bytes": 149432,
         "file": "human-female-ponytail-lod2.glb",
         "materials": 8,
         "meshes": 8,
-        "sha256": "3fccf404ca8c24025886f13470b63bd78232ea3cb2c9c3fa92bdcb09ecb80b0d",
-        "triangles": 18873,
-        "vertices": 9497
+        "sha256": "b28efa337fa07610ca59a22cf98d8ccb8170d9cf4b1e8c452d9b9ce9a3653cf7",
+        "triangles": 18211,
+        "vertices": 9166
       },
       "source": "female"
     }

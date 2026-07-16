@@ -354,6 +354,7 @@ def make_surface_shell(
     thickness: float,
     collection: bpy.types.Collection,
     keep_largest_component: bool = False,
+    strict_boundary: bool = False,
 ) -> bpy.types.Object:
     low, high = object_bounds(body)
     shell = body.copy()
@@ -370,7 +371,12 @@ def make_surface_shell(
     delete_faces = []
     for face in bm.faces:
         center = sum((v.co for v in face.verts), Vector()) / len(face.verts)
-        if not predicate(center, low, high):
+        selected = (
+            all(predicate(vertex.co, low, high) for vertex in face.verts)
+            if strict_boundary
+            else predicate(center, low, high)
+        )
+        if not selected:
             delete_faces.append(face)
     bmesh.ops.delete(bm, geom=delete_faces, context="FACES")
     bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
@@ -449,8 +455,9 @@ def shape_crew_neckline(shell: bpy.types.Object, body: bpy.types.Object) -> None
     """Turn the source-triangle cut into one continuous crew-neck edge.
 
     The upper shell is selected broadly for shoulder coverage. Its central top
-    boundary is projected onto a shared topology-safe plane. This keeps the
-    collar part of the garment instead of adding detached collar tubes.
+    boundary is projected onto a shared topology-safe curve that continues
+    through both shoulders. This keeps the collar part of the garment instead
+    of adding detached tubes or exposing a sawtooth/frayed source-face cut.
     """
     low, high = object_bounds(body)
     height = high.z - low.z
@@ -462,21 +469,133 @@ def shape_crew_neckline(shell: bpy.types.Object, body: bpy.types.Object) -> None
             continue
         normalized_z = (vertex.co.z - low.z) / height
         normalized_x = abs(vertex.co.x) / height
-        # The compact female source has alternating neckline vertices just
-        # below .79h. Include the whole upper central boundary; wrist and waist
-        # openings remain far below this band and cannot be affected.
-        if normalized_z < 0.70 or normalized_x > 0.195:
+        # Include the complete upper garment boundary across both shoulders.
+        # Wrist and waist openings remain far below this band and cannot be
+        # affected. Stopping at the old .195h threshold left the lateral
+        # shoulder triangles at alternating heights, which read as fraying.
+        if normalized_z < 0.70 or normalized_x > 0.340:
             continue
-        # Project every front/back scan boundary onto one plane. The source
-        # edge does not traverse X monotonically, so even an X-driven curve
-        # reconnects its alternating triangles as a visible W. A level crew
-        # edge is the only topology-stable result for both source bodies.
-        # Keep the highest garment edge below the anatomical chin/mouth band.
-        # The former .860 plane could still skin upward across the lower face
-        # during idle breathing. With the neck removed from the sleeve region,
-        # this plane lands at the anatomical neck base without a facial spike.
-        target = 0.830
+        # The female source edge does not traverse X monotonically; an X-based
+        # curve reconnects its alternating scan triangles as a visible W.
+        # One level, face-safe collar plane is topology-stable on both bodies.
+        target = 0.840
         vertex.co.z = low.z + height * target
+    bm.to_mesh(shell.data)
+    bm.free()
+    shell.data.update()
+
+
+def shape_sleeve_cuffs(shell: bpy.types.Object, body: bpy.types.Object, source_kind: str) -> None:
+    """Project both raw sleeve cuts onto clean transverse cuff planes."""
+    low, high = object_bounds(body)
+    height = high.z - low.z
+    shoulder_x = 0.117 if source_kind == "female" else 0.127
+    wrist_x = 0.223 if source_kind == "female" else 0.234
+    shoulder_z, wrist_z = 0.805, 0.515
+    dx, dz = wrist_x - shoulder_x, wrist_z - shoulder_z
+    arm_length_squared = dx * dx + dz * dz
+    cuff_progress = 0.88
+    bm = bmesh.new()
+    bm.from_mesh(shell.data)
+    bm.verts.ensure_lookup_table()
+    remaining_edges = {edge for edge in bm.edges if len(edge.link_faces) == 1}
+    boundary_components = []
+    while remaining_edges:
+        seed = remaining_edges.pop()
+        component_edges = {seed}
+        frontier = [seed]
+        while frontier:
+            edge = frontier.pop()
+            for vertex in edge.verts:
+                for linked in vertex.link_edges:
+                    if linked in remaining_edges and len(linked.link_faces) == 1:
+                        remaining_edges.remove(linked)
+                        component_edges.add(linked)
+                        frontier.append(linked)
+        boundary_components.append({vertex for edge in component_edges for vertex in edge.verts})
+    for vertices in boundary_components:
+        mean_x = sum(vertex.co.x for vertex in vertices) / len(vertices)
+        mean_z = sum(vertex.co.z for vertex in vertices) / len(vertices)
+        normalized_mean_z = (mean_z - low.z) / height
+        # Collar and waist loops straddle the centre line. Each cuff is a
+        # separate lateral loop centered around the lower forearm.
+        if abs(mean_x) / height < 0.14 or not 0.42 < normalized_mean_z < 0.72:
+            continue
+        side = -1 if mean_x < 0.0 else 1
+        for vertex in vertices:
+            normalized_z = (vertex.co.z - low.z) / height
+            normalized_x = abs(vertex.co.x) / height
+            progress = (
+                (normalized_x - shoulder_x) * dx
+                + (normalized_z - shoulder_z) * dz
+            ) / arm_length_squared
+            adjustment = cuff_progress - progress
+            vertex.co.x = side * (normalized_x + adjustment * dx) * height
+            vertex.co.z = low.z + (normalized_z + adjustment * dz) * height
+    bm.to_mesh(shell.data)
+    bm.free()
+    shell.data.update()
+
+
+def finish_upper_garment_openings(
+    shell: bpy.types.Object,
+    body: bpy.types.Object,
+    source_kind: str,
+) -> None:
+    """Bisect exact collar, hem, and cuff seams before solidify/bevel."""
+    low, high = object_bounds(body)
+    height = high.z - low.z
+    bm = bmesh.new()
+    bm.from_mesh(shell.data)
+
+    all_geometry = list(bm.verts) + list(bm.edges) + list(bm.faces)
+    bmesh.ops.bisect_plane(
+        bm,
+        geom=all_geometry,
+        plane_co=(0.0, 0.0, low.z + height * 0.480),
+        plane_no=(0.0, 0.0, 1.0),
+        clear_inner=True,
+        clear_outer=False,
+    )
+    all_geometry = list(bm.verts) + list(bm.edges) + list(bm.faces)
+    bmesh.ops.bisect_plane(
+        bm,
+        geom=all_geometry,
+        plane_co=(0.0, 0.0, low.z + height * 0.820),
+        plane_no=(0.0, 0.0, 1.0),
+        clear_inner=False,
+        clear_outer=True,
+    )
+
+    shoulder_x = 0.117 if source_kind == "female" else 0.127
+    wrist_x = 0.223 if source_kind == "female" else 0.234
+    shoulder_z, wrist_z = 0.805, 0.515
+    dx, dz = wrist_x - shoulder_x, wrist_z - shoulder_z
+    cuff_progress = 0.88
+    for side in (-1, 1):
+        sleeve_faces = []
+        for face in bm.faces:
+            center = sum((vertex.co for vertex in face.verts), Vector()) / len(face.verts)
+            normalized_x = side * center.x / height
+            normalized_z = (center.z - low.z) / height
+            if normalized_x > 0.18 and normalized_z > 0.49:
+                sleeve_faces.append(face)
+        sleeve_edges = {edge for face in sleeve_faces for edge in face.edges}
+        sleeve_vertices = {vertex for face in sleeve_faces for vertex in face.verts}
+        bmesh.ops.bisect_plane(
+            bm,
+            geom=list(sleeve_vertices) + list(sleeve_edges) + sleeve_faces,
+            plane_co=(
+                side * (shoulder_x + dx * cuff_progress) * height,
+                0.0,
+                low.z + (shoulder_z + dz * cuff_progress) * height,
+            ),
+            plane_no=(side * dx, 0.0, dz),
+            clear_inner=False,
+            clear_outer=True,
+        )
+
+    bmesh.ops.delete(bm, geom=[vertex for vertex in bm.verts if not vertex.link_faces], context="VERTS")
     bm.to_mesh(shell.data)
     bm.free()
     shell.data.update()
@@ -546,23 +665,57 @@ def make_authored_hair_cap(
     return hair
 
 
-def torso_predicate(center: Vector, low: Vector, high: Vector, top_height: float = 0.835) -> bool:
+def torso_predicate(
+    center: Vector,
+    low: Vector,
+    high: Vector,
+    top_height: float = 0.835,
+    shoulder_x: float = 0.127,
+    wrist_x: float = 0.234,
+) -> bool:
     h = high.z - low.z
     z = (center.z - low.z) / h
     x = abs(center.x) / h
-    # A continuous crew-neck torso plus lateral upper arms. Sleeves must have a
-    # lower X bound: treating the entire central neck as a sleeve retained a
-    # vertical triangle that skinned across the mouth on the male archetypes.
-    torso = x < 0.19 and 0.48 < z < top_height
-    sleeves = 0.56 < z < 0.86 and 0.16 < x < 0.282
+    # A continuous crew-neck torso plus arm-aligned sleeves. Cutting sleeves
+    # at a horizontal Z threshold left the compact female arm with long,
+    # solidified triangle strips. Progress along the shoulder-to-wrist axis
+    # creates a complete tubular sleeve and one transverse cuff opening.
+    torso = x < 0.19 and 0.46 < z < top_height
+    shoulder_z, wrist_z = 0.805, 0.515
+    dx, dz = wrist_x - shoulder_x, wrist_z - shoulder_z
+    progress = ((x - shoulder_x) * dx + (z - shoulder_z) * dz) / (dx * dx + dz * dz)
+    sleeves = 0.145 < x < 0.29 and -0.22 < progress < 1.00
     return torso or sleeves
 
 
 def torso_predicate_for(source_kind: str) -> Callable[[Vector, Vector, Vector], bool]:
-    # The compact female scan needs one extra face ring above the finished crew
-    # edge; both source bodies still stop well below the anatomical jaw.
-    top_height = 0.845 if source_kind == "female" else 0.835
-    return lambda center, low, high: torso_predicate(center, low, high, top_height)
+    # Keep one disposable face ring beyond every finished seam. Exact bmesh
+    # bisection below trims that ring before solidify, so no scan teeth remain.
+    top_height = 0.865
+    shoulder_x = 0.117 if source_kind == "female" else 0.127
+    wrist_x = 0.223 if source_kind == "female" else 0.234
+    return lambda center, low, high: torso_predicate(
+        center, low, high, top_height, shoulder_x, wrist_x
+    )
+
+
+def finished_upper_predicate_for(source_kind: str) -> Callable[[Vector, Vector, Vector], bool]:
+    """Match body recessing to the post-bisect shirt, not its trim allowance."""
+    shoulder_x = 0.117 if source_kind == "female" else 0.127
+    wrist_x = 0.223 if source_kind == "female" else 0.234
+
+    def finished(center: Vector, low: Vector, high: Vector) -> bool:
+        height = high.z - low.z
+        z = (center.z - low.z) / height
+        x = abs(center.x) / height
+        torso = x < 0.19 and 0.48 < z < 0.82
+        shoulder_z, wrist_z = 0.805, 0.515
+        dx, dz = wrist_x - shoulder_x, wrist_z - shoulder_z
+        progress = ((x - shoulder_x) * dx + (z - shoulder_z) * dz) / (dx * dx + dz * dz)
+        sleeves = 0.145 < x < 0.29 and -0.22 < progress < 0.88
+        return torso or sleeves
+
+    return finished
 
 
 def neckline_boundary(point: Vector, low: Vector, high: Vector) -> bool:
@@ -1211,19 +1364,29 @@ def build_archetype(
     # Extra upper-shell clearance keeps modeled anatomical landmarks from
     # z-fighting through fitted cloth at close range without inflating limbs.
     upper_predicate = torso_predicate_for(archetype.source)
-    upper = make_surface_shell(body, "UpperGarment", materials["ClothUpper"], upper_predicate, 0.016, collection)
+    finished_upper_predicate = finished_upper_predicate_for(archetype.source)
+    upper = make_surface_shell(
+        body,
+        "UpperGarment",
+        materials["ClothUpper"],
+        upper_predicate,
+        0.016,
+        collection,
+        keep_largest_component=True,
+    )
     lower = make_surface_shell(body, "LowerGarment", materials["ClothLower"], pants_predicate, 0.011, collection)
     shoes = make_surface_shell(body, "Shoes", materials["Shoe"], shoe_predicate, 0.010, collection)
     hair = make_authored_hair_cap(body, archetype.hair, materials["Hair"], collection)
 
-    # Shape only the central top boundary. Wrist and scalp openings retain the
-    # fitted source surface, while the shirt gets one continuous crew-neck edge.
-    shape_crew_neckline(upper, body)
+    # Finish every visible shirt opening after selecting the fitted anatomical
+    # surface. Raw triangle thresholds otherwise read as frayed cloth at the
+    # neckline, lower hem, and sleeve cuffs in close gameplay framing.
+    finish_upper_garment_openings(upper, body, archetype.source)
     for obj in (upper, lower, shoes):
         apply_modifiers(obj)
     recess_body_under_shells(
         body,
-        (upper_predicate, pants_predicate, shoe_predicate),
+        (finished_upper_predicate, pants_predicate, shoe_predicate),
         clearance=0.018,
     )
 

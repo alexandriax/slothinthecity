@@ -70,7 +70,9 @@ test("zoo populations, grounding, and fabric wardrobes stay explicit", async () 
   assert.match(zoo, /groundedLocalY/);
   assert.match(zoo, /heightAt\(gate\.position\.x \+ x, gate\.position\.z \+ z\)/);
   assert.match(campaign, /walkingVisitors\.map/);
-  assert.match(campaign, /stationaryVisitors\.forEach\(visitor => idleAuthoredHuman/);
+  assert.match(zoo, /walkingVisitors\.push\(result\.root\)/);
+  assert.doesNotMatch(campaign, /stationaryVisitors/);
+  assert.doesNotMatch(population, /checking-map/);
   assert.doesNotMatch(population, /slice\(0, quality/);
 
   for (const outfit of ["zoo-uniform", "cotton-denim", "silk-leggings", "knit-chinos"]) {
@@ -80,7 +82,10 @@ test("zoo populations, grounding, and fabric wardrobes stay explicit", async () 
   assert.match(finale, /zooNameTag: "Bronx Zoo"/);
   assert.match(runtime, /color: options\.coat/);
   assert.match(runtime, /color: options\.trousers/);
-  assert.match(runtime, /authored-zoo-uniform-name-tag/);
+  assert.match(runtime, /authored-zoo-uniform-shirt-print/);
+  assert.match(runtime, /findBone\(bones, "Chest", "Spine2", "chest"\)/);
+  assert.match(runtime, /transparent: true/);
+  assert.doesNotMatch(runtime.slice(runtime.indexOf("function addZooUniformShirtPrint"), runtime.indexOf("function disposeInstance")), /strokeRect|fillRect/);
   assert.match(runtime, /options\.zooNameTag\.toUpperCase\(\)/);
 });
 

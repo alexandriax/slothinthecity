@@ -388,20 +388,21 @@ function normalizeHeight(instance: THREE.Group, targetHeight: number) {
   instance.position.y -= scaledBounds.min.y;
 }
 
-function addZooUniformNameTag(instance: THREE.Group, options: PremiumHumanOptions) {
+function addZooUniformShirtPrint(instance: THREE.Group, options: PremiumHumanOptions) {
   if (!options.zooNameTag) return undefined;
   const canvas = document.createElement("canvas");
-  canvas.width = 768; canvas.height = 216;
+  canvas.width = 1024; canvas.height = 192;
   const context = canvas.getContext("2d");
   if (!context) return undefined;
-  context.fillStyle = "#173d2b"; context.fillRect(0, 0, canvas.width, canvas.height);
-  context.strokeStyle = "#d7e4b0"; context.lineWidth = 12; context.strokeRect(7, 7, canvas.width - 14, canvas.height - 14);
-  context.fillStyle = "#f3f0dc";
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  // Text-only ink lets the uniform's green cloth and weave remain visible;
+  // there is no detached badge panel or border to read as a floating placard.
+  context.fillStyle = "#dce8bd";
   context.textAlign = "center"; context.textBaseline = "middle";
-  context.font = "700 66px Helvetica, Arial, sans-serif";
-  context.fillText(options.zooNameTag.toUpperCase(), canvas.width / 2, canvas.height / 2 + 2, canvas.width - 52);
+  context.font = "700 76px Helvetica, Arial, sans-serif";
+  context.fillText(options.zooNameTag.toUpperCase(), canvas.width / 2, canvas.height / 2 + 2, canvas.width - 28);
   const texture = new THREE.CanvasTexture(canvas);
-  texture.name = `${options.zooNameTag}-uniform-name-tag-texture`;
+  texture.name = `${options.zooNameTag}-uniform-shirt-print-texture`;
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = options.quality > .8 ? 8 : 4;
 
@@ -415,16 +416,43 @@ function addZooUniformNameTag(instance: THREE.Group, options: PremiumHumanOption
     front = Math.max(front, new THREE.Box3().setFromObject(object).max.z);
   });
   if (!Number.isFinite(front)) front = bounds.max.z;
-  const width = bodyHeight * .145, height = bodyHeight * .04;
-  const badge = new THREE.Mesh(
+  const width = bodyHeight * .082, height = bodyHeight * .017;
+  const shirtPrint = new THREE.Mesh(
     new THREE.PlaneGeometry(width, height),
-    new THREE.MeshPhysicalMaterial({ map: texture, roughness: .56, clearcoat: .18, clearcoatRoughness: .72 }),
+    new THREE.MeshStandardMaterial({
+      map: texture,
+      alphaTest: .02,
+      transparent: true,
+      depthWrite: false,
+      metalness: 0,
+      roughness: .9,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    }),
   );
-  badge.name = "authored-zoo-uniform-name-tag";
-  badge.userData.zooName = options.zooNameTag;
-  badge.position.set(bounds.min.x + bodyHeight * .28, bounds.min.y + bodyHeight * .7, front + bodyHeight * .006);
-  badge.renderOrder = 2;
-  instance.add(badge);
+  shirtPrint.name = "authored-zoo-uniform-shirt-print";
+  shirtPrint.userData.zooName = options.zooNameTag;
+  const desiredPosition = new THREE.Vector3(
+    bounds.min.x + bodyHeight * .205,
+    bounds.min.y + bodyHeight * .705,
+    front + bodyHeight * .001,
+  );
+  const bones: THREE.Bone[] = [];
+  instance.traverse(object => { if (object instanceof THREE.Bone) bones.push(object); });
+  const chest = findBone(bones, "Chest", "Spine2", "chest");
+  if (chest) {
+    instance.updateMatrixWorld(true);
+    const chestWorldQuaternion = new THREE.Quaternion();
+    chest.getWorldQuaternion(chestWorldQuaternion);
+    shirtPrint.position.copy(chest.worldToLocal(desiredPosition.clone()));
+    shirtPrint.quaternion.copy(chestWorldQuaternion).invert();
+    chest.add(shirtPrint);
+  } else {
+    shirtPrint.position.copy(desiredPosition);
+    instance.add(shirtPrint);
+  }
+  shirtPrint.renderOrder = 2;
   return texture;
 }
 
@@ -539,8 +567,8 @@ async function hydrate(
     // Layering the legacy map/phone/wave overrides under HumanWalk produced
     // doubled hands, long fingers, hunched shoulders and violent limb arcs.
     poseSkeleton(instance, host.userData.authoredHumanLocomotion ? "neutral" : options.pose);
-    const uniformNameTag = addZooUniformNameTag(instance, options);
-    if (uniformNameTag) state.ownedTextures.push(uniformNameTag);
+    const uniformShirtPrint = addZooUniformShirtPrint(instance, options);
+    if (uniformShirtPrint) state.ownedTextures.push(uniformShirtPrint);
     // Blender's authored bodies face -Y. The glTF Y-up conversion maps that
     // to +Z, while every existing game placement expects a -Z-facing model.
     // Rotate only the authored child so host transforms and interaction roots
