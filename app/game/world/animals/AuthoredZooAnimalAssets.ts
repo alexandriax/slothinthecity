@@ -16,6 +16,7 @@ export type AuthoredZooAnimalMotion =
   | "climb"
   | "swing"
   | "short-flight"
+  | "landing-settle"
   | "preen"
   | "swim"
   | "surface"
@@ -131,13 +132,14 @@ type HydrationState = {
 
 const AUTHORED_ZOO_ANIMAL_ROOT = "/game/animals/authored";
 const DRACO_DECODER_ROOT = "/game/draco/";
-// This runtime allowlist is intentionally independent from the downloaded
+// This runtime allowlist is intentionally independent from the published
 // manifest. A stale or accidentally broadened manifest must not make a
 // visually rejected study loadable in production.
 const APPROVED_AUTHORED_ZOO_ANIMAL_SPECIES = new Set<AuthoredZooAnimalSpecies>([
   "gary-polar-bear",
   "spider-monkey",
   "california-sea-lion",
+  "sun-conure",
 ]);
 
 const templatePromises = new Map<string, Promise<AnimalTemplate>>();

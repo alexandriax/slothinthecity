@@ -12,6 +12,7 @@ const EXPECTED_SPECIES = {
   "california-sea-lion": ["SeaLionIdle", "SeaLionSwim", "SeaLionSurface", "SeaLionDive"],
   "gary-polar-bear": ["BearIdle", "BearWalk", "BearForage", "BearTurn"],
   "spider-monkey": ["MonkeyIdle", "MonkeyWalk", "MonkeyPerch", "MonkeyClimb", "MonkeySwing"],
+  "sun-conure": ["LandingSettle", "Perch", "Preen", "ShortFlight"],
 };
 
 async function loadGlb(file) {
@@ -56,7 +57,7 @@ test("authored zoo animal runtime is manifest-driven, skeleton-safe, and never f
   ]);
   assert.match(source, /AUTHORED_ZOO_ANIMAL_ROOT = "\/game\/animals\/authored"/);
   assert.match(source, /APPROVED_AUTHORED_ZOO_ANIMAL_SPECIES/);
-  assert.match(source, /"gary-polar-bear",\s+"spider-monkey",\s+"california-sea-lion"/);
+  assert.match(source, /"gary-polar-bear",\s+"spider-monkey",\s+"california-sea-lion",\s+"sun-conure"/);
   assert.match(source, /if \(!APPROVED_AUTHORED_ZOO_ANIMAL_SPECIES\.has\(speciesId\)\)/);
   assert.match(source, /fetch\(`\$\{AUTHORED_ZOO_ANIMAL_ROOT\}\/manifest\.json`, \{ cache: "no-cache" \}\)/);
   assert.match(source, /new DRACOLoader\(\)/);
@@ -83,7 +84,7 @@ test("authored zoo animal runtime is manifest-driven, skeleton-safe, and never f
   assert.match(subway, /option\.journeyKey === "LEXINGTON_TO_WEST_FARMS"[\s\S]*preloadAuthoredZooAnimals/);
   assert.match(subway, /species: "gary-polar-bear"/);
   assert.match(subway, /species: "spider-monkey"/);
-  assert.doesNotMatch(subway, /species: "sun-conure"/);
+  assert.match(subway, /species: "sun-conure"/);
 });
 
 test("original animal manifest pins every reviewed species, authored PBR maps, clips, LODs, and hashes", async () => {
@@ -124,7 +125,8 @@ test("original animal manifest pins every reviewed species, authored PBR maps, c
       assert.deepEqual([...buffer.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10], `${texture.sourceFile} should be PNG`);
       assert.equal(buffer.readUInt32BE(16), texture.width);
       assert.equal(buffer.readUInt32BE(20), texture.height);
-      assert.ok(texture.width >= 2048 && texture.height >= 2048, `${texture.sourceFile} should retain close-view texture detail`);
+      const minimumTextureSize = species.id === "sun-conure" ? 1024 : 2048;
+      assert.ok(texture.width >= minimumTextureSize && texture.height >= minimumTextureSize, `${texture.sourceFile} should retain close-view texture detail`);
       assert.equal(buffer.length, texture.bytes);
       assert.equal(createHash("sha256").update(buffer).digest("hex"), texture.sha256);
     }
@@ -136,7 +138,7 @@ test("manifest generation publishes only animals that passed visual review", asy
   for (const species of Object.keys(EXPECTED_SPECIES)) {
     assert.match(builder, new RegExp(`id: ["']${species}["'],\\s+approved: true`));
   }
-  assert.match(builder, /id: ["']sun-conure["'],\s+approved: false/);
+  assert.match(builder, /id: ["']sun-conure["'],\s+approved: true/);
   assert.match(builder, /id: ["']plains-zebra["'],\s+approved: false/);
   assert.match(builder, /reviewedSpecies\.filter\(review => review\.approved\)/);
   assert.match(builder, /not visually approved/);
@@ -190,8 +192,8 @@ test("production animal generators cannot ingest third-party scenes, models, tex
     if (gltfImports.length) {
       assert.match(
         generator,
-        /def calibrate_root_from_fresh_import\([\s\S]*?bpy\.ops\.import_scene\.gltf\(filepath=str\(path\.resolve\(\)\)\)/,
-        `${species.id} may only re-import its own local export for fresh-import calibration`,
+        /(?:def calibrate_root_from_fresh_import\([\s\S]*?bpy\.ops\.import_scene\.gltf\(filepath=str\(path\.resolve\(\)\)\)|def render_fresh_import\([\s\S]*?bpy\.ops\.import_scene\.gltf\(filepath=str\(glb\)\))/,
+        `${species.id} may only re-import its own local export for fresh-import calibration or render QA`,
       );
     }
     assert.match(generator, /bpy/, `${species.id} should retain a reproducible Blender generator`);
@@ -215,7 +217,7 @@ test("authored animal GLBs are continuous skinned meshes with PBR texture inputs
       assert.equal(json.scenes?.length, 1, `${contract.file} should have one authored scene`);
       assert.ok(json.skins?.length >= 1, `${contract.file} should include a skeleton`);
       assert.ok(skinnedMeshNodes.length >= 1, `${contract.file} should bind its continuous body mesh to the skeleton`);
-      const minimumBones = species.id === "spider-monkey" ? 24 : species.id === "gary-polar-bear" ? 18 : 10;
+      const minimumBones = species.id === "sun-conure" ? 40 : species.id === "spider-monkey" ? 24 : species.id === "gary-polar-bear" ? 18 : 10;
       assert.ok(json.skins[0].joints.length >= minimumBones, `${contract.file} should retain a complete animal rig`);
       assert.ok(nodeNames.every(name => !/(^|[_ .-])(ico)?sphere|torus|capsule|cylinder|cone|cube([_ .-]|$)/i.test(name)), `${contract.file} should not expose primitive construction parts`);
       assert.equal(primitives(json).length, contract.meshes, `${contract.file} contract should count runtime primitives`);

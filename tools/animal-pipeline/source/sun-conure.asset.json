@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "id": "sun-conure",
+  "displayName": "Sun conure",
+  "species": "Aratinga solstitialis",
+  "license": "Original-Project-Asset",
+  "generator": "tools/animal-pipeline/build_sun_conure_manual_production.py",
+  "coordinateSystem": { "forward": "-Z", "origin": "authored armature root with measured perch-contact pose", "unit": "meter", "up": "+Y" },
+  "dimensionsMeters": { "authoredHeightIncludingTail": 0.467, "foldedWidth": 0.14, "flightWingspan": 0.49, "length": 0.218 },
+  "clips": [
+    { "name": "Perch", "frames": [1, 96], "fps": 30 },
+    { "name": "Preen", "frames": [1, 120], "fps": 30 },
+    { "name": "ShortFlight", "frames": [1, 80], "fps": 30 },
+    { "name": "LandingSettle", "frames": [1, 84], "fps": 30 }
+  ],
+  "lod0": {
+    "animations": ["LandingSettle", "Perch", "Preen", "ShortFlight"],
+    "bones": 45,
+    "bytes": 5147332,
+    "embeddedImages": 7,
+    "file": "sun-conure-lod0.glb",
+    "materials": 10,
+    "meshes": 10,
+    "meshNodes": 1,
+    "nodes": 47,
+    "sha256": "1327d4f484d2393e275d12c8101c177780591a8b328f31508c870ec1e81b8a48",
+    "skins": 1,
+    "triangles": 20924,
+    "vertices": 19693
+  },
+  "lod2": {
+    "animations": ["LandingSettle", "Perch", "Preen", "ShortFlight"],
+    "bones": 45,
+    "bytes": 4561532,
+    "embeddedImages": 7,
+    "file": "sun-conure-lod2.glb",
+    "materials": 10,
+    "meshes": 10,
+    "meshNodes": 1,
+    "nodes": 47,
+    "sha256": "76e9d9d2d6811e5adb84a7ce5640bf860a8e5c765d7b19234a7e986efa8325b2",
+    "skins": 1,
+    "triangles": 10462,
+    "vertices": 12002
+  },
+  "maps": {
+    "bodyBasecolor": { "bytes": 658593, "embeddedImageName": "sun-conure-body-basecolor", "height": 1024, "kind": "albedo", "runtimeMimeType": "image/png", "sha256": "30b8fbc5298f481cde953142c907add20e44f116f95a7f1a0041c8c9d53f7a76", "sourceFile": "tools/animal-pipeline/source/sun-conure-body-basecolor.png", "width": 1024 },
+    "wingBasecolor": { "bytes": 240497, "embeddedImageName": "sun-conure-wing-basecolor", "height": 1024, "kind": "albedo", "runtimeMimeType": "image/png", "sha256": "77cdb79d87f12939f2f72e550c5fd39e870ec0f5576f138619809400f6a8fd4c", "sourceFile": "tools/animal-pipeline/source/sun-conure-wing-basecolor.png", "width": 1024 },
+    "tailBasecolor": { "bytes": 164819, "embeddedImageName": "sun-conure-tail-basecolor", "height": 1024, "kind": "albedo", "runtimeMimeType": "image/png", "sha256": "b58304c2c2f2eaa57178659f1ccb2cf79afdecf5f731e117598ceed229ea43c9", "sourceFile": "tools/animal-pipeline/source/sun-conure-tail-basecolor.png", "width": 1024 },
+    "featherNormal": { "bytes": 159282, "embeddedImageName": "sun-conure-feather-normal", "height": 1024, "kind": "normal", "runtimeMimeType": "image/png", "sha256": "ee23a194a08fc393c1bb1766e91713318914338d36e3b420d981df30ed23d08e", "sourceFile": "tools/animal-pipeline/source/sun-conure-feather-normal.png", "width": 1024 },
+    "featherRoughness": { "bytes": 237255, "embeddedImageName": "sun-conure-feather-roughness", "height": 1024, "kind": "roughness", "runtimeMimeType": "image/png", "sha256": "46bd1f887f626302cece6b575e5af3e44fea81f000d794dbca1e82690d3536af", "sourceFile": "tools/animal-pipeline/source/sun-conure-feather-roughness.png", "width": 1024 },
+    "footBasecolor": { "bytes": 620247, "embeddedImageName": "sun-conure-foot-basecolor", "height": 1024, "kind": "albedo", "runtimeMimeType": "image/png", "sha256": "0d3382ba37b6fdd9310d9ed176bff576e892caf19fcea240948fd7d1e9bae51d", "sourceFile": "tools/animal-pipeline/source/sun-conure-foot-basecolor.png", "width": 1024 },
+    "footNormal": { "bytes": 783057, "embeddedImageName": "sun-conure-foot-normal", "height": 1024, "kind": "normal", "runtimeMimeType": "image/png", "sha256": "0783799d43ed6000ba560e379dcbf8f7ba06e4927eee057666f266ee2e62e6e7", "sourceFile": "tools/animal-pipeline/source/sun-conure-foot-normal.png", "width": 1024 }
+  },
+  "materials": [
+    "SunConure.BodyFeatherPBR", "SunConure.WingCovertPBR", "SunConure.FlightFeatherPBR", "SunConure.TailFeatherPBR", "SunConure.TailCovertPBR",
+    "SunConure.ZygodactylFootPBR", "SunConure.BillKeratin", "SunConure.ClawKeratin", "SunConure.EyeCornea", "SunConure.NareRecess"
+  ],
+  "skeleton": {
+    "bones": [
+      "Root", "Pelvis", "Chest", "Neck", "Head", "Jaw",
+      "WingShoulder.L", "WingPrimary.L", "WingFeather.L.0", "WingFeather.L.1", "WingFeather.L.2", "WingFeather.L.3", "Thigh.L", "Tarsus.L", "Foot.L", "Digit.L.ForwardInner", "Digit.L.ForwardOuter", "Digit.L.RearInner", "Digit.L.RearOuter",
+      "WingShoulder.R", "WingPrimary.R", "WingFeather.R.0", "WingFeather.R.1", "WingFeather.R.2", "WingFeather.R.3", "Thigh.R", "Tarsus.R", "Foot.R", "Digit.R.ForwardInner", "Digit.R.ForwardOuter", "Digit.R.RearInner", "Digit.R.RearOuter",
+      "TailRoot", "TailFan.0", "TailFan.1", "TailFan.2", "TailFan.3", "TailFan.4", "TailFan.5", "TailFan.6", "TailFan.7", "TailCovert.0", "TailCovert.1", "TailCovert.2", "TailCovert.3"
+    ],
+    "maxInfluences": 4,
+    "name": "SunConure.Rig"
+  },
+  "supportAnchors": {
+    "perch": { "lengthMeters": 0.24, "radiusMeters": 0.012, "restCenterBlenderMeters": [0, 0, -0.028], "digitsPerFoot": { "forward": 2, "rear": 2 } },
+    "endpointAudit": {
+      "LandingSettle": { "maximumFootDeltaMeters": 0, "maximumRootDeltaMeters": 0 },
+      "Perch": { "maximumFootDeltaMeters": 0, "maximumRootDeltaMeters": 0 },
+      "Preen": { "maximumFootDeltaMeters": 0, "maximumRootDeltaMeters": 0 },
+      "ShortFlight": { "maximumFootDeltaMeters": 0, "maximumRootDeltaMeters": 0 }
+    }
+  },
+  "provenance": {
+    "geometry": "Approved explicit project-authored edge loops, profile lofts, contour shells, and path sections; no imported geometry.",
+    "referencePolicy": "Live-animal imagery informed anatomy, plumage, locomotion, and contact study only; no file or pixel was downloaded, traced, embedded, or sampled.",
+    "rigging": "Project-authored 45-joint avian skeleton, weights, primary fan controls, zygodactyl controls, and four animation clips.",
+    "textures": "Seven deterministic analytic project-authored 1024px PBR maps; zero third-party pixels."
+  }
+}

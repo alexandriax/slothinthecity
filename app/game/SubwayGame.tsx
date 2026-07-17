@@ -155,6 +155,7 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
           { species: "gary-polar-bear", quality: animalQuality },
           { species: "spider-monkey", quality: animalQuality },
           { species: "california-sea-lion", quality: animalQuality },
+          { species: "sun-conure", quality: animalQuality },
         ]).catch(() => undefined);
       }
       const base = TRAIN_INTERIOR_JOURNEYS[option.journeyKey];

@@ -244,6 +244,129 @@
           "width": 2048
         }
       ]
+    },
+    {
+      "id": "sun-conure",
+      "commonName": "Sun conure",
+      "sourceFacing": "-z",
+      "targetHeightMeters": 0.36,
+      "groundOffsetMeters": 0,
+      "license": "Project-original",
+      "source": {
+        "blendBytes": 5540908,
+        "blendFile": "tools/animal-pipeline/source/sun-conure-source.blend",
+        "blendSha256": "cdbd5b3d317891a1876bb8dc7cd32f297784a3e3ef162fe6f5a7a634093157cb",
+        "generator": "tools/animal-pipeline/build_sun_conure_manual_production.py",
+        "method": "Approved original manual-loop avian topology with continuous head-neck-torso anatomy, independently rigged primary fan, measured zygodactyl contact, project-authored clips, UVs, and analytic PBR maps.",
+        "referenceUse": "visual-reference-only"
+      },
+      "lod0": {
+        "bytes": 5147332,
+        "file": "sun-conure-lod0.glb",
+        "materials": 10,
+        "meshes": 10,
+        "sha256": "1327d4f484d2393e275d12c8101c177780591a8b328f31508c870ec1e81b8a48",
+        "triangles": 20924,
+        "vertices": 19693
+      },
+      "lod2": {
+        "bytes": 4561532,
+        "file": "sun-conure-lod2.glb",
+        "materials": 10,
+        "meshes": 10,
+        "sha256": "76e9d9d2d6811e5adb84a7ce5640bf860a8e5c765d7b19234a7e986efa8325b2",
+        "triangles": 10462,
+        "vertices": 12002
+      },
+      "clips": {
+        "idle": [
+          "Perch"
+        ],
+        "perch": [
+          "Perch"
+        ],
+        "short-flight": [
+          "ShortFlight"
+        ],
+        "preen": [
+          "Preen"
+        ],
+        "landing-settle": [
+          "LandingSettle"
+        ]
+      },
+      "textures": [
+        {
+          "bytes": 658593,
+          "embedded": true,
+          "embeddedImage": "sun-conure-body-basecolor",
+          "height": 1024,
+          "kind": "albedo",
+          "sha256": "30b8fbc5298f481cde953142c907add20e44f116f95a7f1a0041c8c9d53f7a76",
+          "sourceFile": "tools/animal-pipeline/source/sun-conure-body-basecolor.png",
+          "width": 1024
+        },
+        {
+          "bytes": 240497,
+          "embedded": true,
+          "embeddedImage": "sun-conure-wing-basecolor",
+          "height": 1024,
+          "kind": "albedo",
+          "sha256": "77cdb79d87f12939f2f72e550c5fd39e870ec0f5576f138619809400f6a8fd4c",
+          "sourceFile": "tools/animal-pipeline/source/sun-conure-wing-basecolor.png",
+          "width": 1024
+        },
+        {
+          "bytes": 164819,
+          "embedded": true,
+          "embeddedImage": "sun-conure-tail-basecolor",
+          "height": 1024,
+          "kind": "albedo",
+          "sha256": "b58304c2c2f2eaa57178659f1ccb2cf79afdecf5f731e117598ceed229ea43c9",
+          "sourceFile": "tools/animal-pipeline/source/sun-conure-tail-basecolor.png",
+          "width": 1024
+        },
+        {
+          "bytes": 159282,
+          "embedded": true,
+          "embeddedImage": "sun-conure-feather-normal",
+          "height": 1024,
+          "kind": "normal",
+          "sha256": "ee23a194a08fc393c1bb1766e91713318914338d36e3b420d981df30ed23d08e",
+          "sourceFile": "tools/animal-pipeline/source/sun-conure-feather-normal.png",
+          "width": 1024
+        },
+        {
+          "bytes": 237255,
+          "embedded": true,
+          "embeddedImage": "sun-conure-feather-roughness",
+          "height": 1024,
+          "kind": "roughness",
+          "sha256": "46bd1f887f626302cece6b575e5af3e44fea81f000d794dbca1e82690d3536af",
+          "sourceFile": "tools/animal-pipeline/source/sun-conure-feather-roughness.png",
+          "width": 1024
+        },
+        {
+          "bytes": 620247,
+          "embedded": true,
+          "embeddedImage": "sun-conure-foot-basecolor",
+          "height": 1024,
+          "kind": "albedo",
+          "sha256": "0d3382ba37b6fdd9310d9ed176bff576e892caf19fcea240948fd7d1e9bae51d",
+          "sourceFile": "tools/animal-pipeline/source/sun-conure-foot-basecolor.png",
+          "width": 1024
+        },
+        {
+          "bytes": 783057,
+          "embedded": true,
+          "embeddedImage": "sun-conure-foot-normal",
+          "height": 1024,
+          "kind": "normal",
+          "sha256": "0783799d43ed6000ba560e379dcbf8f7ba06e4927eee057666f266ee2e62e6e7",
+          "sourceFile": "tools/animal-pipeline/source/sun-conure-foot-normal.png",
+          "width": 1024
+        }
+      ]
     }
   ]
 }

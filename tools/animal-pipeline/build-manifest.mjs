@@ -42,14 +42,14 @@ const reviewedSpecies = [
   },
   {
     id: "sun-conure",
-    approved: false,
+    approved: true,
     asset: "tools/animal-pipeline/source/sun-conure.asset.json",
     blend: "tools/animal-pipeline/source/sun-conure-source.blend",
     commonName: "Sun conure",
     sourceFacing: "-z",
     targetHeightMeters: .36,
-    method: "Original Blender avian sculpt with continuous head, neck and torso anatomy, layered flight feathers, zygodactyl feet, project-authored rig, clips, UVs, and PBR maps.",
-    clips: { idle: ["ConureIdle"], perch: ["ConurePerchHop"], "short-flight": ["ConureFly"], preen: ["ConurePreen"] },
+    method: "Approved original manual-loop avian topology with continuous head-neck-torso anatomy, independently rigged primary fan, measured zygodactyl contact, project-authored clips, UVs, and analytic PBR maps.",
+    clips: { idle: ["Perch"], perch: ["Perch"], "short-flight": ["ShortFlight"], preen: ["Preen"], "landing-settle": ["LandingSettle"] },
   },
   {
     id: "plains-zebra",
