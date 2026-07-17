@@ -303,12 +303,13 @@ test("playable subway services advance through graph destinations while out-of-s
   assert.match(finishRide, /continues beyond this playable route/);
 });
 
-test("West Farms streams the Bronx Zoo rescue level and completion waits for Home Grove", async () => {
-  const [subway, world, zoo, parkReturn] = await Promise.all([
+test("West Farms streams the Bronx Zoo and completion waits for Megatherium at AMNH", async () => {
+  const [subway, world, zoo, bus, museum] = await Promise.all([
     readFile(new URL("../app/game/SubwayGame.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/game/world/SubwayWorld.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/game/world/BronxZooWorld.ts", import.meta.url), "utf8"),
-    readFile(new URL("../app/game/world/CentralParkReturnWorld.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/world/CityBusWorld.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/world/NaturalHistoryMuseumWorld.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(world, /WEST FARMS SQ \/ E TREMONT AV/);
@@ -323,16 +324,16 @@ test("West Farms streams the Bronx Zoo rescue level and completion waits for Hom
   assert.match(subway, /player\.copy\(zooWorld\.spawn\)/);
   assert.match(subway, /zooWorld\.interactionHint\(player\)/);
   assert.match(subway, /event\.kind === "SLOTHS_RELEASED"[\s\S]{0,180}rescuedParty\.setActive\(true/);
-  assert.match(subway, /zooWorld\.stationReturnReached\(player\)[\s\S]{0,120}startReturnTransit\(\)/);
-  assert.match(subway, /function completeMission\(\)[\s\S]{0,220}transitStage !== "CENTRAL_PARK"[\s\S]{0,220}setTransitStage\("COMPLETE"\)/);
+  assert.match(subway, /zooWorld\.busBoardingReached\(player\)[\s\S]{0,160}startBusDrive\(\)/);
+  assert.match(subway, /function completeMission\(\)[\s\S]{0,260}transitStage !== "MUSEUM"[\s\S]{0,260}setTransitStage\("COMPLETE"\)/);
   assert.match(zoo, /readonly spawn = new THREE\.Vector3/);
   assert.match(zoo, /resolvePlayer\(player: THREE\.Vector3/);
-  assert.match(zoo, /stationReturnReached\(player: THREE\.Vector3/);
-  assert.match(parkReturn, /buildRealisticWorld\(this\.root, textures, tier\)/);
-  assert.match(parkReturn, /homeMarker\.userData\.originalTreeIndex/);
-  assert.match(parkReturn, /central-park-sloth-sanctuary-sign/);
-  assert.match(subway, /<div className="eyebrow">Central Park · Home Grove<\/div>/);
-  assert.match(subway, /<h2>Your friends are home\.<\/h2>/);
+  assert.match(zoo, /busBoardingReached\(player: THREE\.Vector3/);
+  assert.match(bus, /bronx-to-natural-history-museum-driving-level/);
+  assert.match(museum, /american-museum-of-natural-history-exploration-level/);
+  assert.match(museum, /megatherium-americanum-giant-ground-sloth-articulated-skeleton/);
+  assert.match(subway, /<div className="eyebrow">AMNH · Fossil Mammal Halls<\/div>/);
+  assert.match(subway, /<h2>Your friends found a giant ancestor\.<\/h2>/);
 });
 
 test("train boarding streams a dedicated interior world with crowd and door gameplay", async () => {

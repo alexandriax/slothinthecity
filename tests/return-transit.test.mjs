@@ -121,18 +121,16 @@ test("return route uses direction-specific voiced copy and never reuses outbound
   assert.match(game, /`lex_downtown_\$\{route\}_boarding`/);
 });
 
-test("return HUD keeps the 5 train and later N/R transfer as separate legs", async () => {
+test("legacy QA return HUD still keeps the 5 train and later N/R transfer as separate legs", async () => {
   const [game, styles] = await Promise.all([
     readSource("../app/game/SubwayGame.tsx"),
     readSource("../app/globals.css"),
   ]);
 
-  assert.match(game, /Return to West Farms for the downtown 5 — transfer to N \/ R later at Lexington Av/);
-  assert.match(game, /First take the downtown 5 to Lexington Avenue\. Transfer there—not here—to a downtown N or R/);
   assert.match(game, /Take the downtown 5 to Lexington Av; transfer to N \/ R there/);
   assert.match(game, /Transfer here to a downtown \$\{arrivingRoute\} train for Fifth Avenue/);
   assert.match(game, /Publish the checkpoint's real service immediately/);
-  assert.match(game, /followerCount > 0 \? "Keep moving toward West Farms · the rescued sloths climb down and follow your walked route"/);
+  assert.match(game, /Lead all four friends out of the zoo and board the museum shuttle/);
   assert.match(game, /<div className="compass-line"><span>FROM<\/span><span className="active">\{hud\.motion\}<\/span><span>TO<\/span>/);
   assert.doesNotMatch(game, /<div className="compass-line">[\s\S]{0,120}<span>R<\/span>/);
   assert.doesNotMatch(styles, /\.subway-shell \.compass:(?:before|after)/);

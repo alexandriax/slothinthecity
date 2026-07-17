@@ -263,23 +263,20 @@ export function createGaryPolarBear(textures: GameTextures, quality: number): Zo
   const shadowFur = material(textures.fur, "#d0ccc0", .96, polarSurface);
   const dark = new THREE.MeshPhysicalMaterial({ color: "#171916", roughness: .3, clearcoat: .42 });
 
-  const body = new THREE.Mesh(new THREE.SphereGeometry(1, segments, Math.max(14, segments - 7)), fur);
+  // Gary's trunk is one tapered anatomical sweep. The previous three
+  // intersecting spheres read as separate toy orbs whenever the light caught
+  // their seams; this continuous surface carries the rib cage into the hips.
+  const body = new THREE.Mesh(taperedSweepGeometry([
+    new THREE.Vector3(0, .03, -1.4),
+    new THREE.Vector3(0, .08, -.78),
+    new THREE.Vector3(0, 0, .16),
+    new THREE.Vector3(0, -.04, .94),
+    new THREE.Vector3(0, .02, 1.42),
+  ], [.68, .94, .98, .86, .56], quality > .86 ? 44 : quality > .62 ? 30 : 20, quality > .86 ? 30 : quality > .62 ? 20 : 14), fur);
   body.name = "gary-continuous-polar-bear-torso";
-  body.scale.set(.95, .65, 1.55);
+  body.scale.set(1, .78, 1);
   body.position.set(0, 1.5, .35);
   root.add(body);
-
-  const shoulders = new THREE.Mesh(new THREE.SphereGeometry(1, segments, Math.max(14, segments - 7)), fur);
-  shoulders.name = "gary-polar-bear-shoulder-mass";
-  shoulders.scale.set(1.03, .86, .9);
-  shoulders.position.set(0, 1.66, -.82);
-  root.add(shoulders);
-
-  const haunches = new THREE.Mesh(new THREE.SphereGeometry(1, segments, Math.max(14, segments - 7)), fur);
-  haunches.name = "gary-polar-bear-powerful-haunch-transition";
-  haunches.scale.set(.9, .72, .88);
-  haunches.position.set(0, 1.5, 1.1);
-  root.add(haunches);
 
   const neck = new THREE.Mesh(new THREE.SphereGeometry(1, segments, Math.max(14, segments - 7)), fur);
   neck.name = "gary-polar-bear-neck-transition";
@@ -327,7 +324,7 @@ export function createGaryPolarBear(textures: GameTextures, quality: number): Zo
     headPivot.add(eye);
   }
 
-  const paws: THREE.Mesh[] = [], legPivots: THREE.Group[] = [];
+  const legPivots: THREE.Group[] = [];
   for (const side of [-1, 1]) for (const front of [-1, 1]) {
     const z = front < 0 ? -.9 : 1.02;
     const upper = new THREE.Vector3(side * .6, 1.48, z);
@@ -348,16 +345,17 @@ export function createGaryPolarBear(textures: GameTextures, quality: number): Zo
     root.add(leg); legPivots.push(leg);
     const paw = new THREE.Mesh(new THREE.SphereGeometry(.26, segments, 16), shadowFur);
     paw.name = "gary-grounded-polar-bear-paw";
-    paw.scale.set(1, .42, 1.25);
-    paw.position.copy(lower).add(new THREE.Vector3(0, -.13, -.08));
-    root.add(paw);
-    paws.push(paw);
+    paw.scale.set(1, .58, 1.3);
+    paw.position.copy(lower).sub(upper).add(new THREE.Vector3(0, -.23, -.12));
+    // Feet belong to their articulated limb pivots so a walking leg can never
+    // leave a disconnected paw behind in world space.
+    leg.add(paw);
     for (let claw = -1; claw <= 1; claw++) {
       const clawMesh = new THREE.Mesh(new THREE.ConeGeometry(.025, .13, 8), new THREE.MeshStandardMaterial({ color: "#4c493f", roughness: .7 }));
       clawMesh.name = "gary-polar-bear-visible-claw";
-      clawMesh.position.copy(paw.position).add(new THREE.Vector3(claw * .065, -.015, -.25));
+      clawMesh.position.copy(paw.position).add(new THREE.Vector3(claw * .065, -.015, -.3));
       clawMesh.rotation.x = -Math.PI / 2;
-      root.add(clawMesh);
+      leg.add(clawMesh);
     }
   }
   shadows(root, quality > .62);
@@ -370,16 +368,13 @@ export function createGaryPolarBear(textures: GameTextures, quality: number): Zo
       const state = root.userData.animationState as string | undefined;
       const breath = Math.sin(elapsed * 1.17 + phase) * .014;
       const gait = state === "walk" ? Math.sin(elapsed * 3.4) : 0;
-      body.scale.y = .65 + breath + Math.abs(gait) * .008;
-      shoulders.scale.y = .86 + breath * .7;
-      haunches.scale.y = .72 + breath * .4;
+      body.scale.y = .78 + breath + Math.abs(gait) * .008;
       headPivot.rotation.y = Math.sin(elapsed * .31 + phase) * (state === "forage" ? .28 : .12);
       headPivot.rotation.x = (state === "forage" ? .24 : -.02) + Math.sin(elapsed * .47) * .025;
       legPivots.forEach((pivot, index) => {
         pivot.rotation.x = state === "walk" ? Math.sin(elapsed * 3.4 + index * Math.PI) * .19 : 0;
         pivot.rotation.z = state === "forage" && index < 2 ? Math.sin(elapsed * .72 + index) * .035 : 0;
       });
-      paws.forEach((paw, index) => { paw.position.y += (Math.sin(elapsed * 3.4 + index * Math.PI) * .016 - (paw.userData.gaitOffset ?? 0)); paw.userData.gaitOffset = Math.sin(elapsed * 3.4 + index * Math.PI) * .016; });
     },
   };
 }
@@ -672,7 +667,7 @@ export function createSpiderMonkey(textures: GameTextures, quality: number, vari
   tail.name = "prehensile-spider-monkey-tail";
   root.add(tail);
   shadows(root, quality > .72);
-  stampPremiumAnimal(root, ["perch", "swing", "forage"]);
+  stampPremiumAnimal(root, ["perch", "swing", "forage", "walk"]);
   const phase = variant * 1.73;
   return {
     root,
@@ -680,13 +675,21 @@ export function createSpiderMonkey(textures: GameTextures, quality: number, vari
     update(elapsed) {
       const state = root.userData.animationState as string | undefined;
       limbRoots.forEach((pivot, index) => {
-        const amplitude = state === "swing" ? .42 : state === "forage" ? .16 : .06;
-        pivot.rotation.z = (pivot.userData.baseZ as number) + Math.sin(elapsed * (state === "swing" ? 2.2 : .58) + phase + index * 1.4) * amplitude;
-        pivot.rotation.x = state === "swing" ? Math.sin(elapsed * 2.2 + index * Math.PI) * .18 : 0;
+        const walking = state === "walk";
+        const amplitude = state === "swing" ? .42 : state === "forage" ? .16 : walking ? .1 : .06;
+        const cadence = state === "swing" ? 2.2 : walking ? 3.4 : .58;
+        pivot.rotation.z = (pivot.userData.baseZ as number) + Math.sin(elapsed * cadence + phase + index * 1.4) * amplitude;
+        const walkPhase = [0, Math.PI, Math.PI, 0][index];
+        pivot.rotation.x = state === "swing"
+          ? Math.sin(elapsed * 2.2 + index * Math.PI) * .18
+          : walking
+            ? Math.sin(elapsed * 3.4 + phase + walkPhase) * (index % 2 === 0 ? .2 : .27)
+            : 0;
       });
       headPivot.rotation.y = Math.sin(elapsed * .49 + phase) * .16;
       headPivot.rotation.x = state === "forage" ? .18 + Math.sin(elapsed * 1.2 + phase) * .07 : Math.sin(elapsed * .36) * .025;
-      body.rotation.z = state === "swing" ? Math.sin(elapsed * 2.2 + phase) * .1 : 0;
+      body.rotation.z = state === "swing" ? Math.sin(elapsed * 2.2 + phase) * .1 : state === "walk" ? Math.sin(elapsed * 3.4 + phase) * .035 : 0;
+      body.position.y = 1.18 + (state === "walk" ? Math.abs(Math.sin(elapsed * 3.4 + phase)) * .025 : 0);
       tail.rotation.y = Math.sin(elapsed * (state === "swing" ? 1.2 : .42) + phase) * (state === "swing" ? .22 : .08);
     },
   };

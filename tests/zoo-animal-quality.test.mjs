@@ -118,8 +118,14 @@ test("hero anatomy uses natural proportions instead of bean bodies, plush heads,
   const gary = ZooAnimals.createGaryPolarBear(textures, 1).root;
   const garyTorso = gary.getObjectByName("gary-continuous-polar-bear-torso");
   const garyEyes = allNamed(gary, "anatomical-eye-with-cornea");
-  assert.ok(garyTorso.scale.z / garyTorso.scale.x > 1.55, "Gary should have an elongated ursine trunk, not a spherical bean torso");
-  assert.ok(garyTorso.position.y - garyTorso.scale.y > .8, "Gary's abdomen should clear visibly long weight-bearing limbs");
+  garyTorso.geometry.computeBoundingBox();
+  const garyTorsoSize = new THREE.Vector3();
+  garyTorso.geometry.boundingBox.getSize(garyTorsoSize);
+  assert.ok(garyTorsoSize.z / garyTorsoSize.x > 1.45, "Gary should have one elongated tapered ursine trunk, not intersecting orb masses");
+  assert.ok(garyTorso.position.y - garyTorsoSize.y * garyTorso.scale.y * .5 > .7, "Gary's abdomen should clear visibly long weight-bearing limbs");
+  const garyPaws = allNamed(gary, "gary-grounded-polar-bear-paw");
+  assert.equal(garyPaws.length, 4);
+  assert.ok(garyPaws.every(paw => /limb.*pivot/.test(paw.parent.name)), "Gary's paws must be parented to the articulated legs they visually contact");
   assert.equal(garyEyes.length, 2);
   assert.ok(garyEyes.every(eye => eye.children.length === 1), "Gary's clearcoat corneas should not add fake geometric catchlight eyes");
   assert.ok(garyEyes[0].children[0].geometry.parameters.radius <= .032, "Gary's eye scale should remain natural relative to his skull");
