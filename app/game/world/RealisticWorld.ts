@@ -1022,6 +1022,27 @@ function addSky(scene: THREE.Scene) {
   sky.material.uniforms.sunPosition.value.copy(sun);
 }
 
+/**
+ * The authored Central Park daylight rig shared by every visit to the park.
+ * Keeping it beside the world builder prevents the homecoming from drifting
+ * into a visually different recreation of the opening level.
+ */
+export function addCentralParkLighting(scene: THREE.Scene, shadowMapSize = 2048) {
+  const hemisphere = new THREE.HemisphereLight("#dce3d2", "#3b3329", .62);
+  const sun = new THREE.DirectionalLight("#ffd49a", 2.65);
+  sun.position.set(-35, 68, 25);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(shadowMapSize, shadowMapSize);
+  sun.shadow.camera.left = sun.shadow.camera.bottom = -42;
+  sun.shadow.camera.right = sun.shadow.camera.top = 42;
+  sun.shadow.camera.near = 1;
+  sun.shadow.camera.far = 150;
+  sun.shadow.normalBias = .035;
+  sun.shadow.bias = -.00008;
+  scene.add(hemisphere, sun, sun.target);
+  return { hemisphere, sun };
+}
+
 function ellipseDiscGeometry(radiusX: number, radiusZ: number, segments = 160) {
   const positions: number[] = [0, 0, 0], uvs: number[] = [.5, .5], indices: number[] = [];
   for (let index = 0; index <= segments; index++) {

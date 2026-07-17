@@ -52,8 +52,11 @@ test("zoo sloth friends use continuous anatomical silhouettes", async () => {
   assert.doesNotMatch(friend, /new THREE\.TubeGeometry|new THREE\.ConeGeometry/);
   assert.doesNotMatch(friend, /const upper = new THREE\.Mesh\(new THREE\.CapsuleGeometry|const wrist = new THREE\.Mesh\(new THREE\.CapsuleGeometry|const palm = new THREE\.Mesh\(new THREE\.SphereGeometry/);
   assert.doesNotMatch(finale, /friend-wave-arm|waiting-sloth-friend"\) object\.rotation\.z/);
-  assert.match(finale, /friendReviewSpawn/);
-  assert.match(game, /if \(qaInput === "finale"\) player\.copy\(zooWorld\.friendReviewSpawn\)/);
+  assert.match(finale, /captive-sloth-friend-\$\{index \+ 1\}-on-real-branch/);
+  assert.match(finale, /sloth-enclosure-load-bearing-tree-branch-\$\{index \+ 1\}/);
+  assert.match(game, /"bronxsloths"/);
+  assert.match(game, /player\.copy\(reviewWorld\.habitatReviewSpawn\)/);
+  assert.match(game, /qaInput === "finale"[\s\S]{0,320}reviewPark\.sanctuaryTarget/);
 });
 
 test("zoo populations, grounding, and fabric wardrobes stay explicit", async () => {

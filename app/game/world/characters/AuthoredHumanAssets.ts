@@ -41,6 +41,11 @@ const AUTHORED_HUMAN_ROOT = "/game/characters/authored";
 const DRACO_DECODER_ROOT = "/game/draco/";
 const SKIN_ATLAS_URL = "/game/characters/human-skin-pbr-v4.webp";
 const CLOTH_ATLAS_URL = "/game/characters/human-cloth-pbr-v4.webp";
+// Bounds include hair and footwear. These values preserve realistic stature
+// after world-owned scale multipliers (the train uses .88) instead of making
+// visitors brush a 2.72 m car ceiling as the former 2.43/2.5 m targets did.
+const AUTHORED_VISITOR_HEIGHT_METERS = 2.04;
+const AUTHORED_ATTENDANT_HEIGHT_METERS = 2.1;
 
 const templatePromises = new Map<string, Promise<HumanTemplate>>();
 const atlasPromises = new Map<string, Promise<THREE.Texture>>();
@@ -586,7 +591,20 @@ async function hydrate(
     // Otherwise the first rendered frame exposes the (historically hunched)
     // bind pose and the head appears to snap upright when motion first updates.
     seedNeutralAnimation(instance, state);
-    normalizeHeight(instance, options.role === "attendant" ? 2.5 : 2.43);
+    const targetHeight = options.role === "attendant"
+      ? AUTHORED_ATTENDANT_HEIGHT_METERS
+      : AUTHORED_VISITOR_HEIGHT_METERS;
+    normalizeHeight(instance, targetHeight);
+    host.userData.authoredHumanTargetHeightMeters = targetHeight;
+    // A seated host may be lowered by its world before asynchronous hydration
+    // completes. Counter that world-space offset on the authored child so the
+    // complete legs and feet remain above the floor rather than being clipped.
+    if (options.pose === "seated" && host.position.y < 0) {
+      const compensation = -host.position.y / Math.max(Math.abs(host.scale.y), .001);
+      instance.position.y += compensation;
+      instance.userData.authoredHumanGroundCompensation = compensation;
+      instance.updateMatrixWorld(true);
+    }
     if (state.disposed || host.userData.authoredHumanDisposed) {
       disposeInstance(instance);
       return;

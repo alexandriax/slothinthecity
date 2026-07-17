@@ -12,7 +12,19 @@ export const DEBUG_SCENE_CHECKPOINTS = {
   transfer: "lexingtontransfer",
   "transfer-concourse": "lexingtonconcourse",
   "train-5": "trainride5",
-  bronx: "finale",
+  bronx: "bronxentry",
+  "bronx-entry": "bronxentry",
+  "bronx-polar": "bronxpolar",
+  "bronx-birds": "bronxbirds",
+  "bronx-monkeys": "bronxmonkeys",
+  "bronx-sloths": "bronxsloths",
+  rescue: "rescuefollowers",
+  "return-westfarms": "returnwestfarms",
+  "return-train-5": "returntrain5",
+  "return-lexington": "returnlexington",
+  "return-train-nr": "returntrainnr",
+  homecoming: "homecoming",
+  finale: "finale",
 } as const;
 
 export type DebugSceneName = keyof typeof DEBUG_SCENE_CHECKPOINTS;
@@ -28,6 +40,17 @@ const SUBWAY_CHECKPOINTS = new Set([
   "lexingtontransfer",
   "lexingtonconcourse",
   "westfarms",
+  "bronxentry",
+  "bronxpolar",
+  "bronxbirds",
+  "bronxmonkeys",
+  "bronxsloths",
+  "rescuefollowers",
+  "returnwestfarms",
+  "returntrain5",
+  "returnlexington",
+  "returntrainnr",
+  "homecoming",
   "finale",
 ]);
 

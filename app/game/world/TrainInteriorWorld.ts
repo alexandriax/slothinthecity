@@ -63,6 +63,24 @@ export const TRAIN_INTERIOR_JOURNEYS = {
     route: "5",
     service: "Uptown / Bronx Express",
   },
+  WEST_FARMS_TO_LEXINGTON: {
+    destination: { name: "Lexington Av / 59 St", side: 1 },
+    intermediateStops: [
+      { name: "E 180 St", side: -1 },
+      { name: "125 St", side: 1 },
+      { name: "86 St", side: -1 },
+    ],
+    origin: "West Farms Sq–E Tremont Av",
+    route: "5",
+    service: "Downtown / Manhattan Express",
+  },
+  LEXINGTON_TO_FIFTH: {
+    destination: { name: "5 Av / 59 St", side: -1 },
+    intermediateStops: [],
+    origin: "Lexington Av / 59 St",
+    route: "N",
+    service: "Downtown / Brooklyn Broadway service",
+  },
 } as const satisfies Record<string, TrainInteriorJourney>;
 
 type DoorRig = {
@@ -88,7 +106,6 @@ type PassengerRig = {
   head: THREE.Group;
   movable: boolean;
   phase: number;
-  seated: boolean;
 };
 
 type TrainSurfaceMaps = {
@@ -163,13 +180,16 @@ function routeTexture(journey: TrainInteriorJourney) {
   });
 }
 
-function destinationTexture(journey: TrainInteriorJourney) {
+function nextStopTexture(journey: TrainInteriorJourney, stop: TrainInteriorStop) {
+  const finalStop = stop === journey.destination;
   return canvasTexture(1024, 256, (context, width, height) => {
     const gradient = context.createLinearGradient(0, 0, width, 0); gradient.addColorStop(0, "#080b09"); gradient.addColorStop(.5, "#17211b"); gradient.addColorStop(1, "#080b09");
     context.fillStyle = gradient; context.fillRect(0, 0, width, height);
     context.strokeStyle = "#8ea995"; context.lineWidth = 6; context.strokeRect(8, 8, width - 16, height - 16);
-    context.fillStyle = "#ccefb2"; context.textAlign = "center"; context.textBaseline = "middle"; fitCanvasText(context, `NEXT · ${journey.destination.name.toUpperCase()}`, width - 70, 58, 700); context.fillText(`NEXT · ${journey.destination.name.toUpperCase()}`, width / 2, 100);
-    context.fillStyle = "#f2f5ed"; fitCanvasText(context, "MOVE TO THE ILLUMINATED EXIT", width - 90, 28, 650); context.letterSpacing = "4px"; context.fillText("MOVE TO THE ILLUMINATED EXIT", width / 2, 176);
+    const heading = `NEXT · ${stop.name.toUpperCase()}`;
+    context.fillStyle = "#ccefb2"; context.textAlign = "center"; context.textBaseline = "middle"; fitCanvasText(context, heading, width - 70, 58, 700); context.fillText(heading, width / 2, 100);
+    const instruction = finalStop ? "MOVE TO THE ILLUMINATED EXIT" : `STAY ABOARD · ${journey.destination.name.toUpperCase()} FINAL`;
+    context.fillStyle = "#f2f5ed"; fitCanvasText(context, instruction, width - 90, 28, 650); context.letterSpacing = "4px"; context.fillText(instruction, width / 2, 176);
   });
 }
 
@@ -242,7 +262,7 @@ function advertisementTexture(index: number) {
   });
 }
 
-function createPassenger(index: number, quality: TrainInteriorQuality, pose: "holding" | "reading" | "seated" | "standing", ownedTextures: THREE.Texture[]) {
+function createPassenger(index: number, quality: TrainInteriorQuality, pose: "holding" | "reading" | "standing", ownedTextures: THREE.Texture[]) {
   const group = new THREE.Group(); group.name = "detailed-train-passenger";
   const palettes = [
     ["#6d4436", "#ae785c", "#25201e"], ["#264d5a", "#d4a27f", "#34251e"], ["#625b35", "#80573f", "#171715"],
@@ -250,17 +270,16 @@ function createPassenger(index: number, quality: TrainInteriorQuality, pose: "ho
   ][index % 6];
   const premium = createPremiumHuman({
     role: "visitor", quality: quality === "desktop" ? 1 : .58, variant: index + 31, faceVariant: [12, 15, 16, 17, 18, 19][index % 6], coat: palettes[0], trousers: palettes[2], skin: palettes[1],
-    accessory: pose === "seated" ? "none" : index % 3 === 0 ? "backpack" : index % 3 === 1 ? "tote" : "none",
-    pose: pose === "seated" ? "seated" : "neutral",
+    accessory: index % 3 === 0 ? "backpack" : index % 3 === 1 ? "tote" : "none",
+    pose: "neutral",
   });
-  if (pose !== "seated") prepareAuthoredHumanLocomotion(premium.root);
+  prepareAuthoredHumanLocomotion(premium.root);
   premium.root.scale.setScalar(.88);
-  if (pose === "seated") premium.root.position.y = -.3;
   group.add(premium.root); ownedTextures.push(...premium.ownedTextures);
   const inertLeft = new THREE.Group(), inertRight = new THREE.Group(), inertHead = new THREE.Group();
   return {
     armLeft: inertLeft, armLeftBaseX: 0, armRight: inertRight, armRightBaseX: 0, base: new THREE.Vector3(), group, head: inertHead,
-    baseRotation: 0, flow: "STAY", flowDoorZ: 0, humanRoot: premium.root, movable: pose !== "seated", phase: index * 1.73, seated: pose === "seated",
+    baseRotation: 0, flow: "STAY", flowDoorZ: 0, humanRoot: premium.root, movable: true, phase: index * 1.73,
   } satisfies PassengerRig;
 }
 
@@ -286,6 +305,7 @@ export class TrainInteriorWorld {
   private readonly passengers: PassengerRig[] = [];
   private readonly ownedTextures: THREE.Texture[] = [];
   private readonly platformTextures = new Map<string, THREE.Texture>();
+  private readonly nextStopTextures: THREE.Texture[] = [];
   private readonly surfaceMaps: TrainSurfaceMaps;
   private readonly tunnelPanels: THREE.Mesh[] = [];
   private tunnelTexture: THREE.Texture | null = null;
@@ -298,6 +318,7 @@ export class TrainInteriorWorld {
   private cameraRoll = 0;
   private disposed = false;
   private wrongDoorNotified = false;
+  private nextStopDisplayMaterial: THREE.MeshBasicMaterial | null = null;
 
   constructor(scene: THREE.Scene, textures: GameTextures, journey: TrainInteriorJourney, quality: TrainInteriorQuality = "desktop") {
     this.journey = journey; this.quality = quality; this.root.name = `train-interior-${journey.route}`; scene.add(this.root);
@@ -430,8 +451,10 @@ export class TrainInteriorWorld {
     }
     const routeMap = routeTexture(this.journey); this.ownedTextures.push(routeMap);
     const map = new THREE.Mesh(new RoundedBoxGeometry(2.36, .66, .045, 3, .02), new THREE.MeshBasicMaterial({ map: routeMap, toneMapped: false })); map.position.set(0, 2.23, -8.83); shell.add(map);
-    const destination = destinationTexture(this.journey); this.ownedTextures.push(destination);
-    const display = new THREE.Mesh(new RoundedBoxGeometry(2.22, .5, .05, 3, .02), new THREE.MeshBasicMaterial({ map: destination, toneMapped: false })); display.position.set(0, 2.18, 8.82); display.rotation.y = Math.PI; shell.add(display);
+    this.nextStopTextures.push(...[...this.journey.intermediateStops, this.journey.destination].map(stop => nextStopTexture(this.journey, stop)));
+    this.ownedTextures.push(...this.nextStopTextures);
+    this.nextStopDisplayMaterial = new THREE.MeshBasicMaterial({ map: this.nextStopTextures[0], toneMapped: false });
+    const display = new THREE.Mesh(new RoundedBoxGeometry(2.22, .5, .05, 3, .02), this.nextStopDisplayMaterial); display.name = "live-next-stop-display"; display.position.set(0, 2.18, 8.82); display.rotation.y = Math.PI; shell.add(display);
     const serviceKinds = ["accessibility", "emergency", "intercom"] as const;
     const serviceTextures = serviceKinds.map(kind => servicePanelTexture(kind, this.journey.route)); this.ownedTextures.push(...serviceTextures);
     serviceKinds.forEach((kind, index) => {
@@ -455,12 +478,15 @@ export class TrainInteriorWorld {
 
   private buildCrowd() {
     const count = this.quality === "desktop" ? 10 : 6;
-    const placements: Array<{ pose: "holding" | "reading" | "seated" | "standing"; rotation: number; x: number; z: number }> = [
-      { pose: "seated", rotation: -Math.PI / 2, x: -1.02, z: 7.15 }, { pose: "holding", rotation: .08, x: .42, z: 4.2 },
-      { pose: "reading", rotation: Math.PI + .08, x: -.46, z: 2.55 }, { pose: "seated", rotation: Math.PI / 2, x: 1.02, z: 3.05 },
+    // The authored character contract currently provides grounded idle/walk
+    // clips, but no seated locomotion clip. Keep riders full-body and upright
+    // instead of lowering an idle rig through the seat and car floor.
+    const placements: Array<{ pose: "holding" | "reading" | "standing"; rotation: number; x: number; z: number }> = [
+      { pose: "holding", rotation: -.12, x: -.52, z: 7.15 }, { pose: "holding", rotation: .08, x: .42, z: 4.2 },
+      { pose: "reading", rotation: Math.PI + .08, x: -.46, z: 2.55 }, { pose: "standing", rotation: Math.PI / 2, x: .48, z: 3.05 },
       { pose: "standing", rotation: .16, x: -.48, z: -1.65 }, { pose: "holding", rotation: Math.PI - .1, x: .46, z: -3.35 },
-      { pose: "seated", rotation: -Math.PI / 2, x: -1.02, z: -3.02 }, { pose: "reading", rotation: .04, x: .46, z: -5.05 },
-      { pose: "seated", rotation: Math.PI / 2, x: 1.02, z: -7.12 }, { pose: "standing", rotation: Math.PI + .15, x: -.42, z: -7.75 },
+      { pose: "standing", rotation: -.12, x: -.48, z: -3.02 }, { pose: "reading", rotation: .04, x: .46, z: -5.05 },
+      { pose: "holding", rotation: .12, x: .52, z: -7.12 }, { pose: "standing", rotation: Math.PI + .15, x: -.42, z: -7.75 },
     ];
     for (let index = 0; index < count; index++) {
       const placement = placements[index], passenger = createPassenger(index, this.quality, placement.pose, this.ownedTextures); passenger.base.set(placement.x, 0, placement.z); passenger.baseRotation = placement.rotation; passenger.group.position.copy(passenger.base); passenger.group.rotation.y = passenger.baseRotation; this.passengers.push(passenger); this.root.add(passenger.group);
@@ -472,7 +498,13 @@ export class TrainInteriorWorld {
     this.passengers.forEach(passenger => {
       passenger.flow = "STAY"; passenger.group.visible = true; passenger.group.position.copy(passenger.base); passenger.group.rotation.y = passenger.baseRotation; passenger.group.rotation.z = 0;
     });
-    this.setDoorAmount(0); return this;
+    this.updateNextStopDisplay(); this.setDoorAmount(0); return this;
+  }
+
+  private updateNextStopDisplay() {
+    const texture = this.nextStopTextures[Math.min(this.stopIndex, this.nextStopTextures.length - 1)];
+    if (!texture || !this.nextStopDisplayMaterial || this.nextStopDisplayMaterial.map === texture) return;
+    this.nextStopDisplayMaterial.map = texture; this.nextStopDisplayMaterial.needsUpdate = true;
   }
 
   private setDoorAmount(amount: number) {
@@ -499,6 +531,7 @@ export class TrainInteriorWorld {
 
   private enterPhase(phase: TrainInteriorPhase) {
     this.phase = phase; this.phaseTime = 0; this.wrongDoorNotified = false;
+    this.updateNextStopDisplay();
     if (phase === "APPROACHING") {
       // Keep riders who alighted at the previous stop off-car. They become the
       // next platform's boarding cohort only once the doors open, rather than
@@ -569,7 +602,7 @@ export class TrainInteriorWorld {
       if (flowPosition) passenger.group.position.lerp(flowPosition, 1 - Math.exp(-delta * 7.5));
       else passenger.group.position.lerp(target, 1 - Math.exp(-delta * (stopActivity ? 2.8 : 1.3)));
       if (!flowPosition && passenger.movable) locomoting = passenger.group.position.distanceTo(target) > .025;
-      passenger.group.position.y = Math.sin(this.elapsed * (passenger.seated ? 1.3 : 2.4) + passenger.phase) * (passenger.seated ? .002 : .006);
+      passenger.group.position.y = Math.sin(this.elapsed * 2.4 + passenger.phase) * .006;
       passenger.group.rotation.z = Math.sin(this.elapsed * 2.1 + passenger.phase) * .008 + this.cameraRoll * .36;
       passenger.head.rotation.y = Math.sin(this.elapsed * .38 + passenger.phase) * .16;
       if (passenger.movable) {
@@ -579,12 +612,12 @@ export class TrainInteriorWorld {
         passenger.armRight.rotation.x += (rightTarget - passenger.armRight.rotation.x) * Math.min(1, delta * 4);
       }
       const distance = previous.distanceTo(passenger.group.position);
-      updateAuthoredHumanMotion(passenger.humanRoot, delta, passenger.group.visible && !passenger.seated && locomoting ? "walk" : "idle", THREE.MathUtils.clamp(distance / Math.max(delta, .001) / 1.05, .65, 1.35));
+      updateAuthoredHumanMotion(passenger.humanRoot, delta, passenger.group.visible && locomoting ? "walk" : "idle", THREE.MathUtils.clamp(distance / Math.max(delta, .001) / 1.05, .65, 1.35));
     });
     // The car is narrow enough that independently animated targets can cross.
     // Give every standing rider a physical footprint so boarding/alighting
     // crowds queue around each other rather than phasing through torsos.
-    const standing = this.passengers.filter(passenger => passenger.group.visible && passenger.movable && !passenger.seated);
+    const standing = this.passengers.filter(passenger => passenger.group.visible && passenger.movable);
     for (let left = 0; left < standing.length; left++) for (let right = left + 1; right < standing.length; right++) {
       const a = standing[left].group.position, b = standing[right].group.position;
       const dx = b.x - a.x, dz = b.z - a.z, distance = Math.hypot(dx, dz);
@@ -650,7 +683,9 @@ export class TrainInteriorWorld {
     const seconds = this.phase === "CRUISING" ? CRUISE_SECONDS - this.phaseTime : this.phase === "APPROACHING" ? APPROACH_SECONDS - this.phaseTime : this.phase === "DWELL" ? DWELL_SECONDS - this.phaseTime : DEPART_SECONDS - this.phaseTime;
     const objective = this.isDestination && (this.phase === "APPROACHING" || this.phase === "DWELL")
       ? `Use any illuminated ${this.journey.destination.side < 0 ? "left-side" : "right-side"} door for ${this.journey.destination.name}`
-      : `Stay clear of the doors until ${this.journey.destination.name}`;
+      : this.isDestination
+        ? `Stay clear of the doors until ${this.journey.destination.name}`
+        : `Stay aboard through ${this.currentStop.name} · destination ${this.journey.destination.name}`;
     return {
       cameraOffset: this.cameraOffset,
       cameraRoll: this.cameraRoll,
