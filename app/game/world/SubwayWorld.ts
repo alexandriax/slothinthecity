@@ -22,9 +22,9 @@ export type SubwayWorldOptions = {
 };
 
 export type SubwayServicePlan = {
-  correct: { color: string; direction: string; route: "N" | "R" | "W" | "5" };
+  correct: { color: string; direction: string; platformSide: -1 | 1; route: "N" | "R" | "W" | "5" };
   terminal: boolean;
-  wrong: { color: string; direction: string; route: "N" | "R" | "W" | "5" };
+  wrong: { color: string; direction: string; platformSide: -1 | 1; route: "N" | "R" | "W" | "5" };
 };
 
 export type SubwayJourneyKey =
@@ -46,35 +46,35 @@ export type SubwayServiceEdge = {
 export function subwayServicePlan(station: SubwayStationId, travelDirection: SubwayTravelDirection): SubwayServicePlan {
   if (travelDirection === "RETURN") {
     if (station === "WEST_FARMS") return {
-      correct: { color: "#00933c", direction: "DOWNTOWN / MANHATTAN", route: "5" },
+      correct: { color: "#00933c", direction: "DOWNTOWN / MANHATTAN", platformSide: -1, route: "5" },
       terminal: false,
-      wrong: { color: "#00933c", direction: "UPTOWN / EASTCHESTER", route: "5" },
+      wrong: { color: "#00933c", direction: "UPTOWN / EASTCHESTER", platformSide: 1, route: "5" },
     };
     if (station === "LEXINGTON") return {
-      correct: { color: "#fccc0a", direction: "DOWNTOWN / BROOKLYN", route: "N" },
+      correct: { color: "#fccc0a", direction: "DOWNTOWN / BROOKLYN", platformSide: 1, route: "N" },
       terminal: false,
-      wrong: { color: "#00933c", direction: "UPTOWN / BRONX", route: "5" },
+      wrong: { color: "#00933c", direction: "UPTOWN / BRONX", platformSide: -1, route: "5" },
     };
     return {
-      correct: { color: "#fccc0a", direction: "QUEENS-BOUND", route: "N" },
+      correct: { color: "#fccc0a", direction: "QUEENS-BOUND", platformSide: -1, route: "N" },
       terminal: false,
-      wrong: { color: "#fccc0a", direction: "DOWNTOWN / BROOKLYN", route: "W" },
+      wrong: { color: "#fccc0a", direction: "DOWNTOWN / BROOKLYN", platformSide: 1, route: "W" },
     };
   }
   if (station === "LEXINGTON") return {
-    correct: { color: "#00933c", direction: "UPTOWN / BRONX", route: "5" },
+    correct: { color: "#00933c", direction: "UPTOWN / BRONX", platformSide: -1, route: "5" },
     terminal: false,
-    wrong: { color: "#fccc0a", direction: "DOWNTOWN / BROOKLYN", route: "N" },
+    wrong: { color: "#fccc0a", direction: "DOWNTOWN / BROOKLYN", platformSide: 1, route: "N" },
   };
   if (station === "WEST_FARMS") return {
-    correct: { color: "#00933c", direction: "UPTOWN / BRONX", route: "5" },
+    correct: { color: "#00933c", direction: "UPTOWN / BRONX", platformSide: 1, route: "5" },
     terminal: false,
-    wrong: { color: "#00933c", direction: "DOWNTOWN / MANHATTAN", route: "5" },
+    wrong: { color: "#00933c", direction: "DOWNTOWN / MANHATTAN", platformSide: -1, route: "5" },
   };
   return {
-    correct: { color: "#fccc0a", direction: "QUEENS-BOUND", route: "N" },
+    correct: { color: "#fccc0a", direction: "QUEENS-BOUND", platformSide: -1, route: "N" },
     terminal: false,
-    wrong: { color: "#fccc0a", direction: "DOWNTOWN / BROOKLYN", route: "W" },
+    wrong: { color: "#fccc0a", direction: "DOWNTOWN / BROOKLYN", platformSide: 1, route: "W" },
   };
 }
 
@@ -706,24 +706,39 @@ function buildStation(id: SubwayStationId, textures: GameTextures, adTextures: T
   const lines = isFifth
     ? ["QUEENS-BOUND  N  R  ←", "DOWNTOWN / BROOKLYN  N  R  W  →"]
     : isLex
-      ? ["UPTOWN / BRONX  4  5  6  ←", "DOWNTOWN BROADWAY  N  R  W  →"]
+      ? ["LEXINGTON LINE · UPTOWN  4  5  6  ←", "BROADWAY LINE · DOWNTOWN  N  R  W  →"]
       : ["DOWNTOWN / MANHATTAN  2  5  ←", "UPTOWN / EASTCHESTER  5  →"];
   const signTexture = stationSignTexture(title, lines, isFifth ? "#fccc0a" : isLex ? "#00933c" : "#5f8f82"); ownedTextures.push(signTexture);
   addTextPanel(root, signTexture, [0, 3.55, 15.6], [6.1, 1.3], 0).name = "primary-platform-wayfinding";
   for (const side of [-1, 1]) addTextPanel(root, signTexture, [side * 6.1, 3.72, -35], [4.8, 1.05], 0).name = "route-direction-sign";
   const leftChoice = platformChoiceTexture(
     isFifth ? "QUEENS-BOUND" : isLex ? "UPTOWN / THE BRONX" : "DOWNTOWN / MANHATTAN",
-    isFifth ? "N / R to Lexington Av–59 St" : isLex ? "4 / 5 express and 6 local" : "2 / 5 toward Manhattan",
+    isFifth ? "N / R to Lexington Av–59 St" : isLex ? "Separate Lexington Line gallery · 4 / 5 express and 6 local" : "2 / 5 toward Manhattan",
     isFifth ? ["N", "R"] : isLex ? ["4", "5", "6"] : ["2", "5"], isFifth ? "#fccc0a" : "#00933c", "LEFT",
   );
   const rightChoice = platformChoiceTexture(
     isFifth ? "DOWNTOWN / BROOKLYN" : isLex ? "DOWNTOWN BROADWAY" : "UPTOWN / EASTCHESTER",
-    isFifth ? "N / R / W Broadway service" : isLex ? "N / R / W toward Fifth Avenue" : "5 toward Eastchester–Dyre Av",
+    isFifth ? "N / R / W Broadway service" : isLex ? "Separate Broadway Line gallery · N / R / W toward Fifth Avenue" : "5 toward Eastchester–Dyre Av",
     isFifth ? ["N", "R", "W"] : isLex ? ["N", "R", "W"] : ["5"], isFifth || isLex ? "#fccc0a" : "#00933c", "RIGHT",
   );
   ownedTextures.push(leftChoice, rightChoice);
   addTextPanel(root, leftChoice, [-5.1, 6.02, 13.95], [4.15, 1.17], 0).name = "left-stair-route-choice";
   addTextPanel(root, rightChoice, [5.1, 6.02, 13.95], [4.15, 1.17], 0).name = "right-stair-route-choice";
+  if (isLex) {
+    // Lexington's transfer services occupy separate galleries. A full-height
+    // acoustic/fire wall, independent track-side identifiers, and dedicated
+    // stair signs prevent the old illusion that a green 5 and yellow N/R were
+    // simply opposite directions on one shared island track bed.
+    const serviceSeparator = new THREE.Mesh(new RoundedBoxGeometry(.055, 4.55, PLATFORM_LENGTH + 1.5, 2, .012), dark);
+    serviceSeparator.name = "lexington-separate-service-gallery-wall"; serviceSeparator.position.set(0, 2.25, PLATFORM_CENTER_Z); root.add(serviceSeparator);
+    const lexGallery = stationSignTexture("LEXINGTON LINE", ["UPTOWN 4 / 5 EXPRESS · 6 LOCAL", "PAID TRANSFER CONCOURSE UPSTAIRS"], "#00933c");
+    const broadwayGallery = stationSignTexture("BROADWAY LINE", ["DOWNTOWN N / R / W", "5 AV / 59 ST · CENTRAL PARK"], "#fccc0a");
+    ownedTextures.push(lexGallery, broadwayGallery);
+    for (const z of [-34, -15, 4]) {
+      addTextPanel(root, lexGallery, [-.036, 2.65, z], [3.8, .95], Math.PI / 2).name = "lexington-line-gallery-identifier";
+      addTextPanel(root, broadwayGallery, [.036, 2.65, z], [3.8, .95], -Math.PI / 2).name = "broadway-line-gallery-identifier";
+    }
+  }
   const streetRoutes = isFifth ? ["N", "R", "W"] : isLex ? ["4", "5", "6", "N", "R", "W"] : ["2", "5"];
   const streetTexture = exitSignTexture(isFifth ? "Subway entrance · 5 Av / 60 St" : isLex ? "Lexington Av / 59 St" : "Exit · Boston Rd / E 178 St", isFifth ? "N · R · W trains · choose direction in concourse" : isLex ? "4 · 5 · 6 and N · R · W · follow platform signs" : "Bronx Zoo · Asia Gate", streetRoutes); ownedTextures.push(streetTexture);
   addStreetEntrance(root, floor, streetTexture, quality, paintMap);
@@ -899,9 +914,11 @@ function buildStation(id: SubwayStationId, textures: GameTextures, adTextures: T
   // instead of snapping the player back to the sidewalk landing.
   const fifthEntryZ = (STREET_STAIR_BOTTOM_Z + STREET_STAIR_TOP_Z) * .5;
   const fifthEntryY = THREE.MathUtils.lerp(CONCOURSE_FLOOR_Y, STREET_FLOOR_Y, .5) + 1.48;
-  const spawn = id === "FIFTH_AV" ? new THREE.Vector3(0, fifthEntryY, fifthEntryZ) : id === "LEXINGTON" ? new THREE.Vector3(0, CONCOURSE_FLOOR_Y + 1.48, 26) : new THREE.Vector3(-6, 1.48, -10);
+  // At West Farms the outbound 5 arrives on the +X northbound side. The -X
+  // platform is the physically separate downtown return, not a reused arrival.
+  const spawn = id === "FIFTH_AV" ? new THREE.Vector3(0, fifthEntryY, fifthEntryZ) : id === "LEXINGTON" ? new THREE.Vector3(0, CONCOURSE_FLOOR_Y + 1.48, 26) : new THREE.Vector3(6, 1.48, -10);
   const waypoint = id === "WEST_FARMS" ? new THREE.Vector3(0, STREET_FLOOR_Y, 46) : new THREE.Vector3(-6, 0, TRAIN_STOP_Z);
-  const platformCheckpoint = id === "WEST_FARMS" ? spawn.clone() : new THREE.Vector3(-6, 1.48, -3.6);
+  const platformCheckpoint = new THREE.Vector3(-6, 1.48, id === "WEST_FARMS" ? -10 : -3.6);
   const streetCheckpoint = new THREE.Vector3(0, STREET_FLOOR_Y + 1.48, 46);
   return { fareReaders, metroCard, passengerFlows, platformCheckpoint, root, spawn, streetCheckpoint, turnstileRotors, waypoint } satisfies StationRig;
 }
@@ -960,13 +977,23 @@ export class SubwayWorld {
   }
 
   get servicePlan() { return subwayServicePlan(this.stationId, this.travelDirection); }
+  private trainOnPlatform(side: -1 | 1) { return side < 0 ? this.correctTrain : this.wrongTrain; }
+  private get recommendedTrain() { return this.trainOnPlatform(this.servicePlan.correct.platformSide); }
+  private platformCheckpoint(side: -1 | 1 = this.servicePlan.correct.platformSide) {
+    const checkpoint = this.stations.get(this.stationId)!.platformCheckpoint.clone();
+    checkpoint.x = Math.abs(checkpoint.x) * side;
+    return checkpoint;
+  }
   get spawn() {
     const station = this.stations.get(this.stationId)!;
     if (this.travelDirection === "RETURN" && this.stationId === "WEST_FARMS") return station.streetCheckpoint;
-    if (this.travelDirection === "RETURN" && this.stationId === "FIFTH_AV") return station.platformCheckpoint;
+    // The returning downtown Broadway train arrives on the opposite side from
+    // the Queens-bound platform. Keep arrival identity separate from whichever
+    // service the campaign currently recommends.
+    if (this.travelDirection === "RETURN" && this.stationId === "FIFTH_AV") return this.platformCheckpoint(1);
     return station.spawn;
   }
-  get arrivingService() { return { direction: this.correctTrain.direction, route: this.correctTrain.route }; }
+  get arrivingService() { return { direction: this.recommendedTrain.direction, route: this.recommendedTrain.route }; }
   get farePaid() { return this.farePaidByStation.get(this.stationId) ?? true; }
   get fareObjective() {
     if (this.travelDirection === "RETURN" || this.stationId !== "FIFTH_AV" || this.farePaid) return null;
@@ -975,7 +1002,7 @@ export class SubwayWorld {
   get waypoint() {
     if (this.travelDirection === "RETURN") {
       if (this.stationId === "FIFTH_AV") return this.stations.get(this.stationId)!.streetCheckpoint;
-      return this.stations.get(this.stationId)!.platformCheckpoint;
+      return this.platformCheckpoint();
     }
     if (this.stationId === "FIFTH_AV" && !this.farePaid) return this.hasMetroCard ? new THREE.Vector3(0, CONCOURSE_FLOOR_Y, 24.15) : new THREE.Vector3(5.65, CONCOURSE_FLOOR_Y, 26.62);
     return this.stations.get(this.stationId)!.waypoint;
@@ -994,8 +1021,9 @@ export class SubwayWorld {
 
   checkpointSpawn(platform = false) {
     const station = this.stations.get(this.stationId)!;
-    if (this.travelDirection === "RETURN") return (platform ? station.platformCheckpoint : this.spawn).clone();
-    return (platform ? station.platformCheckpoint : station.spawn).clone();
+    if (!platform) return (this.travelDirection === "RETURN" ? this.spawn : station.spawn).clone();
+    if (this.travelDirection === "RETURN" && this.stationId === "FIFTH_AV") return this.platformCheckpoint(1);
+    return this.platformCheckpoint();
   }
 
   setTravelDirection(travelDirection: SubwayTravelDirection) {
@@ -1013,8 +1041,12 @@ export class SubwayWorld {
     }
     this.stationId = id;
     const plan = this.servicePlan; this.correctTrain.root.visible = this.wrongTrain.root.visible = !plan.terminal; this.serviceCycle = -1;
-    this.configureTrain(this.correctTrain, plan.correct.route, plan.correct.direction, true, plan.correct.color);
-    this.configureTrain(this.wrongTrain, plan.wrong.route, plan.wrong.direction, false, plan.wrong.color);
+    // Train rigs are permanent physical tracks. `correct` is campaign advice,
+    // never a track identity: West Farms northbound lives on +X while the
+    // downtown return lives on -X, matching the permanent signs and stairs.
+    const recommended = this.trainOnPlatform(plan.correct.platformSide), alternative = this.trainOnPlatform(plan.wrong.platformSide);
+    this.configureTrain(recommended, plan.correct.route, plan.correct.direction, true, plan.correct.color);
+    this.configureTrain(alternative, plan.wrong.route, plan.wrong.direction, false, plan.wrong.color);
     this.setDoorAmount(this.correctTrain, 0); this.setDoorAmount(this.wrongTrain, 0); this.doorOpenAmount = 0; this.doorsOpen = false; this.applyFareState();
     this.correctTrain.root.position.z = -TRAIN_APPROACH_DISTANCE; this.wrongTrain.root.position.z = TRAIN_APPROACH_DISTANCE;
     this.root.updateMatrixWorld(true); return this;
@@ -1178,13 +1210,14 @@ export class SubwayWorld {
       // Successive 30-second arrivals alternate the two valid Broadway-line
       // services, so the authored N / R objective is true in play as well as UI.
       const route = cycleNumber % 2 === 0 ? "N" : "R";
-      this.configureTrain(this.correctTrain, route, "QUEENS-BOUND", true, "#fccc0a");
+      const queensTrain = this.trainOnPlatform(-1);
+      this.configureTrain(queensTrain, route, "QUEENS-BOUND", queensTrain.correct, "#fccc0a");
     } else if (this.stationId === "LEXINGTON" && cycleNumber !== this.serviceCycle) {
       // The physical downtown Broadway service remains present in either quest
       // direction; only which train is recommended changes with campaign state.
       const route = cycleNumber % 2 === 0 ? "N" : "R";
-      const broadwayTrain = this.travelDirection === "RETURN" ? this.correctTrain : this.wrongTrain;
-      this.configureTrain(broadwayTrain, route, "DOWNTOWN / BROOKLYN", broadwayTrain === this.correctTrain, "#fccc0a");
+      const broadwayTrain = this.trainOnPlatform(1);
+      this.configureTrain(broadwayTrain, route, "DOWNTOWN / BROOKLYN", broadwayTrain.correct, "#fccc0a");
     }
     this.serviceCycle = cycleNumber;
     const cycle = elapsed % SUBWAY_TRAIN_INTERVAL_SECONDS;
@@ -1199,7 +1232,7 @@ export class SubwayWorld {
     this.doorOpenAmount = Math.min(THREE.MathUtils.smoothstep(cycle, 5, 6.15), 1 - THREE.MathUtils.smoothstep(cycle, 13.85, 15));
     this.doorsOpen = this.doorOpenAmount > .62;
     for (const train of [this.correctTrain, this.wrongTrain]) {
-      train.root.visible = this.trainPhase !== "AWAY"; train.root.position.z = train.correct ? z : -z;
+      train.root.visible = this.trainPhase !== "AWAY"; train.root.position.z = train.platformSide < 0 ? z : -z;
       train.root.position.y = -.08 + Math.sin(elapsed * 8 + (train.correct ? 0 : 1)) * .008;
       this.setDoorAmount(train, this.doorOpenAmount);
     }
@@ -1275,12 +1308,14 @@ export class SubwayWorld {
 
   /** Closes the doors, hides the other service, and moves the boarded train out. */
   updateRide(option: BoardingOption, progress: number, elapsed: number) {
-    const train = option.correct ? this.correctTrain : this.wrongTrain;
-    const other = option.correct ? this.wrongTrain : this.correctTrain;
+    const train = [this.correctTrain, this.wrongTrain].find(candidate => candidate.route === option.route && candidate.direction === option.direction);
+    if (!train) return;
+    const other = train === this.correctTrain ? this.wrongTrain : this.correctTrain;
     const amount = THREE.MathUtils.clamp(progress, 0, 1);
     train.root.visible = true; other.root.visible = false;
     this.setDoorAmount(train, 1 - THREE.MathUtils.smoothstep(amount, 0, .18));
-    train.root.position.z = THREE.MathUtils.lerp(train.correct ? TRAIN_STOP_Z : -TRAIN_STOP_Z, train.correct ? TRAIN_APPROACH_DISTANCE : -TRAIN_APPROACH_DISTANCE, THREE.MathUtils.smoothstep(amount, .16, 1));
+    const direction = train.platformSide < 0 ? 1 : -1;
+    train.root.position.z = THREE.MathUtils.lerp(direction * TRAIN_STOP_Z, direction * TRAIN_APPROACH_DISTANCE, THREE.MathUtils.smoothstep(amount, .16, 1));
     train.root.position.y = -.08 + Math.sin(elapsed * 8 + (train.correct ? 0 : 1)) * .008;
     this.doorsOpen = amount < .18;
     this.trainPhase = amount < .18 ? "BOARDING" : "DEPARTING";

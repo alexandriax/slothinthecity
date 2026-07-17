@@ -248,8 +248,8 @@ test("subway service cycles every 30 seconds and presents route-correct trains",
   assert.match(world, /buildTrain\(textures, "N", "QUEENS-BOUND", true/);
   assert.match(world, /const route = cycleNumber % 2 === 0 \? "N" : "R"/);
   assert.match(world, /buildTrain\(textures, "W", "[^"]+", false/);
-  assert.match(world, /correct: \{ color: "#00933c", direction: "UPTOWN \/ BRONX", route: "5" \}/);
-  assert.match(world, /wrong: \{ color: "#fccc0a", direction: "DOWNTOWN \/ BROOKLYN", route: "N" \}/);
+  assert.match(world, /correct: \{ color: "#00933c", direction: "UPTOWN \/ BRONX", platformSide: -1, route: "5" \}/);
+  assert.match(world, /wrong: \{ color: "#fccc0a", direction: "DOWNTOWN \/ BROOKLYN", platformSide: 1, route: "N" \}/);
   assert.match(world, /sloth-themed-subway-ad/);
   assert.match(world, /subway-passenger/);
   assert.match(world, /left-stair-route-choice/);

@@ -275,27 +275,6 @@ button { font: inherit; }
   padding:10px 16px 12px;
   border-top:3px solid var(--transit-accent);
 }
-.subway-shell .compass:before,
-.subway-shell .compass:after {
-  position:absolute;
-  top:35px;
-  display:grid;
-  place-items:center;
-  width:24px;
-  height:24px;
-  border-radius:50%;
-  color:#111;
-  background:var(--transit-accent);
-  font-size:10px;
-  font-weight:850;
-  text-shadow:none;
-}
-.subway-shell .compass:before { content:"N"; left:16px; }
-.subway-shell .compass:after { content:"R"; right:16px; }
-.subway-shell[data-station="LEXINGTON"] .compass:before,
-.subway-shell[data-station="LEXINGTON"] .compass:after { content:"5"; }
-.subway-shell[data-station="WEST_FARMS"] .compass:before { content:"2"; }
-.subway-shell[data-station="WEST_FARMS"] .compass:after { content:"5"; }
 .subway-shell .compass-line {
   min-height:24px;
   align-items:center;

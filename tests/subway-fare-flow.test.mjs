@@ -106,7 +106,8 @@ test("successful transfers arrive on the paid Lexington concourse to choose a pl
 test("Fifth Avenue alternates concrete N and R arrivals in geometry and HUD", async () => {
   const [world, game] = await Promise.all([readFile(worldUrl, "utf8"), readFile(gameUrl, "utf8")]);
 
-  assert.match(world, /get arrivingService\(\) \{ return \{ direction: this\.correctTrain\.direction, route: this\.correctTrain\.route \}; \}/);
+  assert.match(world, /get recommendedTrain\(\) \{ return this\.trainOnPlatform\(this\.servicePlan\.correct\.platformSide\); \}/);
+  assert.match(world, /get arrivingService\(\) \{ return \{ direction: this\.recommendedTrain\.direction, route: this\.recommendedTrain\.route \}; \}/);
   assert.match(game, /An uptown \$\{stationWorld\.arrivingService\.route\} train is approaching the station/);
   assert.match(game, /Take the Queens-bound \$\{arrivingRoute\} train one stop/);
   assert.match(game, /NEXT \$\{routeStatus\}/);
