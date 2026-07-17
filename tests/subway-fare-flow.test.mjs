@@ -95,7 +95,10 @@ test("failed rides restore the paid platform checkpoint without replaying door a
 test("successful transfers arrive on the paid Lexington concourse to choose a platform", async () => {
   const game = await readFile(gameUrl, "utf8");
 
-  assert.match(game, /checkpoint\("LEXINGTON", "Lexington Av \/ 59 St — follow the paid-concourse signs and choose the uptown 5 platform", false, true, false\)/);
+  assert.match(game, /const destination = boarded\.destination/);
+  assert.match(game, /destination === "LEXINGTON"/);
+  assert.match(game, /Lexington Av \/ 59 St — take the uptown 5 for the Bronx, or a downtown N \/ R to ride back to Fifth Avenue/);
+  assert.match(game, /checkpoint\(destination, message, false, true, destination !== "LEXINGTON"\)/);
   assert.match(game, /qaInput === "lexingtontransfer"/);
   assert.match(game, /paid-area transfer platform/);
 });

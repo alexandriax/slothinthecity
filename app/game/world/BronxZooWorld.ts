@@ -14,7 +14,11 @@ import {
   type AmbientHumanAgent,
 } from "./characters/AmbientHumanMotion";
 import {
+  cloneZooAnimalAtlasCell,
+  configureAutonomousZooAnimal,
   createAldabraTortoise,
+  createAmericanBison,
+  createAmericanFlamingo,
   createBlueAndGoldMacaw,
   createGaryPolarBear,
   createGreenAracari,
@@ -24,6 +28,7 @@ import {
   createSpiderMonkey,
   createSunConure,
   createZebra,
+  type ZooHabitatMotionOptions,
   type ZooAnimalRig,
 } from "./ZooAnimals";
 
@@ -44,6 +49,17 @@ export type BronxZooInteractionHint = {
 type CircleObstacle = { kind: "circle"; x: number; z: number; radius: number; enabled?: () => boolean };
 type BoxObstacle = { kind: "box"; minX: number; maxX: number; minZ: number; maxZ: number; enabled?: () => boolean };
 type Obstacle = CircleObstacle | BoxObstacle;
+
+type CaptiveSlothMotion = {
+  root: THREE.Group;
+  body: THREE.Mesh | null;
+  head: THREE.Mesh | null;
+  basePosition: THREE.Vector3;
+  baseRotation: THREE.Euler;
+  baseHeadRotation: THREE.Euler | null;
+  baseHeadScale: THREE.Vector3 | null;
+  phase: number;
+};
 
 type ZooMaterials = {
   bark: THREE.MeshStandardMaterial;
@@ -121,7 +137,7 @@ function plaqueTexture() {
     context.font = "500 35px Helvetica, Arial, sans-serif";
     context.fillText("Provided thanks to generous support by", width / 2, 380);
     context.fillStyle = "#fff0b7";
-    context.font = "700 94px Georgia, serif";
+    context.font = "700 62px Georgia, serif";
     context.fillText("TOGYL", width / 2, 505);
   });
 }
@@ -365,22 +381,29 @@ function addCircularFence(root: THREE.Group, materials: ZooMaterials, x: number,
 
 function addLandscape(root: THREE.Group, materials: ZooMaterials, textures: GameTextures, quality: number, obstacles: Obstacle[]) {
   const random = seeded(12031966);
-  const treeCount = Math.round(86 + quality * 68);
+  const treeCount = Math.round(120 + quality * 180);
+  const branchesPerTree = quality > .75 ? 7 : 5, canopyCardsPerTree = quality > .75 ? 6 : 4;
   const trunkGeometry = new THREE.CylinderGeometry(.32, .52, 7.1, quality > .75 ? 12 : 8, 3);
   const trunks = new THREE.InstancedMesh(trunkGeometry, materials.bark, treeCount);
   trunks.name = "bronx-zoo-instanced-landscape-trunks";
   trunks.castShadow = quality > .65;
   trunks.receiveShadow = true;
+  const branchGeometry = new THREE.CylinderGeometry(.08, .19, 1, quality > .75 ? 10 : 7, 2);
+  const branches = new THREE.InstancedMesh(branchGeometry, materials.bark, treeCount * branchesPerTree);
+  branches.name = "bronx-zoo-instanced-articulated-landscape-branches";
+  branches.castShadow = quality > .74;
   const canopyGeometry = new THREE.PlaneGeometry(6.2, 6.9);
-  const canopies = new THREE.InstancedMesh(canopyGeometry, materials.leaf, treeCount * 3);
+  const canopies = new THREE.InstancedMesh(canopyGeometry, materials.leaf, treeCount * canopyCardsPerTree);
   canopies.name = "bronx-zoo-instanced-foliage-branch-canopies";
   canopies.castShadow = quality > .82;
   const dummy = new THREE.Object3D();
+  const branchStart = new THREE.Vector3(), branchEnd = new THREE.Vector3(), branchDirection = new THREE.Vector3();
   let placed = 0, attempts = 0;
   const habitatClearings = [
     [-43, -51, 18], [43, -51, 18], [0, -76, 13], [-43, -101, 18], [43, -101, 19],
-    [-36, -132, 12], [36, -132, 12], [0, -144, 21],
+    [-71, -55, 10], [72, -105, 11], [-36, -132, 12], [36, -132, 12], [0, -144, 21],
     [-68, -26, 13], [68, -28, 14], [-68, -82, 14], [69, -82, 15], [-66, -128, 14], [66, -129, 14],
+    [22, -151, 9], [-13, -69, 3], [14, -107, 3], [-18, -122, 3],
   ];
   const clearRoutes: Array<Array<[number, number]>> = [
     [[0, 10], [0, -27], [-30, -43], [-39, -79], [-34, -118], [0, -139], [34, -118], [39, -79], [30, -43], [0, -27]],
@@ -398,24 +421,38 @@ function addLandscape(root: THREE.Group, materials: ZooMaterials, textures: Game
     dummy.scale.set(scale, scale, scale);
     dummy.updateMatrix();
     trunks.setMatrixAt(placed, dummy.matrix);
-    for (let card = 0; card < 3; card++) {
-      dummy.position.set(x + (random() - .5) * 1.7, y + (6.5 + random() * 1.5) * scale, z + (random() - .5) * 1.7);
-      dummy.rotation.set(0, card * Math.PI / 3 + random() * .2, (random() - .5) * .09);
-      dummy.scale.set(scale * (1 + random() * .22), scale, scale);
+    const crownRotation = random() * Math.PI * 2;
+    for (let branch = 0; branch < branchesPerTree; branch++) {
+      const angle = crownRotation + branch / branchesPerTree * Math.PI * 2 + (random() - .5) * .38;
+      branchStart.set(x, y + (4.25 + branch % 3 * .48) * scale, z);
+      branchEnd.set(x + Math.cos(angle) * (2.25 + branch % 2 * .7) * scale, y + (5.45 + branch % 3 * .62) * scale, z + Math.sin(angle) * (2.25 + branch % 2 * .7) * scale);
+      branchDirection.copy(branchEnd).sub(branchStart);
+      dummy.position.copy(branchStart).add(branchEnd).multiplyScalar(.5);
+      dummy.quaternion.setFromUnitVectors(UP, branchDirection.clone().normalize());
+      dummy.scale.set(scale, branchDirection.length(), scale);
       dummy.updateMatrix();
-      canopies.setMatrixAt(placed * 3 + card, dummy.matrix);
+      branches.setMatrixAt(placed * branchesPerTree + branch, dummy.matrix);
     }
-    if (placed % 4 === 0) obstacles.push({ kind: "circle", x, z, radius: .44 * scale });
+    for (let card = 0; card < canopyCardsPerTree; card++) {
+      dummy.position.set(x + (random() - .5) * 1.7, y + (6.5 + random() * 1.5) * scale, z + (random() - .5) * 1.7);
+      dummy.rotation.set(0, card * Math.PI / canopyCardsPerTree + random() * .2, (random() - .5) * .09);
+      dummy.scale.set(scale * (.82 + random() * .34), scale * (.82 + random() * .3), scale);
+      dummy.updateMatrix();
+      canopies.setMatrixAt(placed * canopyCardsPerTree + card, dummy.matrix);
+    }
+    if (placed % 3 === 0) obstacles.push({ kind: "circle", x, z, radius: .44 * scale });
     placed++;
   }
   trunks.count = placed;
-  canopies.count = placed * 3;
+  branches.count = placed * branchesPerTree;
+  canopies.count = placed * canopyCardsPerTree;
   trunks.instanceMatrix.needsUpdate = true;
+  branches.instanceMatrix.needsUpdate = true;
   canopies.instanceMatrix.needsUpdate = true;
-  root.add(trunks, canopies);
+  root.add(trunks, branches, canopies);
 
-  const fernCount = Math.round(160 + quality * 150);
-  const ferns = new THREE.InstancedMesh(new THREE.PlaneGeometry(1.45, 1.5), new THREE.MeshStandardMaterial({ map: textures.fern, alphaTest: .23, color: "#527a49", roughness: .9, side: THREE.DoubleSide }), fernCount);
+  const fernCount = Math.round(420 + quality * 480);
+  const ferns = new THREE.InstancedMesh(new THREE.PlaneGeometry(1.45, 1.5), new THREE.MeshStandardMaterial({ map: textures.fern, alphaTest: .23, color: "#527a49", roughness: .9, side: THREE.DoubleSide }), fernCount * 2);
   ferns.name = "bronx-zoo-instanced-fern-understory";
   let placedFerns = 0, fernAttempts = 0;
   while (placedFerns < fernCount && fernAttempts++ < fernCount * 20) {
@@ -423,22 +460,74 @@ function addLandscape(root: THREE.Group, materials: ZooMaterials, textures: Game
     const nearRoute = clearRoutes.some(route => route.slice(1).some((end, index) => distanceToSegmentXZ(x, z, route[index], end) < 4.7));
     const inClearing = habitatClearings.some(([cx, cz, radius]) => Math.hypot(x - cx, z - cz) < radius - 1);
     if (nearRoute || inClearing || (z > -15 && Math.abs(x) < 25)) continue;
-    dummy.position.set(x, terrainHeight(x, z) + scale * .7, z);
-    dummy.rotation.set(0, random() * Math.PI, 0);
-    dummy.scale.setScalar(scale);
-    dummy.updateMatrix();
-    ferns.setMatrixAt(placedFerns++, dummy.matrix);
+    const angle = random() * Math.PI;
+    for (let card = 0; card < 2; card++) {
+      dummy.position.set(x, terrainHeight(x, z) + scale * .7, z);
+      dummy.rotation.set(0, angle + card * Math.PI / 2, 0);
+      dummy.scale.set(scale, scale * 1.12, scale);
+      dummy.updateMatrix();
+      ferns.setMatrixAt(placedFerns * 2 + card, dummy.matrix);
+    }
+    placedFerns++;
   }
-  ferns.count = placedFerns;
+  ferns.count = placedFerns * 2;
   ferns.instanceMatrix.needsUpdate = true;
-  root.add(ferns);
+
+  const shrubCount = Math.round(220 + quality * 250);
+  const shrubs = new THREE.InstancedMesh(new THREE.PlaneGeometry(1.65, 1.4), new THREE.MeshStandardMaterial({ map: textures.foliage, alphaTest: .27, color: "#617e50", roughness: .88, side: THREE.DoubleSide }), shrubCount * 2);
+  shrubs.name = "bronx-zoo-instanced-native-shrub-layer";
+  let placedShrubs = 0, shrubAttempts = 0;
+  while (placedShrubs < shrubCount && shrubAttempts++ < shrubCount * 20) {
+    const x = (random() * 2 - 1) * 82, z = -154 + random() * 155, scale = .55 + random() * .85;
+    const nearRoute = clearRoutes.some(route => route.slice(1).some((end, index) => distanceToSegmentXZ(x, z, route[index], end) < 5.2));
+    const inClearing = habitatClearings.some(([cx, cz, radius]) => Math.hypot(x - cx, z - cz) < radius - 1);
+    if (nearRoute || inClearing || (z > -15 && Math.abs(x) < 25)) continue;
+    const angle = random() * Math.PI;
+    for (let card = 0; card < 2; card++) {
+      dummy.position.set(x, terrainHeight(x, z) + scale * .54, z);
+      dummy.rotation.set(0, angle + card * Math.PI / 2, 0);
+      dummy.scale.set(scale, scale * (.72 + random() * .3), scale);
+      dummy.updateMatrix(); shrubs.setMatrixAt(placedShrubs * 2 + card, dummy.matrix);
+    }
+    placedShrubs++;
+  }
+  shrubs.count = placedShrubs * 2; shrubs.instanceMatrix.needsUpdate = true;
+
+  const rockCount = Math.round(55 + quality * 55), rocks = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(.55, 1), materials.stone, rockCount);
+  rocks.name = "bronx-zoo-instanced-mossy-landscape-rocks";
+  for (let index = 0; index < rockCount; index++) {
+    const x = (random() * 2 - 1) * 82, z = -154 + random() * 154, scale = .28 + random() * .85;
+    dummy.position.set(x, terrainHeight(x, z) + scale * .22, z); dummy.rotation.set(random(), random() * Math.PI, random()); dummy.scale.set(scale, scale * (.45 + random() * .3), scale); dummy.updateMatrix(); rocks.setMatrixAt(index, dummy.matrix);
+  }
+  rocks.instanceMatrix.needsUpdate = true; rocks.castShadow = quality > .72; rocks.receiveShadow = true;
+
+  const litterCount = Math.round(620 + quality * 900), leafShape = new THREE.Shape();
+  leafShape.moveTo(0, -.12); leafShape.quadraticCurveTo(.09, -.025, 0, .14); leafShape.quadraticCurveTo(-.09, -.025, 0, -.12);
+  const litter = new THREE.InstancedMesh(new THREE.ShapeGeometry(leafShape), new THREE.MeshStandardMaterial({ vertexColors: true, color: "#b5a989", roughness: 1, side: THREE.DoubleSide }), litterCount);
+  litter.name = "bronx-zoo-instanced-forest-floor-leaf-litter";
+  const litterPalette = [new THREE.Color("#51442d"), new THREE.Color("#6e5830"), new THREE.Color("#38422b"), new THREE.Color("#8a6b39"), new THREE.Color("#433725")];
+  for (let index = 0; index < litterCount; index++) {
+    const x = (random() * 2 - 1) * 83, z = -155 + random() * 158, scale = .5 + random() * .95;
+    dummy.position.set(x, terrainHeight(x, z) + .035, z); dummy.rotation.set(-Math.PI / 2 + (random() - .5) * .12, random() * Math.PI * 2, (random() - .5) * .1); dummy.scale.setScalar(scale); dummy.updateMatrix(); litter.setMatrixAt(index, dummy.matrix); litter.setColorAt(index, litterPalette[index % litterPalette.length]);
+  }
+  litter.instanceMatrix.needsUpdate = true; if (litter.instanceColor) litter.instanceColor.needsUpdate = true;
+  root.add(ferns, shrubs, rocks, litter);
 }
 
-function placeAnimal(root: THREE.Group, animals: ZooAnimalRig[], rig: ZooAnimalRig, x: number, z: number, yaw = 0, yOffset = 0) {
+function placeAnimal(
+  root: THREE.Group,
+  animals: ZooAnimalRig[],
+  rig: ZooAnimalRig,
+  x: number,
+  z: number,
+  yaw = 0,
+  yOffset = 0,
+  motion?: Omit<ZooHabitatMotionOptions, "floorHeight">,
+) {
   rig.root.position.set(x, terrainHeight(x, z) + yOffset, z);
   rig.root.rotation.y = yaw;
   root.add(rig.root);
-  animals.push(rig);
+  animals.push(motion ? configureAutonomousZooAnimal(rig, { ...motion, floorHeight: terrainHeight }) : rig);
 }
 
 export class BronxZooWorld {
@@ -463,6 +552,7 @@ export class BronxZooWorld {
   private ownedTextures: THREE.Texture[] = [];
   private readonly guestAgents: AmbientHumanAgent[] = [];
   private readonly animals: ZooAnimalRig[] = [];
+  private readonly captiveSlothMotion: CaptiveSlothMotion[] = [];
   private readonly obstacles: Obstacle[] = [];
   private readonly entryGateLeaves: THREE.Group[] = [];
   private readonly keeperDoorLeaves: THREE.Group[] = [];
@@ -512,6 +602,8 @@ export class BronxZooWorld {
     this.addZebraHabitat(materials, textures, quality);
     this.addRedPandaHabitat(materials, textures, quality);
     this.addTortoiseHabitat(materials, textures, quality);
+    this.addFlamingoWetland(materials, textures, quality);
+    this.addBisonHabitat(materials, textures, quality);
     this.addSlothHabitat(materials, textures, quality);
 
     addCampusBuilding(this.root, materials, this.ownedTextures, "bronx-zoo-wildlife-health-center", "WILDLIFE HEALTH", -68, -26, 18, 7.6, 12, "#a47b62");
@@ -521,6 +613,7 @@ export class BronxZooWorld {
     addCampusBuilding(this.root, materials, this.ownedTextures, "bronx-zoo-dancing-crane-cafe", "DANCING CRANE CAFE", -66, -128, 18, 7, 12, "#a48462");
     addCampusBuilding(this.root, materials, this.ownedTextures, "bronx-zoo-nature-trek-center", "NATURE TREK", 66, -129, 18, 7.2, 12, "#8f856c");
 
+    this.addGuestAmenities(materials, textures, quality);
     addLandscape(this.root, materials, textures, quality, this.obstacles);
     this.addPermanentCollisions();
 
@@ -676,6 +769,7 @@ export class BronxZooWorld {
     idleAuthoredHuman(this.ticketDonor, delta);
     this.guestAgents.forEach(agent => updateAmbientHumanAgent(agent, elapsed, delta));
     this.animals.forEach(animal => animal.update(elapsed, delta));
+    this.updateCaptiveSlothMotion(elapsed);
     if (player) {
       this.sun.position.set(player.x - 22, 38, player.z + 18);
       this.sun.target.position.set(player.x, 0, player.z);
@@ -693,7 +787,35 @@ export class BronxZooWorld {
     });
     geometries.forEach(geometry => geometry.dispose());
     materials.forEach(material => material.dispose());
+    this.animals.forEach(animal => animal.ownedTextures?.forEach(texture => texture.dispose()));
     this.ownedTextures.forEach(texture => texture.dispose());
+  }
+
+  private updateCaptiveSlothMotion(elapsed: number) {
+    this.captiveSlothMotion.forEach((motion, index) => {
+      if (!motion.root.visible) return;
+      const cycle = ((elapsed + motion.phase) % 16 + 16) % 16;
+      const state = cycle < 5.5 ? "branch-rest" : cycle < 10.5 ? "leaf-forage" : "careful-branch-climb";
+      motion.root.userData.animationState = state;
+      const climbAmount = state === "careful-branch-climb" ? Math.sin((cycle - 10.5) / 5.5 * Math.PI) * .22 : 0;
+      motion.root.position.copy(motion.basePosition);
+      motion.root.position.x += Math.sin(motion.baseRotation.y) * climbAmount;
+      motion.root.position.z += Math.cos(motion.baseRotation.y) * climbAmount;
+      motion.root.position.y += state === "careful-branch-climb" ? Math.sin(elapsed * 2.2 + index) * .018 : 0;
+      motion.root.rotation.copy(motion.baseRotation);
+      motion.root.rotation.z += state === "careful-branch-climb" ? Math.sin(elapsed * 1.6 + index) * .025 : 0;
+      if (motion.body) {
+        motion.body.rotation.y = state === "leaf-forage" ? Math.sin(elapsed * .7 + motion.phase) * .045 : 0;
+        motion.body.scale.y = 1 + Math.sin(elapsed * .92 + motion.phase) * .012;
+      }
+      if (motion.head && motion.baseHeadRotation && motion.baseHeadScale) {
+        motion.head.rotation.copy(motion.baseHeadRotation);
+        motion.head.rotation.y += state === "leaf-forage" ? Math.sin(elapsed * .83 + motion.phase) * .24 : Math.sin(elapsed * .31 + motion.phase) * .07;
+        motion.head.rotation.x += state === "leaf-forage" ? .12 + Math.sin(elapsed * .58 + index) * .04 : Math.sin(elapsed * .42 + index) * .025;
+        motion.head.scale.copy(motion.baseHeadScale);
+        motion.head.scale.y *= 1 + Math.sin(elapsed * .92 + motion.phase) * .008;
+      }
+    });
   }
 
   private addEntryGate(materials: ZooMaterials, quality: number) {
@@ -771,7 +893,9 @@ export class BronxZooWorld {
     this.root.add(habitat);
     const birds = [createSunConure(textures, quality), createBlueAndGoldMacaw(textures, quality), createScarletIbis(textures, quality), createGreenAracari(textures, quality)];
     const positions = [[-46, -49, 4.7, .4], [-39, -52, 5.7, -1.2], [-45, -56, 3.6, 2.4], [-40, -45, 4.2, -2.6]];
-    birds.forEach((bird, index) => placeAnimal(this.root, this.animals, bird, positions[index][0], positions[index][1], positions[index][3], positions[index][2]));
+    birds.forEach((bird, index) => placeAnimal(this.root, this.animals, bird, positions[index][0], positions[index][1], positions[index][3], positions[index][2], {
+      mode: "perch", radius: 1.1 + index * .22, speed: .42 + index * .03, phase: index * 2.8, verticalRange: 1.2 + index * .15,
+    }));
     addHabitatLabel(this.root, this.ownedTextures, materials, "WORLD OF BIRDS", "SUN CONURE · MACAW · SCARLET IBIS · GREEN ARACARI", -31, -39, -.74);
   }
 
@@ -788,7 +912,7 @@ export class BronxZooWorld {
       rock.scale.y = .62;
       this.root.add(rock);
     }
-    placeAnimal(this.root, this.animals, createGaryPolarBear(textures, quality), 39, -48, -1.05);
+    placeAnimal(this.root, this.animals, createGaryPolarBear(textures, quality), 39, -48, -1.05, 0, { mode: "terrestrial", radius: 3.1, speed: .13, phase: .4 });
     const texture = plaqueTexture();
     this.ownedTextures.push(texture);
     const plaque = new THREE.Group();
@@ -815,8 +939,8 @@ export class BronxZooWorld {
     water.position.set(0, terrainHeight(0, -76) + .66, -76);
     pool.add(water);
     this.root.add(pool);
-    placeAnimal(this.root, this.animals, createSeaLion(textures, quality, 0), -2.5, -76, .7, .75);
-    placeAnimal(this.root, this.animals, createSeaLion(textures, quality, 1), 3.2, -78.5, -1.4, .75);
+    placeAnimal(this.root, this.animals, createSeaLion(textures, quality, 0), -2.5, -76, .7, .75, { mode: "aquatic", radius: 2.8, speed: .34, phase: .7 });
+    placeAnimal(this.root, this.animals, createSeaLion(textures, quality, 1), 3.2, -78.5, -1.4, .75, { mode: "aquatic", radius: 2.2, speed: .29, phase: 4.1 });
     addHabitatLabel(this.root, this.ownedTextures, materials, "SEA LION POOL", "CALIFORNIA SEA LIONS", -9, -65, -.2);
     this.obstacles.push({ kind: "circle", x: 0, z: -76, radius: 11.4 });
   }
@@ -833,14 +957,16 @@ export class BronxZooWorld {
       rope.name = "spider-monkey-climbing-rope";
       this.root.add(rope);
     }
-    for (let index = 0; index < 3; index++) placeAnimal(this.root, this.animals, createSpiderMonkey(textures, quality, index), x - 3 + index * 3.2, z + (index % 2 ? 2 : -2), index * .8, index === 1 ? 3.8 : 0);
+    for (let index = 0; index < 3; index++) placeAnimal(this.root, this.animals, createSpiderMonkey(textures, quality, index), x - 3 + index * 3.2, z + (index % 2 ? 2 : -2), index * .8, 3.1 + index * .35, {
+      mode: "arboreal", radius: 1.5 + index * .3, speed: .42 + index * .05, phase: index * 3.4, verticalRange: .8 + index * .15,
+    });
     addHabitatLabel(this.root, this.ownedTextures, materials, "MONKEY FOREST", "GEOFFROY'S SPIDER MONKEYS", -31, -89, -.75);
   }
 
   private addZebraHabitat(materials: ZooMaterials, textures: GameTextures, quality: number) {
     addCircularFence(this.root, materials, 43, -101, 15.5, quality > .72 ? 28 : 20);
-    placeAnimal(this.root, this.animals, createZebra(textures, quality, 0), 40, -101, -1.1);
-    placeAnimal(this.root, this.animals, createZebra(textures, quality, 1), 47, -105, 2.1);
+    placeAnimal(this.root, this.animals, createZebra(textures, quality, 0), 40, -101, -1.1, 0, { mode: "terrestrial", radius: 2.8, speed: .12, phase: 1.2 });
+    placeAnimal(this.root, this.animals, createZebra(textures, quality, 1), 47, -105, 2.1, 0, { mode: "terrestrial", radius: 2.2, speed: .1, phase: 5.6 });
     addHabitatLabel(this.root, this.ownedTextures, materials, "AFRICAN PLAINS", "PLAINS ZEBRA · GRASSLAND CONSERVATION", 31, -89, .75);
   }
 
@@ -849,14 +975,146 @@ export class BronxZooWorld {
     const branch = cylinderBetween(new THREE.Vector3(-40, 1.6, -134), new THREE.Vector3(-32, 4.2, -130), .24, materials.wood, 12);
     branch.name = "red-panda-arboreal-branch";
     this.root.add(branch);
-    placeAnimal(this.root, this.animals, createRedPanda(textures, quality), -35, -132, .7, 2.85);
+    placeAnimal(this.root, this.animals, createRedPanda(textures, quality), -35, -132, .7, 2.85, { mode: "arboreal", radius: 1.7, speed: .18, phase: 2.4, verticalRange: .65 });
     addHabitatLabel(this.root, this.ownedTextures, materials, "RED PANDA", "HIMALAYAN FOREST", -28, -123, -.7);
   }
 
   private addTortoiseHabitat(materials: ZooMaterials, textures: GameTextures, quality: number) {
     addCircularFence(this.root, materials, 36, -132, 9.5, quality > .72 ? 20 : 14);
-    placeAnimal(this.root, this.animals, createAldabraTortoise(textures, quality), 36, -132, -.6);
+    placeAnimal(this.root, this.animals, createAldabraTortoise(textures, quality), 36, -132, -.6, 0, { mode: "terrestrial", radius: 1.35, speed: .035, phase: 3.7 });
     addHabitatLabel(this.root, this.ownedTextures, materials, "GIANT TORTOISE", "ALDABRA ATOLL CONSERVATION", 28, -123, .7);
+  }
+
+  private addFlamingoWetland(materials: ZooMaterials, textures: GameTextures, quality: number) {
+    const x = -71, z = -55, radius = 7.7;
+    const wetland = new THREE.Group();
+    wetland.name = "bronx-zoo-american-flamingo-wetland";
+    const bank = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius + .35, .45, quality > .72 ? 44 : 30), materials.earth);
+    bank.position.set(x, terrainHeight(x, z) + .08, z);
+    wetland.add(bank);
+    const water = new THREE.Mesh(new THREE.CylinderGeometry(5.8, 6.1, .16, quality > .72 ? 44 : 30), materials.water);
+    water.position.set(x, terrainHeight(x, z) + .32, z);
+    wetland.add(water);
+    for (let index = 0; index < 18; index++) {
+      const angle = index * 2.399, reed = new THREE.Mesh(new THREE.CylinderGeometry(.018, .025, 1.1 + index % 3 * .25, 6), new THREE.MeshStandardMaterial({ color: index % 2 ? "#718152" : "#8f8d55", roughness: .92 }));
+      reed.position.set(x + Math.cos(angle) * (5.5 + index % 3 * .35), terrainHeight(x, z) + .85, z + Math.sin(angle) * (5.2 + index % 4 * .3));
+      reed.rotation.z = Math.sin(index * 1.7) * .08;
+      wetland.add(reed);
+    }
+    this.root.add(wetland);
+    addCircularFence(this.root, materials, x, z, radius + .3, quality > .72 ? 18 : 13);
+    for (let index = 0; index < 3; index++) placeAnimal(this.root, this.animals, createAmericanFlamingo(textures, quality, index), x - 2.1 + index * 2.1, z + (index % 2 ? 1.3 : -1), index * .7, .3, {
+      mode: "terrestrial", radius: 1 + index * .22, speed: .06 + index * .012, phase: index * 4.2,
+    });
+    addHabitatLabel(this.root, this.ownedTextures, materials, "FLAMINGO WETLAND", "AMERICAN FLAMINGOS · WETLAND RESTORATION", -63.5, -47, -.7);
+  }
+
+  private addBisonHabitat(materials: ZooMaterials, textures: GameTextures, quality: number) {
+    const x = 72, z = -105, radius = 8.2;
+    const paddock = new THREE.Group();
+    paddock.name = "bronx-zoo-american-bison-paddock";
+    const meadow = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, .12, quality > .72 ? 42 : 28), new THREE.MeshStandardMaterial({ map: textures.ground, bumpMap: textures.ground, bumpScale: .08, color: "#817c52", roughness: .98 }));
+    meadow.position.set(x, terrainHeight(x, z) + .025, z);
+    paddock.add(meadow);
+    const shelter = new THREE.Mesh(new RoundedBoxGeometry(5.8, .3, 3.8, 4, .08), materials.wood);
+    shelter.position.set(x + 2.6, terrainHeight(x, z) + 3.25, z + 2.5);
+    shelter.rotation.z = -.08;
+    paddock.add(shelter);
+    for (const px of [x, x + 5.1]) for (const pz of [z + 1.1, z + 3.9]) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(.1, .14, 3.2, 10), materials.wood);
+      post.position.set(px, terrainHeight(px, pz) + 1.6, pz);
+      paddock.add(post);
+    }
+    const rubbingLog = cylinderBetween(new THREE.Vector3(x - 4.5, .5, z - 2.8), new THREE.Vector3(x + 1.2, .9, z - 3.5), .23, materials.wood, 12);
+    rubbingLog.name = "bison-natural-rubbing-log";
+    paddock.add(rubbingLog);
+    this.root.add(paddock);
+    addCircularFence(this.root, materials, x, z, radius + .35, quality > .72 ? 20 : 14);
+    placeAnimal(this.root, this.animals, createAmericanBison(textures, quality, 0), x - 1.7, z - .4, .2, 0, { mode: "terrestrial", radius: 1.7, speed: .055, phase: 1.1 });
+    placeAnimal(this.root, this.animals, createAmericanBison(textures, quality, 1), x + 2.4, z + 1.2, -2.1, 0, { mode: "terrestrial", radius: 1.2, speed: .045, phase: 6.2 });
+    addHabitatLabel(this.root, this.ownedTextures, materials, "BISON RANGE", "AMERICAN BISON · GRASSLAND RECOVERY", 63, -97, .72);
+  }
+
+  private addGuestAmenities(materials: ZooMaterials, textures: GameTextures, quality: number) {
+    const amenities = new THREE.Group();
+    amenities.name = "bronx-zoo-premium-guest-amenities-and-service-details";
+    const benchMaterial = new THREE.MeshStandardMaterial({ map: textures.bark, bumpMap: textures.bark, bumpScale: .035, color: "#805d3e", roughness: .88 });
+    const benchData = [
+      [-11, -31, -.12], [14, -37, .2], [-29, -59, .85], [29, -61, -.82], [-34, -87, 1.45], [34, -88, -1.4],
+      [-27, -118, .75], [27, -117, -.72], [-11, -137, .12], [12, -136, -.18],
+    ] as const;
+    benchData.slice(0, quality < .62 ? 7 : benchData.length).forEach(([x, z, yaw], index) => {
+      const bench = new THREE.Group();
+      bench.name = `bronx-zoo-visitor-bench-${index + 1}`;
+      bench.position.set(x, terrainHeight(x, z), z);
+      bench.rotation.y = yaw;
+      for (let slat = 0; slat < 5; slat++) {
+        const board = new THREE.Mesh(new RoundedBoxGeometry(3.3, .12, .2, 3, .03), benchMaterial);
+        board.position.set(0, slat < 3 ? .62 + slat * .08 : .92 + (slat - 3) * .22, slat < 3 ? (slat - 1) * .23 : .37);
+        if (slat >= 3) board.rotation.x = -.16;
+        bench.add(board);
+      }
+      for (const bx of [-1.28, 1.28]) {
+        const leg = new THREE.Mesh(new RoundedBoxGeometry(.1, .67, .1, 2, .02), materials.iron);
+        leg.position.set(bx, .31, 0);
+        bench.add(leg);
+      }
+      amenities.add(bench);
+    });
+
+    const vendingTexture = canvasTexture(768, 1024, (context, width, height) => {
+      const gradient = context.createLinearGradient(0, 0, width, height);
+      gradient.addColorStop(0, "#1f625b"); gradient.addColorStop(1, "#11342f");
+      context.fillStyle = gradient; context.fillRect(0, 0, width, height);
+      context.fillStyle = "#f2e4a3"; context.textAlign = "center"; context.font = "700 82px Helvetica, Arial, sans-serif";
+      context.fillText("REFILL", width / 2, 125); context.font = "600 40px Helvetica, Arial, sans-serif"; context.fillText("WATER · SNACKS", width / 2, 190);
+      for (let row = 0; row < 4; row++) for (let column = 0; column < 3; column++) {
+        context.fillStyle = ["#d8a448", "#8bb593", "#be6955"][column]; context.fillRect(105 + column * 190, 270 + row * 145, 110, 95);
+      }
+      context.strokeStyle = "#f2e4a3"; context.lineWidth = 16; context.strokeRect(24, 24, width - 48, height - 48);
+    });
+    this.ownedTextures.push(vendingTexture);
+    const vendingMaterial = new THREE.MeshStandardMaterial({ map: vendingTexture, color: "#ffffff", roughness: .5, metalness: .08 });
+    for (const [x, z, yaw] of [[-13, -69, -.15], [14, -107, .12], [-18, -122, -.1]] as const) {
+      const station = new THREE.Group();
+      station.name = "bronx-zoo-water-refill-and-snack-station";
+      station.position.set(x, terrainHeight(x, z), z); station.rotation.y = yaw;
+      const cabinet = new THREE.Mesh(new RoundedBoxGeometry(1.25, 2.35, .82, 5, .08), vendingMaterial);
+      cabinet.position.y = 1.18; station.add(cabinet);
+      const payment = new THREE.Mesh(new RoundedBoxGeometry(.2, .34, .04, 3, .025), materials.iron);
+      payment.position.set(.39, 1.35, .44); station.add(payment);
+      amenities.add(station);
+    }
+
+    const binPositions = [[-8, -27], [8, -27], [-31, -79], [31, -79], [-23, -126], [23, -126]] as const;
+    binPositions.forEach(([x, z], index) => {
+      const pair = new THREE.Group(); pair.name = "bronx-zoo-waste-recycling-pair"; pair.position.set(x, terrainHeight(x, z), z);
+      for (const side of [-1, 1]) {
+        const bin = new THREE.Mesh(new THREE.CylinderGeometry(.3, .34, .92, 16), new THREE.MeshStandardMaterial({ color: side < 0 ? "#34483b" : "#426b79", metalness: .18, roughness: .61 }));
+        bin.position.set(side * .35, .46, 0); pair.add(bin);
+        const lid = new THREE.Mesh(new THREE.CylinderGeometry(.34, .34, .09, 16), materials.iron); lid.position.set(side * .35, .95, 0); pair.add(lid);
+      }
+      pair.rotation.y = index * .7; amenities.add(pair);
+    });
+
+    const lampMaterial = new THREE.MeshPhysicalMaterial({ color: "#fff0bf", emissive: "#f5cb72", emissiveIntensity: 1.4, roughness: .28, clearcoat: .55 });
+    for (let index = 0; index < 16; index++) {
+      const angle = index / 16 * Math.PI * 2, x = Math.cos(angle) * (34 + index % 3 * 4), z = -82 + Math.sin(angle) * 49;
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(.055, .08, 4.4, 10), materials.iron);
+      post.name = "bronx-zoo-low-glare-path-lamp"; post.position.set(x, terrainHeight(x, z) + 2.2, z); amenities.add(post);
+      const lantern = new THREE.Mesh(new THREE.SphereGeometry(.22, 16, 11), lampMaterial); lantern.position.set(x, terrainHeight(x, z) + 4.48, z); amenities.add(lantern);
+    }
+
+    const service = new THREE.Group(); service.name = "bronx-zoo-keeper-service-yard-detail"; service.position.set(21, terrainHeight(21, -151), -151);
+    const serviceDoor = new THREE.Mesh(new RoundedBoxGeometry(4.2, 3.6, .28, 4, .06), materials.iron); serviceDoor.position.y = 1.8; service.add(serviceDoor);
+    for (let index = 0; index < 7; index++) {
+      const crate = new THREE.Mesh(new RoundedBoxGeometry(1.1, .72, .82, 3, .04), materials.wood);
+      crate.name = "keeper-feed-and-bedding-crate"; crate.position.set(3.2 + index % 3 * 1.15, .36 + Math.floor(index / 3) * .73, (index % 2) * .85); service.add(crate);
+    }
+    const cart = new THREE.Mesh(new RoundedBoxGeometry(2.1, .55, 1.05, 4, .08), new THREE.MeshStandardMaterial({ color: "#416a4b", roughness: .62, metalness: .12 }));
+    cart.name = "keeper-feed-service-cart"; cart.position.set(-3.2, .65, .2); service.add(cart);
+    amenities.add(service);
+    this.root.add(amenities);
   }
 
   private addSlothHabitat(materials: ZooMaterials, textures: GameTextures, quality: number) {
@@ -942,14 +1200,37 @@ export class BronxZooWorld {
       [4.2, -147.2, 4.74, -.8, "#594936"],
       [7.7, -149.8, 5.3, 2.2, "#443a30"],
     ] as const;
+    const slothAtlasSurface = cloneZooAnimalAtlasCell(textures, 2, 2, "captive-sloth-friends");
+    this.ownedTextures.push(slothAtlasSurface);
     slothData.forEach((data, index) => {
       const result = createPremiumSlothFriend(textures, quality, index, data[4]);
       result.root.name = `captive-sloth-friend-${index + 1}-on-real-branch`;
       result.root.position.set(data[0], data[2], data[1]);
       result.root.rotation.set(0, data[3], index % 2 ? .08 : -.06);
       result.root.userData.captive = true;
+      result.root.traverse(object => {
+        if (!(object instanceof THREE.Mesh) || !/(sloth-(?:torso|head|forelimb|hindlimb)|anatomical-sloth)/.test(object.name)) return;
+        const surfaces = Array.isArray(object.material) ? object.material : [object.material];
+        surfaces.forEach(surface => {
+          if (!(surface instanceof THREE.MeshStandardMaterial)) return;
+          surface.map = slothAtlasSurface;
+          surface.needsUpdate = true;
+        });
+      });
       habitat.add(result.root);
       this.captiveSloths.push(result.root);
+      const body = result.root.getObjectByName("continuous-horizontal-anatomical-sloth-torso");
+      const head = result.root.getObjectByName("anatomical-sloth-head-jaw-and-integrated-mask");
+      this.captiveSlothMotion.push({
+        root: result.root,
+        body: body instanceof THREE.Mesh ? body : null,
+        head: head instanceof THREE.Mesh ? head : null,
+        basePosition: result.root.position.clone(),
+        baseRotation: result.root.rotation.clone(),
+        baseHeadRotation: head instanceof THREE.Mesh ? head.rotation.clone() : null,
+        baseHeadScale: head instanceof THREE.Mesh ? head.scale.clone() : null,
+        phase: index * 3.7,
+      });
       this.ownedTextures.push(...result.ownedTextures);
     });
     addHabitatLabel(this.root, this.ownedTextures, materials, "SLOTH CONSERVATION", "RESCUE HABITAT · KEEPER ACCESS", -9.5, -126.5, -.22);
@@ -969,6 +1250,8 @@ export class BronxZooWorld {
       { kind: "circle", x: 43, z: -101, radius: 16.1 },
       { kind: "circle", x: -36, z: -132, radius: 10.1 },
       { kind: "circle", x: 36, z: -132, radius: 10.1 },
+      { kind: "circle", x: -71, z: -55, radius: 8.6 },
+      { kind: "circle", x: 72, z: -105, radius: 9 },
       { kind: "box", minX: -77.5, maxX: -58.5, minZ: -32.5, maxZ: -19.5 },
       { kind: "box", minX: 58, maxX: 78, minZ: -34.5, maxZ: -21.5 },
       { kind: "box", minX: -78, maxX: -58, minZ: -89, maxZ: -75 },

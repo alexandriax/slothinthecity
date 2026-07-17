@@ -140,9 +140,15 @@ function atlasTile(url: string, tile: number, quality: number) {
   }
   let source = atlasSources.get(url);
   if (!source) {
-    source = new THREE.TextureLoader().load(url);
+    source = new THREE.TextureLoader().load(url, loaded => {
+      const pending = (loaded.userData.pendingAtlasClones ?? []) as THREE.Texture[];
+      pending.forEach(texture => { texture.needsUpdate = true; });
+      pending.length = 0;
+      loaded.userData.atlasReady = true;
+    });
     source.colorSpace = THREE.SRGBColorSpace;
     source.wrapS = source.wrapT = THREE.ClampToEdgeWrapping;
+    source.userData.pendingAtlasClones = [] as THREE.Texture[];
     atlasSources.set(url, source);
   }
   const texture = source.clone();
@@ -151,7 +157,8 @@ function atlasTile(url: string, tile: number, quality: number) {
   texture.offset.set((index % 2) * .5, index < 2 ? .5 : 0);
   texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
   texture.anisotropy = quality > .86 ? 8 : quality > .62 ? 4 : 2;
-  texture.needsUpdate = true;
+  if (source.userData.atlasReady || source.image) texture.needsUpdate = true;
+  else ((source.userData.pendingAtlasClones ??= []) as THREE.Texture[]).push(texture);
   return texture;
 }
 

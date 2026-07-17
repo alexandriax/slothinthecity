@@ -1,0 +1,14 @@
+{
+  "asset": "zoo-animal-surface-atlas.webp",
+  "created": "2026-07-16",
+  "generator": "OpenAI built-in image generation",
+  "license": "Original project-generated asset",
+  "sha256": "b2c7cad27c8561135040810e165b7f6d99aa053ed2d1104d4693a5839d958c59",
+  "layout": [
+    ["polar bear", "spider monkey", "red panda"],
+    ["sun conure", "scarlet macaw", "zebra"],
+    ["sea lion", "Galapagos tortoise", "three-toed sloth"]
+  ],
+  "promptPurpose": "A 3x3 diffuse animal-surface atlas with neutral lighting, no text, no logos, no watermark, no complete animals, and species-specific fur, feather, coat, skin, and scute microdetail for the Bronx Zoo runtime meshes.",
+  "processing": "Converted lossily from the generated 1254x1254 RGB PNG to WebP with cwebp quality 88; no third-party source imagery was used."
+}

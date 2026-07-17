@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 const readSource = path => readFile(new URL(path, import.meta.url), "utf8");
@@ -32,8 +32,32 @@ test("Gary's polar-bear habitat carries the exact TOGYL support plaque", async (
   assert.match(zoo, /context\.fillText\("POLAR BEAR", width \/ 2, 252\)/);
   assert.match(zoo, /context\.fillText\("Provided thanks to generous support by", width \/ 2, 380\)/);
   assert.match(zoo, /context\.fillText\("TOGYL", width \/ 2, 505\)/);
+  assert.match(zoo, /context\.font = "700 62px Georgia, serif"/);
   assert.match(zoo, /gary-polar-bear-togyl-support-plaque/);
   assert.match(zoo, /createGaryPolarBear\(textures, quality\)/);
+});
+
+test("zoo species use the licensed project atlas and enclosure-safe multi-state motion", async () => {
+  const [zoo, animals, textures, provenance] = await Promise.all([
+    readSource("../app/game/world/BronxZooWorld.ts"),
+    readSource("../app/game/world/ZooAnimals.ts"),
+    readSource("../app/game/rendering/textures.ts"),
+    readSource("../public/game/textures/zoo-animal-surface-atlas.provenance.json"),
+    access(new URL("../public/game/textures/zoo-animal-surface-atlas.webp", import.meta.url)),
+  ]);
+
+  assert.match(textures, /zooAnimalAtlas: THREE\.Texture/);
+  assert.match(textures, /game\/textures\/zoo-animal-surface-atlas\.webp/);
+  assert.match(animals, /cloneZooAnimalAtlasCell/);
+  assert.match(animals, /texture\.repeat\.set\(1 \/ 3, 1 \/ 3\)/);
+  assert.match(animals, /configureAutonomousZooAnimal/);
+  for (const state of ["walk", "forage", "swim", "surface", "dive", "swing", "perch", "short-flight", "preen"]) {
+    assert.match(animals, new RegExp(`"${state}"`));
+  }
+  assert.match(zoo, /configureAutonomousZooAnimal\(rig, \{ \.\.\.motion/);
+  const metadata = JSON.parse(provenance);
+  assert.equal(metadata.asset, "zoo-animal-surface-atlas.webp");
+  assert.equal(metadata.license, "Original project-generated asset");
 });
 
 test("the expansive zoo includes the sun conure, companion birds, monkeys, and additional habitats", async () => {
@@ -53,7 +77,8 @@ test("the expansive zoo includes the sun conure, companion birds, monkeys, and a
   assert.match(zoo, /MONKEY FOREST/);
   assert.match(zoo, /for \(let index = 0; index < 3; index\+\+\) placeAnimal[\s\S]{0,120}createSpiderMonkey/);
   assert.match(zoo, /spider-monkey-climbing-rope/);
-  for (const habitat of ["SEA LION POOL", "AFRICAN PLAINS", "RED PANDA", "GIANT TORTOISE"]) assert.match(zoo, new RegExp(habitat));
+  for (const habitat of ["SEA LION POOL", "AFRICAN PLAINS", "RED PANDA", "GIANT TORTOISE", "FLAMINGO WETLAND", "AMERICAN BISON"]) assert.match(zoo, new RegExp(habitat));
+  for (const amenity of ["bronx-zoo-water-refill-and-snack-station", "bronx-zoo-waste-recycling-pair", "bronx-zoo-low-glare-path-lamp", "bronx-zoo-keeper-service-yard-detail"]) assert.match(zoo, new RegExp(amenity));
   for (const building of ["bronx-zoo-wildlife-health-center", "bronx-zoo-conservation-center", "bronx-zoo-world-of-reptiles", "bronx-zoo-jungleworld-pavilion", "bronx-zoo-dancing-crane-cafe", "bronx-zoo-nature-trek-center"]) assert.match(zoo, new RegExp(building));
   assert.match(zoo, /worldBounds = Object\.freeze\(\{ minX: -84, maxX: 84, minZ: -158, maxZ: 39\.5 \}\)/);
   assert.match(zoo, /bronx-zoo-textured-undulating-parkland/);
@@ -95,8 +120,10 @@ test("rescued sloths persist through zoo disposal and both reverse subway journe
 
   assert.match(game, /zooWorld\.stationReturnReached\(player\)[\s\S]{0,120}rescuedParty\.allWithin[\s\S]{0,100}startReturnTransit\(\)/);
   assert.match(game, /function startReturnTransit\(\)[\s\S]{0,180}zooWorld\.dispose\(\); zooWorld = null[\s\S]{0,260}createStationWorld\("WEST_FARMS", "RETURN"\)/);
-  assert.match(game, /travelDirection === "RETURN"[\s\S]{0,180}TRAIN_INTERIOR_JOURNEYS\.WEST_FARMS_TO_LEXINGTON[\s\S]{0,100}TRAIN_INTERIOR_JOURNEYS\.LEXINGTON_TO_FIFTH/);
-  assert.match(game, /currentStation === "WEST_FARMS"\) checkpoint\("LEXINGTON"[\s\S]{0,240}else checkpoint\("FIFTH_AV"/);
+  assert.match(game, /const base = TRAIN_INTERIOR_JOURNEYS\[option\.journeyKey\]/);
+  assert.match(game, /option\.journeyKey === "WEST_FARMS_TO_LEXINGTON"/);
+  assert.match(game, /const destination = boarded\.destination/);
+  assert.match(game, /checkpoint\(destination, message, false, true, destination !== "LEXINGTON"\)/);
   assert.match(journeys, /WEST_FARMS_TO_LEXINGTON/);
   assert.match(journeys, /LEXINGTON_TO_FIFTH/);
   assert.match(game, /travelDirection === "RETURN" && currentStation === "FIFTH_AV" && distance < 1\.45\) enterCentralPark\(\)/);
@@ -110,10 +137,10 @@ test("only all four followers reaching the designated Home Grove completes the c
     readSource("../app/game/world/CentralParkReturnWorld.ts"),
   ]);
 
-  assert.match(park, /root\.name = "central-park-homecoming-world"/);
-  assert.match(park, /fifth-avenue-return-subway-exit/);
-  assert.match(park, /readonly sanctuaryTarget = new THREE\.Vector3\(0, 0, -62\)/);
-  assert.match(park, /central-park-designated-sloth-sanctuary-tree/);
+  assert.match(park, /root\.name = "central-park-homecoming-original-world"/);
+  assert.match(park, /readonly spawn = SUBWAY_ENTRY_TRIGGER\.clone\(\)/);
+  assert.match(park, /readonly sanctuaryTarget = START\.clone\(\)/);
+  assert.match(park, /homeMarker\.userData\.originalTreeIndex/);
   assert.match(park, /context\.fillText\("HOME GROVE"/);
   assert.match(park, /central-park-sloth-sanctuary-sign/);
   assert.match(game, /function completeMission\(\)[\s\S]{0,220}!parkReturnWorld \|\| transitStage !== "CENTRAL_PARK" \|\| !rescuedParty\.allWithin\(parkReturnWorld\.sanctuaryTarget, 9\.5\)/);

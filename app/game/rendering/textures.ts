@@ -4,6 +4,7 @@ export type GameTextures = {
   ground: THREE.Texture;
   bark: THREE.Texture;
   fur: THREE.Texture;
+  zooAnimalAtlas: THREE.Texture;
   foliage: THREE.Texture;
   foliageBranch: THREE.Texture;
   fern: THREE.Texture;
@@ -60,8 +61,8 @@ export function loadGameTextures(renderer: THREE.WebGLRenderer, onReady: () => v
   const manager = new THREE.LoadingManager(onReady);
   const loader = new THREE.TextureLoader(manager);
   const anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy());
-  const load = (url: string, repeatX: number, repeatY = repeatX) => {
-    const texture = loader.load(url);
+  const load = (url: string, repeatX: number, repeatY = repeatX, onLoad?: (texture: THREE.Texture) => void) => {
+    const texture = loader.load(url, onLoad);
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
     texture.repeat.set(repeatX, repeatY);
     texture.colorSpace = THREE.SRGBColorSpace;
@@ -71,6 +72,13 @@ export function loadGameTextures(renderer: THREE.WebGLRenderer, onReady: () => v
   const ground = load("/game/textures/forest-floor.webp", 18);
   const bark = load("/game/textures/elm-bark.webp", 1.3, 5);
   const fur = load("/game/textures/sloth-fur.webp", 1.2, 2.2);
+  const zooAnimalAtlas = load("/game/textures/zoo-animal-surface-atlas.webp", 1, 1, atlas => {
+    const pending = (atlas.userData.pendingAtlasClones ?? []) as THREE.Texture[];
+    pending.forEach(texture => { texture.needsUpdate = true; });
+    pending.length = 0;
+    atlas.userData.atlasReady = true;
+  });
+  zooAnimalAtlas.userData.pendingAtlasClones = [] as THREE.Texture[];
   const foliage = load("/game/textures/foliage-cluster.webp", 1);
   foliage.wrapS = foliage.wrapT = THREE.ClampToEdgeWrapping;
   foliage.repeat.set(1, 1);
@@ -84,5 +92,5 @@ export function loadGameTextures(renderer: THREE.WebGLRenderer, onReady: () => v
   const stone = detailTexture("stone"); stone.repeat.set(3, 3); stone.anisotropy = anisotropy;
   const moss = detailTexture("moss"); moss.repeat.set(2, 14); moss.anisotropy = anisotropy;
   const waterNormal = detailTexture("water"); waterNormal.repeat.set(8, 8); waterNormal.anisotropy = anisotropy;
-  return { ground, bark, fur, foliage, foliageBranch, fern, gravel, stone, moss, waterNormal };
+  return { ground, bark, fur, zooAnimalAtlas, foliage, foliageBranch, fern, gravel, stone, moss, waterNormal };
 }

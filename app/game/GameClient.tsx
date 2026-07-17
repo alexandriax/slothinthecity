@@ -19,7 +19,7 @@ import { checkpointUsesSubway, DEBUG_LOOK_REQUEST_EVENT, debugMenuRequested, deb
 import { BOW_BRIDGE_TARGET, createCampaignLandmarks, SUBWAY_TARGET, ZOO_TARGET } from "./world/CampaignLandmarks";
 import { createParkRowboat, ROWBOAT_ROOT_WATERLINE_OFFSET, type ParkRowboat } from "./world/ParkRowboat";
 import { createParkUtilityCart, type ParkUtilityCart } from "./world/ParkUtilityCart";
-import { buildRealisticWorld, LAKE_SOUTHEAST_CART_TARGET, START, terrainY, type BranchRoute, type ClimbableTree } from "./world/RealisticWorld";
+import { addCentralParkLighting, buildRealisticWorld, LAKE_SOUTHEAST_CART_TARGET, START, terrainY, type BranchRoute, type ClimbableTree } from "./world/RealisticWorld";
 
 type Phase = "intro" | "playing" | "paused" | "complete";
 type ParkStage = "FORAGE" | "BOW_BRIDGE" | "LAKE_TICKET" | "ZOO" | "SUBWAY_ENTRANCE";
@@ -97,10 +97,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
     const dropMarkerMaterial = new THREE.MeshBasicMaterial({ color: "#e6a85e", transparent: true, opacity: .78, side: THREE.DoubleSide, depthTest: false });
     const actionMarker = new THREE.Mesh(markerGeometry, actionMarkerMaterial), dropMarker = new THREE.Mesh(markerGeometry, dropMarkerMaterial);
     actionMarker.visible = dropMarker.visible = false; actionMarker.renderOrder = dropMarker.renderOrder = 100; scene.add(actionMarker, dropMarker);
-    const hemisphere = new THREE.HemisphereLight("#dce3d2", "#3b3329", .62); scene.add(hemisphere);
-    const sun = new THREE.DirectionalLight("#ffd49a", 2.65); sun.position.set(-35, 68, 25); sun.castShadow = true;
-    sun.shadow.mapSize.set(initialBudget.shadowMapSize, initialBudget.shadowMapSize); sun.shadow.camera.left = sun.shadow.camera.bottom = -42; sun.shadow.camera.right = sun.shadow.camera.top = 42;
-    sun.shadow.camera.near = 1; sun.shadow.camera.far = 150; sun.shadow.normalBias = .035; sun.shadow.bias = -.00008; scene.add(sun, sun.target);
+    const { sun } = addCentralParkLighting(scene, initialBudget.shadowMapSize);
 
     let composer: EffectComposer | null = null;
     if (initialBudget.postProcessing && innerWidth * innerHeight < 1_750_000) {

@@ -13,6 +13,7 @@ type Follower = {
   velocity: THREE.Vector3;
   previous: THREE.Vector3;
   gaitPhase: number;
+  groundY: number;
   trailingDistance: number;
 };
 
@@ -58,6 +59,7 @@ export class SlothFollowerParty {
         velocity: new THREE.Vector3(),
         previous: new THREE.Vector3(),
         gaitPhase: index * 1.47,
+        groundY: 0,
         trailingDistance: 1.55 + index * 1.22,
       });
     });
@@ -74,7 +76,7 @@ export class SlothFollowerParty {
 
   reset(leader: THREE.Vector3, floorY: number) {
     this.finaleStaged = false;
-    this.lastLeader.copy(leader);
+    this.lastLeader.set(leader.x, floorY, leader.z);
     this.breadcrumbs.length = 0;
     for (let index = 0; index < 54; index++) {
       this.breadcrumbs.push({ position: new THREE.Vector3(leader.x, floorY, leader.z + index * .13) });
@@ -82,6 +84,7 @@ export class SlothFollowerParty {
     this.followers.forEach((follower, index) => {
       const offset = FORMATION_OFFSETS.open[index];
       follower.root.position.set(leader.x + offset.x, floorY, leader.z + 1.55 + index * .72);
+      follower.groundY = floorY;
       follower.previous.copy(follower.root.position);
       follower.velocity.set(0, 0, 0);
     });
@@ -96,7 +99,7 @@ export class SlothFollowerParty {
     this.lastLeader.copy(point);
     this.followers.forEach((follower, index) => {
       const offset = positions[index], x = point.x + offset.x, z = point.z + offset.y;
-      follower.root.position.set(x, floorYAt(x, z), z);
+      follower.groundY = floorYAt(x, z); follower.root.position.set(x, follower.groundY, z);
       follower.root.rotation.set(0, Math.PI, 0);
       follower.velocity.set(0, 0, 0);
       follower.previous.copy(follower.root.position);
@@ -108,10 +111,11 @@ export class SlothFollowerParty {
     const planarDistance = Math.hypot(leader.x - this.lastLeader.x, leader.z - this.lastLeader.z);
     if (!this.breadcrumbs.length || planarDistance >= .12) {
       this.breadcrumbs.unshift({ position: new THREE.Vector3(leader.x, floorY, leader.z) });
-      this.lastLeader.copy(leader);
+      this.lastLeader.set(leader.x, floorY, leader.z);
       let accumulated = 0;
       for (let index = 1; index < this.breadcrumbs.length; index++) {
-        accumulated += this.breadcrumbs[index - 1].position.distanceTo(this.breadcrumbs[index].position);
+        const start = this.breadcrumbs[index - 1].position, end = this.breadcrumbs[index].position;
+        accumulated += Math.hypot(start.x - end.x, start.z - end.z);
         if (accumulated > 18) { this.breadcrumbs.length = index + 1; break; }
       }
     } else if (this.breadcrumbs[0]) {
@@ -124,11 +128,33 @@ export class SlothFollowerParty {
     let remaining = distance;
     for (let index = 1; index < this.breadcrumbs.length; index++) {
       const start = this.breadcrumbs[index - 1].position, end = this.breadcrumbs[index].position;
-      const segment = start.distanceTo(end);
+      const segment = Math.hypot(start.x - end.x, start.z - end.z);
       if (remaining <= segment) return target.copy(start).lerp(end, remaining / Math.max(segment, .001));
       remaining -= segment;
     }
     return target.copy(this.breadcrumbs[this.breadcrumbs.length - 1].position);
+  }
+
+  /**
+   * Project a follower back onto the walked route in X/Z and interpolate the
+   * breadcrumb elevation there. Staircases are narrow, so sampling the world's
+   * floor under a formation's lateral offset can otherwise select the floor
+   * above or below the stair opening and make a sloth pop vertically.
+   */
+  private routeElevationAt(position: THREE.Vector3, fallback: number) {
+    if (this.breadcrumbs.length === 1) return this.breadcrumbs[0].position.y;
+    let closestDistanceSq = Infinity, elevation = fallback;
+    for (let index = 1; index < this.breadcrumbs.length; index++) {
+      const start = this.breadcrumbs[index - 1].position, end = this.breadcrumbs[index].position;
+      const dx = end.x - start.x, dz = end.z - start.z, lengthSq = dx * dx + dz * dz;
+      if (lengthSq < .000001) continue;
+      const amount = THREE.MathUtils.clamp(((position.x - start.x) * dx + (position.z - start.z) * dz) / lengthSq, 0, 1);
+      const projectedX = start.x + dx * amount, projectedZ = start.z + dz * amount;
+      const distanceSq = (position.x - projectedX) ** 2 + (position.z - projectedZ) ** 2;
+      if (distanceSq >= closestDistanceSq) continue;
+      closestDistanceSq = distanceSq; elevation = THREE.MathUtils.lerp(start.y, end.y, amount);
+    }
+    return elevation;
   }
 
   update(
@@ -153,7 +179,7 @@ export class SlothFollowerParty {
       this.reset(leader, leaderFloor);
     }
     this.recordLeader(leader, leaderFloor);
-    const offsets = FORMATION_OFFSETS[formation], target = new THREE.Vector3(), tangent = new THREE.Vector3(), desired = new THREE.Vector3();
+    const offsets = FORMATION_OFFSETS[formation], target = new THREE.Vector3(), tangent = new THREE.Vector3(), desired = new THREE.Vector3(), toTarget = new THREE.Vector3();
     this.followers.forEach((follower, index) => {
       const compressedDistance = follower.trailingDistance * (formation === "train" ? .54 : formation === "station" ? .78 : 1);
       this.pointBehind(compressedDistance, target);
@@ -161,14 +187,23 @@ export class SlothFollowerParty {
       if (tangent.lengthSq() < .0001) tangent.set(0, 0, 1); else tangent.normalize();
       const side = new THREE.Vector3(-tangent.z, 0, tangent.x), offset = offsets[index];
       desired.copy(target).addScaledVector(side, offset.x).addScaledVector(tangent, offset.y);
-      desired.y = floorYAt(desired.x, desired.z);
-      const toTarget = desired.clone().sub(follower.root.position), distance = toTarget.length();
+      desired.y = formation === "station" || formation === "train" ? target.y : floorYAt(desired.x, desired.z);
+      toTarget.set(desired.x - follower.root.position.x, 0, desired.z - follower.root.position.z);
+      const distance = toTarget.length();
       const speed = THREE.MathUtils.clamp(distance * 2.25, 0, formation === "train" ? 1.65 : 2.35);
       if (distance > .02) follower.velocity.lerp(toTarget.normalize().multiplyScalar(speed), 1 - Math.exp(-delta * 7));
       else follower.velocity.multiplyScalar(Math.exp(-delta * 8));
+      follower.velocity.y = 0;
       follower.previous.copy(follower.root.position);
       follower.root.position.addScaledVector(follower.velocity, delta);
-      follower.root.position.y = THREE.MathUtils.lerp(follower.root.position.y, floorYAt(follower.root.position.x, follower.root.position.z), 1 - Math.exp(-delta * 14));
+      const sampledFloor = floorYAt(follower.root.position.x, follower.root.position.z);
+      const elevation = formation === "station" || formation === "train"
+        ? this.routeElevationAt(follower.root.position, desired.y)
+        : sampledFloor;
+      const planarStep = Math.hypot(follower.root.position.x - follower.previous.x, follower.root.position.z - follower.previous.z);
+      const maximumVerticalStep = Math.max(delta * .18, planarStep * 1.35);
+      follower.groundY += THREE.MathUtils.clamp(elevation - follower.groundY, -maximumVerticalStep, maximumVerticalStep);
+      follower.root.position.y = follower.groundY;
       const movedX = follower.root.position.x - follower.previous.x, movedZ = follower.root.position.z - follower.previous.z, locomoting = Math.hypot(movedX, movedZ) > .0012;
       if (locomoting) {
         const desiredYaw = Math.atan2(-movedX, -movedZ);

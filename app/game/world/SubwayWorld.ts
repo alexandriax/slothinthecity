@@ -27,6 +27,17 @@ export type SubwayServicePlan = {
   wrong: { color: string; direction: string; route: "N" | "R" | "W" | "5" };
 };
 
+export type SubwayJourneyKey =
+  | "FIFTH_TO_LEXINGTON"
+  | "LEXINGTON_TO_WEST_FARMS"
+  | "WEST_FARMS_TO_LEXINGTON"
+  | "LEXINGTON_TO_FIFTH";
+
+export type SubwayServiceEdge = {
+  destination: SubwayStationId;
+  journeyKey: SubwayJourneyKey;
+};
+
 /**
  * Stable campaign-facing service contract. Geometry, boarding checks, HUD data,
  * and train interiors all consume this plan instead of independently guessing
@@ -42,29 +53,46 @@ export function subwayServicePlan(station: SubwayStationId, travelDirection: Sub
     if (station === "LEXINGTON") return {
       correct: { color: "#fccc0a", direction: "DOWNTOWN / BROOKLYN", route: "N" },
       terminal: false,
-      wrong: { color: "#00933c", direction: "UPTOWN / THE BRONX", route: "5" },
+      wrong: { color: "#00933c", direction: "UPTOWN / BRONX", route: "5" },
     };
     return {
-      correct: { color: "#fccc0a", direction: "DOWNTOWN / BROOKLYN", route: "N" },
-      terminal: true,
-      wrong: { color: "#fccc0a", direction: "QUEENS-BOUND", route: "R" },
+      correct: { color: "#fccc0a", direction: "QUEENS-BOUND", route: "N" },
+      terminal: false,
+      wrong: { color: "#fccc0a", direction: "DOWNTOWN / BROOKLYN", route: "W" },
     };
   }
   if (station === "LEXINGTON") return {
     correct: { color: "#00933c", direction: "UPTOWN / BRONX", route: "5" },
     terminal: false,
-    wrong: { color: "#00933c", direction: "DOWNTOWN / BROOKLYN", route: "5" },
+    wrong: { color: "#fccc0a", direction: "DOWNTOWN / BROOKLYN", route: "N" },
   };
   if (station === "WEST_FARMS") return {
     correct: { color: "#00933c", direction: "UPTOWN / BRONX", route: "5" },
-    terminal: true,
-    wrong: { color: "#00933c", direction: "DOWNTOWN / BROOKLYN", route: "5" },
+    terminal: false,
+    wrong: { color: "#00933c", direction: "DOWNTOWN / MANHATTAN", route: "5" },
   };
   return {
     correct: { color: "#fccc0a", direction: "QUEENS-BOUND", route: "N" },
     terminal: false,
     wrong: { color: "#fccc0a", direction: "DOWNTOWN / BROOKLYN", route: "W" },
   };
+}
+
+/** The playable transit graph is physical station topology, not quest state. */
+export function subwayJourneyForService(station: SubwayStationId, route: string, direction: string): SubwayServiceEdge | null {
+  if (station === "FIFTH_AV" && (route === "N" || route === "R") && direction.startsWith("QUEENS")) {
+    return { destination: "LEXINGTON", journeyKey: "FIFTH_TO_LEXINGTON" };
+  }
+  if (station === "LEXINGTON" && route === "5" && direction.startsWith("UPTOWN")) {
+    return { destination: "WEST_FARMS", journeyKey: "LEXINGTON_TO_WEST_FARMS" };
+  }
+  if (station === "LEXINGTON" && (route === "N" || route === "R") && direction.startsWith("DOWNTOWN")) {
+    return { destination: "FIFTH_AV", journeyKey: "LEXINGTON_TO_FIFTH" };
+  }
+  if (station === "WEST_FARMS" && route === "5" && direction.startsWith("DOWNTOWN")) {
+    return { destination: "LEXINGTON", journeyKey: "WEST_FARMS_TO_LEXINGTON" };
+  }
+  return null;
 }
 
 export type SubwayProgressState = {
@@ -99,7 +127,9 @@ const TRAIN_STOP_Z = -10;
 
 export type BoardingOption = {
   correct: boolean;
+  destination: SubwayStationId | null;
   direction: string;
+  journeyKey: SubwayJourneyKey | null;
   route: string;
   station: SubwayStationId;
 };
@@ -609,9 +639,9 @@ function buildTrain(textures: GameTextures, route: string, direction: string, co
   root.position.x = trackX; return { root, doors, badgeMaterial, badgeTexture, interiorMaterial: openInteriorMaterial, interiorTexture: openInteriorTexture, route, direction, correct, platformSide } satisfies TrainRig;
 }
 
-function buildStation(id: SubwayStationId, textures: GameTextures, adTextures: THREE.Texture[], bronxMosaicTexture: THREE.Texture, ownedTextures: THREE.Texture[], quality: SubwayQuality, travelDirection: SubwayTravelDirection) {
+function buildStation(id: SubwayStationId, textures: GameTextures, adTextures: THREE.Texture[], bronxMosaicTexture: THREE.Texture, ownedTextures: THREE.Texture[], quality: SubwayQuality) {
   const root = new THREE.Group(); root.name = `station-${id.toLowerCase()}`;
-  const detail = SUBWAY_DETAIL[quality], radial = detail.radialSegments, returnTrip = travelDirection === "RETURN";
+  const detail = SUBWAY_DETAIL[quality], radial = detail.radialSegments;
   const isFifth = id === "FIFTH_AV", isLex = id === "LEXINGTON";
   const fabricMap = microSurfaceTexture("fabric"), leatherMap = microSurfaceTexture("leather"), skinMap = microSurfaceTexture("skin"), paintMap = microSurfaceTexture("paint"), woodMap = microSurfaceTexture("wood"), brickMap = microSurfaceTexture("brick");
   for (const texture of [fabricMap, leatherMap, skinMap, paintMap, woodMap, brickMap]) {
@@ -670,37 +700,38 @@ function buildStation(id: SubwayStationId, textures: GameTextures, adTextures: T
   }
   addStairs(root, -5.1, -1, tile, paintMap); addStairs(root, 5.1, 1, tile, paintMap);
   const title = isFifth ? "5 AV / 59 ST" : isLex ? "LEXINGTON AV / 59 ST" : "WEST FARMS SQ / E TREMONT AV";
-  const lines = returnTrip
-    ? isFifth ? ["EXIT · 5 AV / CENTRAL PARK  ↑", "RETURN COMPLETE · STREET LEVEL"]
-      : isLex ? ["TRANSFER TO DOWNTOWN  N  R  ←", "5 FROM THE BRONX · BROADWAY LINE  →"]
-        : ["DOWNTOWN / MANHATTAN  5  ←", "BRONX ZOO EXIT · BOSTON ROAD  ↑"]
-    : isFifth ? ["QUEENS-BOUND  N  R  ←", "DOWNTOWN / BROOKLYN  W  →"] : isLex ? ["TRANSFER TO UPTOWN / BRONX  4  5  6  ←", "N  R  W · BROADWAY LINE  →"] : ["EXIT · BOSTON RD / E 178 ST", "2  5 · BRONX ZOO · ASIA GATE"];
+  // Directional signage is part of the authored station, not campaign state.
+  // Keeping both choices visible lets the same geometry support the trip to
+  // the zoo and the rescued party's downtown return without a level swap.
+  const lines = isFifth
+    ? ["QUEENS-BOUND  N  R  ←", "DOWNTOWN / BROOKLYN  N  R  W  →"]
+    : isLex
+      ? ["UPTOWN / BRONX  4  5  6  ←", "DOWNTOWN BROADWAY  N  R  W  →"]
+      : ["DOWNTOWN / MANHATTAN  2  5  ←", "UPTOWN / EASTCHESTER  5  →"];
   const signTexture = stationSignTexture(title, lines, isFifth ? "#fccc0a" : isLex ? "#00933c" : "#5f8f82"); ownedTextures.push(signTexture);
   addTextPanel(root, signTexture, [0, 3.55, 15.6], [6.1, 1.3], 0).name = "primary-platform-wayfinding";
   for (const side of [-1, 1]) addTextPanel(root, signTexture, [side * 6.1, 3.72, -35], [4.8, 1.05], 0).name = "route-direction-sign";
-  const leftChoice = returnTrip
-    ? platformChoiceTexture(isFifth ? "EXIT TO CENTRAL PARK" : "DOWNTOWN / MANHATTAN", isFifth ? "5 Av / 60 St street stairs" : isLex ? "N / R one stop to Fifth Avenue" : "5 express to Lexington Av–59 St", isFifth ? ["N", "R", "W"] : isLex ? ["N", "R"] : ["5"], isLex || isFifth ? "#fccc0a" : "#00933c", "LEFT")
-    : platformChoiceTexture(
-      isFifth ? "QUEENS-BOUND" : isLex ? "UPTOWN / THE BRONX" : "BRONX ZOO / BOSTON RD",
-      isFifth ? "N / R to Lexington Av–59 St" : isLex ? "4 / 5 express and 6 local" : "Exit via north stair · Asia Gate",
-      isFifth ? ["N", "R"] : isLex ? ["4", "5", "6"] : ["2", "5"], isFifth ? "#fccc0a" : "#00933c", "LEFT",
-    );
-  const rightChoice = returnTrip
-    ? platformChoiceTexture(isFifth ? "EXIT · STREET LEVEL" : isLex ? "UPTOWN / THE BRONX" : "UPTOWN / EASTCHESTER", isFifth ? "Follow exit signs to Central Park" : "Wrong direction · stay with your friends", isFifth ? [] : ["5"], isFifth ? "#fccc0a" : "#00933c", "RIGHT")
-    : platformChoiceTexture(
-      isFifth ? "DOWNTOWN / BROOKLYN" : isLex ? "DOWNTOWN" : "E TREMONT AV / BUS",
-      isFifth ? "W and downtown Broadway service" : isLex ? "4 / 5 toward Brooklyn · 6 local" : "Street exit · local connections",
-      isFifth ? ["W"] : isLex ? ["4", "5", "6"] : ["2", "5"], isFifth ? "#fccc0a" : "#00933c", "RIGHT",
-    );
+  const leftChoice = platformChoiceTexture(
+    isFifth ? "QUEENS-BOUND" : isLex ? "UPTOWN / THE BRONX" : "DOWNTOWN / MANHATTAN",
+    isFifth ? "N / R to Lexington Av–59 St" : isLex ? "4 / 5 express and 6 local" : "2 / 5 toward Manhattan",
+    isFifth ? ["N", "R"] : isLex ? ["4", "5", "6"] : ["2", "5"], isFifth ? "#fccc0a" : "#00933c", "LEFT",
+  );
+  const rightChoice = platformChoiceTexture(
+    isFifth ? "DOWNTOWN / BROOKLYN" : isLex ? "DOWNTOWN BROADWAY" : "UPTOWN / EASTCHESTER",
+    isFifth ? "N / R / W Broadway service" : isLex ? "N / R / W toward Fifth Avenue" : "5 toward Eastchester–Dyre Av",
+    isFifth ? ["N", "R", "W"] : isLex ? ["N", "R", "W"] : ["5"], isFifth || isLex ? "#fccc0a" : "#00933c", "RIGHT",
+  );
   ownedTextures.push(leftChoice, rightChoice);
   addTextPanel(root, leftChoice, [-5.1, 6.02, 13.95], [4.15, 1.17], 0).name = "left-stair-route-choice";
   addTextPanel(root, rightChoice, [5.1, 6.02, 13.95], [4.15, 1.17], 0).name = "right-stair-route-choice";
-  const streetRoutes = isFifth ? ["N", "R", "W"] : isLex ? ["4", "5", "6"] : ["2", "5"];
+  const streetRoutes = isFifth ? ["N", "R", "W"] : isLex ? ["4", "5", "6", "N", "R", "W"] : ["2", "5"];
   const streetTexture = exitSignTexture(isFifth ? "Subway entrance · 5 Av / 60 St" : isLex ? "Lexington Av / 59 St" : "Exit · Boston Rd / E 178 St", isFifth ? "N · R · W trains · choose direction in concourse" : isLex ? "4 · 5 · 6 and N · R · W · follow platform signs" : "Bronx Zoo · Asia Gate", streetRoutes); ownedTextures.push(streetTexture);
   addStreetEntrance(root, floor, streetTexture, quality, paintMap);
-  const exitTexture = returnTrip
-    ? exitSignTexture(isFifth ? "Exit · Central Park" : isLex ? "Downtown N / R platforms" : "Downtown 5 platform", isFifth ? "5 Av / 60 St · return your friends to the trees" : isLex ? "Transfer toward Fifth Avenue" : "Manhattan-bound service", streetRoutes, isLex || isFifth ? "#fccc0a" : "#00933c")
-    : exitSignTexture(isFifth ? "N · R · W platforms" : isLex ? "Subway platforms" : "North exit · Bronx Zoo", isFifth ? "Choose Queens-bound or downtown at the signed stairs" : isLex ? "Choose uptown / The Bronx or downtown below" : "Boston Rd & E 178 St", streetRoutes, isLex ? "#00933c" : id === "WEST_FARMS" ? "#72aa92" : "#fccc0a"); ownedTextures.push(exitTexture);
+  const exitTexture = exitSignTexture(
+    isFifth ? "Street exit · Central Park" : isLex ? "Uptown and downtown platforms" : "Street exit · Bronx Zoo",
+    isFifth ? "5 Av / 60 St · N / R / W platforms below" : isLex ? "Follow signed stairs for 4 / 5 / 6 or N / R / W" : "Boston Rd & E 178 St · downtown 2 / 5 below",
+    streetRoutes, isLex ? "#00933c" : id === "WEST_FARMS" ? "#72aa92" : "#fccc0a",
+  ); ownedTextures.push(exitTexture);
   addTextPanel(root, exitTexture, [0, 6.35, 26.6], [7.4, 1.25], 0).name = "concourse-direction-sign";
   const mosaic = mosaicTexture(isFifth ? "Fifth Avenue" : isLex ? "Lexington Avenue" : "West Farms Square", isFifth ? "#80522c" : isLex ? "#2c7351" : "#426f69"); ownedTextures.push(mosaic);
   for (const side of [-1, 1]) for (const z of [-43, -20, 3, 24]) addTextPanel(root, mosaic, [side * 9.88, 3.94, z], [3.45, .5], side > 0 ? -Math.PI / 2 : Math.PI / 2);
@@ -804,7 +835,7 @@ function buildStation(id: SubwayStationId, textures: GameTextures, adTextures: T
       phase: index * 2.27 + (isLex ? 1.1 : id === "WEST_FARMS" ? 2.2 : 0),
       side: x < 0 ? -1 : 1,
     });
-    if (returnTrip && id === "WEST_FARMS" && z <= 11) passengerFlows[passengerFlows.length - 1].mode = index % 3 === 0 ? "BOARD" : index % 3 === 1 ? "ALIGHT" : "WAIT";
+    if (id === "WEST_FARMS" && z <= 11) passengerFlows[passengerFlows.length - 1].mode = index % 3 === 0 ? "BOARD" : index % 3 === 1 ? "ALIGHT" : "WAIT";
   });
   if (id === "WEST_FARMS") {
     const artWallMaterial = new THREE.MeshStandardMaterial({ color: "#26312f", roughness: .72, map: paintMap, bumpMap: paintMap, bumpScale: .012 });
@@ -973,27 +1004,17 @@ export class SubwayWorld {
   }
 
   setStation(id: SubwayStationId, travelDirection: SubwayTravelDirection = this.travelDirection) {
-    const directionChanged = this.travelDirection !== travelDirection;
-    if (directionChanged && this.stations.has(id)) this.disposeStation(id);
     this.travelDirection = travelDirection;
     for (const stationId of [...this.stations.keys()]) if (stationId !== id) this.disposeStation(stationId);
     if (!this.stations.has(id)) {
       const stationTextures: THREE.Texture[] = [];
-      const station = buildStation(id, this.gameTextures, this.adTextures, this.bronxMosaicTexture, stationTextures, this.quality, this.travelDirection);
+      const station = buildStation(id, this.gameTextures, this.adTextures, this.bronxMosaicTexture, stationTextures, this.quality);
       this.stations.set(id, station); this.stationOwnedTextures.set(id, stationTextures); this.root.add(station.root);
     }
     this.stationId = id;
     const plan = this.servicePlan; this.correctTrain.root.visible = this.wrongTrain.root.visible = !plan.terminal; this.serviceCycle = -1;
-    if (this.travelDirection === "OUTBOUND" && id === "LEXINGTON") {
-      this.configureTrain(this.correctTrain, "5", "UPTOWN / BRONX", true, "#00933c");
-      this.configureTrain(this.wrongTrain, "5", "DOWNTOWN / BROOKLYN", false, "#00933c");
-    } else if (this.travelDirection === "OUTBOUND" && id === "FIFTH_AV") {
-      this.configureTrain(this.correctTrain, "N", "QUEENS-BOUND", true, "#fccc0a");
-      this.configureTrain(this.wrongTrain, "W", "DOWNTOWN / BROOKLYN", false, "#fccc0a");
-    } else {
-      this.configureTrain(this.correctTrain, plan.correct.route, plan.correct.direction, true, plan.correct.color);
-      this.configureTrain(this.wrongTrain, plan.wrong.route, plan.wrong.direction, false, plan.wrong.color);
-    }
+    this.configureTrain(this.correctTrain, plan.correct.route, plan.correct.direction, true, plan.correct.color);
+    this.configureTrain(this.wrongTrain, plan.wrong.route, plan.wrong.direction, false, plan.wrong.color);
     this.setDoorAmount(this.correctTrain, 0); this.setDoorAmount(this.wrongTrain, 0); this.doorOpenAmount = 0; this.doorsOpen = false; this.applyFareState();
     this.correctTrain.root.position.z = -TRAIN_APPROACH_DISTANCE; this.wrongTrain.root.position.z = TRAIN_APPROACH_DISTANCE;
     this.root.updateMatrixWorld(true); return this;
@@ -1097,6 +1118,18 @@ export class SubwayWorld {
     return best;
   }
 
+  private boardingOptionFor(train: TrainRig): BoardingOption {
+    const edge = subwayJourneyForService(this.stationId, train.route, train.direction);
+    return {
+      correct: train.correct,
+      destination: edge?.destination ?? null,
+      direction: train.direction,
+      journeyKey: edge?.journeyKey ?? null,
+      route: train.route,
+      station: this.stationId,
+    };
+  }
+
   floorHeight(x: number, z: number) {
     if (z >= STREET_STAIR_TOP_Z) return STREET_FLOOR_Y;
     if (z >= STREET_STAIR_BOTTOM_Z && this.streetStaircaseAt(x)) return this.stairSurface(z, STREET_STAIR_BOTTOM_Z, STREET_STAIR_TOP_Z, CONCOURSE_FLOOR_Y, STREET_FLOOR_Y, 22);
@@ -1137,38 +1170,21 @@ export class SubwayWorld {
   update(elapsed: number) {
     const delta = Math.min(Math.max(elapsed - this.lastUpdateElapsed, 0), .08);
     this.lastUpdateElapsed = elapsed;
-    if (this.travelDirection === "OUTBOUND" && this.stationId === "WEST_FARMS") {
-      this.trainPhase = "AWAY";
-      this.doorsOpen = false;
-      this.secondsToTrain = 0;
-      this.correctTrain.root.visible = this.wrongTrain.root.visible = false;
-      this.updateStationPassengerFlows(elapsed % SUBWAY_TRAIN_INTERVAL_SECONDS, delta);
-      return;
-    }
-    if (this.servicePlan.terminal) {
-      this.trainPhase = "AWAY";
-      this.doorsOpen = false;
-      this.secondsToTrain = 0;
-      this.correctTrain.root.visible = this.wrongTrain.root.visible = false;
-      // The terminal has no active train, but its visitors still need the same
-      // walk/pause state machine as every other station.
-      this.updateStationPassengerFlows(elapsed % SUBWAY_TRAIN_INTERVAL_SECONDS, delta);
-      return;
-    }
     const cycleNumber = Math.floor(elapsed / SUBWAY_TRAIN_INTERVAL_SECONDS);
     if (cycleNumber !== this.serviceCycle) {
       this.stations.get(this.stationId)?.passengerFlows.forEach(flow => { flow.exchangeComplete = false; });
     }
-    if (this.travelDirection === "OUTBOUND" && this.stationId === "FIFTH_AV" && cycleNumber !== this.serviceCycle) {
+    if (this.stationId === "FIFTH_AV" && cycleNumber !== this.serviceCycle) {
       // Successive 30-second arrivals alternate the two valid Broadway-line
       // services, so the authored N / R objective is true in play as well as UI.
       const route = cycleNumber % 2 === 0 ? "N" : "R";
       this.configureTrain(this.correctTrain, route, "QUEENS-BOUND", true, "#fccc0a");
-    } else if (this.travelDirection === "RETURN" && this.stationId === "LEXINGTON" && cycleNumber !== this.serviceCycle) {
-      // The return transfer accepts either downtown Broadway service used by
-      // the authored outbound leg, now running west toward Fifth Avenue.
+    } else if (this.stationId === "LEXINGTON" && cycleNumber !== this.serviceCycle) {
+      // The physical downtown Broadway service remains present in either quest
+      // direction; only which train is recommended changes with campaign state.
       const route = cycleNumber % 2 === 0 ? "N" : "R";
-      this.configureTrain(this.correctTrain, route, "DOWNTOWN / BROOKLYN", true, "#fccc0a");
+      const broadwayTrain = this.travelDirection === "RETURN" ? this.correctTrain : this.wrongTrain;
+      this.configureTrain(broadwayTrain, route, "DOWNTOWN / BROOKLYN", broadwayTrain === this.correctTrain, "#fccc0a");
     }
     this.serviceCycle = cycleNumber;
     const cycle = elapsed % SUBWAY_TRAIN_INTERVAL_SECONDS;
@@ -1284,7 +1300,7 @@ export class SubwayWorld {
       if (previousDepth > .16 || depth < .06 || depth > 1.02 || Math.abs(player.z - door.z) > .78) continue;
       if (!boarded || depth < boarded.depth) boarded = { depth, train };
     }
-    return boarded ? { correct: boarded.train.correct, direction: boarded.train.direction, route: boarded.train.route, station: this.stationId } : null;
+    return boarded ? this.boardingOptionFor(boarded.train) : null;
   }
 
   /** A wider non-boarding zone for optional UI hints; crossing the threshold is handled by boardingOption. */
@@ -1297,7 +1313,7 @@ export class SubwayWorld {
       if (distance > 1.35 || nearest && nearest.distance <= distance) continue;
       nearest = { distance, train };
     }
-    return nearest ? { correct: nearest.train.correct, direction: nearest.train.direction, route: nearest.train.route, station: this.stationId } : null;
+    return nearest ? this.boardingOptionFor(nearest.train) : null;
   }
 
   dispose() {

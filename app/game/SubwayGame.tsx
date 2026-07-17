@@ -48,7 +48,7 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
   useEffect(() => {
     const host = mount.current; if (!host) return;
     let transitStage: TransitStage = "FIFTH_AV", currentStation: SubwayStationId = "FIFTH_AV", travelDirection: SubwayTravelDirection = "OUTBOUND", stationClock = 0, gameTime = 0, actionRequested = false;
-    let rideStartedAt = 0, rideUntil = 0, boarded: BoardingOption | null = null, interiorWorld: TrainInteriorWorld | null = null, zooWorld: BronxZooWorld | null = null, parkReturnWorld: CentralParkReturnWorld | null = null;
+    let boarded: BoardingOption | null = null, interiorWorld: TrainInteriorWorld | null = null, zooWorld: BronxZooWorld | null = null, parkReturnWorld: CentralParkReturnWorld | null = null;
     let lastHud = 0, lastFootstep = 0, yaw = 0, pitch = -.04, dragging = false, lastTouchX = 0, lastTouchY = 0, transitionTimer: number | null = null;
     let previousTrainPhase = "AWAY", previousDoorsOpen = false, previousStreetMix = 1;
     const budget = quality.getRenderBudget(), scene = new THREE.Scene(), interiorColor = new THREE.Color("#303936"), streetColor = new THREE.Color("#8aa9ad"), fogInterior = new THREE.Color("#303936"), fogStreet = new THREE.Color("#b7c7c1"); scene.background = interiorColor.clone(); scene.fog = new THREE.FogExp2("#303936", .009);
@@ -98,28 +98,37 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
       if (!preserveAnnouncements) audio.cancelTransitAnnouncements(); audio.setScene(station === "WEST_FARMS" ? "west-farms" : "subway-station", { transitionSeconds: 1.15, intensity: travelDirection === "RETURN" ? .72 : .62 }); if (station !== "FIFTH_AV" && travelDirection === "OUTBOUND") audio.playTransitAnnouncement(station === "LEXINGTON" ? "lex_5_platform" : "west_farms_arrival", { delaySeconds: .45, dedupeSeconds: 0 }); showTransition(station === "FIFTH_AV" ? "5 Av / 59 St" : station === "LEXINGTON" ? "Lexington Av / 59 St" : "West Farms Sq · E Tremont Av"); showToast(message, 4600);
     }
     function finishRide() {
-      if (!boarded) return;
-      if (!boarded.correct) { const stationLabel = currentStation === "FIFTH_AV" ? "5 Av / 59 St" : currentStation === "LEXINGTON" ? "Lexington Av / 59 St" : "West Farms Sq–E Tremont Av"; audio.playFailure(); checkpoint(currentStation, `Wrong train — checkpoint restored at ${stationLabel}. Wait for the next correct service.`, true, false, true); return; }
+      if (!boarded?.destination) return;
       audio.playQuestComplete();
-      if (travelDirection === "RETURN") {
-        if (currentStation === "WEST_FARMS") checkpoint("LEXINGTON", "Lexington Av / 59 St — keep your friends close and transfer to a downtown N or R train for Fifth Avenue", false, true, false);
-        else checkpoint("FIFTH_AV", "5 Av / 59 St — lead the rescued sloths up the street stairs and back into Central Park", false, true, true);
-      } else if (currentStation === "FIFTH_AV") checkpoint("LEXINGTON", "Lexington Av / 59 St — follow the paid-concourse signs and choose the uptown 5 platform", false, true, false);
-      else checkpoint("WEST_FARMS", "West Farms Sq–E Tremont Av — follow the north exit toward the Bronx Zoo", false, true, true);
+      const destination = boarded.destination;
+      const message = destination === "LEXINGTON"
+        ? travelDirection === "RETURN"
+          ? "Lexington Av / 59 St — keep your friends close and take a downtown N or R train for Fifth Avenue"
+          : "Lexington Av / 59 St — take the uptown 5 for the Bronx, or a downtown N / R to ride back to Fifth Avenue"
+        : destination === "WEST_FARMS"
+          ? travelDirection === "RETURN"
+            ? "West Farms Sq–E Tremont Av — the downtown 5 returns to Manhattan whenever you are ready"
+            : "West Farms Sq–E Tremont Av — follow the north exit toward the Bronx Zoo, or ride the downtown 5 back"
+          : travelDirection === "RETURN"
+            ? "5 Av / 59 St — lead the rescued sloths up the street stairs and back into Central Park"
+            : "5 Av / 59 St — take a Queens-bound N or R to continue toward the Bronx"
+      checkpoint(destination, message, false, true, destination !== "LEXINGTON");
     }
     function failRide(event: Extract<TrainInteriorEvent, { type: "PUSHED_OUT" | "MISSED_STOP" }>) {
       audio.playFailure(); const message = event.type === "PUSHED_OUT" ? `The crowd carried you and the rescued group onto the platform at ${event.stop}. Checkpoint restored — wait for the next train.` : `You missed ${event.stop}. Checkpoint restored — wait for the next train.`; checkpoint(currentStation, message, true, false, true);
     }
     function startInterior(option: BoardingOption) {
-      if (!stationWorld) return;
-      const base = travelDirection === "RETURN"
-        ? currentStation === "WEST_FARMS" ? TRAIN_INTERIOR_JOURNEYS.WEST_FARMS_TO_LEXINGTON : TRAIN_INTERIOR_JOURNEYS.LEXINGTON_TO_FIFTH
-        : currentStation === "FIFTH_AV" ? TRAIN_INTERIOR_JOURNEYS.FIFTH_TO_LEXINGTON : TRAIN_INTERIOR_JOURNEYS.LEXINGTON_TO_WEST_FARMS;
+      if (!stationWorld || !option.journeyKey || !option.destination) return;
+      const base = TRAIN_INTERIOR_JOURNEYS[option.journeyKey];
       const journey: TrainInteriorJourney = { ...base, route: option.route as TrainInteriorJourney["route"] };
       subwayProgress = stationWorld.progressState; stationWorld.dispose(); stationWorld = null; interiorWorld = new TrainInteriorWorld(scene, textures, journey, quality.getSnapshot().activeLevel === "low" || quality.getSnapshot().activeLevel === "medium" ? "mobile" : "desktop"); player.copy(interiorWorld.spawn); velocity.set(0, 0, 0); yaw = 0; pitch = -.035; keys.clear(); setTransitStage("RIDING"); audio.setScene("moving-train", { transitionSeconds: .7, intensity: .78 }); audio.playTrainChime("doors-closing"); audio.playTrainDoors("close"); audio.playTransitAnnouncement("stand_clear_doors", { delaySeconds: .35, dedupeSeconds: 4 }); showTransition(`${option.route} train · ${option.direction}`);
-      const rideMessage = travelDirection === "RETURN"
-        ? currentStation === "WEST_FARMS" ? "Keep the four rescued sloths together through E 180 St, 125 St, and 86 St, then exit at Lexington Avenue." : "One final train ride — exit with every friend at Fifth Avenue for Central Park."
-        : currentStation === "FIFTH_AV" ? "Stay clear until Lexington Av. Use any illuminated platform-side door when it appears." : "Stay clear at 86 St, 125 St, and E 180 St. Use any illuminated platform-side door at West Farms.";
+      const rideMessage = option.journeyKey === "FIFTH_TO_LEXINGTON"
+        ? "Ride one stop to Lexington Avenue. Use any illuminated platform-side door when it appears."
+        : option.journeyKey === "LEXINGTON_TO_WEST_FARMS"
+          ? "Stay clear at 86 St, 125 St, and E 180 St. Exit at West Farms for the Bronx Zoo."
+          : option.journeyKey === "WEST_FARMS_TO_LEXINGTON"
+            ? "Keep the rescued sloths together through E 180 St, 125 St, and 86 St, then exit at Lexington Avenue."
+            : "Ride one stop downtown and exit with every friend at Fifth Avenue for Central Park.";
       const nextStop = journey.intermediateStops[0]?.name ?? journey.destination.name;
       setHud({ bearing: 0, distance: 0, motion: "RIDING", objective: rideMessage, objectiveShort: "ON TRAIN", prompt: "", promptKey: "", station: `${option.route} · NEXT ${nextStop.toUpperCase()}`, status: `NEXT STOP · ${nextStop.toUpperCase()}`, value: "ONBOARD", waypoint: "Center aisle", wayfinding: false });
       showToast(rideMessage, 6200);
@@ -127,9 +136,12 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
     }
     function boardThroughOpenDoor(option: BoardingOption) {
       if (transitStage === "RIDING") return;
-      boarded = option; velocity.set(0, 0, 0);
-      if (option.correct) { startInterior(option); return; }
-      rideStartedAt = gameTime; rideUntil = gameTime + 5.8; yaw = 0; pitch = -.03; keys.clear(); setTransitStage("RIDING"); audio.setScene("moving-train", { transitionSeconds: .6, intensity: .8 }); showTransition(`${option.route} train · ${option.direction}`); showToast(`Boarded ${option.route} ${option.direction.toLowerCase()} — this is the wrong service`, 3600);
+      if (!option.journeyKey || !option.destination) {
+        player.copy(playerBeforeMovement); velocity.set(0, 0, 0);
+        showToast(`${option.route} ${option.direction.toLowerCase()} continues beyond this playable route. Cross to the signed platform for the next in-city stop.`, 4200);
+        return;
+      }
+      boarded = option; velocity.set(0, 0, 0); startInterior(option);
     }
     function enterBronxZoo() {
       if (!stationWorld || transitStage === "BRONX_ZOO" || transitStage === "COMPLETE") return null;
@@ -147,7 +159,10 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
     }
     function enterCentralPark() {
       if (!stationWorld || travelDirection !== "RETURN" || currentStation !== "FIFTH_AV") return null;
-      stationWorld.dispose(); stationWorld = null; scene.background = new THREE.Color("#879681"); scene.fog = new THREE.FogExp2("#8f9c87", .0032); renderer.toneMappingExposure = 1.02; parkReturnWorld = new CentralParkReturnWorld(scene, textures, quality.getSnapshot().profile.foliageDensity); player.copy(parkReturnWorld.spawn); velocity.set(0, 0, 0); yaw = 0; pitch = -.04; rescuedParty.reset(player, parkReturnWorld.floorHeight(player.x, player.z)); setTransitStage("CENTRAL_PARK"); setReturnLeg("CENTRAL_PARK"); setZooPhase("HOME_GROVE"); audio.setScene("central-park", { transitionSeconds: 1.5, intensity: .82 }); showTransition("Central Park · Home Grove"); showToast("You made it back. Bring every rescued sloth to the marked grove of trees.", 6200);
+      stationWorld.dispose(); stationWorld = null; parkReturnWorld = new CentralParkReturnWorld(scene, textures, quality.getSnapshot().profile.foliageDensity);
+      const presentation = parkReturnWorld.environmentSettings;
+      scene.background = new THREE.Color(presentation.background); scene.fog = new THREE.FogExp2(presentation.fog, presentation.fogDensity); renderer.toneMappingExposure = presentation.toneMappingExposure; camera.far = presentation.cameraFar; camera.updateProjectionMatrix();
+      player.copy(parkReturnWorld.spawn); velocity.set(0, 0, 0); yaw = parkReturnWorld.spawnYaw; pitch = -.04; rescuedParty.reset(player, parkReturnWorld.floorHeight(player.x, player.z)); setTransitStage("CENTRAL_PARK"); setReturnLeg("CENTRAL_PARK"); setZooPhase("HOME_GROVE"); audio.setScene("central-park", { transitionSeconds: 1.5, intensity: .82 }); showTransition("Central Park · Home Grove"); showToast("You made it back. Bring every rescued sloth to the grove beside the trees where your journey began.", 6200);
       const distance = Math.hypot(parkReturnWorld.sanctuaryTarget.x - player.x, parkReturnWorld.sanctuaryTarget.z - player.z);
       setHud({ bearing: 0, distance, motion: "HOMEWARD", objective: "Bring all four rescued sloths to the Home Grove", objectiveShort: "HOME GROVE", prompt: "", promptKey: "", station: "CENTRAL PARK · HOME GROVE", status: "FOUR FRIENDS FOLLOWING", value: `${Math.round(distance)}M`, waypoint: "Home Grove sanctuary", wayfinding: true });
       return parkReturnWorld;
@@ -160,7 +175,15 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
       if (!event) return;
       if (event.type === "PUSHED_OUT" || event.type === "MISSED_STOP") { failRide(event); return; }
       if (event.type === "INTERMEDIATE_STOP") { audio.playTrainChime("arrival"); audio.playTrainDoors("open"); audio.playCrowdBed(.9, 3.2); const cue = event.stop.startsWith("86") ? "stop_86" : event.stop.startsWith("125") ? "stop_125" : "stop_e180"; audio.playTransitAnnouncement(cue, { delaySeconds: .25, dedupeSeconds: 4 }); showToast(`${event.stop} — stand back from the doors while passengers exit`, 3600); }
-      else if (event.type === "DESTINATION_READY") { audio.playTrainChime("transfer"); audio.playTrainDoors("open"); if (travelDirection === "OUTBOUND") audio.playTransitAnnouncement(currentStation === "FIFTH_AV" ? "lex_arrival_transfer" : "west_farms_arrival", { delaySeconds: .2, dedupeSeconds: 4 }); else if (currentStation === "WEST_FARMS") audio.playTransitAnnouncement("lex_arrival_transfer", { delaySeconds: .2, dedupeSeconds: 4 }); showToast(`${event.stop} — use any illuminated platform-side door and make sure every sloth exits with you`, 4300); }
+      else if (event.type === "DESTINATION_READY") {
+        audio.playTrainChime("transfer"); audio.playTrainDoors("open");
+        let destinationCallout = `${event.stop} — use any illuminated platform-side door and make sure every sloth exits with you`;
+        if (boarded?.journeyKey === "FIFTH_TO_LEXINGTON") audio.playTransitAnnouncement("lex_arrival_transfer", { delaySeconds: .2, dedupeSeconds: 4 });
+        else if (boarded?.journeyKey === "LEXINGTON_TO_WEST_FARMS") audio.playTransitAnnouncement("west_farms_arrival", { delaySeconds: .2, dedupeSeconds: 4 });
+        else if (boarded?.journeyKey === "WEST_FARMS_TO_LEXINGTON") destinationCallout = `${event.stop} — exit with every sloth, then transfer to a downtown N or R train for 5 Av / 59 St`;
+        else if (boarded?.journeyKey === "LEXINGTON_TO_FIFTH") destinationCallout = `${event.stop} — exit with every sloth and follow the signed street stairs to Central Park`;
+        showToast(destinationCallout, 4300);
+      }
       else if (event.type === "WRONG_DOOR") showToast("That is not the platform side — follow the illuminated doorway", 2600);
       else if (event.type === "ARRIVED") finishRide();
     }
@@ -175,14 +198,14 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
       // illuminated vestibule instead of the blank side of an adjacent car.
       player.set(-3.72, 1.48, -10); yaw = -Math.PI / 2;
     }
-    if (qaInput === "trainride" && stationWorld) startInterior({ correct: true, direction: "QUEENS-BOUND", route: "N", station: "FIFTH_AV" });
-    if (qaInput === "trainride5" && stationWorld) startInterior({ correct: true, direction: "UPTOWN / BRONX", route: "5", station: "LEXINGTON" });
+    if (qaInput === "trainride" && stationWorld) startInterior({ correct: true, destination: "LEXINGTON", direction: "QUEENS-BOUND", journeyKey: "FIFTH_TO_LEXINGTON", route: "N", station: "FIFTH_AV" });
+    if (qaInput === "trainride5" && stationWorld) startInterior({ correct: true, destination: "WEST_FARMS", direction: "UPTOWN / BRONX", journeyKey: "LEXINGTON_TO_WEST_FARMS", route: "5", station: "LEXINGTON" });
     if (["bronxentry", "bronxpolar", "bronxbirds", "bronxmonkeys", "bronxsloths", "rescuefollowers"].includes(qaInput ?? "") && stationWorld) {
       const reviewWorld = enterBronxZoo();
       if (reviewWorld) {
         if (qaInput !== "bronxentry") reviewWorld.setTicketCollected(true);
         if (qaInput === "bronxentry") player.copy(reviewWorld.ticketReviewSpawn);
-        else if (qaInput === "bronxpolar") { player.set(29.5, reviewWorld.floorHeight(29.5, -40) + 1.48, -40); yaw = -1.02; }
+        else if (qaInput === "bronxpolar") { player.set(27, reviewWorld.floorHeight(27, -51) + 1.48, -51); yaw = -1.82; }
         else if (qaInput === "bronxbirds") { player.set(-29.5, reviewWorld.floorHeight(-29.5, -39) + 1.48, -39); yaw = .84; }
         else if (qaInput === "bronxmonkeys") { player.set(-29.5, reviewWorld.floorHeight(-29.5, -88) + 1.48, -88); yaw = .8; }
         else player.copy(reviewWorld.habitatReviewSpawn);
@@ -197,8 +220,8 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
       const station: SubwayStationId = qaInput === "returnwestfarms" || qaInput === "returntrain5" ? "WEST_FARMS" : "LEXINGTON";
       checkpoint(station, "QA checkpoint · rescued friends return journey", false, false, true);
       rescuedParty.setActive(true, player, player.y - 1.48); reflectRescueState("RETURN_TRANSIT");
-      if (qaInput === "returntrain5" && stationWorld) startInterior({ correct: true, direction: "DOWNTOWN / MANHATTAN", route: "5", station: "WEST_FARMS" });
-      else if (qaInput === "returntrainnr" && stationWorld) startInterior({ correct: true, direction: "DOWNTOWN / BROOKLYN", route: "N", station: "LEXINGTON" });
+      if (qaInput === "returntrain5" && stationWorld) startInterior({ correct: true, destination: "LEXINGTON", direction: "DOWNTOWN / MANHATTAN", journeyKey: "WEST_FARMS_TO_LEXINGTON", route: "5", station: "WEST_FARMS" });
+      else if (qaInput === "returntrainnr" && stationWorld) startInterior({ correct: true, destination: "FIFTH_AV", direction: "DOWNTOWN / BROOKLYN", journeyKey: "LEXINGTON_TO_FIFTH", route: "N", station: "LEXINGTON" });
       else if (qaInput === "homecoming" || qaInput === "finale") {
         checkpoint("FIFTH_AV", "QA checkpoint · Fifth Avenue return exit", false, false, true); const reviewPark = enterCentralPark();
         if (qaInput === "finale" && reviewPark) { player.copy(reviewPark.sanctuaryTarget).setY(reviewPark.floorHeight(reviewPark.sanctuaryTarget.x, reviewPark.sanctuaryTarget.z) + 1.48); rescuedParty.reset(player, reviewPark.floorHeight(player.x, player.z)); completeMission(); }
@@ -219,12 +242,6 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
         camera.position.copy(player).add(snapshot.cameraOffset); camera.rotation.set(THREE.MathUtils.clamp(pitch, -.74, .74), yaw, snapshot.cameraRoll); sloth.animate(gameTime, velocity.length(), false);
         if (moving && gameTime - lastFootstep > .46) { lastFootstep = gameTime; audio.playFootstep("metal", Math.min(1, velocity.length() / 1.82)); }
         if (gameTime - lastHud > .1) { lastHud = gameTime; const destinationPhase = snapshot.objective.includes("illuminated"); setHud({ bearing, distance, motion: snapshot.phase === "DWELL" ? "DOORS OPEN" : snapshot.phase === "APPROACHING" ? "BRAKING" : "RIDING", objective: snapshot.objective, objectiveShort: destinationPhase ? "EXIT" : "ON TRAIN", prompt: snapshot.prompt, promptKey: snapshot.prompt ? "E" : "", station: `${boarded?.route ?? interiorWorld.journey.route} · NEXT ${snapshot.stop.toUpperCase()}`, status: snapshot.phase === "DWELL" ? `${snapshot.stop.toUpperCase()} · DOORS OPEN` : snapshot.phase === "APPROACHING" ? `APPROACHING ${snapshot.stop.toUpperCase()}` : `NEXT STOP · ${snapshot.stop.toUpperCase()}`, value: `${snapshot.secondsRemaining}S`, waypoint: destinationPhase ? `${snapshot.destination} exit` : "Center aisle", wayfinding: destinationPhase }); }
-      } else if (transitStage === "RIDING" && boarded && stationWorld) {
-        const rideDuration = Math.max(.001, rideUntil - rideStartedAt), rideProgress = THREE.MathUtils.clamp((gameTime - rideStartedAt) / rideDuration, 0, 1); stationWorld.updateRide(boarded, rideProgress, gameTime);
-        const train = boarded.correct ? stationWorld.correctTrain : stationWorld.wrongTrain, interior = new THREE.Vector3(0, 1.5, .2); train.root.localToWorld(interior); camera.position.copy(interior); camera.rotation.set(THREE.MathUtils.clamp(pitch, -.68, .68), yaw, Math.sin(gameTime * 9) * .003); sloth.animate(gameTime, .2, false);
-        if (rescuedParty.isActive) rescuedParty.update(gameTime, delta, interior, () => 0, "train");
-        if (gameTime - lastHud > .12) { lastHud = gameTime; setHud({ bearing: 0, distance: 0, motion: "WRONG TRAIN", objective: "This service is headed the wrong way", objectiveShort: "WRONG TRAIN", prompt: "", promptKey: "", station: `${boarded.route} · ${boarded.direction}`, status: "CHECKPOINT READY", value: `${Math.max(0, Math.ceil(rideUntil - gameTime))}S`, waypoint: "Return to platform", wayfinding: false }); }
-        if (gameTime >= rideUntil) finishRide();
       } else if (transitStage !== "COMPLETE" && stationWorld) {
         stationClock += delta; stationWorld.update(stationClock);
         if (stationWorld.trainPhase !== previousTrainPhase && stationWorld.trainPhase === "APPROACHING") {

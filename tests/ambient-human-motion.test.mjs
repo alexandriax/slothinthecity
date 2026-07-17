@@ -31,5 +31,6 @@ test("park, station, and zoo worlds advance authored walker state every frame", 
   assert.match(subway, /mode: "ALIGHT" \| "AMBIENT" \| "BOARD" \| "WAIT"/);
   assert.match(subway, /const walkSeconds = 2\.7/);
   assert.match(subway, /flow\.group\.visible && locomoting \? "walk" : "idle"/);
-  assert.match(subway, /this\.updateStationPassengerFlows\(elapsed % SUBWAY_TRAIN_INTERVAL_SECONDS, delta\)/);
+  assert.match(subway, /const cycle = elapsed % SUBWAY_TRAIN_INTERVAL_SECONDS/);
+  assert.match(subway, /this\.updateStationPassengerFlows\(cycle, delta\)/);
 });
