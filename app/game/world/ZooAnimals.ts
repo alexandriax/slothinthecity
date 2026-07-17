@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { markTextureCloneReadyAfterSource, type GameTextures } from "../rendering/textures";
+import { authorZooAnimalRig } from "./animals/AuthoredZooAnimalAssets";
 
 export type ZooAnimalRig = {
   root: THREE.Group;
@@ -12,6 +13,7 @@ export type ZooAnimalMotionMode = "terrestrial" | "aquatic" | "arboreal" | "perc
 export type ZooHabitatMotionOptions = {
   mode: ZooAnimalMotionMode;
   radius: number;
+  animationSpeed?: number;
   speed?: number;
   phase?: number;
   verticalRange?: number;
@@ -34,9 +36,9 @@ export type ZooAnimalGeometryMetrics = {
 
 /**
  * Runtime fidelity audit used by the zoo QA route and regression tests. The
- * authored human LOD0s establish a 60k--76k triangle close-camera ceiling;
- * hero animals deliberately land below that, but retain enough silhouette
- * density and articulated anatomy to sit beside those characters convincingly.
+ * authored human LOD0s establish the close-camera comparison bar. Production
+ * animals now report their imported manifest geometry independently because
+ * silhouette needs vary substantially by species and fur/skin treatment.
  */
 export function measureZooAnimalGeometry(root: THREE.Object3D): ZooAnimalGeometryMetrics {
   const metrics: ZooAnimalGeometryMetrics = { triangles: 0, vertices: 0, meshes: 0, articulatedJoints: 0 };
@@ -220,6 +222,10 @@ export function configureAutonomousZooAnimal(rig: ZooAnimalRig, options: ZooHabi
         tangent.copy(next).sub(rig.root.position);
         if (tangent.lengthSq() > .00001) rig.root.rotation.y = Math.atan2(-tangent.x, -tangent.z);
       } else rig.root.rotation.y += Math.atan2(Math.sin(baseYaw - rig.root.rotation.y), Math.cos(baseYaw - rig.root.rotation.y)) * (1 - Math.exp(-delta * 2.4));
+      // Locomotion speed controls the habitat route; clip speed is a separate
+      // authored-behavior choice so nearby animals do not march in lockstep.
+      rig.root.userData.animationSpeed = THREE.MathUtils.clamp(options.animationSpeed ?? 1, .35, 1.8);
+      rig.root.userData.habitatMotionPhase = phase;
       rig.update(elapsed, delta);
     },
   };
@@ -361,7 +367,7 @@ export function createGaryPolarBear(textures: GameTextures, quality: number): Zo
   shadows(root, quality > .62);
   stampPremiumAnimal(root, ["idle", "walk", "forage"]);
   const phase = .37;
-  return {
+  return authorZooAnimalRig({
     root,
     ownedTextures: [polarSurface],
     update(elapsed) {
@@ -376,7 +382,7 @@ export function createGaryPolarBear(textures: GameTextures, quality: number): Zo
         pivot.rotation.z = state === "forage" && index < 2 ? Math.sin(elapsed * .72 + index) * .035 : 0;
       });
     },
-  };
+  }, { species: "gary-polar-bear", quality, defaultMotion: "idle", phaseOffset: .23 });
 }
 
 function createPerchedBird(
@@ -527,7 +533,12 @@ export function createSunConure(textures: GameTextures, quality: number) {
   }, 1.08);
   bird.root.name = "sun-conure-hero-bird";
   bird.root.userData.commonName = "Sun conure";
-  return bird;
+  return authorZooAnimalRig(bird, {
+    species: "sun-conure",
+    quality,
+    defaultMotion: "perch",
+    phaseOffset: .61,
+  });
 }
 
 export function createBlueAndGoldMacaw(textures: GameTextures, quality: number) {
@@ -669,7 +680,7 @@ export function createSpiderMonkey(textures: GameTextures, quality: number, vari
   shadows(root, quality > .72);
   stampPremiumAnimal(root, ["perch", "swing", "forage", "walk"]);
   const phase = variant * 1.73;
-  return {
+  return authorZooAnimalRig({
     root,
     ownedTextures: [monkeySurface],
     update(elapsed) {
@@ -692,7 +703,12 @@ export function createSpiderMonkey(textures: GameTextures, quality: number, vari
       body.position.y = 1.18 + (state === "walk" ? Math.abs(Math.sin(elapsed * 3.4 + phase)) * .025 : 0);
       tail.rotation.y = Math.sin(elapsed * (state === "swing" ? 1.2 : .42) + phase) * (state === "swing" ? .22 : .08);
     },
-  };
+  }, {
+    species: "spider-monkey",
+    quality,
+    defaultMotion: variant === 0 ? "perch" : "walk",
+    phaseOffset: variant * 1.37,
+  });
 }
 
 export function createSeaLion(textures: GameTextures, quality: number, variant = 0): ZooAnimalRig {
@@ -776,15 +792,24 @@ export function createSeaLion(textures: GameTextures, quality: number, variant =
   shadows(root, quality > .72);
   stampPremiumAnimal(root, ["swim", "surface", "dive"]);
   const phase = variant * 2.1;
-  return { root, ownedTextures: [seaLionSurface], update(elapsed) {
-    const state = root.userData.animationState as string | undefined;
-    headPivot.rotation.y = Math.sin(elapsed * .45 + phase) * (state === "surface" ? .3 : .16);
-    headPivot.rotation.x = state === "dive" ? .22 : Math.sin(elapsed * .61 + phase) * .035;
-    body.position.y = .5 + Math.sin(elapsed * (state === "swim" ? 2.1 : .9) + phase) * (state === "swim" ? .055 : .018);
-    body.rotation.z = state === "swim" ? Math.sin(elapsed * 2.1 + phase) * .08 : 0;
-    flippers.forEach((flipper, index) => { flipper.rotation.x = state === "swim" ? Math.sin(elapsed * 3.4 + index * Math.PI) * .34 : 0; });
-    hindFlippers.forEach((flipper, index) => { flipper.rotation.y = state === "swim" ? Math.sin(elapsed * 3.4 + index * Math.PI) * .24 : 0; });
-  } };
+  return authorZooAnimalRig({
+    root,
+    ownedTextures: [seaLionSurface],
+    update(elapsed) {
+      const state = root.userData.animationState as string | undefined;
+      headPivot.rotation.y = Math.sin(elapsed * .45 + phase) * (state === "surface" ? .3 : .16);
+      headPivot.rotation.x = state === "dive" ? .22 : Math.sin(elapsed * .61 + phase) * .035;
+      body.position.y = .5 + Math.sin(elapsed * (state === "swim" ? 2.1 : .9) + phase) * (state === "swim" ? .055 : .018);
+      body.rotation.z = state === "swim" ? Math.sin(elapsed * 2.1 + phase) * .08 : 0;
+      flippers.forEach((flipper, index) => { flipper.rotation.x = state === "swim" ? Math.sin(elapsed * 3.4 + index * Math.PI) * .34 : 0; });
+      hindFlippers.forEach((flipper, index) => { flipper.rotation.y = state === "swim" ? Math.sin(elapsed * 3.4 + index * Math.PI) * .24 : 0; });
+    },
+  }, {
+    species: "california-sea-lion",
+    quality,
+    defaultMotion: variant % 3 === 1 ? "swim" : variant % 3 === 2 ? "dive" : "surface",
+    phaseOffset: variant * 2.1,
+  });
 }
 
 export function createRedPanda(textures: GameTextures, quality: number): ZooAnimalRig {

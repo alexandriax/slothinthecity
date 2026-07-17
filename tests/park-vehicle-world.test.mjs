@@ -1,10 +1,35 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import * as THREE from "three";
-import { createSlothRig } from "../app/game/player/SlothRig.ts";
-import { createParkRowboat } from "../app/game/world/ParkRowboat.ts";
-import { createParkUtilityCart } from "../app/game/world/ParkUtilityCart.ts";
+import * as esbuild from "esbuild";
+
+async function loadVehicleHarness() {
+  const result = await esbuild.build({
+    stdin: {
+      contents: `
+        export { createSlothRig } from "./app/game/player/SlothRig.ts";
+        export { createParkRowboat } from "./app/game/world/ParkRowboat.ts";
+        export { createParkUtilityCart } from "./app/game/world/ParkUtilityCart.ts";
+        export * as THREE from "three";
+      `,
+      resolveDir: process.cwd(),
+    },
+    bundle: true,
+    platform: "node",
+    format: "cjs",
+    write: false,
+    logLevel: "silent",
+  });
+  const loadedModule = { exports: {} };
+  new Function("module", "exports", "require", result.outputFiles[0].text)(
+    loadedModule,
+    loadedModule.exports,
+    () => { throw new Error("vehicle harness encountered an unexpected external require"); },
+  );
+  return loadedModule.exports;
+}
+
+const { THREE, createSlothRig, createParkRowboat, createParkUtilityCart } = await loadVehicleHarness();
 
 test("both lake shores provide usable boats and field-services carts", async () => {
   const [game, world] = await Promise.all([

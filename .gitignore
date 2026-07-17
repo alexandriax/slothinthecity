@@ -42,3 +42,8 @@ next-env.d.ts
 /.wrangler/
 /outputs/
 /work/
+
+# authored asset pipeline scratch files
+__pycache__/
+*.py[cod]
+*.blend1

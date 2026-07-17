@@ -22,6 +22,11 @@ import {
   type ZooAnimalGeometryMetrics,
   type ZooAnimalRig,
 } from "../../game/world/ZooAnimals";
+import {
+  inspectAuthoredZooAnimal,
+  markAuthoredZooAnimalDisposed,
+  type AuthoredZooAnimalDebugState,
+} from "../../game/world/animals/AuthoredZooAnimalAssets";
 import styles from "../characters/CharacterShowroom.module.css";
 
 type QualityPreset = "hero" | "balanced" | "mobile";
@@ -47,6 +52,10 @@ const ANIMALS: AnimalDefinition[] = [
 ];
 
 const EMPTY_METRICS: ZooAnimalGeometryMetrics = { articulatedJoints: 0, meshes: 0, triangles: 0, vertices: 0 };
+const EMPTY_AUTHORED_STATE: AuthoredZooAnimalDebugState = {
+  animationClips: [], bones: 0, meshes: 0, skinnedMeshes: 0, status: "unmanaged",
+  triangles: 0, vertices: 0, visibleAuthoredRoots: 0,
+};
 const QUALITY_VALUE: Record<QualityPreset, number> = { hero: 1, balanced: .74, mobile: .5 };
 
 function disposeRig(rig: ZooAnimalRig) {
@@ -71,6 +80,7 @@ export function AnimalShowroom() {
   const [motion, setMotion] = useState("idle");
   const [motions, setMotions] = useState<string[]>(["idle"]);
   const [metrics, setMetrics] = useState<ZooAnimalGeometryMetrics>(EMPTY_METRICS);
+  const [authoredState, setAuthoredState] = useState<AuthoredZooAnimalDebugState>(EMPTY_AUTHORED_STATE);
   const [ready, setReady] = useState(false);
 
   useEffect(() => { motionRef.current = motion; }, [motion]);
@@ -123,23 +133,39 @@ export function AnimalShowroom() {
     key.shadow.mapSize.set(2048, 2048);
     const rim = new THREE.DirectionalLight("#8fc8c4", 2.4);
     rim.position.set(5, 5, 4);
-    scene.add(hemisphere, key, rim);
+    const cameraFill = new THREE.DirectionalLight("#f5ead2", 2.8);
+    cameraFill.position.set(4, 4.5, -8);
+    scene.add(hemisphere, key, rim, cameraFill);
 
     const textures = loadGameTextures(renderer, () => { if (!disposed) setReady(true); });
     const rig = ANIMALS[selected].factory(textures, QUALITY_VALUE[quality]);
+    setAuthoredState(inspectAuthoredZooAnimal(rig.root));
     stage.add(rig.root);
-    rig.root.updateMatrixWorld(true);
     const bounds = new THREE.Box3().setFromObject(rig.root);
-    rig.root.position.y -= bounds.min.y;
-    rig.root.updateMatrixWorld(true);
-    bounds.setFromObject(rig.root);
-    const size = bounds.getSize(new THREE.Vector3()), center = bounds.getCenter(new THREE.Vector3());
-    const extent = Math.max(size.x, size.y, size.z, 1);
-    camera.position.set(center.x + extent * .95, center.y + extent * .3, center.z - extent * 2.15);
-    controls.target.copy(center).setY(center.y + size.y * .06);
-    controls.minDistance = extent * .55;
-    controls.maxDistance = extent * 6;
-    controls.update();
+    const authoredManaged = rig.root.userData.premiumZooAnimalRoot === true;
+    if (!authoredManaged && !bounds.isEmpty() && Number.isFinite(bounds.min.y)) {
+      rig.root.position.y -= bounds.min.y;
+      rig.root.updateMatrixWorld(true);
+    }
+    const frameRig = () => {
+      rig.root.updateMatrixWorld(true);
+      bounds.setFromObject(rig.root);
+      if (bounds.isEmpty()) return false;
+      const size = bounds.getSize(new THREE.Vector3()), center = bounds.getCenter(new THREE.Vector3());
+      if (![size.x, size.y, size.z, center.x, center.y, center.z].every(Number.isFinite)) return false;
+      const extent = Math.max(size.x, size.y, size.z, 1);
+      camera.position.set(center.x + extent * .95, center.y + extent * .3, center.z - extent * 2.15);
+      controls.target.copy(center).setY(center.y + size.y * .06);
+      controls.minDistance = extent * .55;
+      controls.maxDistance = extent * 6;
+      controls.update();
+      return true;
+    };
+    if (!frameRig()) {
+      camera.position.set(2.2, 1.3, -4.8);
+      controls.target.set(0, .8, 0);
+      controls.update();
+    }
 
     const states = Array.isArray(rig.root.userData.animationStates) && rig.root.userData.animationStates.length
       ? rig.root.userData.animationStates.map(String)
@@ -168,6 +194,7 @@ export function AnimalShowroom() {
     const timer = new THREE.Timer();
     timer.connect(document);
     let elapsed = 0;
+    let frame = 0, authoredSignature = "";
     const animate = () => {
       if (disposed) return;
       raf = requestAnimationFrame(animate);
@@ -176,6 +203,34 @@ export function AnimalShowroom() {
       if (playingRef.current) elapsed += delta;
       rig.root.userData.animationState = motionRef.current;
       rig.update(elapsed, playingRef.current ? delta : 0);
+      if (++frame % 12 === 0) {
+        const inspected = inspectAuthoredZooAnimal(rig.root);
+        const signature = `${inspected.status}:${inspected.lod}:${inspected.triangles}:${inspected.activeClip}:${inspected.animationClips.join(",")}`;
+        if (signature !== authoredSignature) {
+          authoredSignature = signature;
+          setAuthoredState(inspected);
+          if (inspected.status === "ready") {
+            frameRig();
+            setMetrics({
+              articulatedJoints: inspected.bones,
+              meshes: inspected.meshes,
+              triangles: inspected.triangles,
+              vertices: inspected.vertices,
+            });
+            const authoredMotions = Object.keys(rig.root.userData.animationStates ?? {});
+            const published = Array.isArray(rig.root.userData.animationStates)
+              ? rig.root.userData.animationStates.map(String)
+              : authoredMotions;
+            if (published.length) {
+              setMotions(published);
+              if (!published.includes(motionRef.current)) {
+                motionRef.current = published[0];
+                setMotion(published[0]);
+              }
+            }
+          }
+        }
+      }
       controls.update();
       renderer.render(scene, camera);
     };
@@ -187,6 +242,7 @@ export function AnimalShowroom() {
       resizeObserver.disconnect();
       timer.dispose();
       controls.dispose();
+      markAuthoredZooAnimalDisposed(rig.root);
       disposeRig(rig);
       Object.values(textures).forEach(texture => texture.dispose());
       floor.geometry.dispose();
@@ -201,7 +257,12 @@ export function AnimalShowroom() {
     <div className={styles.viewport} ref={viewport} />
     <header className={styles.header}>
       <div><span>Sloth in the City · development</span><h1>Zoo animal lab</h1></div>
-      <div className={styles.loadState}><i className={ready ? styles.ready : undefined} />{ready ? "surface atlas ready" : "loading atlas"}</div>
+      <div className={styles.loadState}><i className={ready && authoredState.status !== "authored-load-failed" ? styles.ready : undefined} />{
+        authoredState.status === "ready" ? `${authoredState.lod} authored rig ready`
+          : authoredState.status === "loading" ? "loading authored rig"
+            : authoredState.status === "authored-load-failed" ? "authored asset failed QA"
+              : ready ? "surface atlas ready" : "loading atlas"
+      }</div>
     </header>
     <aside className={styles.panel}>
       <section>
@@ -223,12 +284,16 @@ export function AnimalShowroom() {
       <section className={styles.metrics}>
         <label>Selected mesh · {animal.family}</label>
         <dl>
-          <div><dt>Fidelity</dt><dd className={styles.clean}>v2 hero</dd></div>
+          <div><dt>Fidelity</dt><dd className={authoredState.status === "ready" ? styles.clean : undefined}>{authoredState.status === "ready" ? `authored · ${authoredState.lod}` : "procedural review"}</dd></div>
           <div><dt>Triangles</dt><dd>{metrics.triangles.toLocaleString()}</dd></div>
           <div><dt>Vertices</dt><dd>{metrics.vertices.toLocaleString()}</dd></div>
           <div><dt>Meshes</dt><dd>{metrics.meshes}</dd></div>
           <div><dt>Joints</dt><dd>{metrics.articulatedJoints}</dd></div>
           <div><dt>States</dt><dd>{motions.length}</dd></div>
+          {authoredState.status === "ready" ? <div><dt>Skinned</dt><dd>{authoredState.skinnedMeshes}/{authoredState.meshes}</dd></div> : null}
+          {authoredState.status === "ready" ? <div><dt>Active clip</dt><dd>{authoredState.activeClip ?? "—"}</dd></div> : null}
+          {authoredState.contract ? <div><dt>Contract</dt><dd>{authoredState.triangles.toLocaleString()}/{authoredState.contract.triangles.toLocaleString()}</dd></div> : null}
+          {authoredState.error ? <div><dt>Asset error</dt><dd>{authoredState.error}</dd></div> : null}
         </dl>
       </section>
     </aside>

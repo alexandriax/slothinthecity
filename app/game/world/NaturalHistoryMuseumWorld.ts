@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { GameTextures } from "../rendering/textures";
 import { createPremiumHuman, markPremiumCharactersDisposed } from "./PremiumCharacter";
 import { createAmbientHumanAgent, updateAmbientHumanAgent, type AmbientHumanAgent } from "./characters/AmbientHumanMotion";
@@ -39,6 +40,94 @@ function facadeBannerTexture() {
 function cylinderBetween(start: THREE.Vector3, end: THREE.Vector3, radius: number, material: THREE.Material, segments = 14) {
   const direction = end.clone().sub(start), mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius * .9, radius, direction.length(), segments, 2), material);
   mesh.position.copy(start).add(end).multiplyScalar(.5); mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize()); return mesh;
+}
+
+function fossilBoneBetween(start: THREE.Vector3, end: THREE.Vector3, radius: number, material: THREE.Material, segments = 20) {
+  const root = new THREE.Group();
+  root.name = "museum-sculpted-fossil-bone";
+  const direction = end.clone().sub(start), length = direction.length();
+  const shaft = new THREE.Mesh(new THREE.CapsuleGeometry(radius * .72, Math.max(.01, length - radius * 1.8), 7, segments), material);
+  shaft.position.copy(start).add(end).multiplyScalar(.5);
+  shaft.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+  root.add(shaft);
+  for (const point of [start, end]) {
+    const epiphysis = new THREE.Mesh(new THREE.SphereGeometry(radius * 1.12, segments, Math.max(10, Math.round(segments * .65))), material);
+    epiphysis.position.copy(point);
+    epiphysis.scale.set(1.06, .82, 1.18);
+    root.add(epiphysis);
+  }
+  return root;
+}
+
+function fossilVertebra(point: THREE.Vector3, scale: number, material: THREE.Material, yaw = 0) {
+  const vertebra = new THREE.Group();
+  vertebra.name = "museum-anatomical-vertebra-with-processes";
+  vertebra.position.copy(point); vertebra.rotation.y = yaw;
+  const centrum = new THREE.Mesh(new THREE.SphereGeometry(scale, 14, 9), material);
+  centrum.scale.set(1.18, .72, .82); vertebra.add(centrum);
+  const neuralSpine = new THREE.Mesh(new THREE.ConeGeometry(scale * .24, scale * 1.85, 8), material);
+  neuralSpine.position.y = scale * 1.05; neuralSpine.scale.z = .58; vertebra.add(neuralSpine);
+  for (const side of [-1, 1]) {
+    const process = cylinderBetween(
+      new THREE.Vector3(side * scale * .55, scale * .12, 0),
+      new THREE.Vector3(side * scale * 1.45, scale * .32, scale * .08),
+      scale * .12,
+      material,
+      8,
+    );
+    vertebra.add(process);
+  }
+  return vertebra;
+}
+
+function fossilRib(start: THREE.Vector3, side: -1 | 1, drop: number, width: number, material: THREE.Material) {
+  const curve = new THREE.CatmullRomCurve3([
+    start,
+    start.clone().add(new THREE.Vector3(side * width * .48, -.08, .02)),
+    start.clone().add(new THREE.Vector3(side * width, -drop * .45, .18)),
+    start.clone().add(new THREE.Vector3(side * width * .72, -drop, .42)),
+  ], false, "centripetal");
+  const rib = new THREE.Mesh(new THREE.TubeGeometry(curve, 18, .055, 9, false), material);
+  rib.name = "museum-curved-articulated-fossil-rib";
+  return rib;
+}
+
+function mergeMuseumFossils(root: THREE.Group, material: THREE.Material, name: string) {
+  root.updateMatrixWorld(true);
+  const sources: THREE.Mesh[] = [];
+  const geometries: THREE.BufferGeometry[] = [];
+  root.traverse(object => {
+    if (!(object instanceof THREE.Mesh) || object.material !== material) return;
+    let geometry = object.geometry.clone();
+    // BufferGeometryUtils requires every source to agree on index and
+    // attribute layout. Museum bones combine rounded boxes, spheres, tubes,
+    // cones and capsules, and those constructors do not all make the same
+    // indexing choice. Flattening once at authoring time is far cheaper than
+    // leaving hundreds of independent fossil draw calls alive at runtime.
+    if (geometry.index) {
+      const nonIndexed = geometry.toNonIndexed();
+      geometry.dispose();
+      geometry = nonIndexed;
+    }
+    geometry.applyMatrix4(object.matrixWorld);
+    if (!geometry.getAttribute("normal")) geometry.computeVertexNormals();
+    if (!geometry.getAttribute("uv")) {
+      const count = geometry.getAttribute("position")?.count ?? 0;
+      geometry.setAttribute("uv", new THREE.Float32BufferAttribute(new Float32Array(count * 2), 2));
+    }
+    for (const attribute of Object.keys(geometry.attributes)) {
+      if (!new Set(["position", "normal", "uv"]).has(attribute)) geometry.deleteAttribute(attribute);
+    }
+    geometry.clearGroups();
+    sources.push(object); geometries.push(geometry);
+  });
+  const merged = mergeGeometries(geometries, false);
+  geometries.forEach(geometry => geometry.dispose());
+  if (!merged) return;
+  sources.forEach(source => {
+    source.removeFromParent(); source.geometry.dispose();
+  });
+  const mesh = new THREE.Mesh(merged, material); mesh.name = name; root.add(mesh);
 }
 
 function setShadows(root: THREE.Object3D, cast: boolean) {
@@ -121,30 +210,177 @@ function addArchitecture(root: THREE.Group, textures: GameTextures, ownedTexture
     addWall("museum-cross-gallery-west-partition", -33, 4.4, z, 22, 8.8, 2.1, wall);
     addWall("museum-cross-gallery-east-partition", 33, 4.4, z, 22, 8.8, 2.1, wall);
   }
-  const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(92, 220), new THREE.MeshStandardMaterial({ color: "#d6cfbf", roughness: 1, side: THREE.DoubleSide })); ceiling.rotation.x = Math.PI / 2; ceiling.position.set(0, 11.2, -105); root.add(ceiling);
+  const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(92, 220), new THREE.MeshStandardMaterial({ color: "#e4ddcf", roughness: .96, side: THREE.DoubleSide })); ceiling.rotation.x = Math.PI / 2; ceiling.position.set(0, 11.2, -105); root.add(ceiling);
   for (let z = 9; z > -220; z -= 26) for (const x of [-24, 0, 24]) {
     const fixture = new THREE.Mesh(new THREE.CylinderGeometry(.28, .5, .18, 12), new THREE.MeshStandardMaterial({ color: "#eee2bd", emissive: "#ffe2a2", emissiveIntensity: 1.25 })); fixture.position.set(x, 8.8, z); root.add(fixture);
   }
 }
 
+function addGalleryFixtures(root: THREE.Group, textures: GameTextures, quality: number) {
+  const fixtures = new THREE.Group(); fixtures.name = "amnh-authored-gallery-fixtures-and-display-cases";
+  const brass = new THREE.MeshStandardMaterial({ color: "#a88b4d", roughness: .38, metalness: .68 });
+  const darkStone = new THREE.MeshStandardMaterial({ color: "#34342f", map: textures.stone, bumpMap: textures.stone, bumpScale: .025, roughness: .82 });
+  const walnut = new THREE.MeshStandardMaterial({ color: "#5a3928", map: textures.bark, bumpMap: textures.bark, bumpScale: .035, roughness: .82 });
+  const museumGlass = new THREE.MeshPhysicalMaterial({ color: "#bfd3d2", roughness: .09, transmission: .62, transparent: true, opacity: .16, depthWrite: false, clearcoat: .35 });
+  museumGlass.forceSinglePass = true;
+  const label = new THREE.MeshStandardMaterial({ color: "#e9e0ca", roughness: .72 });
+  const fossil = new THREE.MeshStandardMaterial({ color: "#c9b890", map: textures.stone, bumpMap: textures.stone, bumpScale: .018, roughness: .84 });
+  const mineralPalette = ["#7d6250", "#526f75", "#8a7656", "#6e5d79"].map(color => new THREE.MeshStandardMaterial({ color, roughness: .48, metalness: .12 }));
+
+  // Brass route inlays and cross-hall thresholds keep the sprawling floor
+  // legible without relying on floating HUD arrows.
+  for (const x of [-14.8, 14.8]) {
+    const inlay = new THREE.Mesh(new RoundedBoxGeometry(.09, .018, 224, 2, .008), brass);
+    inlay.name = "fossil-halls-brass-floor-inlay"; inlay.position.set(x, .018, -104); fixtures.add(inlay);
+  }
+  for (const z of [-31, -92, -153, -190]) {
+    const threshold = new THREE.Mesh(new RoundedBoxGeometry(35, .02, .1, 2, .008), brass);
+    threshold.name = "museum-cross-hall-brass-threshold"; threshold.position.set(0, .02, z); fixtures.add(threshold);
+  }
+
+  const caseCount = quality < .58 ? 8 : quality < .82 ? 12 : 16;
+  for (let index = 0; index < caseCount; index++) {
+    const side = index % 2 ? 1 : -1, row = Math.floor(index / 2), z = -24 - row * (quality > .82 ? 23 : 29);
+    const display = new THREE.Group(); display.name = `amnh-permanent-collection-vitrine-${index + 1}`;
+    display.position.set(side * 31.5, 0, z);
+    const plinth = new THREE.Mesh(new RoundedBoxGeometry(4.2, .78, 3.05, 5, .09), darkStone); plinth.position.y = .39; display.add(plinth);
+    const hood = new THREE.Mesh(new RoundedBoxGeometry(3.82, 2.35, 2.68, 5, .055), museumGlass); hood.position.y = 1.76; display.add(hood);
+    const artifact = index % 3 === 0
+      ? new THREE.Mesh(new THREE.IcosahedronGeometry(.72, quality > .72 ? 4 : 2), mineralPalette[index % mineralPalette.length])
+      : index % 3 === 1
+        ? new THREE.Mesh(new THREE.TorusKnotGeometry(.52, .12, quality > .72 ? 80 : 48, 12, 2, 3), fossil)
+        : new THREE.Mesh(new THREE.DodecahedronGeometry(.68, quality > .72 ? 3 : 2), mineralPalette[index % mineralPalette.length]);
+    artifact.name = index % 3 === 1 ? "museum-invertebrate-fossil-cast" : "museum-mineral-specimen";
+    artifact.position.set((index % 3 - 1) * .22, 1.42, 0); artifact.rotation.set(index * .19, index * .37, index * .11); display.add(artifact);
+    const caption = new THREE.Mesh(new RoundedBoxGeometry(2.45, .34, .06, 3, .02), label); caption.name = "museum-case-interpretation-label"; caption.position.set(0, .68, 1.56); caption.rotation.x = -.22; display.add(caption);
+    fixtures.add(display);
+  }
+
+  for (let row = 0; row < 6; row++) for (const side of [-1, 1]) {
+    const bench = new THREE.Group(); bench.name = "amnh-walnut-gallery-bench"; bench.position.set(side * 9.4, 0, -42 - row * 29.5);
+    const seat = new THREE.Mesh(new RoundedBoxGeometry(3.7, .24, .86, 5, .07), walnut); seat.position.y = .82; bench.add(seat);
+    const back = new THREE.Mesh(new RoundedBoxGeometry(3.7, .78, .18, 4, .045), walnut); back.position.set(0, 1.18, .34); back.rotation.x = -.1; bench.add(back);
+    for (const x of [-1.42, 1.42]) { const leg = new THREE.Mesh(new RoundedBoxGeometry(.18, .76, .58, 3, .035), brass); leg.position.set(x, .42, 0); bench.add(leg); }
+    fixtures.add(bench);
+  }
+
+  // Recessed ceiling coffers and bronze frames break up the single flat lid
+  // that made the rotunda and long halls read as an unfinished box.
+  const cofferMaterials = [
+    new THREE.MeshStandardMaterial({ color: "#d2c7b2", roughness: .94 }),
+    new THREE.MeshStandardMaterial({ color: "#e0d6c1", roughness: .94 }),
+  ];
+  for (let z = 4; z >= -212; z -= 18) for (const x of [-27, -9, 9, 27]) {
+    const coffer = new THREE.Mesh(new RoundedBoxGeometry(12.5, .08, 11.5, 3, .04), cofferMaterials[Math.abs(x / 9 + Math.round(z / 18)) % 2]);
+    coffer.name = "amnh-recessed-ceiling-coffer"; coffer.position.set(x, 11.12, z); fixtures.add(coffer);
+    const pin = new THREE.Mesh(new THREE.CylinderGeometry(.075, .075, .9, 8), brass); pin.position.set(x, 10.65, z); fixtures.add(pin);
+  }
+  root.add(fixtures);
+}
+
 function addRotundaDinosaurs(root: THREE.Group, bone: THREE.Material, circles: CircleObstacle[]) {
   const exhibit = new THREE.Group(); exhibit.name = "theodore-roosevelt-rotunda-barosaurus-allosaurus-display";
-  const base = new THREE.Mesh(new RoundedBoxGeometry(23, .55, 12, 6, .15), new THREE.MeshStandardMaterial({ color: "#554d42", roughness: .82 })); base.position.set(0, .28, -5); exhibit.add(base);
-  const hip = new THREE.Vector3(2, 5.6, -5), shoulder = new THREE.Vector3(-4.5, 7.8, -7.2);
-  exhibit.add(cylinderBetween(hip, shoulder, .34, bone, 20));
-  for (let index = 0; index < 24; index++) {
-    const amount = index / 23, point = hip.clone().lerp(new THREE.Vector3(-14, 9.6, -8.5), amount); point.y += Math.sin(amount * Math.PI) * 1.2;
-    const vertebra = new THREE.Mesh(new THREE.SphereGeometry(.27 - amount * .1, 16, 11), bone); vertebra.name = "barosaurus-neck-vertebra"; vertebra.position.copy(point); exhibit.add(vertebra);
+  const baseMaterial = new THREE.MeshStandardMaterial({ color: "#3e3b36", roughness: .76, metalness: .08 });
+  const mountMetal = new THREE.MeshStandardMaterial({ color: "#171a18", roughness: .32, metalness: .82 });
+  const base = new THREE.Mesh(new RoundedBoxGeometry(27, .62, 14, 7, .18), baseMaterial); base.position.set(0, .31, -5); exhibit.add(base);
+
+  // Project-original anatomical reconstruction: distinct centra, neural and
+  // transverse processes, curved ribs, paired limb bones, girdles and feet.
+  // The old display was a row of spheres connected by cylinders and dominated
+  // the player's first museum view as obvious blockout geometry.
+  const hip = new THREE.Vector3(2.2, 5.55, -3.45), shoulder = new THREE.Vector3(-3.75, 6.85, -6.05);
+  const bodyCurve = new THREE.CatmullRomCurve3([
+    hip,
+    new THREE.Vector3(.5, 6.15, -4.15),
+    new THREE.Vector3(-1.8, 6.65, -5.15),
+    shoulder,
+  ], false, "centripetal");
+  for (let index = 0; index < 10; index++) {
+    const amount = index / 9, point = bodyCurve.getPoint(amount);
+    exhibit.add(fossilVertebra(point, .25 - amount * .02, bone, -.24));
+    if (index > 0 && index < 9) {
+      const ribWidth = 1.95 - Math.abs(index - 4.5) * .14;
+      exhibit.add(fossilRib(point.clone().add(new THREE.Vector3(0, -.03, .04)), -1, 2.45, ribWidth, bone));
+      exhibit.add(fossilRib(point.clone().add(new THREE.Vector3(0, -.03, .04)), 1, 2.45, ribWidth, bone));
+    }
   }
+
+  const neckCurve = new THREE.CatmullRomCurve3([
+    shoulder,
+    new THREE.Vector3(-6.7, 7.45, -7.1),
+    new THREE.Vector3(-10.5, 8.85, -7.65),
+    new THREE.Vector3(-13.9, 9.35, -7.25),
+  ], false, "centripetal");
+  for (let index = 1; index < 17; index++) {
+    const amount = index / 16, point = neckCurve.getPoint(amount), tangent = neckCurve.getTangent(amount);
+    exhibit.add(fossilVertebra(point, .215 - amount * .08, bone, Math.atan2(tangent.x, tangent.z)));
+  }
+  const headPoint = neckCurve.getPoint(1);
+  const skull = new THREE.Group(); skull.name = "barosaurus-sculpted-skull-and-jaw"; skull.position.copy(headPoint); skull.rotation.set(-.06, -.16, -.14);
+  const cranium = new THREE.Mesh(new RoundedBoxGeometry(.72, .58, .9, 7, .18), bone); cranium.position.set(-.2, .02, -.18); skull.add(cranium);
+  const snout = new THREE.Mesh(new RoundedBoxGeometry(.58, .34, 1.05, 7, .13), bone); snout.position.set(-.36, -.08, -.78); skull.add(snout);
+  const jaw = new THREE.Mesh(new RoundedBoxGeometry(.54, .16, 1.08, 6, .07), bone); jaw.position.set(-.35, -.34, -.72); jaw.rotation.x = -.08; skull.add(jaw);
   for (const side of [-1, 1]) {
-    const rearKnee = new THREE.Vector3(side * 2.2, 3, -2.8), rearFoot = new THREE.Vector3(side * 2.7, .72, -1.5);
-    exhibit.add(cylinderBetween(hip.clone().add(new THREE.Vector3(side * 1.1, 0, 0)), rearKnee, .38, bone, 20), cylinderBetween(rearKnee, rearFoot, .29, bone, 18));
-    const frontKnee = new THREE.Vector3(side * 3.2, 3.3, -8), frontFoot = new THREE.Vector3(side * 3.4, .72, -8.4);
-    exhibit.add(cylinderBetween(shoulder.clone().add(new THREE.Vector3(side * .7, 0, 0)), frontKnee, .27, bone, 18), cylinderBetween(frontKnee, frontFoot, .22, bone, 18));
+    const orbit = new THREE.Mesh(new THREE.TorusGeometry(.13, .038, 8, 20), bone); orbit.position.set(side * .37 - .2, .1, -.25); orbit.rotation.y = Math.PI / 2; skull.add(orbit);
   }
-  for (let index = 0; index < 12; index++) {
-    const point = hip.clone().lerp(new THREE.Vector3(13, 4, -2), index / 11), vertebra = new THREE.Mesh(new THREE.SphereGeometry(.24 - index * .012, 14, 10), bone); vertebra.position.copy(point); exhibit.add(vertebra);
+  exhibit.add(skull);
+
+  const tailCurve = new THREE.CatmullRomCurve3([
+    hip,
+    new THREE.Vector3(5.2, 5.2, -2.25),
+    new THREE.Vector3(9.2, 4.3, -1.2),
+    new THREE.Vector3(13.7, 3.2, -.55),
+  ], false, "centripetal");
+  for (let index = 1; index < 19; index++) {
+    const amount = index / 18, point = tailCurve.getPoint(amount), tangent = tailCurve.getTangent(amount);
+    exhibit.add(fossilVertebra(point, .235 - amount * .16, bone, Math.atan2(tangent.x, tangent.z)));
   }
+
+  const pelvis = new THREE.Group(); pelvis.name = "barosaurus-pelvic-girdle"; pelvis.position.copy(hip);
+  for (const side of [-1, 1]) {
+    const ilium = new THREE.Mesh(new THREE.CapsuleGeometry(.31, 1.85, 8, 20), bone); ilium.position.set(side * .88, .05, .05); ilium.rotation.set(.1, 0, side * .92); pelvis.add(ilium);
+    const socket = new THREE.Mesh(new THREE.TorusGeometry(.34, .11, 10, 24), bone); socket.position.set(side * 1.1, -.18, .2); socket.rotation.y = Math.PI / 2; pelvis.add(socket);
+  }
+  exhibit.add(pelvis);
+
+  const scapula = new THREE.Group(); scapula.name = "barosaurus-pectoral-girdle";
+  for (const side of [-1, 1]) {
+    const blade = fossilBoneBetween(
+      shoulder.clone().add(new THREE.Vector3(side * .3, .65, .15)),
+      shoulder.clone().add(new THREE.Vector3(side * 1.05, -.7, .5)),
+      .18,
+      bone,
+      18,
+    );
+    scapula.add(blade);
+  }
+  exhibit.add(scapula);
+
+  for (const side of [-1, 1] as const) {
+    const rearHip = hip.clone().add(new THREE.Vector3(side * 1.08, -.22, .15));
+    const rearKnee = new THREE.Vector3(side * 2.25 + .55, 3.1, -2.05), rearAnkle = new THREE.Vector3(side * 2.55 + .55, .83, -1.3);
+    exhibit.add(fossilBoneBetween(rearHip, rearKnee, .25, bone, 22), fossilBoneBetween(rearKnee, rearAnkle, .2, bone, 20));
+    const frontShoulder = shoulder.clone().add(new THREE.Vector3(side * .82, -.55, .05));
+    const frontElbow = new THREE.Vector3(side * 2.9 - 2.2, 3.35, -7.15), frontWrist = new THREE.Vector3(side * 3.05 - 2.2, .78, -7.55);
+    exhibit.add(fossilBoneBetween(frontShoulder, frontElbow, .2, bone, 20), fossilBoneBetween(frontElbow, frontWrist, .16, bone, 18));
+    for (const [foot, forward] of [[rearAnkle, 1], [frontWrist, -1]] as const) for (let toe = -1; toe <= 2; toe++) {
+      exhibit.add(fossilBoneBetween(
+        foot.clone().add(new THREE.Vector3(toe * .11, -.08, 0)),
+        foot.clone().add(new THREE.Vector3(toe * .16, -.43, forward * (.55 + Math.abs(toe) * .06))),
+        .055,
+        bone,
+        10,
+      ));
+    }
+  }
+
+  // Museum mounting hardware is intentionally thinner/darker than the fossil
+  // so support structure reads as engineered steel rather than extra bones.
+  for (const [x, y, z] of [[2.2, 5.1, -3.45], [-3.6, 6.2, -6.0], [-10.2, 8.25, -7.55]] as const) {
+    const post = cylinderBetween(new THREE.Vector3(x, .62, z), new THREE.Vector3(x, y, z), .045, mountMetal, 10);
+    post.name = "rotunda-fossil-mount-blackened-steel"; exhibit.add(post);
+  }
+  mergeMuseumFossils(exhibit, bone, "barosaurus-original-merged-anatomical-fossil-mesh");
   root.add(exhibit); circles.push({ x: 0, z: -5, radius: 12.2 });
 }
 
@@ -181,33 +417,166 @@ function addEarthAndMeteoriteHalls(root: THREE.Group, circles: CircleObstacle[])
 
 function addMegatherium(root: THREE.Group, ownedTextures: THREE.Texture[], bone: THREE.Material, circles: CircleObstacle[]) {
   const gallery = new THREE.Group(); gallery.name = "fossil-mammal-halls-megatherium-americanum-finale";
-  const stage = new THREE.Mesh(new RoundedBoxGeometry(23, .65, 16, 7, .18), new THREE.MeshStandardMaterial({ color: "#3d3730", roughness: .78 })); stage.position.set(0, .32, -198); gallery.add(stage);
-  const skeleton = new THREE.Group(); skeleton.name = "megatherium-americanum-giant-ground-sloth-articulated-skeleton"; skeleton.position.set(0, .65, -199);
-  // Present the skeleton on a three-quarter museum mount so its broad pelvis,
-  // balancing tail, rib cage, and enormous manual claws read on approach.
-  skeleton.rotation.y = -.34;
-  const pelvis = new THREE.Mesh(new THREE.TorusGeometry(1.45, .38, 16, 38), bone); pelvis.name = "megatherium-broad-fossil-pelvis"; pelvis.position.set(0, 4.15, 1.7); pelvis.rotation.x = Math.PI / 2; skeleton.add(pelvis);
-  const spineStart = new THREE.Vector3(0, 4.4, 1.4), spineEnd = new THREE.Vector3(0, 7.35, -1.3); skeleton.add(cylinderBetween(spineStart, spineEnd, .25, bone, 22));
-  for (let index = 0; index < 18; index++) {
-    const amount = index / 17, point = spineStart.clone().lerp(spineEnd, amount); point.y += Math.sin(amount * Math.PI) * .25;
-    const vertebra = new THREE.Mesh(new THREE.SphereGeometry(.3 - amount * .05, 18, 12), bone); vertebra.name = "megatherium-articulated-spinal-vertebra"; vertebra.position.copy(point); skeleton.add(vertebra);
+  const stageMaterial = new THREE.MeshStandardMaterial({ color: "#302d29", roughness: .72, metalness: .06 });
+  const mountMaterial = new THREE.MeshStandardMaterial({ color: "#151817", roughness: .3, metalness: .86 });
+  const brass = new THREE.MeshStandardMaterial({ color: "#9d8045", roughness: .35, metalness: .72 });
+  const stage = new THREE.Mesh(new RoundedBoxGeometry(25, .72, 17.5, 8, .2), stageMaterial); stage.position.set(0, .36, -198); gallery.add(stage);
+  const interpretation = [
+    ["SLOTHS THROUGH TIME", "ANATOMY · ADAPTATION · SOUTH AMERICAN PALEOECOLOGY"],
+    ["A GIANT HERBIVORE", "MIOCENE–PLEISTOCENE · CLAWS FOR PULLING VEGETATION"],
+  ] as const;
+  interpretation.forEach(([title, subtitle], index) => {
+    const texture = exhibitTexture(title, subtitle, index ? "#c8a96a" : "#a8c5b5"); ownedTextures.push(texture);
+    const panel = new THREE.Group(); panel.name = "megatherium-fossil-hall-interpretation-wall";
+    panel.position.set(index ? 23 : -23, 5.15, -224.9);
+    const frame = new THREE.Mesh(new RoundedBoxGeometry(19.2, 7.1, .3, 5, .07), brass); panel.add(frame);
+    const face = new THREE.Mesh(new RoundedBoxGeometry(18.5, 6.45, .08, 4, .035), new THREE.MeshBasicMaterial({ map: texture, toneMapped: false })); face.position.z = .2; panel.add(face);
+    gallery.add(panel);
+  });
+
+  // Project-original skeletal reconstruction built from anatomical landmarks,
+  // not a row of spheres and straight rods. The mount is authored locally and
+  // then rotated as a complete museum specimen so the pelvis, rib cage, long
+  // balancing tail and hook-like manual unguals read together on approach.
+  const skeleton = new THREE.Group();
+  skeleton.name = "megatherium-americanum-giant-ground-sloth-articulated-skeleton";
+
+  const pelvisCenter = new THREE.Vector3(0, 4.2, 1.55);
+  const sacrum = fossilBoneBetween(new THREE.Vector3(0, 3.85, 1.85), new THREE.Vector3(0, 4.55, 1.18), .34, bone, 24);
+  sacrum.name = "megatherium-fused-sacrum"; skeleton.add(sacrum);
+  for (const side of [-1, 1] as const) {
+    const iliumTop = new THREE.Vector3(side * 1.42, 4.95, 1.6);
+    const acetabulum = new THREE.Vector3(side * 1.18, 4.02, 1.52);
+    skeleton.add(
+      fossilBoneBetween(pelvisCenter.clone().add(new THREE.Vector3(side * .18, .35, .05)), iliumTop, .3, bone, 24),
+      fossilBoneBetween(iliumTop, acetabulum, .34, bone, 24),
+      fossilBoneBetween(acetabulum, pelvisCenter.clone().add(new THREE.Vector3(side * .18, -.38, .12)), .27, bone, 22),
+    );
+    const socket = new THREE.Mesh(new THREE.TorusGeometry(.36, .095, 12, 30), bone);
+    socket.name = "megatherium-pelvic-acetabulum"; socket.position.copy(acetabulum); socket.rotation.y = Math.PI / 2; skeleton.add(socket);
   }
-  const ribMaterial = bone;
-  for (const side of [-1, 1]) for (let index = 0; index < 7; index++) {
-    const rib = new THREE.Mesh(new THREE.TorusGeometry(1.25 - index * .045, .075, 10, 30, Math.PI * 1.2), ribMaterial); rib.name = "megatherium-curved-fossil-rib"; rib.position.set(side * .18, 5.2 + index * .28, .15 - index * .22); rib.rotation.set(Math.PI / 2, side * .18, side > 0 ? -.55 : 2.6); skeleton.add(rib);
+
+  const spineCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, 4.55, 1.35),
+    new THREE.Vector3(0, 5.25, .72),
+    new THREE.Vector3(0, 6.25, -.12),
+    new THREE.Vector3(0, 7.18, -1.0),
+  ], false, "centripetal");
+  const spinePoints: THREE.Vector3[] = [];
+  for (let index = 0; index < 20; index++) {
+    const amount = index / 19, point = spineCurve.getPoint(amount), tangent = spineCurve.getTangent(amount);
+    spinePoints.push(point);
+    skeleton.add(fossilVertebra(point, .31 - amount * .065, bone, Math.atan2(tangent.x, tangent.z)));
   }
-  const neck = new THREE.Vector3(0, 7.9, -1.65), skullPoint = new THREE.Vector3(0, 8.35, -2.25); skeleton.add(cylinderBetween(spineEnd, neck, .22, bone, 18));
-  const skull = new THREE.Mesh(new RoundedBoxGeometry(1.18, .85, 1.55, 7, .28), bone); skull.name = "megatherium-long-fossil-skull"; skull.position.copy(skullPoint); skull.rotation.x = -.18; skeleton.add(skull);
-  const muzzle = new THREE.Mesh(new RoundedBoxGeometry(.72, .47, .8, 6, .18), bone); muzzle.position.set(0, 8.08, -3.12); skeleton.add(muzzle);
+  const sternumStart = new THREE.Vector3(0, 4.1, .7), sternumEnd = new THREE.Vector3(0, 5.55, -1.05);
+  skeleton.add(fossilBoneBetween(sternumStart, sternumEnd, .14, bone, 18));
+  for (let index = 3; index < 16; index += 2) {
+    const point = spinePoints[index], amount = index / 19;
+    const drop = 1.7 + Math.sin(amount * Math.PI) * .65;
+    const width = 1.04 + Math.sin(amount * Math.PI) * .56;
+    skeleton.add(fossilRib(point, -1, drop, width, bone), fossilRib(point, 1, drop, width, bone));
+  }
+
+  const neckCurve = new THREE.CatmullRomCurve3([
+    spineCurve.getPoint(1),
+    new THREE.Vector3(0, 7.68, -1.42),
+    new THREE.Vector3(0, 8.08, -1.83),
+    new THREE.Vector3(0, 8.2, -2.28),
+  ], false, "centripetal");
+  for (let index = 1; index < 7; index++) {
+    const amount = index / 6, point = neckCurve.getPoint(amount), tangent = neckCurve.getTangent(amount);
+    skeleton.add(fossilVertebra(point, .23 - amount * .035, bone, Math.atan2(tangent.x, tangent.z)));
+  }
+
+  const skull = new THREE.Group(); skull.name = "megatherium-sculpted-skull-jaw-and-dentition"; skull.position.set(0, 8.18, -2.5); skull.rotation.x = -.12;
+  const cranium = new THREE.Mesh(new RoundedBoxGeometry(1.18, .9, 1.35, 8, .25), bone); cranium.position.z = -.15; skull.add(cranium);
+  const rostrum = new THREE.Mesh(new RoundedBoxGeometry(.82, .48, 1.18, 7, .16), bone); rostrum.position.set(0, -.16, -.98); skull.add(rostrum);
+  const jaw = new THREE.Mesh(new RoundedBoxGeometry(.76, .18, 1.45, 6, .08), bone); jaw.position.set(0, -.52, -.8); jaw.rotation.x = -.045; skull.add(jaw);
   for (const side of [-1, 1]) {
-    const hip = new THREE.Vector3(side * 1.08, 4.25, 1.7), knee = new THREE.Vector3(side * 1.32, 2.35, 1.2), ankle = new THREE.Vector3(side * 1.48, .65, .15);
-    skeleton.add(cylinderBetween(hip, knee, .32, bone, 22), cylinderBetween(knee, ankle, .27, bone, 20));
-    const shoulder = new THREE.Vector3(side * .82, 6.85, -.72), wrist = new THREE.Vector3(side * 1.7, 4.15, -1.65), hand = new THREE.Vector3(side * 2.05, 3.15, -2.25);
-    skeleton.add(cylinderBetween(shoulder, wrist, .25, bone, 20), cylinderBetween(wrist, hand, .2, bone, 18));
-    for (let claw = 0; claw < 3; claw++) { const clawBone = new THREE.Mesh(new THREE.ConeGeometry(.09, .82 + claw * .08, 12), bone); clawBone.name = "megatherium-enormous-curved-manual-claw"; clawBone.position.set(side * (2.05 + claw * .2), 2.78 - claw * .08, -2.42 - claw * .15); clawBone.rotation.z = side * -.35; clawBone.rotation.x = -.55; skeleton.add(clawBone); }
+    const orbit = new THREE.Mesh(new THREE.TorusGeometry(.25, .075, 10, 28), bone); orbit.name = "megatherium-deep-orbit"; orbit.position.set(side * .5, .1, -.27); orbit.rotation.y = Math.PI / 2; skull.add(orbit);
+    const arch = fossilBoneBetween(new THREE.Vector3(side * .5, -.02, -.2), new THREE.Vector3(side * .46, -.22, -.86), .075, bone, 12); arch.name = "megatherium-zygomatic-arch"; skull.add(arch);
   }
-  for (let index = 0; index < 15; index++) { const amount = index / 14, point = new THREE.Vector3(0, 4.1 - amount * 2.8, 2.45 + amount * 4.8); const tail = new THREE.Mesh(new THREE.SphereGeometry(.36 - amount * .22, 16, 10), bone); tail.name = "megatherium-balancing-tail-vertebra"; tail.position.copy(point); skeleton.add(tail); }
-  gallery.add(skeleton); root.add(gallery); circles.push({ x: 0, z: -198, radius: 10.7 });
+  for (const side of [-1, 1]) for (let tooth = 0; tooth < 4; tooth++) {
+    const molar = new THREE.Mesh(new RoundedBoxGeometry(.13, .24, .13, 4, .03), bone);
+    molar.name = "megatherium-high-crowned-cheek-tooth"; molar.position.set(side * .24, -.42, -.35 - tooth * .24); skull.add(molar);
+  }
+  skeleton.add(skull);
+
+  const addCurvedUngual = (points: THREE.Vector3[], radius: number, name: string) => {
+    const curve = new THREE.CatmullRomCurve3(points, false, "centripetal");
+    const claw = new THREE.Mesh(new THREE.TubeGeometry(curve, 18, radius, 10, false), bone);
+    claw.name = name; skeleton.add(claw);
+  };
+
+  for (const side of [-1, 1] as const) {
+    const hip = new THREE.Vector3(side * 1.18, 4.04, 1.5);
+    const knee = new THREE.Vector3(side * 1.52, 2.55, .9);
+    const hock = new THREE.Vector3(side * 1.38, 1.02, -.08);
+    const heel = new THREE.Vector3(side * 1.42, .55, .48);
+    skeleton.add(
+      fossilBoneBetween(hip, knee, .34, bone, 24),
+      fossilBoneBetween(knee, hock, .27, bone, 22),
+      fossilBoneBetween(hock, heel, .2, bone, 18),
+    );
+    for (let toe = 0; toe < 4; toe++) {
+      const spread = (toe - 1.5) * .18;
+      const metatarsal = new THREE.Vector3(side * (1.43 + spread), .42, -.15 - toe * .12);
+      const toeEnd = new THREE.Vector3(side * (1.48 + spread * 1.25), .32, -.92 - toe * .1);
+      skeleton.add(fossilBoneBetween(heel, metatarsal, .105, bone, 14), fossilBoneBetween(metatarsal, toeEnd, .075, bone, 12));
+    }
+
+    const shoulder = new THREE.Vector3(side * .9, 6.72, -.62);
+    const elbow = new THREE.Vector3(side * 1.42, 5.18, -1.05);
+    const wrist = new THREE.Vector3(side * 1.82, 3.82, -1.62);
+    const palm = new THREE.Vector3(side * 1.98, 3.15, -2.08);
+    skeleton.add(
+      fossilBoneBetween(shoulder, elbow, .26, bone, 22),
+      fossilBoneBetween(elbow, wrist, .21, bone, 20),
+      fossilBoneBetween(wrist, palm, .16, bone, 18),
+    );
+    for (let digit = 0; digit < 3; digit++) {
+      const lateral = (digit - 1) * .22;
+      const knuckle = new THREE.Vector3(side * (2.03 + lateral), 3.0 - digit * .035, -2.38 - digit * .12);
+      const clawMid = new THREE.Vector3(side * (2.15 + lateral * 1.18), 2.62 - digit * .05, -2.72 - digit * .16);
+      const clawTip = new THREE.Vector3(side * (2.08 + lateral * 1.28), 2.3 - digit * .06, -2.58 - digit * .19);
+      skeleton.add(fossilBoneBetween(palm, knuckle, .095, bone, 14));
+      addCurvedUngual([knuckle, clawMid, clawTip], .075 + digit * .008, "megatherium-enormous-curved-manual-claw-ungual");
+    }
+  }
+
+  const tailCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, 4.12, 2.05),
+    new THREE.Vector3(0, 3.45, 3.35),
+    new THREE.Vector3(0, 2.35, 5.05),
+    new THREE.Vector3(0, 1.15, 7.15),
+    new THREE.Vector3(0, .72, 8.35),
+  ], false, "centripetal");
+  for (let index = 0; index < 22; index++) {
+    const amount = index / 21, point = tailCurve.getPoint(amount), tangent = tailCurve.getTangent(amount);
+    const tailVertebra = fossilVertebra(point, .29 - amount * .19, bone, Math.atan2(tangent.x, tangent.z));
+    tailVertebra.name = `megatherium-balancing-tail-vertebra-${index + 1}`;
+    skeleton.add(tailVertebra);
+  }
+
+  // Thin blackened-steel uprights make the support system believable without
+  // visually replacing the bones they carry.
+  for (const [px, py, pz, height] of [[0, 4.55, 1.35, 4.3], [-1.42, 2.52, .35, 4.7], [1.42, 2.52, .35, 4.7], [0, 6.25, -1.0, 8.0]] as const) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(.045, .065, height, 10), mountMaterial);
+    post.name = "megatherium-blackened-steel-mount"; post.position.set(px, py - height * .5 + .08, pz); skeleton.add(post);
+  }
+  const mountCrossbar = fossilBoneBetween(new THREE.Vector3(-1.45, 4.55, 1.48), new THREE.Vector3(1.45, 4.55, 1.48), .045, mountMaterial, 10);
+  mountCrossbar.name = "megatherium-mount-crossbar"; skeleton.add(mountCrossbar);
+
+  mergeMuseumFossils(skeleton, bone, "megatherium-original-merged-anatomical-fossil-mesh");
+  skeleton.position.set(0, .68, -199);
+  skeleton.rotation.y = -.34;
+  gallery.add(skeleton);
+
+  for (const side of [-1, 1]) {
+    const rail = new THREE.Mesh(new THREE.CylinderGeometry(.045, .055, 19.5, 10), brass);
+    rail.name = "megatherium-gallery-brass-visitor-rail"; rail.position.set(side * 10.4, 1.02, -198); rail.rotation.x = Math.PI / 2; gallery.add(rail);
+  }
+  root.add(gallery); circles.push({ x: 0, z: -198, radius: 11.5 });
   addExhibitSign(root, ownedTextures, "MEGATHERIUM AMERICANUM", "GIANT GROUND SLOTH · FOSSIL MAMMAL HALLS · FLOOR 4", 0, 3.4, -210.5, Math.PI, 1.25);
 }
 
@@ -238,6 +607,7 @@ export class NaturalHistoryMuseumWorld {
     this.root.name = "american-museum-of-natural-history-exploration-level"; scene.add(this.root);
     const bone = new THREE.MeshStandardMaterial({ color: "#d5c6a2", roughness: .8, metalness: .02 });
     addArchitecture(this.root, textures, this.ownedTextures, quality, this.boxes);
+    addGalleryFixtures(this.root, textures, quality);
     addRotundaDinosaurs(this.root, bone, this.circles);
     addBlueWhale(this.root, this.circles);
     addAfricanMammals(this.root, bone, this.circles);
@@ -249,19 +619,61 @@ export class NaturalHistoryMuseumWorld {
     addExhibitSign(this.root, this.ownedTextures, "ARTHUR ROSS HALL OF METEORITES", "AHNIGHITO · CAPE YORK METEORITE", -34.5, 3.1, -109, Math.PI / 2, .72);
     addExhibitSign(this.root, this.ownedTextures, "GOTTESMAN HALL OF PLANET EARTH", "ROCKS · MINERALS · PLANETARY PROCESSES", 34.5, 3.1, -109, -Math.PI / 2, .72);
     addExhibitSign(this.root, this.ownedTextures, "FOSSIL MAMMAL HALLS", "ADVANCED MAMMALS · GIANT GROUND SLOTH AHEAD", 0, 4.4, -158, 0, .9);
-    const guestSpawns = [[-10, 6], [11, 4], [-28, -45], [-25, -82], [27, -44], [30, -86], [-26, -143], [26, -143], [-10, -171], [10, -174], [-5, -214], [7, -216]] as const;
-    const count = quality < .58 ? 5 : quality < .82 ? 7 : 9;
+    const guestSpawns = [
+      [-10, 6], [11, 4], [-28, -45], [-25, -82], [27, -44], [30, -86],
+      [-26, -143], [26, -143], [-10, -171], [10, -174], [-5, -214], [7, -216],
+      [-18, -194], [18, -202], [-12, -208], [13, -190], [-30, -116], [31, -117],
+    ] as const;
+    const count = quality < .58 ? 8 : quality < .82 ? 12 : 18;
     for (let index = 0; index < count; index++) {
       const [x, z] = guestSpawns[index], result = createPremiumHuman({ role: index === count - 1 ? "attendant" : "visitor", quality, variant: 61 + index, faceVariant: 9 + index, coat: ["#4d6d78", "#8b5b42", "#6a5b82", "#65744e"][index % 4], trousers: ["#30363c", "#403c38", "#292d35"][index % 3], skin: ["#b57959", "#77503e", "#d1a17d", "#906047"][index % 4], outfit: index % 3 === 1 ? "knit-chinos" : "cotton-denim", accessory: index % 4 === 0 ? "camera" : index % 4 === 1 ? "tote" : "backpack", pose: index % 4 === 0 ? "photographing" : "neutral" });
       result.root.name = index === count - 1 ? "fossil-mammal-hall-docent" : "amnh-wandering-museum-visitor-" + (index + 1); result.root.position.set(x, 0, z); this.root.add(result.root); this.ownedTextures.push(...result.ownedTextures);
       this.guests.push(createAmbientHumanAgent(result.root, { axis: Math.abs(x) > 18 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(index % 2 ? 1 : -1, 0, .3), travel: index === count - 1 ? .4 : 2.5 + index % 4, speed: .7 + index % 3 * .06, pauseSeconds: 2.6 + index % 3, phase: index * 1.9 }));
     }
-    const hemi = new THREE.HemisphereLight("#c8d9df", "#423b33", 1.18), galleryFill = new THREE.AmbientLight("#f2dfbf", .62); this.root.add(hemi, galleryFill);
-    const sun = new THREE.DirectionalLight("#fff0ce", 2.05); sun.position.set(-35, 48, 58); sun.castShadow = false; this.root.add(sun);
-    // Hundreds of museum exhibit parts receive light, while only dedicated
-    // hero assets need authored cast shadows. Avoiding a full-world shadow
-    // submission keeps the sprawling level smooth on integrated GPUs.
+    const hemi = new THREE.HemisphereLight("#c8d9df", "#352f2a", .7);
+    const galleryFill = new THREE.AmbientLight("#e7d8bd", .24);
+    this.root.add(hemi, galleryFill);
+    const sun = new THREE.DirectionalLight("#fff0ce", 2.2);
+    sun.position.set(-35, 48, 58);
+    sun.castShadow = quality > .72;
+    sun.shadow.mapSize.set(quality > .9 ? 2048 : 1024, quality > .9 ? 2048 : 1024);
+    sun.shadow.camera.left = sun.shadow.camera.bottom = -55;
+    sun.shadow.camera.right = sun.shadow.camera.top = 55;
+    sun.shadow.camera.near = 1;
+    sun.shadow.camera.far = 120;
+    sun.shadow.normalBias = .03;
+    this.root.add(sun, sun.target);
+
+    // The previous uniform ambient wash made every exhibit read like an
+    // ungrounded viewport model. Use localized ceiling spots to shape each
+    // gallery and reserve expensive shadow maps for the two hero mounts.
+    const gallerySpots = [
+      [0, 7, 82, "#ffe3b0"], [-21, -45, 58, "#d7e7ec"], [22, -70, 62, "#f2d2a0"],
+      [-22, -104, 54, "#d7e3e8"], [22, -130, 58, "#e9d4b7"], [-18, -162, 56, "#e5d6b9"], [0, -198, 88, "#ffe0a2"],
+    ] as const;
+    gallerySpots.slice(0, quality < .6 ? 4 : gallerySpots.length).forEach(([x, z, intensity, color], index, visible) => {
+      const light = new THREE.SpotLight(color, intensity, 34, .72, .72, 1.7);
+      light.name = `amnh-gallery-exhibit-spot-${index + 1}`;
+      light.position.set(x, 9.7, z + 2.5);
+      light.target.position.set(x, 1.2, z);
+      light.castShadow = quality > .82 && (index === 0 || index === visible.length - 1);
+      if (light.castShadow) {
+        light.shadow.mapSize.set(1024, 1024);
+        light.shadow.bias = -.00015;
+        light.shadow.normalBias = .025;
+      }
+      this.root.add(light, light.target);
+    });
+
     setShadows(this.root, false);
+    for (const heroName of [
+      "theodore-roosevelt-rotunda-barosaurus-allosaurus-display",
+      "fossil-mammal-halls-megatherium-americanum-finale",
+      "american-museum-central-park-west-facade",
+    ]) {
+      const hero = this.root.getObjectByName(heroName);
+      if (hero) setShadows(hero, quality > .62);
+    }
   }
 
   get objectiveTarget() { return this.megatheriumTarget.clone(); }

@@ -1,9 +1,27 @@
 import * as THREE from "three";
 
 const pendingTextureClones = new WeakMap<THREE.Texture, THREE.Texture[]>();
+const disposedTextureClones = new WeakSet<THREE.Texture>();
+
+export function hasDecodedTextureImage(texture: THREE.Texture) {
+  const image = texture.source.data as (CanvasImageSource & {
+    complete?: boolean;
+    naturalWidth?: number;
+    width?: number;
+  }) | null | undefined;
+  if (!image) return false;
+  if (image.complete === false) return false;
+  const width = image.naturalWidth ?? image.width;
+  return width === undefined || Number(width) > 0;
+}
 
 export function markTextureCloneReadyAfterSource(texture: THREE.Texture, source: THREE.Texture) {
-  if (source.image) {
+  texture.addEventListener("dispose", () => disposedTextureClones.add(texture));
+  // TextureLoader installs an HTMLImageElement before its pixels have decoded.
+  // Marking clones dirty during that gap makes WebGL attempt an upload with no
+  // image data, producing a warning per zoo animal and occasionally a blank
+  // first frame. Only upload immediately when the shared Source is usable.
+  if (hasDecodedTextureImage(source)) {
     texture.needsUpdate = true;
     return;
   }
@@ -13,7 +31,9 @@ export function markTextureCloneReadyAfterSource(texture: THREE.Texture, source:
 }
 
 function releasePendingTextureClones(source: THREE.Texture) {
-  pendingTextureClones.get(source)?.forEach(texture => { texture.needsUpdate = true; });
+  pendingTextureClones.get(source)?.forEach(texture => {
+    if (!disposedTextureClones.has(texture) && hasDecodedTextureImage(source)) texture.needsUpdate = true;
+  });
   pendingTextureClones.delete(source);
 }
 

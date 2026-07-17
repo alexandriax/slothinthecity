@@ -1,0 +1,249 @@
+{
+  "schemaVersion": 1,
+  "generator": "tools/animal-pipeline/build-manifest.mjs",
+  "species": [
+    {
+      "id": "gary-polar-bear",
+      "commonName": "Polar bear",
+      "sourceFacing": "-z",
+      "targetHeightMeters": 1.706,
+      "groundOffsetMeters": 0,
+      "license": "Project-original",
+      "source": {
+        "blendBytes": 23518328,
+        "blendFile": "tools/animal-pipeline/source/gary-polar-bear-source.blend",
+        "blendSha256": "46fca5face6eae19117f82d8319ee2154466b10170c11616c494035364fbe174",
+        "generator": "tools/animal-pipeline/build_gary.py",
+        "method": "Original fused anatomical Blender sculpt, project-authored quadruped skin, clips, UVs, and deterministic PBR maps.",
+        "referenceUse": "visual-reference-only"
+      },
+      "lod0": {
+        "bytes": 5316148,
+        "file": "gary-polar-bear-lod0.glb",
+        "materials": 6,
+        "meshes": 6,
+        "sha256": "1e9f215de84cf1543b94a85241302146d7110dca49890dedf57a92f8c96f787e",
+        "triangles": 128656,
+        "vertices": 72251
+      },
+      "lod2": {
+        "bytes": 4907500,
+        "file": "gary-polar-bear-lod2.glb",
+        "materials": 6,
+        "meshes": 6,
+        "sha256": "3967223af91d820bcd21a28f5f917a1a8aaf8460fca04670d48c45a44b283b54",
+        "triangles": 44320,
+        "vertices": 27289
+      },
+      "clips": {
+        "idle": [
+          "BearIdle"
+        ],
+        "walk": [
+          "BearWalk"
+        ],
+        "forage": [
+          "BearForage"
+        ],
+        "turn": [
+          "BearTurn"
+        ]
+      },
+      "textures": [
+        {
+          "bytes": 6439196,
+          "embedded": true,
+          "embeddedImage": "gary-polar-bear-albedo",
+          "height": 2048,
+          "kind": "albedo",
+          "sha256": "faef6aa0369cd2353b52d3c4bc1be4b690b713dcbf8dc7447dfcea72c00ef4f3",
+          "sourceFile": "tools/animal-pipeline/source/gary-polar-bear-albedo.png",
+          "width": 2048
+        },
+        {
+          "bytes": 12518339,
+          "embedded": true,
+          "embeddedImage": "gary-polar-bear-normal",
+          "height": 2048,
+          "kind": "normal",
+          "sha256": "9a6492b6f52f1f1578fbaea2718390ad497c17d1f47174539fae259d46756a00",
+          "sourceFile": "tools/animal-pipeline/source/gary-polar-bear-normal.png",
+          "width": 2048
+        },
+        {
+          "bytes": 3958483,
+          "embedded": true,
+          "embeddedImage": "gary-polar-bear-roughness",
+          "height": 2048,
+          "kind": "roughness",
+          "sha256": "2f87f351ed7cec7d8935fea74419fe3b1d6b28cfc04684e17364913e97ae34d8",
+          "sourceFile": "tools/animal-pipeline/source/gary-polar-bear-roughness.png",
+          "width": 2048
+        }
+      ]
+    },
+    {
+      "id": "california-sea-lion",
+      "commonName": "California sea lion",
+      "sourceFacing": "-z",
+      "targetHeightMeters": 1.292,
+      "groundOffsetMeters": 0,
+      "license": "Project-original",
+      "source": {
+        "blendBytes": 26470008,
+        "blendFile": "tools/animal-pipeline/source/california-sea-lion-source.blend",
+        "blendSha256": "b398c23df4dc988ab73b326ce738ad04751c302a9a72ba8b0fb6473152782a0e",
+        "generator": "tools/animal-pipeline/build_sea_lion.py",
+        "method": "Original fused cross-section pinniped loft, sculpted webbed flippers, project-authored skinning, clips, UVs, and deterministic PBR maps.",
+        "referenceUse": "visual-reference-only"
+      },
+      "lod0": {
+        "bytes": 3644264,
+        "file": "california-sea-lion-lod0.glb",
+        "materials": 7,
+        "meshes": 9,
+        "sha256": "d47fc03b324dcae432aaa9387220c4e9bc55a04f7c7cdebaa5eab0138ef2a134",
+        "triangles": 152004,
+        "vertices": 87392
+      },
+      "lod2": {
+        "bytes": 3205312,
+        "file": "california-sea-lion-lod2.glb",
+        "materials": 7,
+        "meshes": 9,
+        "sha256": "8d3ec0e2f986cce170752138869dbd6e5bdd0e31d35ecb4b45ef29c6e3ffa49d",
+        "triangles": 48960,
+        "vertices": 31884
+      },
+      "clips": {
+        "idle": [
+          "SeaLionIdle"
+        ],
+        "swim": [
+          "SeaLionSwim"
+        ],
+        "surface": [
+          "SeaLionSurface"
+        ],
+        "dive": [
+          "SeaLionDive"
+        ]
+      },
+      "textures": [
+        {
+          "bytes": 2500541,
+          "embedded": true,
+          "embeddedImage": "california-sea-lion-albedo",
+          "height": 2048,
+          "kind": "albedo",
+          "sha256": "8c31525bc505ffd9e93f178f2f5fa2ce275193db63c8358853081d9f5070b0a4",
+          "sourceFile": "tools/animal-pipeline/source/california-sea-lion-albedo.png",
+          "width": 2048
+        },
+        {
+          "bytes": 10673998,
+          "embedded": true,
+          "embeddedImage": "california-sea-lion-normal",
+          "height": 2048,
+          "kind": "normal",
+          "sha256": "9ee346d73f404272ac36969632fa3efd46bcb78aeb6a65c60d5f040cddfb57e1",
+          "sourceFile": "tools/animal-pipeline/source/california-sea-lion-normal.png",
+          "width": 2048
+        },
+        {
+          "bytes": 2960177,
+          "embedded": true,
+          "embeddedImage": "california-sea-lion-roughness",
+          "height": 2048,
+          "kind": "roughness",
+          "sha256": "74de98941960488154e9489ca0194cec7517dd30adfd851847d910c8a56e60a1",
+          "sourceFile": "tools/animal-pipeline/source/california-sea-lion-roughness.png",
+          "width": 2048
+        }
+      ]
+    },
+    {
+      "id": "spider-monkey",
+      "commonName": "Geoffroy's spider monkey",
+      "sourceFacing": "+z",
+      "targetHeightMeters": 1.48,
+      "groundOffsetMeters": 0,
+      "license": "Project-original",
+      "source": {
+        "blendBytes": 8007895,
+        "blendFile": "tools/animal-pipeline/source/monkey-spider-source.blend",
+        "blendSha256": "8a57d00d2a5a3e2cba16bae71055fb20040a652077e22a6c0ca71981c84d5f9c",
+        "generator": "tools/animal-pipeline/build_spider_monkey.py",
+        "method": "Original continuous spider-monkey anatomical skin with sculpted face, grasping extremities and prehensile tail; project-authored rig, clips, UVs, and PBR maps.",
+        "referenceUse": "visual-reference-only"
+      },
+      "lod0": {
+        "bytes": 19595324,
+        "file": "spider-monkey-lod0.glb",
+        "materials": 5,
+        "meshes": 5,
+        "sha256": "cc3962d7eb39201387349aeb1d617ccaff0cad9b5e0c8f17d14d16e047f9cb5a",
+        "triangles": 137016,
+        "vertices": 79202
+      },
+      "lod2": {
+        "bytes": 13788288,
+        "file": "spider-monkey-lod2.glb",
+        "materials": 5,
+        "meshes": 5,
+        "sha256": "ed77071b55e8c027313cff77a2c2e28d00b26e6d7e3e7dcd16f40798d32260c9",
+        "triangles": 32882,
+        "vertices": 21097
+      },
+      "clips": {
+        "idle": [
+          "MonkeyIdle"
+        ],
+        "walk": [
+          "MonkeyWalk"
+        ],
+        "perch": [
+          "MonkeyPerch"
+        ],
+        "climb": [
+          "MonkeyClimb"
+        ],
+        "swing": [
+          "MonkeySwing"
+        ]
+      },
+      "textures": [
+        {
+          "bytes": 3544547,
+          "embedded": true,
+          "embeddedImage": "monkey-spider-fur-basecolor",
+          "height": 2048,
+          "kind": "albedo",
+          "sha256": "6d05e8c6a257a55dd4e07df948d767699011d248256954c06bef3c129326fc6a",
+          "sourceFile": "tools/animal-pipeline/source/monkey-spider-fur-basecolor.png",
+          "width": 2048
+        },
+        {
+          "bytes": 5967017,
+          "embedded": true,
+          "embeddedImage": "monkey-spider-fur-normal",
+          "height": 2048,
+          "kind": "normal",
+          "sha256": "db46ee998b49aee84a5c0d4de9f62b99d8e0d759bc0500a248aaffe44c428127",
+          "sourceFile": "tools/animal-pipeline/source/monkey-spider-fur-normal.png",
+          "width": 2048
+        },
+        {
+          "bytes": 2582100,
+          "embedded": true,
+          "embeddedImage": "monkey-spider-fur-roughness",
+          "height": 2048,
+          "kind": "roughness",
+          "sha256": "c7e7809d249ae60eef3dea74a658d04621e6d8d5cd0825bc590eb35d7a01a098",
+          "sourceFile": "tools/animal-pipeline/source/monkey-spider-fur-roughness.png",
+          "width": 2048
+        }
+      ]
+    }
+  ]
+}

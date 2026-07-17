@@ -32,12 +32,12 @@ test("Gary's polar-bear habitat carries the exact TOGYL support plaque", async (
   assert.match(zoo, /context\.fillText\("POLAR BEAR", width \/ 2, 252\)/);
   assert.match(zoo, /context\.fillText\("Provided thanks to generous support by", width \/ 2, 380\)/);
   assert.match(zoo, /context\.fillText\("TOGYL", width \/ 2, 505\)/);
-  assert.match(zoo, /context\.font = "700 62px Georgia, serif"/);
+  assert.match(zoo, /context\.font = "700 44px Helvetica, Arial, sans-serif"/);
   assert.match(zoo, /gary-polar-bear-togyl-support-plaque/);
   assert.match(zoo, /createGaryPolarBear\(textures, quality\)/);
 });
 
-test("zoo species use the licensed project atlas and enclosure-safe multi-state motion", async () => {
+test("zoo species use the project atlas and enclosure-safe multi-state motion", async () => {
   const [zoo, animals, textures, provenance] = await Promise.all([
     readSource("../app/game/world/BronxZooWorld.ts"),
     readSource("../app/game/world/ZooAnimals.ts"),
@@ -96,7 +96,12 @@ test("the expansive zoo includes the sun conure, companion birds, monkeys, and a
   assert.match(zoo, /SUN CONURE · MACAW · SCARLET IBIS · GREEN ARACARI/);
   assert.match(zoo, /MONKEY FOREST/);
   assert.match(zoo, /spider-monkey-load-bearing-contact-branch/);
-  assert.match(zoo, /perched\.root\.userData\.animationState = "perch"/);
+  assert.match(zoo, /spider-monkey-authored-contact-support-rig/);
+  assert.match(zoo, /spider-monkey-perch-hand-contact-branch/);
+  assert.match(zoo, /spider-monkey-prehensile-tail-contact-branch/);
+  assert.match(zoo, /const state = cycle < 10\.2 \? "perch" : cycle < 16\.4 \? "climb" : "swing"/);
+  assert.match(zoo, /spider-monkey-authored-climb-hand-contact-rope/);
+  assert.match(zoo, /spider-monkey-authored-climb-foot-contact-rung/);
   assert.equal((zoo.match(/mode: "terrestrial"[\s\S]{0,80}speed: \.1/g) ?? []).length >= 2, true);
   assert.match(zoo, /spider-monkey-climbing-rope/);
   for (const habitat of ["SEA LION POOL", "AFRICAN PLAINS", "RED PANDA", "GIANT TORTOISE", "FLAMINGO WETLAND", "AMERICAN BISON"]) assert.match(zoo, new RegExp(habitat));
