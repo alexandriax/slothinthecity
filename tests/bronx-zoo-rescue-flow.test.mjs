@@ -60,6 +60,26 @@ test("zoo species use the licensed project atlas and enclosure-safe multi-state 
   assert.equal(metadata.license, "Original project-generated asset");
 });
 
+test("pending atlas clones cannot recursively serialize through Three.js texture userData", async () => {
+  const [textures, animals, humans] = await Promise.all([
+    readSource("../app/game/rendering/textures.ts"),
+    readSource("../app/game/world/ZooAnimals.ts"),
+    readSource("../app/game/world/PremiumCharacter.ts"),
+  ]);
+
+  assert.match(textures, /const pendingTextureClones = new WeakMap<THREE\.Texture, THREE\.Texture\[]>\(\)/);
+  assert.match(textures, /markTextureCloneReadyAfterSource\(texture: THREE\.Texture, source: THREE\.Texture\)/);
+  assert.match(animals, /markTextureCloneReadyAfterSource\(texture, textures\.zooAnimalAtlas\)/);
+  assert.match(animals, /texture\.source = textures\.zooAnimalAtlas\.source/);
+  assert.match(humans, /const pendingAtlasClones = new WeakMap<THREE\.Texture, THREE\.Texture\[]>\(\)/);
+  assert.match(humans, /texture\.source = source\.source/);
+  assert.doesNotMatch(animals, /zooAnimalAtlas\.clone\(\)/);
+  assert.doesNotMatch(humans, /source\.clone\(\)/);
+  assert.doesNotMatch(textures, /userData\.pendingAtlasClones|userData\.atlasReady/);
+  assert.doesNotMatch(animals, /userData\.pendingAtlasClones|userData\.atlasReady/);
+  assert.doesNotMatch(humans, /userData\.pendingAtlasClones|userData\.atlasReady/);
+});
+
 test("the expansive zoo includes the sun conure, companion birds, monkeys, and additional habitats", async () => {
   const [zoo, animals] = await Promise.all([
     readSource("../app/game/world/BronxZooWorld.ts"),

@@ -128,6 +128,7 @@ function texturedMaterial(texture: THREE.Texture, roughness: number, options: { 
 }
 
 const atlasSources = new Map<string, THREE.Texture>();
+const pendingAtlasClones = new WeakMap<THREE.Texture, THREE.Texture[]>();
 
 /**
  * The generated atlases are 2 x 2 sheets. Cloning shares the decoded image but
@@ -141,24 +142,27 @@ function atlasTile(url: string, tile: number, quality: number) {
   let source = atlasSources.get(url);
   if (!source) {
     source = new THREE.TextureLoader().load(url, loaded => {
-      const pending = (loaded.userData.pendingAtlasClones ?? []) as THREE.Texture[];
-      pending.forEach(texture => { texture.needsUpdate = true; });
-      pending.length = 0;
-      loaded.userData.atlasReady = true;
+      pendingAtlasClones.get(loaded)?.forEach(texture => { texture.needsUpdate = true; });
+      pendingAtlasClones.delete(loaded);
     });
     source.colorSpace = THREE.SRGBColorSpace;
     source.wrapS = source.wrapT = THREE.ClampToEdgeWrapping;
-    source.userData.pendingAtlasClones = [] as THREE.Texture[];
     atlasSources.set(url, source);
   }
-  const texture = source.clone();
+  const texture = new THREE.Texture();
+  texture.source = source.source;
+  texture.colorSpace = source.colorSpace;
   const index = ((tile % 4) + 4) % 4;
   texture.repeat.set(.5, .5);
   texture.offset.set((index % 2) * .5, index < 2 ? .5 : 0);
   texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
   texture.anisotropy = quality > .86 ? 8 : quality > .62 ? 4 : 2;
-  if (source.userData.atlasReady || source.image) texture.needsUpdate = true;
-  else ((source.userData.pendingAtlasClones ??= []) as THREE.Texture[]).push(texture);
+  if (source.image) texture.needsUpdate = true;
+  else {
+    const pending = pendingAtlasClones.get(source) ?? [];
+    pending.push(texture);
+    pendingAtlasClones.set(source, pending);
+  }
   return texture;
 }
 

@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import type { GameTextures } from "../rendering/textures";
+import { markTextureCloneReadyAfterSource, type GameTextures } from "../rendering/textures";
 
 export type ZooAnimalRig = {
   root: THREE.Group;
@@ -30,7 +30,8 @@ function qualitySegments(quality: number, high = 28, medium = 20, low = 14) {
 }
 
 export function cloneZooAnimalAtlasCell(textures: GameTextures, column: 0 | 1 | 2, rowFromTop: 0 | 1 | 2, name: string) {
-  const texture = textures.zooAnimalAtlas.clone();
+  const texture = new THREE.Texture();
+  texture.source = textures.zooAnimalAtlas.source;
   texture.name = `zoo-animal-atlas-${name}`;
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
@@ -40,8 +41,7 @@ export function cloneZooAnimalAtlasCell(textures: GameTextures, column: 0 | 1 | 
   texture.repeat.set(1 / 3, 1 / 3);
   // Texture V origins are bottom-left; atlas rows are documented top-down.
   texture.offset.set(column / 3, (2 - rowFromTop) / 3);
-  if (textures.zooAnimalAtlas.userData.atlasReady || textures.zooAnimalAtlas.image) texture.needsUpdate = true;
-  else ((textures.zooAnimalAtlas.userData.pendingAtlasClones ??= []) as THREE.Texture[]).push(texture);
+  markTextureCloneReadyAfterSource(texture, textures.zooAnimalAtlas);
   return texture;
 }
 

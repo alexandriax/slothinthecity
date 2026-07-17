@@ -1,5 +1,22 @@
 import * as THREE from "three";
 
+const pendingTextureClones = new WeakMap<THREE.Texture, THREE.Texture[]>();
+
+export function markTextureCloneReadyAfterSource(texture: THREE.Texture, source: THREE.Texture) {
+  if (source.image) {
+    texture.needsUpdate = true;
+    return;
+  }
+  const pending = pendingTextureClones.get(source) ?? [];
+  pending.push(texture);
+  pendingTextureClones.set(source, pending);
+}
+
+function releasePendingTextureClones(source: THREE.Texture) {
+  pendingTextureClones.get(source)?.forEach(texture => { texture.needsUpdate = true; });
+  pendingTextureClones.delete(source);
+}
+
 export type GameTextures = {
   ground: THREE.Texture;
   bark: THREE.Texture;
@@ -73,12 +90,8 @@ export function loadGameTextures(renderer: THREE.WebGLRenderer, onReady: () => v
   const bark = load("/game/textures/elm-bark.webp", 1.3, 5);
   const fur = load("/game/textures/sloth-fur.webp", 1.2, 2.2);
   const zooAnimalAtlas = load("/game/textures/zoo-animal-surface-atlas.webp", 1, 1, atlas => {
-    const pending = (atlas.userData.pendingAtlasClones ?? []) as THREE.Texture[];
-    pending.forEach(texture => { texture.needsUpdate = true; });
-    pending.length = 0;
-    atlas.userData.atlasReady = true;
+    releasePendingTextureClones(atlas);
   });
-  zooAnimalAtlas.userData.pendingAtlasClones = [] as THREE.Texture[];
   const foliage = load("/game/textures/foliage-cluster.webp", 1);
   foliage.wrapS = foliage.wrapT = THREE.ClampToEdgeWrapping;
   foliage.repeat.set(1, 1);
