@@ -30,7 +30,11 @@ export function resolveTouchAction(prompt: string, promptKey: string, vehicle: T
   if (!code) return null;
   const label = prompt.includes("SWIPE METROCARD") ? "Swipe"
     : prompt.includes("COLLECT METROCARD") ? "Card"
-      : prompt.includes("RECOVER") || prompt.includes("TICKET") ? "Take"
+      : prompt.includes("PRESENT TICKET") || prompt.includes("SCAN TICKET") ? "Enter"
+        : prompt.includes("OPEN SLOTH") || prompt.includes("HABITAT DOOR") ? "Open"
+          : prompt.includes("RESCUE") || prompt.includes("FREE SLOTH") ? "Rescue"
+            : prompt.includes("TICKET DONOR") || prompt.includes("SPEAK WITH") ? "Talk"
+              : prompt.includes("RECOVER") || prompt.includes("TICKET") ? "Take"
         : prompt.includes("EXIT TRAIN") || prompt.includes("EXIT") ? "Exit"
           : prompt.includes("DRIVE") ? "Drive"
             : prompt.includes("FORAGE") ? "Forage"

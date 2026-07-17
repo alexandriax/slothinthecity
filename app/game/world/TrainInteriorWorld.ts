@@ -63,6 +63,24 @@ export const TRAIN_INTERIOR_JOURNEYS = {
     route: "5",
     service: "Uptown / Bronx Express",
   },
+  WEST_FARMS_TO_LEXINGTON: {
+    destination: { name: "Lexington Av / 59 St", side: 1 },
+    intermediateStops: [
+      { name: "E 180 St", side: -1 },
+      { name: "125 St", side: 1 },
+      { name: "86 St", side: -1 },
+    ],
+    origin: "West Farms Sq–E Tremont Av",
+    route: "5",
+    service: "Downtown / Manhattan Express",
+  },
+  LEXINGTON_TO_FIFTH: {
+    destination: { name: "5 Av / 59 St", side: -1 },
+    intermediateStops: [],
+    origin: "Lexington Av / 59 St",
+    route: "N",
+    service: "Downtown / Brooklyn Broadway service",
+  },
 } as const satisfies Record<string, TrainInteriorJourney>;
 
 type DoorRig = {

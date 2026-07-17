@@ -197,7 +197,7 @@ test("field-services cart has the requested plate and wheel-clear side placards"
   assert.ok(labelBottom > fenderTop, `service label bottom ${labelBottom} must clear fender top ${fenderTop}`);
 });
 
-test("park and finale landmarks use complete campuses and textured articulated characters", async () => {
+test("park and Bronx Zoo landmarks use complete campuses and textured articulated characters", async () => {
   const [landmarks, finale, characters] = await Promise.all([
     readFile(new URL("../app/game/world/CampaignLandmarks.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/game/world/BronxZooWorld.ts", import.meta.url), "utf8"),
@@ -218,7 +218,15 @@ test("park and finale landmarks use complete campuses and textured articulated c
   assert.match(characters, /proceduralSurface\("fur"/);
   assert.match(characters, /new THREE\.CapsuleGeometry/);
   assert.match(characters, /createPremiumSlothFriend/);
-  for (const feature of ["west-farms-station-exit-approach", "bronx-zoo-arrival-fountain", "bronx-zoo-ticket-and-member-pavilion", "waiting-quadrupedal-sloth-friend"]) assert.match(finale + characters, new RegExp(feature));
+  for (const feature of [
+    "west-farms-station-exit-approach",
+    "bronx-zoo-arrival-fountain",
+    "bronx-zoo-ticket-and-member-pavilion",
+    "bronx-zoo-world-of-birds-sun-conure-aviary",
+    "gary-polar-bear-togyl-support-plaque",
+    "bronx-zoo-sloth-conservation-enclosure",
+    "captive-sloth-friend-",
+  ]) assert.match(finale + characters, new RegExp(feature));
   assert.match(finale, /bronx-zoo-arrival-attendant/);
   assert.match(finale, /attendantNearby\(player: THREE\.Vector3/);
   assert.match(characters, /\/game\/characters\/npc-face-atlas-v2-03\.webp/);
@@ -283,7 +291,7 @@ test("wrong trains restore the current station checkpoint and correct trains adv
   const checkpoint = subway.slice(checkpointStart, finishRideStart);
   const finishRide = subway.slice(finishRideStart, frameStart);
 
-  assert.match(checkpoint, /stationWorld\.setStation\(station\)\.restoreProgressState\(subwayProgress\)/);
+  assert.match(checkpoint, /stationWorld\.setStation\(station, travelDirection\)\.restoreProgressState\(subwayProgress\)/);
   assert.match(checkpoint, /player\.copy\(stationWorld\.checkpointSpawn\(resumeAtPlatform\)\)/);
   assert.match(checkpoint, /stationClock = waitForNextTrain \? 18 : 0/);
   assert.match(checkpoint, /previousDoorsOpen = stationWorld\.doorsOpen/);
@@ -294,11 +302,12 @@ test("wrong trains restore the current station checkpoint and correct trains adv
   assert.match(finishRide, /checkpoint\("WEST_FARMS"/);
 });
 
-test("West Farms streams a playable Bronx Zoo arrival before mission completion", async () => {
-  const [subway, world, finale] = await Promise.all([
+test("West Farms streams the Bronx Zoo rescue level and completion waits for Home Grove", async () => {
+  const [subway, world, zoo, parkReturn] = await Promise.all([
     readFile(new URL("../app/game/SubwayGame.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/game/world/SubwayWorld.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/game/world/BronxZooWorld.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/world/CentralParkReturnWorld.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(world, /WEST FARMS SQ \/ E TREMONT AV/);
@@ -311,14 +320,17 @@ test("West Farms streams a playable Bronx Zoo arrival before mission completion"
   assert.match(subway, /new BronxZooWorld\(scene, textures/);
   assert.match(subway, /stationWorld\.dispose\(\); stationWorld = null/);
   assert.match(subway, /player\.copy\(zooWorld\.spawn\)/);
-  assert.match(subway, /zooWorld\.attendantNearby\(player\)/);
-  assert.match(subway, /SPEAK WITH BRONX ZOO ATTENDANT/);
-  assert.match(subway, /function completeMission\(\)[\s\S]{0,180}setTransitStage\("COMPLETE"\)/);
-  assert.match(finale, /readonly spawn = new THREE\.Vector3/);
-  assert.match(finale, /resolvePlayer\(player: THREE\.Vector3/);
-  assert.match(finale, /attendantNearby\(player: THREE\.Vector3/);
-  assert.match(subway, /<div className="eyebrow">Bronx Zoo · Asia Gate<\/div>/);
-  assert.match(subway, /<h2>Mission complete\.<\/h2>/);
+  assert.match(subway, /zooWorld\.interactionHint\(player\)/);
+  assert.match(subway, /event\.kind === "SLOTHS_RELEASED"[\s\S]{0,180}rescuedParty\.setActive\(true/);
+  assert.match(subway, /zooWorld\.stationReturnReached\(player\)[\s\S]{0,120}startReturnTransit\(\)/);
+  assert.match(subway, /function completeMission\(\)[\s\S]{0,220}transitStage !== "CENTRAL_PARK"[\s\S]{0,220}setTransitStage\("COMPLETE"\)/);
+  assert.match(zoo, /readonly spawn = new THREE\.Vector3/);
+  assert.match(zoo, /resolvePlayer\(player: THREE\.Vector3/);
+  assert.match(zoo, /stationReturnReached\(player: THREE\.Vector3/);
+  assert.match(parkReturn, /central-park-home-grove-tree/);
+  assert.match(parkReturn, /central-park-sloth-sanctuary-sign/);
+  assert.match(subway, /<div className="eyebrow">Central Park · Home Grove<\/div>/);
+  assert.match(subway, /<h2>Your friends are home\.<\/h2>/);
 });
 
 test("train boarding streams a dedicated interior world with crowd and door gameplay", async () => {
@@ -328,13 +340,13 @@ test("train boarding streams a dedicated interior world with crowd and door game
   ]);
 
   assert.match(subway, /stationWorld\.dispose\(\); stationWorld = null; interiorWorld = new TrainInteriorWorld/);
-  assert.match(subway, /stationWorld \?\?= createStationWorld\(station\)/);
+  assert.match(subway, /stationWorld \?\?= createStationWorld\(station, travelDirection\)/);
   assert.match(subway, /new TrainInteriorWorld\(scene, textures/);
   assert.match(subway, /data-loaded-world=\{stage === "RIDING" \? "train-interior"/);
   assert.match(subway, /boardThroughOpenDoor\(option\)/);
   assert.match(subway, /stationWorld\.boardingHint\(player\)/);
   assert.match(subway, /WALK THROUGH OPEN/);
-  assert.match(subway, /The crowd carried you onto the platform/);
+  assert.match(subway, /The crowd carried you and the rescued group onto the platform/);
   assert.match(interior, /PUSHED_OUT/);
   assert.match(interior, /MISSED_STOP/);
   assert.match(interior, /destination-door-marker/);

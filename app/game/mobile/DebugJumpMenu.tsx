@@ -17,7 +17,18 @@ const DEBUG_DESTINATIONS: Array<{ scene: DebugSceneName; label: string; detail: 
   { scene: "transfer-concourse", label: "59 St concourse", detail: "Choose a transfer" },
   { scene: "transfer", label: "Uptown transfer", detail: "5 train platform" },
   { scene: "train-5", label: "5 train", detail: "Bronx-bound ride" },
-  { scene: "bronx", label: "Bronx Zoo", detail: "Final approach" },
+  { scene: "bronx", label: "Bronx Zoo", detail: "Ticket forecourt" },
+  { scene: "bronx-polar", label: "Gary", detail: "Polar bear habitat" },
+  { scene: "bronx-birds", label: "World of Birds", detail: "Sun conure aviary" },
+  { scene: "bronx-monkeys", label: "Monkey habitat", detail: "Ropes and canopy" },
+  { scene: "bronx-sloths", label: "Sloth habitat", detail: "Rescue enclosure" },
+  { scene: "rescue", label: "Rescued friends", detail: "Follower-party review" },
+  { scene: "return-westfarms", label: "Return platform", detail: "Downtown 5 service" },
+  { scene: "return-train-5", label: "Return 5 train", detail: "Followers onboard" },
+  { scene: "return-lexington", label: "Return transfer", detail: "Downtown N / R" },
+  { scene: "return-train-nr", label: "Return N / R", detail: "Fifth Avenue ride" },
+  { scene: "homecoming", label: "Central Park return", detail: "Escort to Home Grove" },
+  { scene: "finale", label: "Finale", detail: "Home Grove reunion" },
 ];
 
 export function DebugJumpMenu({ activeScene }: { activeScene: DebugSceneName | null }) {

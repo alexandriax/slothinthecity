@@ -5,22 +5,22 @@ import test from "node:test";
 const WORLD_CASES = [
   {
     file: "CampaignLandmarks.ts",
-    expectedHumans: 2,
+    minimumHumans: 2,
     markerBefore: "scene.remove(root)",
   },
   {
     file: "SubwayWorld.ts",
-    expectedHumans: 1,
+    minimumHumans: 1,
     markerBefore: "station.root.removeFromParent()",
   },
   {
     file: "TrainInteriorWorld.ts",
-    expectedHumans: 1,
+    minimumHumans: 1,
     markerBefore: "this.root.removeFromParent()",
   },
   {
     file: "BronxZooWorld.ts",
-    expectedHumans: 2,
+    minimumHumans: 2,
     markerBefore: "this.root.removeFromParent()",
   },
 ];
@@ -49,13 +49,19 @@ test("premium-human worlds invalidate pending authored-character hydration befor
 });
 
 test("all premium-human world integrations remain present", async () => {
-  for (const { file, expectedHumans } of WORLD_CASES) {
+  for (const { file, minimumHumans } of WORLD_CASES) {
     const source = await worldSource(file);
     const createCalls = source.match(/createPremiumHuman\s*\(/g) ?? [];
-    assert.equal(
-      createCalls.length,
-      expectedHumans,
-      `${file} should retain its authored human creation sites`,
+    assert.ok(
+      createCalls.length >= minimumHumans,
+      `${file} should retain at least ${minimumHumans} authored human creation sites`,
     );
   }
+
+  const bronxZoo = await worldSource("BronxZooWorld.ts");
+  assert.match(bronxZoo, /bronx-zoo-extra-ticket-donor/);
+  assert.match(bronxZoo, /bronx-zoo-arrival-attendant/);
+  assert.match(bronxZoo, /bronx-zoo-wandering-visitor-\$\{index \+ 1\}/);
+  assert.match(bronxZoo, /guestData\.slice\(0, quality < \.58 \? 4 : quality < \.82 \? 6 : guestData\.length\)/);
+  assert.match(bronxZoo, /this\.guestAgents\.push\(createAmbientHumanAgent\(result\.root/);
 });

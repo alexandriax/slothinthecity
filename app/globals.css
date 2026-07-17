@@ -494,14 +494,15 @@ button { font: inherit; }
 
 .subway-shell .finale-screen {
   background:
-    linear-gradient(90deg,rgba(4,11,8,.86) 0%,rgba(5,14,10,.58) 38%,rgba(5,14,10,.12) 72%),
-    linear-gradient(0deg,rgba(3,9,6,.46),transparent 55%);
+    linear-gradient(90deg,rgba(4,11,8,.86) 0%,rgba(5,14,10,.56) 38%,rgba(5,14,10,.08) 72%),
+    linear-gradient(0deg,rgba(3,9,6,.2),transparent 55%);
 }
+.subway-shell[data-game-state="complete"] .world-vignette { box-shadow:inset 0 0 10vw 1vw rgba(0,0,0,.28); }
 .subway-shell .finale-screen:before {
   background:
     repeating-linear-gradient(90deg,transparent 0 79px,rgba(255,255,255,.018) 80px),
     radial-gradient(circle at 78% 28%,rgba(193,230,150,.2),transparent 30%),
-    linear-gradient(135deg,transparent 55%,rgba(0,0,0,.45));
+    linear-gradient(135deg,transparent 55%,rgba(0,0,0,.18));
 }
 .subway-shell .finale-screen .pause-card {
   position:absolute;
@@ -518,7 +519,7 @@ button { font: inherit; }
   transform:translateY(-50%);
 }
 .subway-shell .finale-screen .pause-card:before {
-  content:"05";
+  content:"06";
   position:absolute;
   top:-26px;
   right:15px;
@@ -529,7 +530,7 @@ button { font: inherit; }
   line-height:1;
 }
 .subway-shell .finale-screen .pause-card:after {
-  content:"WEST FARMS SQ \2192  BRONX ZOO";
+  content:"BRONX ZOO \2192  CENTRAL PARK · HOME GROVE";
   position:absolute;
   left:0;
   right:0;
