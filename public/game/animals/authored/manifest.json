@@ -250,7 +250,7 @@
       "commonName": "Sun conure",
       "sourceFacing": "-z",
       "targetHeightMeters": 0.36,
-      "groundOffsetMeters": 0,
+      "groundOffsetMeters": -0.1064,
       "license": "Project-original",
       "source": {
         "blendBytes": 5540908,

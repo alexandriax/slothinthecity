@@ -48,6 +48,7 @@ const reviewedSpecies = [
     commonName: "Sun conure",
     sourceFacing: "-z",
     targetHeightMeters: .36,
+    groundOffsetMeters: -.1064,
     method: "Approved original manual-loop avian topology with continuous head-neck-torso anatomy, independently rigged primary fan, measured zygodactyl contact, project-authored clips, UVs, and analytic PBR maps.",
     clips: { idle: ["Perch"], perch: ["Perch"], "short-flight": ["ShortFlight"], preen: ["Preen"], "landing-settle": ["LandingSettle"] },
   },
@@ -196,7 +197,7 @@ async function speciesContract(review) {
     commonName: review.commonName,
     sourceFacing: review.sourceFacing,
     targetHeightMeters: review.targetHeightMeters,
-    groundOffsetMeters: 0,
+    groundOffsetMeters: review.groundOffsetMeters ?? 0,
     license: "Project-original",
     source: {
       blendBytes: blend.length,

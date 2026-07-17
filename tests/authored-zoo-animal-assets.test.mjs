@@ -92,6 +92,7 @@ test("original animal manifest pins every reviewed species, authored PBR maps, c
   assert.equal(manifest.schemaVersion, 1);
   assert.match(manifest.generator, /^tools\/animal-pipeline\//);
   assert.deepEqual(manifest.species.map(entry => entry.id).toSorted(), Object.keys(EXPECTED_SPECIES).toSorted());
+  assert.equal(manifest.species.find(entry => entry.id === "sun-conure")?.groundOffsetMeters, -.1064, "the conure should normalize to its measured perch plane, not its tail tip");
 
   for (const species of manifest.species) {
     assert.equal(species.license, "Project-original", `${species.id} should be an original project asset`);
