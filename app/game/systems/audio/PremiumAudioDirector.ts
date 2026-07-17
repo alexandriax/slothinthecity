@@ -91,8 +91,34 @@ export const TRANSIT_ANNOUNCEMENTS = {
   stop_125: "/audio/announcements/stop_125.mp3",
   stop_e180: "/audio/announcements/stop_e180.mp3",
   west_farms_arrival: "/audio/announcements/west_farms_arrival.mp3",
+  west_farms_downtown_5_platform: "/audio/announcements/west_farms_downtown_5_platform.mp3",
+  west_farms_downtown_5_boarding: "/audio/announcements/west_farms_downtown_5_boarding.mp3",
+  southbound_5_e180: "/audio/announcements/southbound_5_e180.mp3",
+  southbound_5_125: "/audio/announcements/southbound_5_125.mp3",
+  southbound_5_86: "/audio/announcements/southbound_5_86.mp3",
+  southbound_5_lexington_transfer: "/audio/announcements/southbound_5_lexington_transfer.mp3",
+  lex_downtown_n_platform: "/audio/announcements/lex_downtown_n_platform.mp3",
+  lex_downtown_r_platform: "/audio/announcements/lex_downtown_r_platform.mp3",
+  lex_downtown_n_boarding: "/audio/announcements/lex_downtown_n_boarding.mp3",
+  lex_downtown_r_boarding: "/audio/announcements/lex_downtown_r_boarding.mp3",
+  downtown_nr_fifth_arrival: "/audio/announcements/downtown_nr_fifth_arrival.mp3",
   stand_clear_doors: "/audio/announcements/stand_clear_doors.mp3",
 } as const;
+
+/** Exact authored copy for caption parity and route-direction QA. */
+export const RETURN_TRANSIT_ANNOUNCEMENT_SCRIPTS = {
+  west_farms_downtown_5_platform: "Attention passengers. The next downtown 5 train is now approaching West Farms Square, East Tremont Avenue. This train is going to Manhattan. Transfer to the N or R at Lexington Avenue.",
+  west_farms_downtown_5_boarding: "Downtown 5 train. Doors are open. Board here for Lexington Avenue. The N and R transfer is at Lexington Avenue, not at West Farms.",
+  southbound_5_e180: "This is East 180th Street. The next stop is 125th Street.",
+  southbound_5_125: "This is 125th Street. The next stop is 86th Street.",
+  southbound_5_86: "This is 86th Street. The next stop is Lexington Avenue, 59th Street, where you can transfer to the downtown N or R.",
+  southbound_5_lexington_transfer: "This is Lexington Avenue, 59th Street. Transfer here to a downtown N or R train for Fifth Avenue. Exit with your group and follow signs for the separate Broadway platform.",
+  lex_downtown_n_platform: "Attention passengers. A downtown N train is approaching Lexington Avenue, 59th Street. This train goes one stop to Fifth Avenue, 59th Street.",
+  lex_downtown_r_platform: "Attention passengers. A downtown R train is approaching Lexington Avenue, 59th Street. This train goes one stop to Fifth Avenue, 59th Street.",
+  lex_downtown_n_boarding: "Downtown N train. Doors are open. Board here for Fifth Avenue and Central Park.",
+  lex_downtown_r_boarding: "Downtown R train. Doors are open. Board here for Fifth Avenue and Central Park.",
+  downtown_nr_fifth_arrival: "This is Fifth Avenue, 59th Street. Exit here for Central Park. Please take all belongings and keep your group together.",
+} as const satisfies Partial<Record<keyof typeof TRANSIT_ANNOUNCEMENTS, string>>;
 
 export type TransitAnnouncement = keyof typeof TRANSIT_ANNOUNCEMENTS;
 

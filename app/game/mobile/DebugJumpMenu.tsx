@@ -54,6 +54,7 @@ export function DebugJumpMenu({ activeScene }: { activeScene: DebugSceneName | n
           <strong>{destination.label}</strong><small>{destination.detail}</small>
         </a>)}
         <a href="/debug/characters"><strong>Character lab</strong><small>Meshes and animation</small></a>
+        <a href="/debug/animals"><strong>Animal lab</strong><small>Anatomy, mesh and motion</small></a>
       </div>
     </div>}
   </aside>;

@@ -131,6 +131,36 @@ test("the keeper door releases four branch-dwelling sloths into a scene-owned fo
   assert.match(game, /event\.kind === "SLOTHS_RELEASED"[\s\S]{0,180}rescuedParty\.setActive\(true/);
 });
 
+test("opening the keeper door preserves every authored sloth transform until it naturally catches the player", async () => {
+  const [zoo, party] = await Promise.all([
+    readSource("../app/game/world/BronxZooWorld.ts"),
+    readSource("../app/game/world/SlothFollowerParty.ts"),
+  ]);
+
+  const slothData = zoo.slice(zoo.indexOf("const slothData = ["), zoo.indexOf("] as const;", zoo.indexOf("const slothData = [")));
+  const followerTints = party.slice(party.indexOf("const FOLLOWER_TINTS"), party.indexOf("as const;", party.indexOf("const FOLLOWER_TINTS")));
+  assert.deepEqual(followerTints.match(/#[0-9a-f]{6}/gi), slothData.match(/#[0-9a-f]{6}/gi));
+  assert.doesNotMatch(party, /result\.root\.scale\.multiplyScalar/);
+  assert.match(party, /const persistentSlothSurface = cloneZooAnimalAtlasCell\(textures, 2, 2, "rescued-sloth-friends"\)/);
+  assert.match(party, /this\.ownedTextures\.push\(persistentSlothSurface\)/);
+  assert.match(party, /\!\/\(sloth-\(\?:torso\|head\|forelimb\|hindlimb\)\|anatomical-sloth\)\/[\s\S]{0,260}surface\.map = persistentSlothSurface/);
+  assert.ok(party.indexOf("this.ownedTextures.push(persistentSlothSurface)") < party.indexOf("FOLLOWER_TINTS.forEach"));
+
+  const activation = party.slice(party.indexOf("setActive(active:"), party.indexOf("private seedBreadcrumbs"));
+  assert.match(activation, /if \(!wasActive && this\.releaseFromEnclosure\(leader, floorY\)\) return;[\s\S]{0,80}this\.reset\(leader, floorY\)/);
+  assert.match(activation, /getObjectByName\(`captive-sloth-friend-\$\{index \+ 1\}-on-real-branch`\)/);
+  assert.match(activation, /getWorldPosition\(follower\.root\.position\)/);
+  assert.match(activation, /getWorldQuaternion\(follower\.root\.quaternion\)/);
+  assert.match(activation, /follower\.formationJoined = false/);
+  assert.doesNotMatch(activation.slice(activation.indexOf("private releaseFromEnclosure")), /follower\.root\.position\.set\(leader/);
+
+  assert.match(party, /const catchingUp = !follower\.formationJoined/);
+  assert.match(party, /if \(!catchingUp\) desired\.addScaledVector\(side, offset\.x\)\.addScaledVector\(tangent, offset\.y\)/);
+  assert.match(party, /if \(catchingUp && distance <= 2\.15\) follower\.formationJoined = true/);
+  assert.match(party, /maximumSpeed = catchingUp \? 3\.25/);
+  assert.match(party, /"release-climb-down"/);
+});
+
 test("rescued sloths persist through zoo disposal and both reverse subway journeys", async () => {
   const [game, party, journeys] = await Promise.all([
     readSource("../app/game/SubwayGame.tsx"),

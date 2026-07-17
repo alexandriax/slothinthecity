@@ -22,7 +22,7 @@ export type TrainInteriorJourney = {
 };
 
 export type TrainInteriorEvent =
-  | { type: "INTERMEDIATE_STOP"; stop: string }
+  | { type: "INTERMEDIATE_STOP"; nextStop: string; stop: string }
   | { type: "PUSHED_OUT"; stop: string }
   | { type: "DESTINATION_READY"; stop: string }
   | { type: "WRONG_DOOR"; stop: string }
@@ -330,6 +330,10 @@ export class TrainInteriorWorld {
   }
 
   get currentStop() { return this.stopIndex < this.journey.intermediateStops.length ? this.journey.intermediateStops[this.stopIndex] : this.journey.destination; }
+  get displayedStop() {
+    const index = this.phase === "DEPARTING" ? Math.min(this.stopIndex + 1, this.journey.intermediateStops.length) : this.stopIndex;
+    return index < this.journey.intermediateStops.length ? this.journey.intermediateStops[index] : this.journey.destination;
+  }
   get isDestination() { return this.stopIndex >= this.journey.intermediateStops.length; }
   get exitWaypoint() { return new THREE.Vector3(this.journey.destination.side * (CAR_HALF_WIDTH + .36), PLAYER_EYE_Y, 0); }
 
@@ -502,7 +506,8 @@ export class TrainInteriorWorld {
   }
 
   private updateNextStopDisplay() {
-    const texture = this.nextStopTextures[Math.min(this.stopIndex, this.nextStopTextures.length - 1)];
+    const displayIndex = this.phase === "DEPARTING" ? this.stopIndex + 1 : this.stopIndex;
+    const texture = this.nextStopTextures[Math.min(displayIndex, this.nextStopTextures.length - 1)];
     if (!texture || !this.nextStopDisplayMaterial || this.nextStopDisplayMaterial.map === texture) return;
     this.nextStopDisplayMaterial.map = texture; this.nextStopDisplayMaterial.needsUpdate = true;
   }
@@ -548,7 +553,8 @@ export class TrainInteriorWorld {
           passenger.group.visible = true;
         } else passenger.group.rotation.y = passenger.baseRotation;
       });
-      this.pendingEvent = this.isDestination ? { type: "DESTINATION_READY", stop: this.currentStop.name } : { type: "INTERMEDIATE_STOP", stop: this.currentStop.name };
+      const nextStop = this.stopIndex + 1 < this.journey.intermediateStops.length ? this.journey.intermediateStops[this.stopIndex + 1] : this.journey.destination;
+      this.pendingEvent = this.isDestination ? { type: "DESTINATION_READY", stop: this.currentStop.name } : { type: "INTERMEDIATE_STOP", nextStop: nextStop.name, stop: this.currentStop.name };
     }
     if (phase === "DEPARTING") {
       this.passengers.forEach(passenger => {
@@ -685,6 +691,8 @@ export class TrainInteriorWorld {
       ? `Use any illuminated ${this.journey.destination.side < 0 ? "left-side" : "right-side"} door for ${this.journey.destination.name}`
       : this.isDestination
         ? `Stay clear of the doors until ${this.journey.destination.name}`
+        : this.phase === "DEPARTING"
+          ? `Next stop ${this.displayedStop.name} · destination ${this.journey.destination.name}`
         : `Stay aboard through ${this.currentStop.name} · destination ${this.journey.destination.name}`;
     return {
       cameraOffset: this.cameraOffset,
@@ -698,7 +706,7 @@ export class TrainInteriorWorld {
       phase: this.phase,
       prompt: this.isDestination && this.phase === "DWELL" && this.doorsOpenAmount > .65 && zone ? "EXIT TRAIN" : "",
       secondsRemaining: Math.max(0, Math.ceil(seconds)),
-      stop: this.currentStop.name,
+      stop: this.displayedStop.name,
     };
   }
 

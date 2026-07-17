@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { GameTextures } from "../rendering/textures";
 import { createPremiumSlothFriend } from "./PremiumCharacter";
+import { cloneZooAnimalAtlasCell } from "./ZooAnimals";
 
 export type SlothPartyFormation = "grove" | "open" | "station" | "train";
 
@@ -15,9 +16,12 @@ type Follower = {
   gaitPhase: number;
   groundY: number;
   trailingDistance: number;
+  formationJoined: boolean;
 };
 
-const FOLLOWER_TINTS = ["#7b6d56", "#675e50", "#806d52", "#706354"] as const;
+// Match the authored enclosure animals so opening the keeper door is a
+// continuous character handoff instead of a visible model/color swap.
+const FOLLOWER_TINTS = ["#514536", "#423a31", "#594936", "#443a30"] as const;
 const FORMATION_OFFSETS: Record<SlothPartyFormation, readonly THREE.Vector2[]> = {
   open: [new THREE.Vector2(-.72, 0), new THREE.Vector2(.72, -.25), new THREE.Vector2(-.48, -.6), new THREE.Vector2(.5, -.9)],
   station: [new THREE.Vector2(-.42, 0), new THREE.Vector2(.42, -.18), new THREE.Vector2(-.35, -.48), new THREE.Vector2(.35, -.72)],
@@ -46,12 +50,25 @@ export class SlothFollowerParty {
     this.root.name = "rescued-sloth-follower-party";
     this.root.visible = false;
     scene.add(this.root);
+    // This clone shares the app-owned atlas source, not the zoo world's
+    // disposable captive texture. The party therefore keeps identical sloth
+    // surfaces throughout station, train, and park streaming transitions.
+    const persistentSlothSurface = cloneZooAnimalAtlasCell(textures, 2, 2, "rescued-sloth-friends");
+    this.ownedTextures.push(persistentSlothSurface);
     FOLLOWER_TINTS.forEach((tint, index) => {
       const result = createPremiumSlothFriend(textures, quality, index, tint);
       result.root.name = `rescued-sloth-follower-${index + 1}`;
       result.root.userData.followingPlayer = true;
       result.root.userData.logicalId = `sloth-friend-${index + 1}`;
-      result.root.scale.multiplyScalar(.88);
+      result.root.traverse(object => {
+        if (!(object instanceof THREE.Mesh) || !/(sloth-(?:torso|head|forelimb|hindlimb)|anatomical-sloth)/.test(object.name)) return;
+        const surfaces = Array.isArray(object.material) ? object.material : [object.material];
+        surfaces.forEach(surface => {
+          if (!(surface instanceof THREE.MeshStandardMaterial)) return;
+          surface.map = persistentSlothSurface;
+          surface.needsUpdate = true;
+        });
+      });
       this.root.add(result.root);
       this.ownedTextures.push(...result.ownedTextures);
       this.followers.push({
@@ -61,6 +78,7 @@ export class SlothFollowerParty {
         gaitPhase: index * 1.47,
         groundY: 0,
         trailingDistance: 1.55 + index * 1.22,
+        formationJoined: false,
       });
     });
   }
@@ -68,25 +86,56 @@ export class SlothFollowerParty {
   get isActive() { return this.active; }
 
   setActive(active: boolean, leader?: THREE.Vector3, floorY = 0) {
+    const wasActive = this.active;
     this.active = active;
     this.finaleStaged = false;
     this.root.visible = active;
-    if (active && leader) this.reset(leader, floorY);
+    if (!active || !leader) return;
+    // On the real rescue, inherit the authored animals' transforms before the
+    // zoo world is disposed. Debug checkpoints that begin in transit have no
+    // enclosure meshes and intentionally fall back to a local-world reset.
+    if (!wasActive && this.releaseFromEnclosure(leader, floorY)) return;
+    this.reset(leader, floorY);
+  }
+
+  private releaseFromEnclosure(leader: THREE.Vector3, floorY: number) {
+    const scene = this.root.parent;
+    if (!scene) return false;
+    const enclosureSloths = this.followers.map((_, index) => scene.getObjectByName(`captive-sloth-friend-${index + 1}-on-real-branch`));
+    if (enclosureSloths.some(sloth => !sloth)) return false;
+    this.lastLeader.set(leader.x, floorY, leader.z);
+    this.seedBreadcrumbs(leader, floorY);
+    enclosureSloths.forEach((enclosureSloth, index) => {
+      const follower = this.followers[index];
+      enclosureSloth!.getWorldPosition(follower.root.position);
+      enclosureSloth!.getWorldQuaternion(follower.root.quaternion);
+      follower.groundY = follower.root.position.y;
+      follower.previous.copy(follower.root.position);
+      follower.velocity.set(0, 0, 0);
+      follower.formationJoined = false;
+      follower.root.userData.motion = "release-catch-up";
+    });
+    return true;
+  }
+
+  private seedBreadcrumbs(leader: THREE.Vector3, floorY: number) {
+    this.breadcrumbs.length = 0;
+    for (let index = 0; index < 54; index++) {
+      this.breadcrumbs.push({ position: new THREE.Vector3(leader.x, floorY, leader.z + index * .13) });
+    }
   }
 
   reset(leader: THREE.Vector3, floorY: number) {
     this.finaleStaged = false;
     this.lastLeader.set(leader.x, floorY, leader.z);
-    this.breadcrumbs.length = 0;
-    for (let index = 0; index < 54; index++) {
-      this.breadcrumbs.push({ position: new THREE.Vector3(leader.x, floorY, leader.z + index * .13) });
-    }
+    this.seedBreadcrumbs(leader, floorY);
     this.followers.forEach((follower, index) => {
       const offset = FORMATION_OFFSETS.open[index];
       follower.root.position.set(leader.x + offset.x, floorY, leader.z + 1.55 + index * .72);
       follower.groundY = floorY;
       follower.previous.copy(follower.root.position);
       follower.velocity.set(0, 0, 0);
+      follower.formationJoined = true;
     });
   }
 
@@ -103,6 +152,7 @@ export class SlothFollowerParty {
       follower.root.rotation.set(0, Math.PI, 0);
       follower.velocity.set(0, 0, 0);
       follower.previous.copy(follower.root.position);
+      follower.formationJoined = true;
       follower.root.traverse(object => { if (object instanceof THREE.Mesh) object.frustumCulled = false; });
     });
   }
@@ -182,15 +232,22 @@ export class SlothFollowerParty {
     const offsets = FORMATION_OFFSETS[formation], target = new THREE.Vector3(), tangent = new THREE.Vector3(), desired = new THREE.Vector3(), toTarget = new THREE.Vector3();
     this.followers.forEach((follower, index) => {
       const compressedDistance = follower.trailingDistance * (formation === "train" ? .54 : formation === "station" ? .78 : 1);
-      this.pointBehind(compressedDistance, target);
-      this.pointBehind(compressedDistance + .34, tangent).sub(target).setY(0);
+      const catchingUp = !follower.formationJoined;
+      const targetDistance = catchingUp ? .55 + index * .26 : compressedDistance;
+      this.pointBehind(targetDistance, target);
+      this.pointBehind(targetDistance + .34, tangent).sub(target).setY(0);
       if (tangent.lengthSq() < .0001) tangent.set(0, 0, 1); else tangent.normalize();
       const side = new THREE.Vector3(-tangent.z, 0, tangent.x), offset = offsets[index];
-      desired.copy(target).addScaledVector(side, offset.x).addScaledVector(tangent, offset.y);
+      desired.copy(target);
+      // Released sloths first converge on the walked route. Formation offsets
+      // are introduced only after each animal has physically caught up.
+      if (!catchingUp) desired.addScaledVector(side, offset.x).addScaledVector(tangent, offset.y);
       desired.y = formation === "station" || formation === "train" ? target.y : floorYAt(desired.x, desired.z);
       toTarget.set(desired.x - follower.root.position.x, 0, desired.z - follower.root.position.z);
       const distance = toTarget.length();
-      const speed = THREE.MathUtils.clamp(distance * 2.25, 0, formation === "train" ? 1.65 : 2.35);
+      if (catchingUp && distance <= 2.15) follower.formationJoined = true;
+      const maximumSpeed = catchingUp ? 3.25 : formation === "train" ? 1.65 : 2.35;
+      const speed = THREE.MathUtils.clamp(distance * (catchingUp ? 1.45 : 2.25), 0, maximumSpeed);
       if (distance > .02) follower.velocity.lerp(toTarget.normalize().multiplyScalar(speed), 1 - Math.exp(-delta * 7));
       else follower.velocity.multiplyScalar(Math.exp(-delta * 8));
       follower.velocity.y = 0;
@@ -202,7 +259,10 @@ export class SlothFollowerParty {
         : sampledFloor;
       const planarStep = Math.hypot(follower.root.position.x - follower.previous.x, follower.root.position.z - follower.previous.z);
       const maximumVerticalStep = Math.max(delta * .18, planarStep * 1.35);
-      follower.groundY += THREE.MathUtils.clamp(elevation - follower.groundY, -maximumVerticalStep, maximumVerticalStep);
+      const releaseVerticalStep = catchingUp
+        ? Math.max(delta * .72, planarStep * .58)
+        : maximumVerticalStep;
+      follower.groundY += THREE.MathUtils.clamp(elevation - follower.groundY, -releaseVerticalStep, releaseVerticalStep);
       follower.root.position.y = follower.groundY;
       const movedX = follower.root.position.x - follower.previous.x, movedZ = follower.root.position.z - follower.previous.z, locomoting = Math.hypot(movedX, movedZ) > .0012;
       if (locomoting) {
@@ -214,7 +274,7 @@ export class SlothFollowerParty {
       follower.root.position.y += locomoting ? Math.abs(gait) * .018 : gait * .008;
       follower.root.rotation.z = THREE.MathUtils.lerp(follower.root.rotation.z, gait * (locomoting ? .018 : .008), 1 - Math.exp(-delta * 5));
       follower.root.rotation.x = THREE.MathUtils.lerp(follower.root.rotation.x, locomoting ? -.025 : 0, 1 - Math.exp(-delta * 5));
-      follower.root.userData.motion = locomoting ? "walk" : "idle";
+      follower.root.userData.motion = catchingUp ? locomoting ? "release-climb-down" : "release-catch-up" : locomoting ? "walk" : "idle";
     });
     const minimumSpacing = formation === "train" ? .52 : formation === "station" ? .68 : .82;
     for (let left = 0; left < this.followers.length; left++) for (let right = left + 1; right < this.followers.length; right++) {
