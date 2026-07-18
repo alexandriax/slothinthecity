@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { GameTextures } from "../rendering/textures";
-import { createPremiumSlothFriend } from "./PremiumCharacter";
+import { createPremiumScooterSlothFriend, createPremiumSlothFriend } from "./PremiumCharacter";
 import { cloneZooAnimalAtlasCell } from "./ZooAnimals";
 import { createElectricScooter, rollPersonalMobility, type PersonalMobilityVehicle } from "./PersonalMobility";
 
@@ -13,6 +13,8 @@ type Breadcrumb = {
 
 type Follower = {
   root: THREE.Group;
+  walkingRig: THREE.Group;
+  riderRig: THREE.Group;
   velocity: THREE.Vector3;
   previous: THREE.Vector3;
   gaitPhase: number;
@@ -50,6 +52,7 @@ export class SlothFollowerParty {
   private disposed = false;
   private finaleStaged = false;
   private scooterMode = false;
+  private qualityReviewStaged = false;
 
   constructor(scene: THREE.Scene, textures: GameTextures, quality = 1) {
     this.root.name = "rescued-sloth-follower-party";
@@ -61,11 +64,17 @@ export class SlothFollowerParty {
     const persistentSlothSurface = cloneZooAnimalAtlasCell(textures, 2, 2, "rescued-sloth-friends");
     this.ownedTextures.push(persistentSlothSurface);
     FOLLOWER_TINTS.forEach((tint, index) => {
-      const result = createPremiumSlothFriend(textures, quality, index, tint);
-      result.root.name = `rescued-sloth-follower-${index + 1}`;
-      result.root.userData.followingPlayer = true;
-      result.root.userData.logicalId = `sloth-friend-${index + 1}`;
-      result.root.traverse(object => {
+      const walking = createPremiumSlothFriend(textures, quality, index, tint);
+      const rider = createPremiumScooterSlothFriend(textures, quality, index, tint);
+      const anchor = new THREE.Group();
+      anchor.name = `rescued-sloth-follower-${index + 1}`;
+      anchor.userData.followingPlayer = true;
+      anchor.userData.logicalId = `sloth-friend-${index + 1}`;
+      walking.root.name = `rescued-sloth-follower-${index + 1}-quadrupedal-rig`;
+      rider.root.name = `rescued-sloth-follower-${index + 1}-scooter-rider-rig`;
+      rider.root.visible = false;
+      anchor.add(walking.root, rider.root);
+      anchor.traverse(object => {
         if (!(object instanceof THREE.Mesh) || !/(sloth-(?:torso|head|forelimb|hindlimb)|anatomical-sloth)/.test(object.name)) return;
         const surfaces = Array.isArray(object.material) ? object.material : [object.material];
         surfaces.forEach(surface => {
@@ -74,14 +83,16 @@ export class SlothFollowerParty {
           surface.needsUpdate = true;
         });
       });
-      this.root.add(result.root);
+      this.root.add(anchor);
       const scooter = createElectricScooter(index + 1);
       scooter.root.name = `rescued-sloth-friend-${index + 1}-ridden-electric-scooter`;
       scooter.root.visible = false;
       this.root.add(scooter.root);
-      this.ownedTextures.push(...result.ownedTextures);
+      this.ownedTextures.push(...walking.ownedTextures, ...rider.ownedTextures);
       this.followers.push({
-        root: result.root,
+        root: anchor,
+        walkingRig: walking.root,
+        riderRig: rider.root,
         velocity: new THREE.Vector3(),
         previous: new THREE.Vector3(),
         gaitPhase: index * 1.47,
@@ -101,6 +112,8 @@ export class SlothFollowerParty {
     this.followers.forEach(follower => {
       follower.scooter.root.visible = active;
       follower.root.userData.ridingElectricScooter = active;
+      follower.walkingRig.visible = !active;
+      follower.riderRig.visible = active;
     });
   }
 
@@ -108,6 +121,7 @@ export class SlothFollowerParty {
     const wasActive = this.active;
     this.active = active;
     this.finaleStaged = false;
+    this.qualityReviewStaged = false;
     this.root.visible = active;
     if (!active || !leader) return;
     // On the real rescue, inherit the authored animals' transforms before the
@@ -146,6 +160,7 @@ export class SlothFollowerParty {
 
   reset(leader: THREE.Vector3, floorY: number) {
     this.finaleStaged = false;
+    this.qualityReviewStaged = false;
     this.lastLeader.set(leader.x, floorY, leader.z);
     this.seedBreadcrumbs(leader, floorY);
     this.followers.forEach((follower, index) => {
@@ -158,11 +173,53 @@ export class SlothFollowerParty {
     });
   }
 
+  /**
+   * Deterministic fixed-angle staging for the repository's visual review
+   * checkpoints. It uses the shipping rigs, materials, scooters and collision
+   * spacing while placing every subject inside one reproducible camera frame.
+   */
+  stageQualityReview(viewer: THREE.Vector3, viewerYaw: number, floorYAt: (x: number, z: number) => number, scooter = false) {
+    this.active = true;
+    this.finaleStaged = false;
+    this.root.visible = true;
+    this.setScooterMode(scooter);
+    const forward = new THREE.Vector3(-Math.sin(viewerYaw), 0, -Math.cos(viewerYaw));
+    const right = new THREE.Vector3(-forward.z, 0, forward.x);
+    const placements = scooter ? [
+      { side: -1.45, depth: 3.6 },
+      { side: 1.45, depth: 3.9 },
+      { side: -1.35, depth: 5.8 },
+      { side: 1.35, depth: 6.1 },
+    ] as const : [
+      { side: -1.25, depth: 3.05 },
+      { side: 1.25, depth: 3.3 },
+      { side: -1.2, depth: 5.05 },
+      { side: 1.2, depth: 5.3 },
+    ] as const;
+    this.lastLeader.copy(viewer);
+    this.qualityReviewStaged = true;
+    this.seedBreadcrumbs(viewer, floorYAt(viewer.x, viewer.z));
+    this.followers.forEach((follower, index) => {
+      const placement = placements[index];
+      follower.root.position.copy(viewer).addScaledVector(forward, placement.depth).addScaledVector(right, placement.side);
+      follower.groundY = floorYAt(follower.root.position.x, follower.root.position.z);
+      follower.root.position.y = follower.groundY;
+      const reviewYaw = viewerYaw + Math.PI + (scooter ? Math.sign(placement.side) * .28 : 0);
+      follower.root.rotation.set(0, reviewYaw, 0);
+      follower.velocity.set(0, 0, 0);
+      follower.previous.copy(follower.root.position);
+      follower.formationJoined = true;
+      follower.scooter.root.position.set(follower.root.position.x, follower.groundY, follower.root.position.z);
+      follower.scooter.root.rotation.set(0, follower.root.rotation.y, 0);
+    });
+  }
+
   stageFinale(point: THREE.Vector3, floorYAt: (x: number, z: number) => number) {
     this.setScooterMode(false);
     const positions = [new THREE.Vector2(-2.25, 2.5), new THREE.Vector2(-.7, 3.05), new THREE.Vector2(1.05, 2.35), new THREE.Vector2(2.65, 1.55)];
     this.active = true;
     this.finaleStaged = true;
+    this.qualityReviewStaged = false;
     this.root.visible = true;
     this.breadcrumbs.length = 0;
     this.lastLeader.copy(point);
@@ -235,6 +292,10 @@ export class SlothFollowerParty {
     formation: SlothPartyMovementFormation = "open",
   ) {
     if (!this.active || this.disposed) return;
+    if (this.qualityReviewStaged) {
+      if (Math.hypot(leader.x - this.lastLeader.x, leader.z - this.lastLeader.z) > .15) this.qualityReviewStaged = false;
+      else return;
+    }
     if (this.finaleStaged) {
       this.followers.forEach(follower => {
         const idle = Math.sin(elapsed * 1.25 + follower.gaitPhase);
@@ -287,7 +348,7 @@ export class SlothFollowerParty {
         ? Math.max(delta * .72, planarStep * .58)
         : maximumVerticalStep;
       follower.groundY += THREE.MathUtils.clamp(elevation - follower.groundY, -releaseVerticalStep, releaseVerticalStep);
-      follower.root.position.y = follower.groundY + (this.scooterMode ? .42 : 0);
+      follower.root.position.y = follower.groundY;
       const movedX = follower.root.position.x - follower.previous.x, movedZ = follower.root.position.z - follower.previous.z, locomoting = Math.hypot(movedX, movedZ) > .0012;
       if (locomoting) {
         const desiredYaw = Math.atan2(-movedX, -movedZ);
@@ -297,11 +358,10 @@ export class SlothFollowerParty {
       const gait = locomoting ? Math.sin(elapsed * 6.2 + follower.gaitPhase) : Math.sin(elapsed * 1.35 + follower.gaitPhase) * .18;
       follower.root.position.y += this.scooterMode ? Math.sin(elapsed * 4.2 + follower.gaitPhase) * .006 : locomoting ? Math.abs(gait) * .018 : gait * .008;
       follower.root.rotation.z = THREE.MathUtils.lerp(follower.root.rotation.z, this.scooterMode ? -follower.velocity.x * .008 : gait * (locomoting ? .018 : .008), 1 - Math.exp(-delta * 5));
-      // Tilting the authored quadrupedal rig around its grounded origin places
-      // its head upright and both long foreclaws at the real handlebar height.
-      // The result reads as a balanced rider holding the grips, not a sloth
-      // crouched lengthwise across the deck.
-      follower.root.rotation.x = THREE.MathUtils.lerp(follower.root.rotation.x, this.scooterMode ? 1.2 : locomoting ? -.025 : 0, 1 - Math.exp(-delta * 7));
+      // Scooter mode swaps to an authored rider whose hind paws and foreclaws
+      // are built around the real deck and grip coordinates. The shared world
+      // anchor stays upright for collision and path-following in every mode.
+      follower.root.rotation.x = THREE.MathUtils.lerp(follower.root.rotation.x, locomoting && !this.scooterMode ? -.025 : 0, 1 - Math.exp(-delta * 7));
       follower.root.userData.motion = this.scooterMode ? locomoting ? "ride-electric-scooter-upright" : "balance-on-electric-scooter-upright" : catchingUp ? locomoting ? "release-climb-down" : "release-catch-up" : locomoting ? "walk" : "idle";
     });
     const minimumSpacing = formation === "train" ? .86 : formation === "station" ? 1.05 : formation === "scooter" ? 1.78 : 1.34;

@@ -122,7 +122,8 @@ test("shore forestry and first-person vehicle grips preserve visual clarity", as
 
   assert.match(world, /containsLakeWater\(x, z, -radius - 6\.5\)/);
   assert.match(world, /containsLakeWater\(x, z, -8\)/);
-  assert.match(game, /layoutDepth/);
+  assert.match(game, /layoutCanonicalSlothViewmodel/);
+  assert.match(sloth, /layoutDepth/);
   assert.match(game, /getWorldGripTransforms\(vehicleGripTransforms\)/);
   assert.match(game, /camera\.worldToLocal\(vehicleGripTargets\.left\)/);
   assert.match(game, /camera\.worldToLocal\(vehicleGripTargets\.right\)/);

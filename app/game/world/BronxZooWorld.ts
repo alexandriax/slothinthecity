@@ -718,7 +718,7 @@ export class BronxZooWorld {
   readonly busBoardingPosition = new THREE.Vector3(17.05, 2.5, 22.48);
   // Deliberately placed on the donor-to-gate desire line so the player sees
   // the mobility option immediately after receiving the extra ticket.
-  readonly skateboardPosition = new THREE.Vector3(-4.1, 1.02, -1.1);
+  readonly skateboardPosition = new THREE.Vector3(-4.1, terrainHeight(-4.1, -1.1), -1.1);
   readonly cameraPosition = new THREE.Vector3(0, 4.2, -118);
   readonly cameraTarget = new THREE.Vector3(0, 3.8, -140);
   readonly worldBounds = Object.freeze({ minX: -84, maxX: 84, minZ: -158, maxZ: 39.5 });
@@ -801,13 +801,6 @@ export class BronxZooWorld {
     this.skateboard.root.userData.interactionKind = "zoo-skateboard";
     this.root.add(this.skateboard.root);
     this.skateboardPrevious.copy(this.skateboard.root.position);
-    const skateboardSignTexture = signTexture("ZOO SKATEBOARD", "E TO RIDE · SPACE KICKFLIP", "#6dc8b7");
-    this.ownedTextures.push(skateboardSignTexture);
-    const skateboardSign = new THREE.Mesh(new RoundedBoxGeometry(2.8, .82, .1, 4, .035), new THREE.MeshBasicMaterial({ map: skateboardSignTexture, toneMapped: false }));
-    skateboardSign.name = "bronx-zoo-skateboard-fast-travel-instruction-sign";
-    skateboardSign.position.set(-5.7, 2.45, -.72);
-    skateboardSign.rotation.y = .18;
-    this.root.add(skateboardSign);
 
     this.addEntryGate(materials, quality);
     this.addTicketPavilions(materials);

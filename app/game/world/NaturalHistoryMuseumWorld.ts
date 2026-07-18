@@ -185,7 +185,8 @@ function addArchitecture(root: THREE.Group, textures: GameTextures, ownedTexture
   const limestone = new THREE.MeshStandardMaterial({ color: "#c6bda8", map: textures.stone, roughness: .83 });
   const redStone = new THREE.MeshStandardMaterial({ color: "#7a4b40", map: textures.stone, roughness: .86 });
   const bronze = new THREE.MeshStandardMaterial({ color: "#4b4a3d", roughness: .38, metalness: .58 });
-  const glass = new THREE.MeshPhysicalMaterial({ color: "#8eb4bd", roughness: .12, transparent: true, opacity: .6, transmission: .25 });
+  const glass = new THREE.MeshPhysicalMaterial({ color: "#b7d5d8", roughness: .08, transparent: true, opacity: .18, transmission: .72, depthWrite: false, clearcoat: .32 });
+  glass.forceSinglePass = true;
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(96, 290), new THREE.MeshStandardMaterial({ color: "#aa9e87", map: textures.stone, roughness: .7, metalness: .05 }));
   floor.name = "museum-polished-stone-floor"; floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, -90); root.add(floor);
   const plaza = new THREE.Mesh(new THREE.PlaneGeometry(126, 66), new THREE.MeshStandardMaterial({ color: "#8c887d", map: textures.stone, roughness: .9 })); plaza.rotation.x = -Math.PI / 2; plaza.position.set(0, -.02, 47); root.add(plaza);
@@ -214,11 +215,24 @@ function addArchitecture(root: THREE.Group, textures: GameTextures, ownedTexture
     const capital = new THREE.Mesh(new RoundedBoxGeometry(1.82, .52, 1.82, 4, .08), limestone);
     capital.name = "roosevelt-portico-capital-touching-entablature"; capital.position.set(column * 4.5, 13.74, 24); facade.add(capital);
   }
-  const portalDark = new THREE.MeshStandardMaterial({ color: "#171b1a", emissive: "#6a4d24", emissiveIntensity: .42, roughness: .72 });
   const entryBrass = new THREE.MeshStandardMaterial({ color: "#9d824b", metalness: .68, roughness: .36 });
+  // Close the narrow reveal gaps between the three portals and the flanking
+  // wings. These are true masonry piers, not an opaque wall behind the doors.
+  for (const x of [-9.15, -3, 3, 9.15]) {
+    const pierWidth = Math.abs(x) > 6 ? 1.7 : 1.3;
+    const pier = new THREE.Mesh(new RoundedBoxGeometry(pierWidth, 10.1, 1.1, 5, .08), limestone);
+    pier.name = "amnh-solid-masonry-between-public-entry-portals";
+    pier.position.set(x, 6.05, 23.55); facade.add(pier);
+  }
   for (const x of [-6, 0, 6]) {
-    const recess = new THREE.Mesh(new RoundedBoxGeometry(4.6, 7.2, .22, 6, .08), portalDark);
-    recess.name = "amnh-open-warm-lit-public-entrance"; recess.position.set(x, 4.78, 23.92); facade.add(recess);
+    // The portal remains physically empty all the way to the rotunda. A warm
+    // soffit and side reveals communicate depth without hiding the interior.
+    const soffit = new THREE.Mesh(new RoundedBoxGeometry(4.5, .34, 4.8, 5, .06), limestone);
+    soffit.name = "amnh-cut-through-portal-limestone-soffit"; soffit.position.set(x, 8.25, 21.7); facade.add(soffit);
+    for (const side of [-1, 1]) {
+      const reveal = new THREE.Mesh(new RoundedBoxGeometry(.3, 7.05, 4.8, 4, .05), limestone);
+      reveal.name = "amnh-cut-through-portal-solid-side-reveal"; reveal.position.set(x + side * 2.28, 4.72, 21.7); facade.add(reveal);
+    }
     const transom = new THREE.Mesh(new RoundedBoxGeometry(3.8, 2.05, .08, 5, .035), glass);
     transom.name = "amnh-entrance-glass-transom-above-human-scale-doors"; transom.position.set(x, 6.55, 24.12); facade.add(transom);
     for (const mullionX of [-1.25, 0, 1.25]) {
@@ -266,8 +280,14 @@ function addArchitecture(root: THREE.Group, textures: GameTextures, ownedTexture
   const pedestal = new THREE.Mesh(new RoundedBoxGeometry(4.6, 2.4, 4.6, 5, .12), limestone); pedestal.position.set(0, 1.2, 37); facade.add(pedestal);
   root.add(facade);
   addExhibitSign(root, ownedTextures, "PUBLIC ENTRANCE", "THEODORE ROOSEVELT ROTUNDA · ALL VISITORS", 0, 10.65, 24.18, 0, .62);
-  // Keep only the masonry beside the three open doors collidable.
-  boxes.push({ minX: -38, maxX: -8.4, minZ: 22, maxZ: 26 }, { minX: 8.4, maxX: 38, minZ: 22, maxZ: 26 });
+  // Keep only the real masonry beside and between the three open doors
+  // collidable. Every portal opening stays walkable and visually transparent.
+  boxes.push(
+    { minX: -38, maxX: -10, minZ: 22, maxZ: 26 },
+    { minX: 10, maxX: 38, minZ: 22, maxZ: 26 },
+    { minX: -3.7, maxX: -2.3, minZ: 22, maxZ: 26 },
+    { minX: 2.3, maxX: 3.7, minZ: 22, maxZ: 26 },
+  );
 
   const wall = new THREE.MeshStandardMaterial({ color: "#d2c9b7", roughness: .88 });
   const darkWall = new THREE.MeshStandardMaterial({ color: "#32423c", roughness: .9 });
@@ -320,6 +340,69 @@ function detailedInvertebrateFossil(material: THREE.Material) {
   return specimen;
 }
 
+function detailedCollectionSpecimen(index: number, fossil: THREE.Material, minerals: THREE.Material[], dark: THREE.Material) {
+  const specimen = new THREE.Group();
+  const kind = index % 8;
+  specimen.name = `amnh-unique-accessioned-specimen-${String(index + 1).padStart(3, "0")}`;
+  specimen.userData.accession = `AMNH-LOCAL-${String(index + 1).padStart(4, "0")}`;
+  if (kind === 0) {
+    specimen.add(detailedMineralSpecimen(index, minerals));
+  } else if (kind === 1) {
+    specimen.add(detailedInvertebrateFossil(fossil));
+  } else if (kind === 2) {
+    const slab = new THREE.Mesh(new RoundedBoxGeometry(1.55, .18, 1.1, 5, .07), minerals[(index + 1) % minerals.length]);
+    slab.name = "ordovician-trilobite-matrix-slab"; slab.rotation.x = -.18; specimen.add(slab);
+    for (let segment = 0; segment < 10; segment++) {
+      const plate = new THREE.Mesh(new THREE.CapsuleGeometry(.1 + Math.sin(segment / 9 * Math.PI) * .06, .12, 6, 12), fossil);
+      plate.name = "trilobite-articulated-thoracic-segment"; plate.position.set(0, .16 + segment * .004, -.42 + segment * .095); plate.rotation.set(Math.PI / 2, 0, Math.sin(segment * .6) * .05); specimen.add(plate);
+    }
+    const cephalon = new THREE.Mesh(new THREE.SphereGeometry(.27, 18, 12), fossil); cephalon.name = "trilobite-sculpted-cephalon"; cephalon.scale.set(1, .35, .78); cephalon.position.set(0, .18, -.55); specimen.add(cephalon);
+  } else if (kind === 3) {
+    const jaw = new THREE.Mesh(new THREE.TorusGeometry(.64, .09, 10, 38, Math.PI * 1.28), fossil);
+    jaw.name = "oreodont-curved-mandible-cast"; jaw.rotation.set(Math.PI / 2, 0, -.44); specimen.add(jaw);
+    for (let tooth = 0; tooth < 9; tooth++) {
+      const angle = .12 + tooth / 8 * Math.PI * 1.05;
+      const molar = new THREE.Mesh(new RoundedBoxGeometry(.085, .18, .1, 4, .02), fossil);
+      molar.name = "oreodont-individual-cheek-tooth"; molar.position.set(Math.cos(angle) * .59, .15, Math.sin(angle) * .45); molar.rotation.y = -angle; specimen.add(molar);
+    }
+  } else if (kind === 4) {
+    const slice = new THREE.Mesh(new THREE.CylinderGeometry(.62, .66, .18, 16), minerals[(index + 2) % minerals.length]);
+    slice.name = "etched-iron-meteorite-cross-section"; slice.rotation.x = Math.PI / 2; specimen.add(slice);
+    for (let band = -2; band <= 2; band++) {
+      const lamella = new THREE.Mesh(new RoundedBoxGeometry(1.02, .025, .025, 2, .008), dark);
+      lamella.name = "meteorite-widmanstatten-lamella"; lamella.position.set(0, band * .16, .105); lamella.rotation.z = band % 2 ? .55 : -.48; specimen.add(lamella);
+    }
+  } else if (kind === 5) {
+    for (let egg = 0; egg < 5; egg++) {
+      const shell = new THREE.Mesh(new THREE.SphereGeometry(.2 + egg % 2 * .025, 20, 14), fossil);
+      shell.name = "elephant-bird-egg-clutch-fragment"; shell.scale.set(.78, 1.28, .82); shell.position.set((egg % 3 - 1) * .38, .22 + Math.floor(egg / 3) * .12, (Math.floor(egg / 3) - .35) * .42); shell.rotation.z = (egg - 2) * .08; specimen.add(shell);
+    }
+  } else if (kind === 6) {
+    for (let tooth = 0; tooth < 4; tooth++) {
+      const fang = new THREE.Mesh(new THREE.ConeGeometry(.14 + tooth * .012, .68 + tooth * .08, 18), fossil);
+      fang.name = "theropod-serrated-tooth-crown"; fang.position.set(-.55 + tooth * .36, .35, (tooth % 2 - .5) * .22); fang.rotation.z = -.12 + tooth * .07; specimen.add(fang);
+      for (let serration = 0; serration < 5; serration++) {
+        const denticle = new THREE.Mesh(new THREE.ConeGeometry(.018, .055, 7), fossil);
+        denticle.name = "theropod-tooth-edge-denticle"; denticle.position.set(fang.position.x + .13, .12 + serration * .09, fang.position.z); denticle.rotation.z = Math.PI / 2; specimen.add(denticle);
+      }
+    }
+  } else {
+    const shale = new THREE.Mesh(new RoundedBoxGeometry(1.5, .16, 1.12, 5, .055), minerals[index % minerals.length]);
+    shale.name = "green-river-formation-leaf-shale"; shale.rotation.x = -.12; specimen.add(shale);
+    const midribStart = new THREE.Vector3(0, .14, -.42), midribEnd = new THREE.Vector3(0, .16, .42);
+    const midrib = cylinderBetween(midribStart, midribEnd, .022, fossil, 8); midrib.name = "fossil-leaf-central-midrib"; specimen.add(midrib);
+    for (let vein = -4; vein <= 4; vein++) {
+      if (vein === 0) continue;
+      const y = vein * .085;
+      for (const side of [-1, 1]) {
+        const lateral = cylinderBetween(new THREE.Vector3(0, .155, y), new THREE.Vector3(side * (.42 - Math.abs(vein) * .035), .16, y + Math.sign(vein) * .08), .012, fossil, 7);
+        lateral.name = "fossil-leaf-secondary-vein"; specimen.add(lateral);
+      }
+    }
+  }
+  return specimen;
+}
+
 function addGalleryFixtures(root: THREE.Group, textures: GameTextures, ownedTextures: THREE.Texture[], quality: number) {
   const fixtures = new THREE.Group(); fixtures.name = "amnh-authored-gallery-fixtures-and-display-cases";
   const brass = new THREE.MeshStandardMaterial({ color: "#a88b4d", roughness: .38, metalness: .68 });
@@ -349,6 +432,16 @@ function addGalleryFixtures(root: THREE.Group, textures: GameTextures, ownedText
     ["PLANETARY MATERIALS", "METEORITES · IMPACT GLASS · DIFFERENTIATED WORLDS"],
     ["NORTH AMERICAN MAMMALS", "ADAPTATION ACROSS ICE, GRASSLAND AND FOREST"],
     ["BIODIVERSITY IN DETAIL", "FORM, FUNCTION AND EVOLUTIONARY RELATIONSHIPS"],
+    ["TRILOBITES OF NEW YORK", "ARTICULATED EXOSKELETONS · ORDOVICIAN SEAS"],
+    ["JAWS AND TEETH", "DIET RECORDED IN ENAMEL, CUSPS AND WEAR"],
+    ["IRON FROM SPACE", "CRYSTALLINE PATTERNS REVEALED BY ETCHING"],
+    ["GIANT BIRD EGGS", "SHELL STRUCTURE · ISLAND EVOLUTION · EXTINCTION"],
+    ["THEROPOD DENTITION", "SERRATIONS · REPLACEMENT · FEEDING ECOLOGY"],
+    ["FOSSIL FORESTS", "LEAF VENATION · CLIMATE · ANCIENT LAKES"],
+    ["AMMONITES", "COILED SHELL GROWTH THROUGH DEEP TIME"],
+    ["CRYSTAL SYSTEMS", "ATOMIC ORDER EXPRESSED AS NATURAL GEOMETRY"],
+    ["MAMMAL EVOLUTION", "SKULLS, LIMBS AND CHANGING LANDSCAPES"],
+    ["COLLECTIONS AT WORK", "ACCESSION · CONSERVATION · COMPARATIVE STUDY"],
   ] as const;
   const collectionTextures = collectionTitles.map(([title, subtitle], index) => collectionGraphicTexture(title, subtitle, index));
   ownedTextures.push(...collectionTextures);
@@ -371,14 +464,15 @@ function addGalleryFixtures(root: THREE.Group, textures: GameTextures, ownedText
     display.position.set(side * 31.5, 0, z);
     const plinth = new THREE.Mesh(new RoundedBoxGeometry(4.2, .78, 3.05, 5, .09), darkStone); plinth.position.y = .39; display.add(plinth);
     const hood = new THREE.Mesh(new RoundedBoxGeometry(3.82, 2.35, 2.68, 5, .055), museumGlass); hood.position.y = 1.76; display.add(hood);
-    const artifact = index % 3 === 1 ? detailedInvertebrateFossil(fossil) : detailedMineralSpecimen(index, mineralPalette);
-    artifact.name = index % 3 === 1 ? "museum-invertebrate-fossil-cast" : "museum-mineral-specimen";
-    artifact.position.set((index % 3 - 1) * .22, 1.42, 0); artifact.rotation.set(index * .19, index * .37, index * .11); display.add(artifact);
+    const artifact = detailedCollectionSpecimen(index, fossil, mineralPalette, brass);
+    artifact.position.set(0, 1.42, 0); artifact.rotation.y = index * .37; display.add(artifact);
     const caption = new THREE.Mesh(new RoundedBoxGeometry(2.45, .34, .06, 3, .02), label); caption.name = "museum-case-interpretation-label"; caption.position.set(0, .68, 1.56); caption.rotation.x = -.22; display.add(caption);
     fixtures.add(display);
   }
 
-  for (let row = 0; row < 8; row++) for (const side of [-1, 1]) {
+  // Stop the furniture program before the hero fossil hall. The previous
+  // z=-189.5 row intersected the Megatherium plinth and brass visitor rail.
+  for (let row = 0; row < 5; row++) for (const side of [-1, 1]) {
     const bench = new THREE.Group(); bench.name = "amnh-walnut-gallery-bench"; bench.position.set(side * 9.4, 0, -42 - row * 29.5);
     const seat = new THREE.Mesh(new RoundedBoxGeometry(3.7, .24, .86, 5, .07), walnut); seat.position.y = .82; bench.add(seat);
     const back = new THREE.Mesh(new RoundedBoxGeometry(3.7, .78, .18, 4, .045), walnut); back.position.set(0, 1.18, .34); back.rotation.x = -.1; bench.add(back);
@@ -566,17 +660,84 @@ function addMilsteinOceanLifeDetails(root: THREE.Group, quality: number, circles
   hall.add(encounter); root.add(hall);
 }
 
-function addAfricanMammals(root: THREE.Group, bone: THREE.Material, circles: CircleObstacle[]) {
-  const group = new THREE.Group(); group.name = "akeley-hall-african-elephant-group"; group.position.set(27, 0, -70);
-  const skin = new THREE.MeshStandardMaterial({ color: "#716f67", roughness: .96 });
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(1.72, 2.2, 10, 28), skin); body.position.y = 3.25; body.rotation.x = Math.PI / 2; group.add(body);
-  const head = new THREE.Mesh(new THREE.CapsuleGeometry(1.28, .65, 10, 26), skin); head.position.set(0, 3.42, -2.8); head.rotation.x = Math.PI / 2; group.add(head);
-  group.add(cylinderBetween(new THREE.Vector3(0, 2.9, -3.3), new THREE.Vector3(0, .75, -4.1), .35, skin, 22));
-  for (const side of [-1, 1]) {
-    for (const z of [-1.2, 1.3]) group.add(cylinderBetween(new THREE.Vector3(side * 1.05, 2.75, z), new THREE.Vector3(side * 1.08, .55, z), .42, skin, 20));
-    const tusk = new THREE.Mesh(new THREE.ConeGeometry(.14, 2.2, 20), bone); tusk.position.set(side * .55, 2.55, -4); tusk.rotation.x = -.45; group.add(tusk);
-    const ear = new THREE.Mesh(new THREE.CircleGeometry(1.35, 30), skin); ear.position.set(side * 1.25, 4.05, -2.2); ear.rotation.y = side * .72; group.add(ear);
+function elephantCraniumGeometry() {
+  const geometry = new THREE.SphereGeometry(1, 40, 30);
+  const positions = geometry.getAttribute("position") as THREE.BufferAttribute;
+  for (let index = 0; index < positions.count; index++) {
+    const x = positions.getX(index), y = positions.getY(index), z = positions.getZ(index);
+    const forehead = THREE.MathUtils.smoothstep(y, -.15, .78);
+    const cheek = THREE.MathUtils.smoothstep(-y, -.52, .2);
+    positions.setXYZ(index, x * (1.02 - cheek * .12), y * 1.12 + forehead * .06, z * (1.2 - cheek * .08));
   }
+  positions.needsUpdate = true; geometry.computeVertexNormals();
+  return geometry;
+}
+
+function elephantEarGeometry() {
+  const earShape = new THREE.Shape();
+  earShape.moveTo(0, 1.15);
+  earShape.bezierCurveTo(.78, 1.28, 1.52, .68, 1.58, -.18);
+  earShape.bezierCurveTo(1.58, -.92, .88, -1.56, .18, -1.18);
+  earShape.bezierCurveTo(-.12, -.62, -.18, .52, 0, 1.15);
+  return new THREE.ShapeGeometry(earShape, 28);
+}
+
+function addAfricanMammals(root: THREE.Group, textures: GameTextures, ownedTextures: THREE.Texture[], bone: THREE.Material, circles: CircleObstacle[]) {
+  const group = new THREE.Group(); group.name = "akeley-hall-african-elephant-group"; group.position.set(27, 0, -70);
+  const skinTexture = canvasTexture(1024, 1024, context => {
+    context.fillStyle = "#77746c"; context.fillRect(0, 0, 1024, 1024);
+    for (let line = 0; line < 620; line++) {
+      const x = (line * 193 + line * line * 7) % 1024, y = (line * 431 + line * line * 3) % 1024;
+      const length = 8 + line % 31, angle = (line * 1.79) % (Math.PI * 2);
+      context.strokeStyle = line % 4 ? "rgba(38,36,33,.15)" : "rgba(225,218,198,.11)";
+      context.lineWidth = .7 + line % 3 * .45; context.beginPath(); context.moveTo(x, y);
+      context.quadraticCurveTo(x + Math.cos(angle + .7) * length * .55, y + Math.sin(angle + .7) * length * .55, x + Math.cos(angle) * length, y + Math.sin(angle) * length); context.stroke();
+    }
+    for (let fold = 0; fold < 32; fold++) {
+      const y = 30 + fold * 31; context.strokeStyle = "rgba(34,31,28,.12)"; context.lineWidth = 1.4;
+      context.beginPath(); context.moveTo(-20, y); context.bezierCurveTo(280, y - 14, 680, y + 18, 1044, y - 3); context.stroke();
+    }
+  });
+  skinTexture.wrapS = skinTexture.wrapT = THREE.RepeatWrapping; skinTexture.repeat.set(2.6, 2.2); ownedTextures.push(skinTexture);
+  const skin = new THREE.MeshStandardMaterial({ color: "#d0cdc3", map: skinTexture, bumpMap: skinTexture, bumpScale: .045, roughness: .98, emissive: "#25231f", emissiveIntensity: .12, side: THREE.DoubleSide });
+  const darkSkin = new THREE.MeshStandardMaterial({ color: "#514f49", roughness: .95 });
+  const ground = new THREE.Mesh(new RoundedBoxGeometry(14.5, .38, 11.5, 7, .14), new THREE.MeshStandardMaterial({ color: "#866c4d", roughness: 1 }));
+  ground.name = "akeley-elephant-group-continuous-habitat-ground"; ground.position.y = .19; group.add(ground);
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(1.72, 2.2, 12, 34), skin); body.name = "african-elephant-continuous-ribcage-and-abdomen"; body.position.y = 3.25; body.rotation.x = Math.PI / 2; body.scale.set(1.04, 1, 1.08); group.add(body);
+  const head = new THREE.Mesh(elephantCraniumGeometry(), skin); head.name = "african-elephant-single-sculpted-cranium-cheek-and-trunk-root"; head.scale.set(1.08, 1.03, 1.12); head.position.set(0, 3.42, -3.18); group.add(head);
+  const jaw = new THREE.Mesh(new THREE.CapsuleGeometry(.46, .62, 10, 26), skin); jaw.name = "african-elephant-integrated-lower-jaw-and-mouth-mass"; jaw.position.set(0, 2.82, -3.92); jaw.rotation.x = Math.PI / 2; jaw.scale.set(1.16, 1, .82); group.add(jaw);
+  const trunkCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, 3.25, -3.75), new THREE.Vector3(.08, 2.55, -4.18),
+    new THREE.Vector3(-.08, 1.52, -4.25), new THREE.Vector3(.12, .62, -3.92),
+  ], false, "centripetal");
+  const trunk = new THREE.Mesh(new THREE.TubeGeometry(trunkCurve, 38, .31, 18, false), skin); trunk.name = "african-elephant-continuously-curved-muscular-trunk"; group.add(trunk);
+  const trunkTip = new THREE.Mesh(new THREE.SphereGeometry(.32, 22, 16), skin); trunkTip.name = "african-elephant-trunk-tip-with-finger"; trunkTip.scale.set(1, .72, .88); trunkTip.position.set(.12, .62, -3.92); group.add(trunkTip);
+  for (let wrinkle = 0; wrinkle < 7; wrinkle++) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(.29 - wrinkle * .009, .012, 7, 24), darkSkin);
+    ring.name = "african-elephant-trunk-anatomical-wrinkle-ring"; ring.position.set(Math.sin(wrinkle * .8) * .055, 2.7 - wrinkle * .28, -4.13 - Math.sin(wrinkle * .45) * .1); ring.rotation.x = Math.PI / 2; ring.scale.y = .82; group.add(ring);
+  }
+  for (const side of [-1, 1]) {
+    for (const z of [-1.25, 1.3]) {
+      const upper = cylinderBetween(new THREE.Vector3(side * 1.03, 2.85, z), new THREE.Vector3(side * 1.1, 1.45, z + .06), .47, skin, 24);
+      upper.name = "african-elephant-weight-bearing-upper-leg"; group.add(upper);
+      const lower = cylinderBetween(new THREE.Vector3(side * 1.1, 1.5, z + .06), new THREE.Vector3(side * 1.08, .48, z + .12), .39, skin, 24);
+      lower.name = "african-elephant-columnar-lower-leg"; group.add(lower);
+      const foot = new THREE.Mesh(new THREE.SphereGeometry(.48, 24, 16), skin); foot.name = "african-elephant-cushioned-foot"; foot.scale.set(1.08, .5, 1.2); foot.position.set(side * 1.08, .42, z - .02); group.add(foot);
+      for (let nail = -1; nail <= 1; nail++) { const toe = new THREE.Mesh(new THREE.SphereGeometry(.095, 14, 10), bone); toe.name = "african-elephant-individual-toenail"; toe.scale.set(1, .42, .62); toe.position.set(side * 1.08 + nail * .18, .37, z - .48); group.add(toe); }
+    }
+    const tuskCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(side * .54, 2.96, -3.8), new THREE.Vector3(side * .64, 2.5, -4.35),
+      new THREE.Vector3(side * .76, 2.05, -4.72), new THREE.Vector3(side * .7, 1.72, -4.78),
+    ], false, "centripetal");
+    const tusk = new THREE.Mesh(new THREE.TubeGeometry(tuskCurve, 28, .13, 14, false), bone); tusk.name = "african-elephant-curved-ivory-tusk"; group.add(tusk);
+    const ear = new THREE.Mesh(elephantEarGeometry(), skin); ear.name = "african-elephant-anatomical-fan-ear"; ear.scale.set(side * .82, .98, 1); ear.position.set(side * .9, 3.7, -2.82); ear.rotation.y = side * .14; group.add(ear);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(.075, 16, 12), darkSkin); eye.name = "african-elephant-head-attached-eye"; eye.position.set(side * .73, 3.75, -3.87); group.add(eye);
+    const eyelid = new THREE.Mesh(new THREE.TorusGeometry(.098, .018, 7, 22, Math.PI), skin); eyelid.name = "african-elephant-sculpted-upper-eyelid"; eyelid.position.set(side * .73, 3.79, -3.92); eyelid.rotation.set(Math.PI / 2, 0, side > 0 ? 0 : Math.PI); group.add(eyelid);
+  }
+  const mouth = new THREE.Mesh(new THREE.TorusGeometry(.38, .025, 7, 30, Math.PI), darkSkin); mouth.name = "african-elephant-defined-mouth-line"; mouth.position.set(0, 2.66, -4.22); mouth.rotation.set(Math.PI / 2, 0, Math.PI); group.add(mouth);
+  const tailCurve = new THREE.CatmullRomCurve3([new THREE.Vector3(0, 3.3, 2.95), new THREE.Vector3(.12, 2.25, 3.65), new THREE.Vector3(-.05, 1.2, 3.76)], false, "centripetal");
+  const tail = new THREE.Mesh(new THREE.TubeGeometry(tailCurve, 22, .075, 10, false), skin); tail.name = "african-elephant-tapered-tail"; group.add(tail);
+  const tailBrush = new THREE.Mesh(new THREE.SphereGeometry(.18, 16, 10), darkSkin); tailBrush.scale.set(.72, 1.5, .72); tailBrush.position.set(-.05, 1.08, 3.76); group.add(tailBrush);
   root.add(group); circles.push({ x: 27, z: -70, radius: 6.3 });
 }
 
@@ -695,12 +856,24 @@ function addOfficialPermanentHallMoments(root: THREE.Group, textures: GameTextur
   // partition. They add readable texture density even when the player looks
   // sideways instead of directly at a hero object.
   const panelCount = quality < .58 ? 12 : quality < .82 ? 20 : 28;
+  const researchTopics = [
+    ["CONGO BASIN FIELD NOTES", "MAMMAL SURVEY · 1921 EXPEDITION"], ["WHALE EAR BONES", "HEARING ANATOMY · OCEAN ACOUSTICS"],
+    ["DINOSAUR GROWTH RINGS", "HISTOLOGY · AGE · METABOLISM"], ["CAPE YORK METEORITES", "INUIT KNOWLEDGE · IRON · ORBIT"],
+    ["GARNET UNDER PRESSURE", "NEW YORK BEDROCK · METAMORPHISM"], ["CORAL REEF TRANSECT", "ANDROS ISLAND · SPECIES COUNTS"],
+    ["ELEPHANT FAMILY LIFE", "COMMUNICATION · MEMORY · KINSHIP"], ["TRILOBITE VISION", "CALCITE LENSES · ANCIENT SEAS"],
+    ["BLUE WHALE FEEDING", "BALEEN · KRILL · LUNGE MECHANICS"], ["GOBI DESERT CAMP", "JACKETS · MAPS · FOSSIL PREPARATION"],
+    ["SLOTH HAIR ECOSYSTEM", "ALGAE · MOTHS · CANOPY CAMOUFLAGE"], ["VOLCANIC ISLAND CLOCK", "ARGON DATING · PLATE MOTION"],
+    ["MAMMOTH TOOTH WEAR", "GRASSLAND DIET · ENAMEL RIDGES"], ["SQUID SUCKER RINGS", "DEEP-SEA PREDATION · CHITIN"],
+    ["BIRD EGG MICROSTRUCTURE", "SHELL PORES · INCUBATION"], ["TYRANNOSAURUS BITE", "MUSCLE RECONSTRUCTION · BONE DAMAGE"],
+    ["LEAF VEINS AND CLIMATE", "GREEN RIVER FLORA · TEMPERATURE"], ["AMMONITE BUOYANCY", "CHAMBERS · SIPHUNCLE · SWIMMING"],
+    ["PLANETARY CORES", "DENSITY · MAGNETISM · DIFFERENTIATION"], ["BAT ECHOLOCATION", "COCHLEA · FREQUENCY · FLIGHT"],
+    ["FOSSIL PIGMENTS", "MELANOSOMES · COLOR RECONSTRUCTION"], ["GLACIAL BOULDERS", "TRANSPORT · STRIATIONS · ICE FLOW"],
+    ["HUMAN EVOLUTION CASTS", "SKULL SHAPE · LOCOMOTION · DIET"], ["MUSEUM CONSERVATION LAB", "HUMIDITY · ADHESIVES · REVERSIBILITY"],
+    ["DNA FROM COLLECTIONS", "TISSUE BANKS · LINEAGES · BIODIVERSITY"], ["INSECT WING ARCHIVE", "VENATION · FLIGHT · CLASSIFICATION"],
+    ["DEEP OCEAN LIGHT", "BIOLUMINESCENCE · SIGNALS · CAMOUFLAGE"], ["ACCESSION TO EXHIBITION", "PROVENANCE · CATALOGING · PUBLIC SCIENCE"],
+  ] as const;
   for (let index = 0; index < panelCount; index++) {
-    const side = index % 2 ? 1 : -1, row = Math.floor(index / 2), texture = collectionGraphicTexture(
-      ["FIELD NOTES", "SPECIMEN DETAIL", "DEEP TIME", "CONSERVATION", "COLLECTION STORY", "RESEARCH IN ACTION"][index % 6],
-      ["AMNH SCIENCE", "PERMANENT COLLECTION", "EXPEDITION ARCHIVE", "COMPARE · OBSERVE · DISCOVER"][index % 4],
-      index + 12,
-    );
+    const side = index % 2 ? 1 : -1, row = Math.floor(index / 2), topic = researchTopics[index], texture = collectionGraphicTexture(topic[0], topic[1], index + 12);
     ownedTextures.push(texture);
     const panel = new THREE.Mesh(new THREE.PlaneGeometry(5.4, 3.35), new THREE.MeshBasicMaterial({ map: texture, toneMapped: false })); panel.name = "amnh-dense-main-aisle-interpretive-media-panel"; panel.position.set(side * 15.82, 4.8, -17 - row * 15.1); panel.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; collection.add(panel);
     const light = new THREE.Mesh(new RoundedBoxGeometry(.16, .12, 4.9, 3, .025), mediaSurface); light.name = "amnh-media-panel-integrated-wash-light"; light.position.copy(panel.position).add(new THREE.Vector3(-side * .12, 2.02, 0)); collection.add(light);
@@ -998,7 +1171,7 @@ export class NaturalHistoryMuseumWorld {
     addRotundaDinosaurs(this.root, bone, this.circles);
     addBlueWhale(this.root, this.circles);
     addMilsteinOceanLifeDetails(this.root, quality, this.circles);
-    addAfricanMammals(this.root, bone, this.circles);
+    addAfricanMammals(this.root, textures, this.ownedTextures, bone, this.circles);
     addAkeleyHabitatDioramas(this.root, quality, this.circles);
     addEarthAndMeteoriteHalls(this.root, this.circles);
     addOfficialPermanentHallMoments(this.root, textures, this.ownedTextures, quality, this.circles);
@@ -1056,7 +1229,7 @@ export class NaturalHistoryMuseumWorld {
     // ungrounded viewport model. Use localized ceiling spots to shape each
     // gallery and reserve expensive shadow maps for the two hero mounts.
     const gallerySpots = [
-      [0, 7, 82, "#ffe3b0"], [-21, -45, 58, "#d7e7ec"], [22, -70, 62, "#f2d2a0"],
+      [0, 7, 82, "#ffe3b0"], [-21, -45, 58, "#d7e7ec"], [27, -70, 84, "#f2d2a0"],
       [-22, -104, 54, "#d7e3e8"], [22, -130, 58, "#e9d4b7"], [-18, -162, 56, "#e5d6b9"], [0, -198, 88, "#ffe0a2"],
     ] as const;
     gallerySpots.slice(0, quality < .6 ? 4 : gallerySpots.length).forEach(([x, z, intensity, color], index, visible) => {

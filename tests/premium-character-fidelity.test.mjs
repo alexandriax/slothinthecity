@@ -41,6 +41,9 @@ test("zoo sloth friends use continuous anatomical silhouettes", async () => {
   for (const feature of ["continuous-horizontal-anatomical-sloth-torso", "anatomical-sloth-head-jaw-and-integrated-mask", "weight-bearing-anatomical-sloth-forelimb", "weight-bearing-anatomical-sloth-hindlimb", "ground-contact-capped-sloth-foreclaw", "ground-contact-capped-sloth-hindclaw"]) {
     assert.match(friend, new RegExp(feature));
   }
+  for (const feature of ["head-attached-embedded-sloth-eye", "head-attached-embedded-sloth-nose", "continuous-furred-sloth-forepaw-claw-root-pad", "continuous-furred-sloth-hindpaw-claw-root-pad", "scooter-head-attached-embedded-sloth-eye", "scooter-handlebar-wrapped-sloth-forepaw", "scooter-deck-planted-furred-sloth-hindpaw"]) {
+    assert.match(friend, new RegExp(feature));
+  }
   assert.match(source, /function paintSlothSurface/);
   assert.match(source, /vertexColors: true/);
   assert.match(source, /function quadrupedalSlothTorsoGeometry/);

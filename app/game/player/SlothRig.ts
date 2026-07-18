@@ -14,6 +14,25 @@ export type SlothRig = {
   setVehiclePose(mode: "none" | "cart" | "rowboat", steering?: number, oarPhase?: number, rowingEffort?: number, gripTargets?: SlothVehicleGripTargets): void;
 };
 
+/** Canonical Central Park viewmodel framing used by every streamed world. */
+export function layoutCanonicalSlothViewmodel(sloth: SlothRig, viewportWidth: number) {
+  const portrait = viewportWidth < 760;
+  sloth.root.scale.setScalar(portrait ? .54 : .78);
+  sloth.left.position.x = portrait ? -.55 : -.94;
+  sloth.right.position.x = portrait ? .55 : .94;
+  sloth.left.position.y = sloth.right.position.y = portrait ? -.74 : -.86;
+  sloth.left.rotation.z = portrait ? -.48 : -.74;
+  sloth.right.rotation.z = portrait ? .48 : .74;
+  sloth.left.userData.layoutX = sloth.left.position.x;
+  sloth.right.userData.layoutX = sloth.right.position.x;
+  sloth.left.userData.layoutY = sloth.left.position.y;
+  sloth.right.userData.layoutY = sloth.right.position.y;
+  sloth.left.userData.layoutDepth = sloth.left.position.z;
+  sloth.right.userData.layoutDepth = sloth.right.position.z;
+  sloth.left.userData.layoutZ = sloth.left.rotation.z;
+  sloth.right.userData.layoutZ = sloth.right.rotation.z;
+}
+
 type ArmJoints = {
   elbow: THREE.Bone;
   wrist: THREE.Bone;
@@ -373,14 +392,17 @@ export function createSlothRig(furTexture: THREE.Texture): SlothRig {
     map: viewmodelFur,
     bumpMap: viewmodelFur,
     bumpScale: .024,
-    color: "#aaa08f",
+    color: "#b9aa96",
     roughness: .96,
     sheen: .32,
     sheenColor: new THREE.Color("#8d8373"),
     sheenRoughness: .9,
-    emissive: new THREE.Color("#766c5d"),
-    emissiveMap: viewmodelFur,
-    emissiveIntensity: .72,
+    // A low, texture-independent brown fill keeps the same authored fur map
+    // readable under the park's sunset, the shuttle cab, and the museum's
+    // neutral gallery lights. Using the dark fur map as its own emissive mask
+    // made the canonical arms collapse into black silhouettes indoors.
+    emissive: new THREE.Color("#4a3325"),
+    emissiveIntensity: .46,
   });
   const keratin = new THREE.MeshPhysicalMaterial({
     color: "#fff9e9",

@@ -31,7 +31,10 @@ const DEBUG_DESTINATIONS: Array<{ scene: DebugSceneName; label: string; detail: 
   { scene: "bus-reroute", label: "Bus reroute", detail: "Wrong turn · recover through the street grid" },
   { scene: "bus-arrival", label: "Bus arrival", detail: "Central Park West parking" },
   { scene: "museum", label: "AMNH exterior", detail: "Central Park West entrance" },
+  { scene: "museum-scooters", label: "Scooter convoy", detail: "Rider contact and spacing" },
   { scene: "museum-rotunda", label: "Museum rotunda", detail: "Dinosaurs and galleries" },
+  { scene: "museum-collections", label: "Museum collections", detail: "Unique study cases and media" },
+  { scene: "museum-african", label: "African mammals", detail: "Elephant anatomy and dioramas" },
   { scene: "museum-megatherium", label: "Fossil mammals", detail: "Megatherium approach" },
   { scene: "finale", label: "Finale", detail: "Giant ground sloth reunion" },
 ];
