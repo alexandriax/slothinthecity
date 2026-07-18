@@ -178,7 +178,7 @@ test("rescued sloths persist through zoo disposal, shuttle boarding, and the mus
 
   assert.match(game, /actionRequested && hint\?\.kind === "BUS_BOARDING"[\s\S]{0,180}rescuedParty\.allWithin\(zooWorld\.busBoardingPosition, 9\.5\)[\s\S]{0,100}startBusDrive\(\)/);
   assert.doesNotMatch(game, /if \(zooWorld\.busBoardingReached\(player\)/);
-  assert.match(game, /function startBusDrive\(startProgress = 0\)[\s\S]{0,300}zooWorld\.dispose\(\); zooWorld = null[\s\S]{0,420}new CityBusWorld/);
+  assert.match(game, /function startBusDrive\(startProgress = 0, reviewSpawn\?: "missed-exit" \| "uws-reroute"\)[\s\S]{0,300}zooWorld\.dispose\(\); zooWorld = null[\s\S]{0,520}new CityBusWorld/);
   assert.match(game, /rescuedParty\.root\.visible = false/);
   assert.match(bus, /rescued-sloth-on-museum-shuttle-/);
   assert.match(bus, /createPremiumSlothFriend\(textures, quality, index/);

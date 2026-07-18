@@ -34,15 +34,16 @@ test("zoo circulation uses habitat overlooks and routes around the sea-lion pool
 });
 
 test("museum shuttle is drivable through signed NYC traffic rather than a cutscene", async () => {
-  const [bus, game] = await Promise.all([
+  const [bus, network, game] = await Promise.all([
     readSource("../app/game/world/CityBusWorld.ts"),
+    readSource("../app/game/world/CityRoadNetwork.ts"),
     readSource("../app/game/SubwayGame.tsx"),
   ]);
 
-  for (const road of ["Southern Boulevard", "Bronx River Parkway", "Cross Bronx Expressway", "Henry Hudson Parkway", "West Side Highway", "West 79th Street · Central Park West"]) assert.match(bus, new RegExp(road.replace("·", "·")));
+  for (const road of ["Southern Boulevard", "Bronx River Parkway", "Cross Bronx Expressway", "Henry Hudson Parkway", "West Side Highway", "West 79th Street", "Central Park West"]) assert.match(bus, new RegExp(road));
   assert.match(bus, /new-york-stop-and-go-traffic-vehicle-/);
-  assert.match(bus, /const SIGNAL_STOPS = \[126, 282, 1044, 1114\] as const/);
-  assert.match(bus, /nearestGap < 18/);
+  assert.match(bus, /const SIGNAL_STOPS = \[126, 282, CROSSTOWN_START \+ 92/);
+  assert.match(bus, /nearestGap < 21/);
   assert.match(bus, /RED LIGHT · HOLD POSITION/);
   assert.match(bus, /input\.accelerate/);
   assert.match(bus, /input\.brake/);
@@ -54,10 +55,30 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
   assert.match(bus, /updateAmbientHumanAgent/);
   assert.match(bus, /markPremiumCharactersDisposed/);
   assert.match(game, /transitStage === "BUS_DRIVE" && cityBusWorld/);
-  assert.match(game, /W drives forward; S brakes, then reverses once stopped/);
+  assert.match(game, /continuous free-driving trip/);
   assert.match(game, /audio\.setCartMotor\(true, speed\)/);
   assert.match(game, /cityBusWorld\.parkingReached/);
-  assert.match(bus, /targetSpeed = driveInput > 0 \? 12\.5 : -4\.2/);
+  assert.match(bus, /const HIGHWAY_TOP_SPEED = 32/);
+  assert.match(bus, /targetSpeed = driveInput > 0 \? forwardTopSpeed : -6\.2/);
+  assert.match(bus, /targetLane/);
+  assert.match(bus, /vehicle\.lane \+= \(vehicle\.targetLane - vehicle\.lane\)/);
+  assert.match(bus, /new CityRoadNetwork\(DRIVE_ROADS\)/);
+  assert.match(bus, /this\.busPosition\.addScaledVector\(driveForward, this\.speed \* delta\)/);
+  assert.match(bus, /missed-w79-highway/);
+  assert.match(bus, /Amsterdam Avenue/);
+  assert.match(bus, /Columbus Avenue/);
+  assert.match(bus, /OPEN-WORLD REROUTE ACTIVE/);
+  assert.match(bus, /upper-west-side-open-world-loop-traffic-/);
+  assert.doesNotMatch(bus, /desiredLateral/);
+  assert.match(network, /class CityRoadNetwork/);
+  assert.match(network, /shortest-path guidance/);
+  assert.match(network, /route\(position: THREE\.Vector3, destination: THREE\.Vector3, heading\?: THREE\.Vector3\)/);
+  assert.match(bus, /performance-instanced-open-world-upper-west-side-zebra-crosswalks/);
+  assert.match(game, /Wrong turn — navigation recalculated through the connected street grid/);
+  assert.match(bus, /CITY_BUS_ROUTE_LENGTH = CENTRAL_PARK_WEST_START \+ 270/);
+  assert.match(bus, /hudson-river-right-side-of-southbound-west-side-highway/);
+  assert.match(bus, /central-park-visible-left-side-of-central-park-west/);
+  assert.match(bus, /exit-here-for-american-museum-of-natural-history-sign/);
   assert.match(bus, /get signedSpeedMetersPerSecond\(\)/);
   assert.match(bus, /nyc-crosswalk-separated-ladder-bar/);
   assert.match(bus, /nyc-traffic-signal-\$\{aspect\.toLowerCase\(\)\}-lens/);
@@ -68,6 +89,31 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
   assert.match(game, /cityBusWorld\.getWorldGripPositions\(busGripWorld\)/);
   assert.match(game, /camera\.worldToLocal\(busGripCamera\.left\)/);
   assert.match(game, /sloth\.setVehiclePose\("cart", cityBusWorld\.steeringAmount/);
+});
+
+test("the zoo skateboard and AMNH five-scooter convoy provide fast travel", async () => {
+  const [mobility, zoo, museum, party, game, touch] = await Promise.all([
+    readSource("../app/game/world/PersonalMobility.ts"),
+    readSource("../app/game/world/BronxZooWorld.ts"),
+    readSource("../app/game/world/NaturalHistoryMuseumWorld.ts"),
+    readSource("../app/game/world/SlothFollowerParty.ts"),
+    readSource("../app/game/SubwayGame.tsx"),
+    readSource("../app/game/mobile/TouchControls.tsx"),
+  ]);
+
+  assert.match(mobility, /createSkateboard/);
+  assert.match(mobility, /skateboard-continuous-kicktail-maple-deck/);
+  assert.match(mobility, /createSegwayScooter/);
+  assert.match(mobility, /segway-scooter-visible-brake-cable/);
+  assert.match(zoo, /RIDE ZOO SKATEBOARD · SPACE KICKFLIP|E TO RIDE · SPACE KICKFLIP/);
+  assert.match(zoo, /triggerSkateboardKickflip/);
+  assert.match(game, /travelSpeed = skateboarding \? 8\.8 : 2\.5/);
+  assert.match(museum, /for \(let index = 0; index < 5; index\+\+\)/);
+  assert.match(museum, /amnh-five-scooter-fast-travel-line-/);
+  assert.match(party, /rescued-sloth-friend-\$\{index \+ 1\}-ridden-segway-scooter/);
+  assert.match(party, /formation === "scooter" \? catchingUp \? 10\.5 : 9\.1/);
+  assert.match(game, /rescuedParty\.setScooterMode\(true\)/);
+  assert.match(touch, /vehicle === "skateboard" \? "Trick"/);
 });
 
 test("shuttle boarding is a visible exterior interaction, never an invisible body trigger", async () => {
@@ -123,7 +169,13 @@ test("AMNH is a full exploration level with permanent halls, crowds, and Megathe
   assert.match(museum, /roosevelt-portico-grounded-column-base/);
   assert.match(museum, /amnh-open-warm-lit-public-entrance/);
   assert.match(museum, /amnh-clearly-marked-public-entry-carpet/);
+  assert.match(museum, /amnh-player-climbable-roosevelt-entrance-step/);
+  assert.match(museum, /amnh-collision-matched-entrance-landing/);
+  assert.match(museum, /if \(z >= 24\.45 && z <= 34\.65\)/);
+  assert.match(museum, /player\.y = this\.floorHeight\(player\.x, player\.z\) \+ 1\.48/);
   assert.match(museum, /context\.measureText\(text\)\.width <= maxWidth/);
+  assert.match(museum, /amnh-textured-permanent-hall-wall-graphic-/);
+  assert.match(museum, /amnh-interactive-collection-study-station/);
   assert.match(museum, /andros-coral-reef-diorama/);
   assert.match(museum, /sperm-whale-and-giant-squid-deep-ocean-display/);
   assert.match(museum, /akeley-water-hole-panoramic-diorama/);

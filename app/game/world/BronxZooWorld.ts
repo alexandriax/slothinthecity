@@ -33,6 +33,7 @@ import {
   type ZooAnimalRig,
 } from "./ZooAnimals";
 import { markAuthoredZooAnimalsDisposed } from "./animals/AuthoredZooAnimalAssets";
+import { createSkateboard, rollPersonalMobility, type PersonalMobilityVehicle } from "./PersonalMobility";
 
 export type BronxZooQuestState = "NEED_TICKET" | "ENTER_ZOO" | "FIND_SLOTHS" | "ESCORT_TO_BUS";
 
@@ -670,6 +671,7 @@ export class BronxZooWorld {
   // Exterior of the visible open door. Boarding is an explicit interaction;
   // the player never needs to intersect the coach body to trigger it.
   readonly busBoardingPosition = new THREE.Vector3(16.9, 2.5, 21.72);
+  readonly skateboardPosition = new THREE.Vector3(-13.5, 1.02, 23.2);
   readonly cameraPosition = new THREE.Vector3(0, 4.2, -118);
   readonly cameraTarget = new THREE.Vector3(0, 3.8, -140);
   readonly worldBounds = Object.freeze({ minX: -84, maxX: 84, minZ: -158, maxZ: 39.5 });
@@ -686,6 +688,11 @@ export class BronxZooWorld {
   private readonly entryGateLeaves: THREE.Group[] = [];
   private readonly keeperDoorLeaves: THREE.Group[] = [];
   private readonly sun = new THREE.DirectionalLight("#ffdda1", 2.6);
+  private readonly skateboard: PersonalMobilityVehicle;
+  private readonly skateboardPrevious = new THREE.Vector3();
+  private skateboardMounted = false;
+  private skateboardTrickStarted = -Infinity;
+  private skateboardLift = 0;
   private hasAdmissionTicket = false;
   private releasedFriends = false;
   private state: BronxZooQuestState = "NEED_TICKET";
@@ -740,6 +747,20 @@ export class BronxZooWorld {
     addStationExit(this.root, materials, textures, this.ownedTextures, quality);
     addArrivalFountain(this.root, materials, quality);
     addMuseumShuttleBus(this.root, materials, this.ownedTextures, quality);
+    this.skateboard = createSkateboard();
+    this.skateboard.root.position.copy(this.skateboardPosition);
+    this.skateboard.root.rotation.y = -.16;
+    this.skateboard.root.userData.interactable = true;
+    this.skateboard.root.userData.interactionKind = "zoo-skateboard";
+    this.root.add(this.skateboard.root);
+    this.skateboardPrevious.copy(this.skateboard.root.position);
+    const skateboardSignTexture = signTexture("ZOO SKATEBOARD", "E TO RIDE · SPACE KICKFLIP", "#6dc8b7");
+    this.ownedTextures.push(skateboardSignTexture);
+    const skateboardSign = new THREE.Mesh(new RoundedBoxGeometry(2.8, .82, .1, 4, .035), new THREE.MeshBasicMaterial({ map: skateboardSignTexture, toneMapped: false }));
+    skateboardSign.name = "bronx-zoo-skateboard-fast-travel-instruction-sign";
+    skateboardSign.position.set(-15.6, 2.45, 23.45);
+    skateboardSign.rotation.y = .38;
+    this.root.add(skateboardSign);
 
     this.addEntryGate(materials, quality);
     this.addTicketPavilions(materials);
@@ -820,6 +841,8 @@ export class BronxZooWorld {
   get questState() { return this.state; }
   get hasTicket() { return this.hasAdmissionTicket; }
   get friendsReleased() { return this.releasedFriends; }
+  get isSkateboardMounted() { return this.skateboardMounted; }
+  get skateboardRideLift() { return this.skateboardLift; }
 
   get objectiveTarget() {
     if (this.state === "NEED_TICKET") return this.ticketDonorPosition.clone();
@@ -879,6 +902,37 @@ export class BronxZooWorld {
   gateNearby(player: THREE.Vector3, distance = 3.5) { return this.distanceXZ(player, this.gatePosition) <= distance; }
   slothHabitatNearby(player: THREE.Vector3, distance = 3.2) { return this.distanceXZ(player, this.slothHabitatPosition) <= distance; }
   busBoardingReached(player: THREE.Vector3, distance = 2.8) { return this.releasedFriends && this.distanceXZ(player, this.busBoardingPosition) <= distance; }
+  skateboardNearby(player: THREE.Vector3, distance = 2.4) { return !this.skateboardMounted && this.distanceXZ(player, this.skateboard.root.position) <= distance; }
+
+  setSkateboardMounted(mounted: boolean, player?: THREE.Vector3, yaw = 0) {
+    this.skateboardMounted = mounted;
+    this.skateboardLift = 0;
+    this.skateboardTrickStarted = -Infinity;
+    this.skateboard.root.userData.ridden = mounted;
+    if (!mounted && player) {
+      const floor = this.floorHeight(player.x, player.z);
+      this.skateboard.root.position.set(player.x + Math.cos(yaw) * 1.15, floor, player.z - Math.sin(yaw) * 1.15);
+      this.skateboard.root.rotation.set(0, yaw, 0);
+      this.skateboardPrevious.copy(this.skateboard.root.position);
+    }
+  }
+
+  triggerSkateboardKickflip(elapsed: number) {
+    if (this.skateboardMounted && elapsed - this.skateboardTrickStarted > .9) this.skateboardTrickStarted = elapsed;
+  }
+
+  updateSkateboard(elapsed: number, player: THREE.Vector3, movementYaw: number) {
+    if (!this.skateboardMounted) return;
+    const floor = this.floorHeight(player.x, player.z);
+    const distance = Math.hypot(player.x - this.skateboardPrevious.x, player.z - this.skateboardPrevious.z);
+    const trickPhase = THREE.MathUtils.clamp((elapsed - this.skateboardTrickStarted) / .82, 0, 1);
+    const trickActive = trickPhase > 0 && trickPhase < 1;
+    this.skateboardLift = trickActive ? Math.sin(trickPhase * Math.PI) * .6 : 0;
+    this.skateboard.root.position.set(player.x, floor + this.skateboardLift, player.z);
+    this.skateboard.root.rotation.set(0, movementYaw, trickActive ? trickPhase * Math.PI * 2 : 0);
+    rollPersonalMobility(this.skateboard, distance, .095);
+    this.skateboardPrevious.copy(player);
+  }
 
   attendantNearby(player: THREE.Vector3, distance = 2.35) {
     return this.hasAdmissionTicket && this.distanceXZ(player, this.attendantPosition) <= distance;

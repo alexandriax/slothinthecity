@@ -2,8 +2,10 @@ import * as THREE from "three";
 import type { GameTextures } from "../rendering/textures";
 import { createPremiumSlothFriend } from "./PremiumCharacter";
 import { cloneZooAnimalAtlasCell } from "./ZooAnimals";
+import { createSegwayScooter, rollPersonalMobility, type PersonalMobilityVehicle } from "./PersonalMobility";
 
 export type SlothPartyFormation = "grove" | "open" | "station" | "train";
+type SlothPartyMovementFormation = SlothPartyFormation | "scooter";
 
 type Breadcrumb = {
   position: THREE.Vector3;
@@ -17,13 +19,15 @@ type Follower = {
   groundY: number;
   trailingDistance: number;
   formationJoined: boolean;
+  scooter: PersonalMobilityVehicle;
 };
 
 // Match the authored enclosure animals so opening the keeper door is a
 // continuous character handoff instead of a visible model/color swap.
 const FOLLOWER_TINTS = ["#514536", "#423a31", "#594936", "#443a30"] as const;
-const FORMATION_OFFSETS: Record<SlothPartyFormation, readonly THREE.Vector2[]> = {
+const FORMATION_OFFSETS: Record<SlothPartyMovementFormation, readonly THREE.Vector2[]> = {
   open: [new THREE.Vector2(-.72, 0), new THREE.Vector2(.72, -.25), new THREE.Vector2(-.48, -.6), new THREE.Vector2(.5, -.9)],
+  scooter: [new THREE.Vector2(-.8, 0), new THREE.Vector2(.8, -.18), new THREE.Vector2(-.72, -.62), new THREE.Vector2(.72, -.82)],
   station: [new THREE.Vector2(-.42, 0), new THREE.Vector2(.42, -.18), new THREE.Vector2(-.35, -.48), new THREE.Vector2(.35, -.72)],
   train: [new THREE.Vector2(-.26, 0), new THREE.Vector2(.26, -.22), new THREE.Vector2(-.24, -.56), new THREE.Vector2(.24, -.82)],
   grove: [new THREE.Vector2(-1.35, .2), new THREE.Vector2(1.25, -.1), new THREE.Vector2(-.7, -1.1), new THREE.Vector2(.8, -1.35)],
@@ -45,6 +49,7 @@ export class SlothFollowerParty {
   private active = false;
   private disposed = false;
   private finaleStaged = false;
+  private scooterMode = false;
 
   constructor(scene: THREE.Scene, textures: GameTextures, quality = 1) {
     this.root.name = "rescued-sloth-follower-party";
@@ -70,6 +75,10 @@ export class SlothFollowerParty {
         });
       });
       this.root.add(result.root);
+      const scooter = createSegwayScooter(index + 1);
+      scooter.root.name = `rescued-sloth-friend-${index + 1}-ridden-segway-scooter`;
+      scooter.root.visible = false;
+      this.root.add(scooter.root);
       this.ownedTextures.push(...result.ownedTextures);
       this.followers.push({
         root: result.root,
@@ -79,11 +88,21 @@ export class SlothFollowerParty {
         groundY: 0,
         trailingDistance: 1.55 + index * 1.22,
         formationJoined: false,
+        scooter,
       });
     });
   }
 
   get isActive() { return this.active; }
+  get isScooterMode() { return this.scooterMode; }
+
+  setScooterMode(active: boolean) {
+    this.scooterMode = active;
+    this.followers.forEach(follower => {
+      follower.scooter.root.visible = active;
+      follower.root.userData.ridingSegwayScooter = active;
+    });
+  }
 
   setActive(active: boolean, leader?: THREE.Vector3, floorY = 0) {
     const wasActive = this.active;
@@ -140,6 +159,7 @@ export class SlothFollowerParty {
   }
 
   stageFinale(point: THREE.Vector3, floorYAt: (x: number, z: number) => number) {
+    this.setScooterMode(false);
     const positions = [new THREE.Vector2(-2.25, 2.5), new THREE.Vector2(-.7, 3.05), new THREE.Vector2(1.05, 2.35), new THREE.Vector2(2.65, 1.55)];
     this.active = true;
     this.finaleStaged = true;
@@ -212,7 +232,7 @@ export class SlothFollowerParty {
     delta: number,
     leader: THREE.Vector3,
     floorYAt: (x: number, z: number) => number,
-    formation: SlothPartyFormation = "open",
+    formation: SlothPartyMovementFormation = "open",
   ) {
     if (!this.active || this.disposed) return;
     if (this.finaleStaged) {
@@ -231,7 +251,7 @@ export class SlothFollowerParty {
     this.recordLeader(leader, leaderFloor);
     const offsets = FORMATION_OFFSETS[formation], target = new THREE.Vector3(), tangent = new THREE.Vector3(), desired = new THREE.Vector3(), toTarget = new THREE.Vector3();
     this.followers.forEach((follower, index) => {
-      const compressedDistance = follower.trailingDistance * (formation === "train" ? .54 : formation === "station" ? .78 : 1);
+      const compressedDistance = follower.trailingDistance * (formation === "train" ? .54 : formation === "station" ? .78 : formation === "scooter" ? .68 : 1);
       const catchingUp = !follower.formationJoined;
       const targetDistance = catchingUp ? .55 + index * .26 : compressedDistance;
       this.pointBehind(targetDistance, target);
@@ -247,7 +267,8 @@ export class SlothFollowerParty {
       const distance = toTarget.length();
       if (catchingUp && distance <= 2.15) follower.formationJoined = true;
       const maximumSpeed = catchingUp ? 3.25 : formation === "train" ? 1.65 : 2.35;
-      const speed = THREE.MathUtils.clamp(distance * (catchingUp ? 1.45 : 2.25), 0, maximumSpeed);
+      const mobilityMaximumSpeed = formation === "scooter" ? catchingUp ? 10.5 : 9.1 : maximumSpeed;
+      const speed = THREE.MathUtils.clamp(distance * (catchingUp ? 1.45 : 2.25), 0, mobilityMaximumSpeed);
       if (distance > .02) follower.velocity.lerp(toTarget.normalize().multiplyScalar(speed), 1 - Math.exp(-delta * 7));
       else follower.velocity.multiplyScalar(Math.exp(-delta * 8));
       follower.velocity.y = 0;
@@ -263,7 +284,7 @@ export class SlothFollowerParty {
         ? Math.max(delta * .72, planarStep * .58)
         : maximumVerticalStep;
       follower.groundY += THREE.MathUtils.clamp(elevation - follower.groundY, -releaseVerticalStep, releaseVerticalStep);
-      follower.root.position.y = follower.groundY;
+      follower.root.position.y = follower.groundY + (this.scooterMode ? .27 : 0);
       const movedX = follower.root.position.x - follower.previous.x, movedZ = follower.root.position.z - follower.previous.z, locomoting = Math.hypot(movedX, movedZ) > .0012;
       if (locomoting) {
         const desiredYaw = Math.atan2(-movedX, -movedZ);
@@ -271,12 +292,15 @@ export class SlothFollowerParty {
         follower.root.rotation.y += yawError * (1 - Math.exp(-delta * 8));
       }
       const gait = locomoting ? Math.sin(elapsed * 6.2 + follower.gaitPhase) : Math.sin(elapsed * 1.35 + follower.gaitPhase) * .18;
-      follower.root.position.y += locomoting ? Math.abs(gait) * .018 : gait * .008;
-      follower.root.rotation.z = THREE.MathUtils.lerp(follower.root.rotation.z, gait * (locomoting ? .018 : .008), 1 - Math.exp(-delta * 5));
-      follower.root.rotation.x = THREE.MathUtils.lerp(follower.root.rotation.x, locomoting ? -.025 : 0, 1 - Math.exp(-delta * 5));
-      follower.root.userData.motion = catchingUp ? locomoting ? "release-climb-down" : "release-catch-up" : locomoting ? "walk" : "idle";
+      follower.root.position.y += this.scooterMode ? Math.sin(elapsed * 4.2 + follower.gaitPhase) * .006 : locomoting ? Math.abs(gait) * .018 : gait * .008;
+      follower.root.rotation.z = THREE.MathUtils.lerp(follower.root.rotation.z, this.scooterMode ? -follower.velocity.x * .008 : gait * (locomoting ? .018 : .008), 1 - Math.exp(-delta * 5));
+      follower.root.rotation.x = THREE.MathUtils.lerp(follower.root.rotation.x, this.scooterMode ? -.075 : locomoting ? -.025 : 0, 1 - Math.exp(-delta * 5));
+      follower.root.userData.motion = this.scooterMode ? locomoting ? "ride-segway-scooter" : "balance-on-segway-scooter" : catchingUp ? locomoting ? "release-climb-down" : "release-catch-up" : locomoting ? "walk" : "idle";
+      follower.scooter.root.position.set(follower.root.position.x, follower.groundY, follower.root.position.z);
+      follower.scooter.root.rotation.set(0, follower.root.rotation.y, 0);
+      if (this.scooterMode) rollPersonalMobility(follower.scooter, planarStep, .19);
     });
-    const minimumSpacing = formation === "train" ? .52 : formation === "station" ? .68 : .82;
+    const minimumSpacing = formation === "train" ? .52 : formation === "station" ? .68 : formation === "scooter" ? 1.05 : .82;
     for (let left = 0; left < this.followers.length; left++) for (let right = left + 1; right < this.followers.length; right++) {
       const a = this.followers[left].root.position, b = this.followers[right].root.position, dx = b.x - a.x, dz = b.z - a.z, distance = Math.hypot(dx, dz);
       if (distance <= .001 || distance >= minimumSpacing) continue;

@@ -4,6 +4,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { GameTextures } from "../rendering/textures";
 import { createPremiumHuman, createPremiumSlothFriend, markPremiumCharactersDisposed } from "./PremiumCharacter";
 import { createAmbientHumanAgent, updateAmbientHumanAgent, type AmbientHumanAgent } from "./characters/AmbientHumanMotion";
+import { createSegwayScooter, rollPersonalMobility, type PersonalMobilityVehicle } from "./PersonalMobility";
 
 type BoxObstacle = { minX: number; maxX: number; minZ: number; maxZ: number };
 type CircleObstacle = { x: number; z: number; radius: number };
@@ -51,6 +52,29 @@ function facadeBannerTexture() {
     let subtitleSize = 34; context.font = `600 ${subtitleSize}px Helvetica, Arial, sans-serif`;
     while (subtitleSize > 24 && context.measureText(subtitle).width > 1320) { subtitleSize -= 1; context.font = `600 ${subtitleSize}px Helvetica, Arial, sans-serif`; }
     context.fillText(subtitle, 768, 340, 1320);
+  });
+}
+
+function collectionGraphicTexture(title: string, subtitle: string, index: number) {
+  return canvasTexture(1024, 640, context => {
+    const palettes = [
+      ["#152b31", "#557b78", "#d7c091"], ["#30281f", "#8b6545", "#dfcfa7"],
+      ["#202c22", "#58714f", "#d5c997"], ["#2d2732", "#76647c", "#d7c7a5"],
+    ] as const;
+    const [background, mid, accent] = palettes[index % palettes.length];
+    const gradient = context.createLinearGradient(0, 0, 1024, 640); gradient.addColorStop(0, background); gradient.addColorStop(.58, mid); gradient.addColorStop(1, background);
+    context.fillStyle = gradient; context.fillRect(0, 0, 1024, 640);
+    context.globalAlpha = .22;
+    for (let ring = 0; ring < 18; ring++) {
+      context.strokeStyle = ring % 3 ? accent : "#ffffff"; context.lineWidth = 4 + ring % 4;
+      context.beginPath(); context.ellipse(170 + ring * 43, 310 + Math.sin(ring * 1.7) * 120, 92 + ring * 9, 34 + ring * 2, ring * .31, 0, Math.PI * 2); context.stroke();
+    }
+    context.globalAlpha = 1;
+    context.fillStyle = "rgba(12,16,15,.72)"; context.fillRect(42, 390, 940, 190);
+    context.strokeStyle = accent; context.lineWidth = 10; context.strokeRect(18, 18, 988, 604);
+    context.fillStyle = "#f7f0df"; context.textAlign = "left"; context.textBaseline = "middle";
+    context.font = "700 62px Georgia, serif"; context.fillText(title, 76, 454, 870);
+    context.fillStyle = accent; context.font = "600 28px Helvetica, Arial, sans-serif"; context.fillText(subtitle, 78, 530, 860);
   });
 }
 
@@ -178,7 +202,7 @@ function addArchitecture(root: THREE.Group, textures: GameTextures, ownedTexture
   }
   for (const side of [-1, 1]) { const wing = new THREE.Mesh(new RoundedBoxGeometry(28, 17, 18, 5, .18), redStone); wing.position.set(side * 47, 8.5, 14); facade.add(wing); }
   const steps = 9;
-  for (let step = 0; step < steps; step++) { const stair = new THREE.Mesh(new RoundedBoxGeometry(34 + step * 1.25, .22, 1.25, 3, .04), limestone); stair.position.set(0, step * .18, 30 - step * 1.12); facade.add(stair); }
+  for (let step = 0; step < steps; step++) { const stair = new THREE.Mesh(new RoundedBoxGeometry(34 + step * 1.25, .22, 1.25, 3, .04), limestone); stair.name = "amnh-player-climbable-roosevelt-entrance-step"; stair.position.set(0, step * .135, 34 - step * 1.12); facade.add(stair); }
   for (let column = -5; column <= 5; column++) {
     if (column === 0) continue;
     const base = new THREE.Mesh(new RoundedBoxGeometry(1.68, .5, 1.68, 4, .07), limestone);
@@ -206,6 +230,10 @@ function addArchitecture(root: THREE.Group, textures: GameTextures, ownedTexture
   }
   const entryCarpet = new THREE.Mesh(new RoundedBoxGeometry(8.8, .035, 8.4, 4, .014), new THREE.MeshStandardMaterial({ color: "#65342b", roughness: .94 }));
   entryCarpet.name = "amnh-clearly-marked-public-entry-carpet"; entryCarpet.position.set(0, 1.12, 28.2); facade.add(entryCarpet);
+  const entryLanding = new THREE.Mesh(new RoundedBoxGeometry(17.2, .16, 5.6, 4, .04), limestone);
+  entryLanding.name = "amnh-collision-matched-entrance-landing"; entryLanding.position.set(0, 1.1, 22.6); facade.add(entryLanding);
+  const lobbyRamp = new THREE.Mesh(new THREE.PlaneGeometry(16.4, 10.2, 1, 10), new THREE.MeshStandardMaterial({ color: "#b8ab91", map: textures.stone, roughness: .76, side: THREE.DoubleSide }));
+  lobbyRamp.name = "amnh-interior-access-ramp-from-portico-to-rotunda"; lobbyRamp.rotation.x = -Math.PI / 2 - Math.atan2(1.12, 10.2); lobbyRamp.position.set(0, .56, 15.5); facade.add(lobbyRamp);
   for (const x of [-6, 0, 6]) {
     const arch = new THREE.Mesh(new THREE.TorusGeometry(2.42, .24, 12, quality > .72 ? 36 : 24, Math.PI), limestone);
     arch.name = "central-park-west-carved-entrance-arch"; arch.position.set(x, 8, 24.08); facade.add(arch);
@@ -255,7 +283,34 @@ function addArchitecture(root: THREE.Group, textures: GameTextures, ownedTexture
   }
 }
 
-function addGalleryFixtures(root: THREE.Group, textures: GameTextures, quality: number) {
+function detailedMineralSpecimen(index: number, materials: THREE.Material[]) {
+  const specimen = new THREE.Group(); specimen.name = "museum-multi-crystal-geological-specimen";
+  const base = new THREE.Mesh(new THREE.DodecahedronGeometry(.54, 2), materials[(index + 2) % materials.length]); base.scale.set(1.25, .42, .92); base.position.y = -.18; specimen.add(base);
+  for (let crystal = 0; crystal < 7; crystal++) {
+    const height = .42 + (crystal * 17 % 5) * .13;
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(.11 + crystal % 2 * .025, .13 + crystal % 3 * .018, height, 6), materials[(index + crystal) % materials.length]);
+    shaft.name = "museum-faceted-crystal-prism"; shaft.position.set((crystal % 3 - 1) * .24, height * .5, (Math.floor(crystal / 3) - .8) * .22); shaft.rotation.set((crystal % 2 - .5) * .16, crystal * .7, (crystal % 3 - 1) * .1); specimen.add(shaft);
+    const termination = new THREE.Mesh(new THREE.ConeGeometry(.115 + crystal % 2 * .025, .19, 6), materials[(index + crystal) % materials.length]);
+    termination.name = "museum-natural-crystal-termination"; termination.position.copy(shaft.position).add(new THREE.Vector3(0, height * .55, 0)); termination.rotation.copy(shaft.rotation); specimen.add(termination);
+  }
+  return specimen;
+}
+
+function detailedInvertebrateFossil(material: THREE.Material) {
+  const specimen = new THREE.Group(); specimen.name = "museum-detailed-coiled-invertebrate-fossil";
+  const points: THREE.Vector3[] = [];
+  for (let segment = 0; segment < 72; segment++) {
+    const t = segment / 71, angle = t * Math.PI * 5.4, radius = .07 + t * .52;
+    points.push(new THREE.Vector3(Math.cos(angle) * radius, Math.sin(angle) * radius, Math.sin(t * Math.PI) * .055));
+  }
+  const shell = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), 110, .065, 10, false), material); shell.name = "museum-ammonite-continuous-ribbed-shell"; specimen.add(shell);
+  for (let rib = 9; rib < points.length; rib += 5) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(.075, .012, 7, 14), material); ring.name = "museum-ammonite-growth-rib"; ring.position.copy(points[rib]); ring.rotation.y = Math.PI / 2; specimen.add(ring);
+  }
+  return specimen;
+}
+
+function addGalleryFixtures(root: THREE.Group, textures: GameTextures, ownedTextures: THREE.Texture[], quality: number) {
   const fixtures = new THREE.Group(); fixtures.name = "amnh-authored-gallery-fixtures-and-display-cases";
   const brass = new THREE.MeshStandardMaterial({ color: "#a88b4d", roughness: .38, metalness: .68 });
   const darkStone = new THREE.MeshStandardMaterial({ color: "#34342f", map: textures.stone, bumpMap: textures.stone, bumpScale: .025, roughness: .82 });
@@ -277,25 +332,43 @@ function addGalleryFixtures(root: THREE.Group, textures: GameTextures, quality: 
     threshold.name = "museum-cross-hall-brass-threshold"; threshold.position.set(0, .02, z); fixtures.add(threshold);
   }
 
-  const caseCount = quality < .58 ? 8 : quality < .82 ? 12 : 16;
+  const collectionTitles = [
+    ["ORIGINS OF OCEAN LIFE", "MARINE INVERTEBRATES · 485–360 MILLION YEARS AGO"],
+    ["MINERALS OF NEW YORK", "GARNET · TOURMALINE · HERKIMER QUARTZ"],
+    ["DEEP TIME", "FOSSILS RECORD CHANGING CONTINENTS AND CLIMATES"],
+    ["PLANETARY MATERIALS", "METEORITES · IMPACT GLASS · DIFFERENTIATED WORLDS"],
+    ["NORTH AMERICAN MAMMALS", "ADAPTATION ACROSS ICE, GRASSLAND AND FOREST"],
+    ["BIODIVERSITY IN DETAIL", "FORM, FUNCTION AND EVOLUTIONARY RELATIONSHIPS"],
+  ] as const;
+  const collectionTextures = collectionTitles.map(([title, subtitle], index) => collectionGraphicTexture(title, subtitle, index));
+  ownedTextures.push(...collectionTextures);
+  for (let panelIndex = 0; panelIndex < 16; panelIndex++) {
+    const side = panelIndex % 2 ? 1 : -1, row = Math.floor(panelIndex / 2);
+    const panel = new THREE.Mesh(new THREE.PlaneGeometry(7.6, 4.6), new THREE.MeshBasicMaterial({ map: collectionTextures[panelIndex % collectionTextures.length], toneMapped: false }));
+    panel.name = `amnh-textured-permanent-hall-wall-graphic-${panelIndex + 1}`; panel.position.set(side * 43.42, 5.25, -22 - row * 26.5); panel.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; fixtures.add(panel);
+    for (const y of [-2.42, 2.42]) {
+      const rail = new THREE.Mesh(new RoundedBoxGeometry(.12, .16, 8.05, 3, .035), brass); rail.name = "amnh-bronze-wall-graphic-frame"; rail.position.copy(panel.position).add(new THREE.Vector3(-side * .07, y, 0)); fixtures.add(rail);
+    }
+    for (const z of [-3.95, 3.95]) {
+      const rail = new THREE.Mesh(new RoundedBoxGeometry(.12, 5.02, .16, 3, .035), brass); rail.name = "amnh-bronze-wall-graphic-frame"; rail.position.copy(panel.position).add(new THREE.Vector3(-side * .07, 0, z)); fixtures.add(rail);
+    }
+  }
+
+  const caseCount = quality < .58 ? 14 : quality < .82 ? 20 : 28;
   for (let index = 0; index < caseCount; index++) {
-    const side = index % 2 ? 1 : -1, row = Math.floor(index / 2), z = -24 - row * (quality > .82 ? 23 : 29);
+    const side = index % 2 ? 1 : -1, row = Math.floor(index / 2), z = -18 - row * (quality > .82 ? 14.2 : 19.2);
     const display = new THREE.Group(); display.name = `amnh-permanent-collection-vitrine-${index + 1}`;
     display.position.set(side * 31.5, 0, z);
     const plinth = new THREE.Mesh(new RoundedBoxGeometry(4.2, .78, 3.05, 5, .09), darkStone); plinth.position.y = .39; display.add(plinth);
     const hood = new THREE.Mesh(new RoundedBoxGeometry(3.82, 2.35, 2.68, 5, .055), museumGlass); hood.position.y = 1.76; display.add(hood);
-    const artifact = index % 3 === 0
-      ? new THREE.Mesh(new THREE.IcosahedronGeometry(.72, quality > .72 ? 4 : 2), mineralPalette[index % mineralPalette.length])
-      : index % 3 === 1
-        ? new THREE.Mesh(new THREE.TorusKnotGeometry(.52, .12, quality > .72 ? 80 : 48, 12, 2, 3), fossil)
-        : new THREE.Mesh(new THREE.DodecahedronGeometry(.68, quality > .72 ? 3 : 2), mineralPalette[index % mineralPalette.length]);
+    const artifact = index % 3 === 1 ? detailedInvertebrateFossil(fossil) : detailedMineralSpecimen(index, mineralPalette);
     artifact.name = index % 3 === 1 ? "museum-invertebrate-fossil-cast" : "museum-mineral-specimen";
     artifact.position.set((index % 3 - 1) * .22, 1.42, 0); artifact.rotation.set(index * .19, index * .37, index * .11); display.add(artifact);
     const caption = new THREE.Mesh(new RoundedBoxGeometry(2.45, .34, .06, 3, .02), label); caption.name = "museum-case-interpretation-label"; caption.position.set(0, .68, 1.56); caption.rotation.x = -.22; display.add(caption);
     fixtures.add(display);
   }
 
-  for (let row = 0; row < 6; row++) for (const side of [-1, 1]) {
+  for (let row = 0; row < 8; row++) for (const side of [-1, 1]) {
     const bench = new THREE.Group(); bench.name = "amnh-walnut-gallery-bench"; bench.position.set(side * 9.4, 0, -42 - row * 29.5);
     const seat = new THREE.Mesh(new RoundedBoxGeometry(3.7, .24, .86, 5, .07), walnut); seat.position.y = .82; bench.add(seat);
     const back = new THREE.Mesh(new RoundedBoxGeometry(3.7, .78, .18, 4, .045), walnut); back.position.set(0, 1.18, .34); back.rotation.x = -.1; bench.add(back);
@@ -313,6 +386,16 @@ function addGalleryFixtures(root: THREE.Group, textures: GameTextures, quality: 
     const coffer = new THREE.Mesh(new RoundedBoxGeometry(12.5, .08, 11.5, 3, .04), cofferMaterials[Math.abs(x / 9 + Math.round(z / 18)) % 2]);
     coffer.name = "amnh-recessed-ceiling-coffer"; coffer.position.set(x, 11.12, z); fixtures.add(coffer);
     const pin = new THREE.Mesh(new THREE.CylinderGeometry(.075, .075, .9, 8), brass); pin.position.set(x, 10.65, z); fixtures.add(pin);
+  }
+  for (const z of [-24, -55, -86, -117, -148, -179, -210]) for (const x of [-20, 20]) {
+    const station = new THREE.Group(); station.name = "amnh-interactive-collection-study-station"; station.position.set(x, 0, z);
+    const cabinet = new THREE.Mesh(new RoundedBoxGeometry(3.4, 1.05, 1.55, 5, .08), walnut); cabinet.position.y = .53; station.add(cabinet);
+    for (let drawer = 0; drawer < 4; drawer++) {
+      const face = new THREE.Mesh(new RoundedBoxGeometry(.64, .24, .035, 3, .018), label); face.position.set(-1.05 + drawer * .7, .62, .795); station.add(face);
+      const pull = new THREE.Mesh(new THREE.TorusGeometry(.055, .012, 7, 14, Math.PI), brass); pull.position.set(face.position.x, .61, .825); pull.rotation.x = Math.PI / 2; station.add(pull);
+    }
+    const taskLight = new THREE.Mesh(new THREE.CylinderGeometry(.18, .28, .14, 14), new THREE.MeshStandardMaterial({ color: "#eee0b6", emissive: "#ffd994", emissiveIntensity: 1.2, roughness: .3 })); taskLight.position.set(0, 2.2, 0); station.add(taskLight);
+    fixtures.add(station);
   }
   root.add(fixtures);
 }
@@ -790,18 +873,23 @@ export class NaturalHistoryMuseumWorld {
   readonly megatheriumTarget = new THREE.Vector3(0, 1.48, -186);
   readonly cameraPosition = new THREE.Vector3(0, 7.2, -176);
   readonly cameraTarget = new THREE.Vector3(0, 5.2, -198);
+  readonly scooterDockTarget = new THREE.Vector3(-18, 1.48, 47.5);
   readonly environmentSettings = { background: "#8da0a2", fog: "#9eaaa7", fogDensity: .0035, toneMappingExposure: 1.22, cameraFar: 520 } as const;
   private readonly boxes: BoxObstacle[] = [];
   private readonly circles: CircleObstacle[] = [];
   private readonly guests: AmbientHumanAgent[] = [];
   private readonly ownedTextures: THREE.Texture[] = [];
+  private readonly scooters: PersonalMobilityVehicle[] = [];
+  private readonly scooterPrevious = new THREE.Vector3();
+  private scooterConvoyActive = false;
+  private scooterHeading = 0;
   private disposed = false;
 
   constructor(scene: THREE.Scene, textures: GameTextures, quality = 1) {
     this.root.name = "american-museum-of-natural-history-exploration-level"; scene.add(this.root);
     const bone = new THREE.MeshStandardMaterial({ color: "#d5c6a2", roughness: .8, metalness: .02 });
     addArchitecture(this.root, textures, this.ownedTextures, quality, this.boxes);
-    addGalleryFixtures(this.root, textures, quality);
+    addGalleryFixtures(this.root, textures, this.ownedTextures, quality);
     addRotundaDinosaurs(this.root, bone, this.circles);
     addBlueWhale(this.root, this.circles);
     addMilsteinOceanLifeDetails(this.root, quality, this.circles);
@@ -810,6 +898,23 @@ export class NaturalHistoryMuseumWorld {
     addEarthAndMeteoriteHalls(this.root, this.circles);
     addSlothEvolutionGallery(this.root, textures, this.ownedTextures, bone, quality, this.circles);
     addMegatherium(this.root, this.ownedTextures, bone, this.circles);
+    for (let index = 0; index < 5; index++) {
+      const scooter = createSegwayScooter(index);
+      scooter.root.name = `amnh-five-scooter-fast-travel-line-${index + 1}`;
+      scooter.root.position.set(-21.1 + index * 1.55, 0, 47.5);
+      scooter.root.rotation.y = index % 2 ? -.045 : .045;
+      scooter.root.userData.interactable = true;
+      scooter.root.userData.interactionKind = "amnh-segway-scooter";
+      this.scooters.push(scooter); this.root.add(scooter.root);
+    }
+    this.scooterPrevious.copy(this.scooters[0].root.position);
+    const mobilityTexture = exhibitTexture("SEGWAY SCOOTER CORRAL", "E TO RIDE · ALL FOUR FRIENDS RIDE TOGETHER", "#78c8ba"); this.ownedTextures.push(mobilityTexture);
+    const mobilitySign = new THREE.Mesh(new RoundedBoxGeometry(6.8, 1.12, .16, 5, .05), new THREE.MeshBasicMaterial({ map: mobilityTexture, toneMapped: false }));
+    mobilitySign.name = "amnh-five-segway-scooters-group-fast-travel-sign"; mobilitySign.position.set(-23.4, 2.42, 45.1); this.root.add(mobilitySign);
+    const mobilityPostMaterial = new THREE.MeshStandardMaterial({ color: "#343a38", metalness: .66, roughness: .38 });
+    for (const x of [-25.9, -20.9]) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(.055, .08, 1.9, 10), mobilityPostMaterial); post.name = "amnh-segway-corral-grounded-sign-post"; post.position.set(x, .95, 45.14); this.root.add(post);
+    }
     addExhibitSign(this.root, this.ownedTextures, "THEODORE ROOSEVELT ROTUNDA", "BAROSAURUS · ALLOSAURUS · FLOOR 1", 0, 6.7, 14.2, 0, 1.12);
     addExhibitSign(this.root, this.ownedTextures, "MILSTEIN HALL OF OCEAN LIFE", "94-FOOT BLUE WHALE · ANDROS REEF · DEEP-OCEAN ENCOUNTER", -34.5, 3.1, -45, Math.PI / 2, .78);
     addExhibitSign(this.root, this.ownedTextures, "AKELEY HALL OF AFRICAN MAMMALS", "ELEPHANT GROUP · WATER HOLE · HABITAT DIORAMAS", 34.5, 3.1, -47, -Math.PI / 2, .78);
@@ -875,8 +980,51 @@ export class NaturalHistoryMuseumWorld {
 
   get objectiveTarget() { return this.megatheriumTarget.clone(); }
   get objectiveLabel() { return "Find the Megatherium in the Fossil Mammal Halls"; }
-  floorHeight() { return 0; }
+  get isScooterConvoyActive() { return this.scooterConvoyActive; }
+  floorHeight(x = 0, z = 0) {
+    if (Math.abs(x) > 22.5) return 0;
+    if (z >= 24.45 && z <= 34.65) {
+      const step = THREE.MathUtils.clamp(Math.round((34.15 - z) / 1.12), 0, 8);
+      return .11 + step * .135;
+    }
+    if (z >= 20.1 && z < 24.45) return 1.19;
+    if (z >= 10.4 && z < 20.1) return THREE.MathUtils.clamp((z - 10.4) / 9.7, 0, 1) * 1.19;
+    return 0;
+  }
   megatheriumNearby(player: THREE.Vector3, distance = 8.5) { return Math.hypot(player.x - this.megatheriumTarget.x, player.z - this.megatheriumTarget.z) <= distance; }
+  scooterDockNearby(player: THREE.Vector3, distance = 5.2) {
+    return !this.scooterConvoyActive && this.scooters.some(scooter => scooter.root.visible && Math.hypot(player.x - scooter.root.position.x, player.z - scooter.root.position.z) <= distance);
+  }
+
+  setScooterConvoyActive(active: boolean, player?: THREE.Vector3, yaw = 0) {
+    this.scooterConvoyActive = active;
+    this.scooterHeading = yaw;
+    this.scooters.forEach((scooter, index) => { scooter.root.visible = active ? index === 0 : true; });
+    if (player) {
+      const lead = this.scooters[0];
+      lead.root.position.set(player.x, this.floorHeight(player.x, player.z), player.z);
+      lead.root.rotation.set(0, yaw, 0);
+      this.scooterPrevious.copy(player);
+    }
+  }
+
+  updateScooter(player: THREE.Vector3, movementYaw: number) {
+    if (!this.scooterConvoyActive) return;
+    const scooter = this.scooters[0], distance = Math.hypot(player.x - this.scooterPrevious.x, player.z - this.scooterPrevious.z);
+    if (distance > .001) this.scooterHeading = movementYaw;
+    scooter.root.position.set(player.x, this.floorHeight(player.x, player.z), player.z);
+    scooter.root.rotation.set(0, this.scooterHeading, 0);
+    rollPersonalMobility(scooter, distance, .19);
+    this.scooterPrevious.copy(player);
+  }
+
+  getScooterGripPositions(target: { left: THREE.Vector3; right: THREE.Vector3 }) {
+    const anchors = this.scooters[0].gripAnchors;
+    if (!anchors) return target;
+    this.scooters[0].root.updateMatrixWorld(true);
+    anchors[0].getWorldPosition(target.left); anchors[1].getWorldPosition(target.right);
+    return target;
+  }
 
   resolvePlayer(player: THREE.Vector3, velocity: THREE.Vector3) {
     player.x = THREE.MathUtils.clamp(player.x, -62, 62); player.z = THREE.MathUtils.clamp(player.z, -221, 61);
@@ -886,7 +1034,7 @@ export class NaturalHistoryMuseumWorld {
       if (distance <= .001 || distance >= clearance) continue;
       player.x = circle.x + dx / distance * clearance; player.z = circle.z + dz / distance * clearance; velocity.set(0, 0, 0);
     }
-    player.y = 1.48;
+    player.y = this.floorHeight(player.x, player.z) + 1.48;
   }
 
   update(elapsed: number, delta: number) { if (!this.disposed) this.guests.forEach(agent => updateAmbientHumanAgent(agent, elapsed, delta)); }
