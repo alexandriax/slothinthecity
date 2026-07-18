@@ -6,6 +6,7 @@ import { createPremiumHuman, createPremiumSlothFriend, markPremiumCharactersDisp
 import { createAmbientHumanAgent, updateAmbientHumanAgent, type AmbientHumanAgent } from "./characters/AmbientHumanMotion";
 import type { SlothVehicleGripTargets } from "../player/SlothRig";
 import { CityRoadNetwork, type DriveRoad, type RouteGuidance } from "./CityRoadNetwork";
+import { NYC_OSM_BOUNDARY_CLOSURES, NYC_OSM_BUILDINGS, NYC_OSM_ROADS } from "./nycShuttleOsmData";
 
 export type CityBusInput = {
   accelerate: boolean;
@@ -24,6 +25,26 @@ export type ShuttleMinimapSnapshot = {
   destinationZ: number;
 };
 
+export type ShuttleImpactEvent = {
+  kind: "traffic" | "building" | "barrier";
+  severity: number;
+  damage: number;
+  integrity: number;
+  label: string;
+  disabled: boolean;
+};
+
+type StaticCollider = {
+  id: string;
+  kind: "building" | "barrier";
+  label: string;
+  x: number;
+  z: number;
+  halfX: number;
+  halfZ: number;
+  yaw: number;
+};
+
 type TrafficVehicle = {
   root: THREE.Group;
   progress: number;
@@ -33,6 +54,7 @@ type TrafficVehicle = {
   cruise: number;
   phase: number;
   nextLaneChange: number;
+  collisionOffset: THREE.Vector3;
 };
 
 type LocalTrafficVehicle = {
@@ -41,6 +63,7 @@ type LocalTrafficVehicle = {
   distance: number;
   speed: number;
   laneOffset: number;
+  collisionOffset: THREE.Vector3;
 };
 
 type TrafficSignalAspect = "RED" | "YELLOW" | "GREEN";
@@ -54,20 +77,37 @@ type BuiltBus = {
   root: THREE.Group;
   steeringWheel: THREE.Group;
   gripAnchors: readonly [THREE.Object3D, THREE.Object3D];
+  damageStages: readonly THREE.Group[];
 };
 
 const HIGHWAY_START = 900;
 const HIGHWAY_EXIT_START = 2550;
-const TURN_RADIUS = 24;
-const TURN_ARC_LENGTH = TURN_RADIUS * Math.PI / 2;
-const CROSSTOWN_START = HIGHWAY_EXIT_START + TURN_ARC_LENGTH;
-const CROSSTOWN_LENGTH = 250;
-const CENTRAL_PARK_WEST_TURN_START = CROSSTOWN_START + CROSSTOWN_LENGTH;
-const CENTRAL_PARK_WEST_START = CENTRAL_PARK_WEST_TURN_START + TURN_ARC_LENGTH;
-export const CITY_BUS_ROUTE_LENGTH = CENTRAL_PARK_WEST_START + 52;
+const MANHATTAN_PRIMARY_POINTS = [
+  [0, -HIGHWAY_EXIT_START],
+  [-35, -2520],
+  [-75, -2490],
+  [-120.643, -2479.735], // West 79th Street exit surface road
+  [-152.641, -2512.553],
+  [-191.655, -2551.638],
+  [-217.844, -2577.899], // Amsterdam Avenue at West 79th Street
+  [-225.68, -2552.852],
+  [-234.265, -2525.14], // Amsterdam Avenue at West 81st Street
+  [-269.247, -2560.206],
+  [-291.22, -2584.444],
+  [-329.196, -2622.539], // Central Park West / Museum campus
+] as const;
+const MANHATTAN_PRIMARY_LENGTHS = MANHATTAN_PRIMARY_POINTS.slice(1).map((point, index) => Math.hypot(point[0] - MANHATTAN_PRIMARY_POINTS[index][0], point[1] - MANHATTAN_PRIMARY_POINTS[index][1]));
+const MANHATTAN_PRIMARY_CUMULATIVE = [0];
+for (const length of MANHATTAN_PRIMARY_LENGTHS) MANHATTAN_PRIMARY_CUMULATIVE.push(MANHATTAN_PRIMARY_CUMULATIVE.at(-1)! + length);
+const MANHATTAN_PRIMARY_LENGTH = MANHATTAN_PRIMARY_CUMULATIVE.at(-1)!;
+const CROSSTOWN_START = HIGHWAY_EXIT_START + MANHATTAN_PRIMARY_CUMULATIVE[3];
+const AMSTERDAM_TURN_START = HIGHWAY_EXIT_START + MANHATTAN_PRIMARY_CUMULATIVE[6];
+const WEST_81_START = HIGHWAY_EXIT_START + MANHATTAN_PRIMARY_CUMULATIVE[8];
+const CENTRAL_PARK_WEST_START = HIGHWAY_EXIT_START + MANHATTAN_PRIMARY_LENGTH;
+export const CITY_BUS_ROUTE_LENGTH = CENTRAL_PARK_WEST_START;
 export const CITY_BUS_HIGHWAY_REVIEW_PROGRESS = 1450;
 export const CITY_BUS_EXIT_REVIEW_PROGRESS = HIGHWAY_EXIT_START - 150;
-export const CITY_BUS_CITY_REVIEW_PROGRESS = CROSSTOWN_START + 86;
+export const CITY_BUS_CITY_REVIEW_PROGRESS = CROSSTOWN_START + 62;
 const LANE_WIDTH = 3.35;
 const TRAFFIC_LANES = [-1.5, -.5, .5, 1.5] as const;
 // Arcade pace is intentional: the sloth is slow on foot, but the vehicles are
@@ -75,19 +115,68 @@ const TRAFFIC_LANES = [-1.5, -.5, .5, 1.5] as const;
 // proximity remains readable, but only player brake/handbrake input takes pace.
 const STREET_TOP_SPEED = 48;
 const HIGHWAY_TOP_SPEED = 72;
-const SIGNAL_STOPS = [150, 335, 565, CROSSTOWN_START + 72, CROSSTOWN_START + 176, CENTRAL_PARK_WEST_START + 26] as const;
+const SHUTTLE_MAX_DAMAGE = 100;
+const SHUTTLE_COLLISION_RADIUS = 1.08;
+const SHUTTLE_COLLISION_OFFSETS = [-2.75, 0, 2.75] as const;
+const COLLISION_BUCKET_SIZE = 34;
+const SIGNAL_STOPS = [150, 335, 565, CROSSTOWN_START + 42, AMSTERDAM_TURN_START - 18, WEST_81_START + 38] as const;
 const SIGNAL_COLORS: Record<TrafficSignalAspect, string> = { RED: "#ff3b2f", YELLOW: "#ffd02f", GREEN: "#37e778" };
 const ROUTE_LEGS = [
-  { from: 0, to: 220, name: "Southern Boulevard", detail: "Bronx Zoo shuttle gate · neighborhood traffic" },
-  { from: 220, to: 470, name: "East 180th Street", detail: "West Farms shops · local intersections" },
-  { from: 470, to: 700, name: "Fordham Road Connector", detail: "follow signs for the Henry Hudson" },
-  { from: 700, to: HIGHWAY_START, name: "Henry Hudson Parkway Ramp", detail: "merge toward Manhattan" },
-  { from: HIGHWAY_START, to: HIGHWAY_EXIT_START, name: "West Side Highway", detail: "south along the Hudson River" },
-  { from: HIGHWAY_EXIT_START, to: CROSSTOWN_START, name: "West 79th Street Exit", detail: "take the museum exit" },
-  { from: CROSSTOWN_START, to: CENTRAL_PARK_WEST_TURN_START, name: "West 79th Street", detail: "cross town toward Central Park West" },
-  { from: CENTRAL_PARK_WEST_TURN_START, to: CENTRAL_PARK_WEST_START, name: "Central Park West Turn", detail: "turn right at Central Park West" },
-  { from: CENTRAL_PARK_WEST_START, to: CITY_BUS_ROUTE_LENGTH, name: "Central Park West", detail: "American Museum of Natural History" },
+  { from: 0, to: 100, name: "Jungleworld Road", detail: "Bronx Zoo shuttle gate" },
+  { from: 100, to: 245, name: "Boston Road", detail: "local Bronx traffic" },
+  { from: 245, to: 355, name: "East Tremont Avenue", detail: "turn toward East 177th Street" },
+  { from: 355, to: 445, name: "East 177th Street", detail: "Sheridan Boulevard ahead" },
+  { from: 445, to: 560, name: "Sheridan Boulevard", detail: "ramp to the Cross Bronx" },
+  { from: 560, to: HIGHWAY_START, name: "Cross Bronx Expressway", detail: "westbound toward the Henry Hudson" },
+  { from: HIGHWAY_START, to: HIGHWAY_EXIT_START, name: "Henry Hudson Parkway", detail: "NY 9A south along the Hudson River" },
+  { from: HIGHWAY_EXIT_START, to: CROSSTOWN_START, name: "West 79th Street Exit", detail: "exit for the museum" },
+  { from: CROSSTOWN_START, to: AMSTERDAM_TURN_START, name: "West 79th Street", detail: "east to Amsterdam Avenue" },
+  { from: AMSTERDAM_TURN_START, to: WEST_81_START, name: "Amsterdam Avenue", detail: "turn north to West 81st Street" },
+  { from: WEST_81_START, to: CITY_BUS_ROUTE_LENGTH, name: "West 81st Street", detail: "museum campus at Central Park West" },
 ] as const;
+
+type CollisionContact = { collider: StaticCollider; normal: THREE.Vector3; penetration: number };
+
+class StaticCollisionIndex {
+  private readonly buckets = new Map<string, StaticCollider[]>();
+
+  add(collider: StaticCollider) {
+    const radius = Math.hypot(collider.halfX, collider.halfZ);
+    const minimumX = Math.floor((collider.x - radius) / COLLISION_BUCKET_SIZE), maximumX = Math.floor((collider.x + radius) / COLLISION_BUCKET_SIZE);
+    const minimumZ = Math.floor((collider.z - radius) / COLLISION_BUCKET_SIZE), maximumZ = Math.floor((collider.z + radius) / COLLISION_BUCKET_SIZE);
+    for (let x = minimumX; x <= maximumX; x++) for (let z = minimumZ; z <= maximumZ; z++) {
+      const key = `${x}:${z}`, bucket = this.buckets.get(key) ?? [];
+      if (!this.buckets.has(key)) this.buckets.set(key, bucket);
+      bucket.push(collider);
+    }
+  }
+
+  nearby(position: THREE.Vector3) {
+    const bucketX = Math.floor(position.x / COLLISION_BUCKET_SIZE), bucketZ = Math.floor(position.z / COLLISION_BUCKET_SIZE);
+    const result = new Set<StaticCollider>();
+    for (let x = bucketX - 1; x <= bucketX + 1; x++) for (let z = bucketZ - 1; z <= bucketZ + 1; z++) {
+      for (const collider of this.buckets.get(`${x}:${z}`) ?? []) result.add(collider);
+    }
+    return result;
+  }
+}
+
+function circleObbContact(center: THREE.Vector3, radius: number, collider: StaticCollider): CollisionContact | null {
+  const cosine = Math.cos(-collider.yaw), sine = Math.sin(-collider.yaw), dx = center.x - collider.x, dz = center.z - collider.z;
+  const localX = dx * cosine - dz * sine, localZ = dx * sine + dz * cosine;
+  const closestX = THREE.MathUtils.clamp(localX, -collider.halfX, collider.halfX), closestZ = THREE.MathUtils.clamp(localZ, -collider.halfZ, collider.halfZ);
+  let normalX = localX - closestX, normalZ = localZ - closestZ, distance = Math.hypot(normalX, normalZ), penetration = radius - distance;
+  if (penetration <= 0) return null;
+  if (distance < .0001) {
+    const escapeX = collider.halfX - Math.abs(localX), escapeZ = collider.halfZ - Math.abs(localZ);
+    if (escapeX < escapeZ) { normalX = Math.sign(localX || 1); normalZ = 0; penetration = radius + escapeX; }
+    else { normalX = 0; normalZ = Math.sign(localZ || 1); penetration = radius + escapeZ; }
+    distance = 1;
+  }
+  normalX /= distance; normalZ /= distance;
+  const worldCosine = Math.cos(collider.yaw), worldSine = Math.sin(collider.yaw);
+  return { collider, penetration, normal: new THREE.Vector3(normalX * worldCosine - normalZ * worldSine, 0, normalX * worldSine + normalZ * worldCosine) };
+}
 
 function signalAspectAt(elapsed: number, stop: number): TrafficSignalAspect {
   const phase = ((elapsed + stop * .07) % 16 + 16) % 16;
@@ -120,18 +209,15 @@ function routeCenter(progress: number) {
     return new THREE.Vector3(Math.sin(p / 112) * 15 * taper, Math.sin(p / 145) * 1.15 * taper, -p);
   }
   if (p < HIGHWAY_EXIT_START) return new THREE.Vector3(0, .4, -p);
-  if (p < CROSSTOWN_START) {
-    const angle = (p - HIGHWAY_EXIT_START) / TURN_RADIUS;
-    return new THREE.Vector3(-TURN_RADIUS + Math.cos(angle) * TURN_RADIUS, .4, -HIGHWAY_EXIT_START - Math.sin(angle) * TURN_RADIUS);
+  let cursor = p - HIGHWAY_EXIT_START;
+  for (let index = 0; index < MANHATTAN_PRIMARY_LENGTHS.length; index++) {
+    const length = MANHATTAN_PRIMARY_LENGTHS[index];
+    if (cursor > length) { cursor -= length; continue; }
+    const start = MANHATTAN_PRIMARY_POINTS[index], end = MANHATTAN_PRIMARY_POINTS[index + 1], t = cursor / Math.max(.001, length);
+    return new THREE.Vector3(THREE.MathUtils.lerp(start[0], end[0], t), .4, THREE.MathUtils.lerp(start[1], end[1], t));
   }
-  const crossTownZ = -HIGHWAY_EXIT_START - TURN_RADIUS;
-  if (p < CENTRAL_PARK_WEST_TURN_START) return new THREE.Vector3(-TURN_RADIUS - (p - CROSSTOWN_START), .4, crossTownZ);
-  const secondTurnX = -TURN_RADIUS - CROSSTOWN_LENGTH;
-  if (p < CENTRAL_PARK_WEST_START) {
-    const angle = (p - CENTRAL_PARK_WEST_TURN_START) / TURN_RADIUS;
-    return new THREE.Vector3(secondTurnX - Math.sin(angle) * TURN_RADIUS, .4, crossTownZ - (1 - Math.cos(angle)) * TURN_RADIUS);
-  }
-  return new THREE.Vector3(secondTurnX - TURN_RADIUS, .4, crossTownZ - TURN_RADIUS - (p - CENTRAL_PARK_WEST_START));
+  const end = MANHATTAN_PRIMARY_POINTS.at(-1)!;
+  return new THREE.Vector3(end[0], .4, end[1]);
 }
 
 function routeFrame(progress: number) {
@@ -142,35 +228,13 @@ function routeFrame(progress: number) {
   return { center: routeCenter(progress), tangent, right, yaw };
 }
 
-const CROSSTOWN_Z = -HIGHWAY_EXIT_START - TURN_RADIUS;
-const CENTRAL_PARK_WEST_X = -TURN_RADIUS - CROSSTOWN_LENGTH - TURN_RADIUS;
-const CENTRAL_PARK_WEST_NORTH_Z = CROSSTOWN_Z - TURN_RADIUS;
-const AMNH_BUS_BAY = new THREE.Vector3(CENTRAL_PARK_WEST_X + 6.8, .4, CENTRAL_PARK_WEST_NORTH_Z - 52);
-
-// Local deterministic street graph traced from OpenStreetMap topology around
-// the West 79th Street Henry Hudson exit and AMNH. Distances are compressed
-// for play, while west-to-east avenue order and the W 72–81 grid stay true.
-const UWS_AVENUES = [
-  { x: 0, name: "West Side Highway" },
-  { x: -46, name: "Riverside Drive" },
-  { x: -92, name: "West End Avenue" },
-  { x: -146, name: "Broadway" },
-  { x: -202, name: "Amsterdam Avenue" },
-  { x: -250, name: "Columbus Avenue" },
-  { x: CENTRAL_PARK_WEST_X, name: "Central Park West" },
-] as const;
-const UWS_CROSS_STREETS = [
-  { z: -2494, name: "West 81st Street" },
-  { z: -2534, name: "West 80th Street" },
-  { z: CROSSTOWN_Z, name: "West 79th Street" },
-  { z: -2614, name: "West 78th Street" },
-  { z: -2654, name: "West 77th Street" },
-  { z: -2694, name: "West 76th Street" },
-  { z: -2734, name: "West 75th Street" },
-  { z: -2774, name: "West 74th Street" },
-  { z: -2814, name: "West 73rd Street" },
-  { z: -2854, name: "West 72nd Street" },
-] as const;
+const AMNH_END_FRAME = routeFrame(CITY_BUS_ROUTE_LENGTH);
+// Match the authored curb bay's local transform exactly. Local -Z faces the
+// route tangent, so the stop lies ten metres beyond the routing endpoint and
+// 6.8 metres toward the museum curb.
+const AMNH_BUS_BAY = AMNH_END_FRAME.center.clone()
+  .addScaledVector(AMNH_END_FRAME.right, 6.8)
+  .addScaledVector(AMNH_END_FRAME.tangent, 10);
 
 function primaryRoadName(progress: number) {
   return ROUTE_LEGS.find(leg => progress >= leg.from && progress < leg.to)?.name ?? "Central Park West";
@@ -181,14 +245,7 @@ function displayRoadName(name: string) { return name === "Central Park West Turn
 function buildDriveRoads() {
   const anchors = new Set<number>();
   for (let progress = 0; progress <= CITY_BUS_ROUTE_LENGTH; progress += 18) anchors.add(Math.min(progress, CITY_BUS_ROUTE_LENGTH));
-  for (const progress of [
-    0, HIGHWAY_START, HIGHWAY_EXIT_START, CROSSTOWN_START,
-    ...[-46, -92, -146, -202, -250, -274].map(x => CROSSTOWN_START + Math.abs(x + TURN_RADIUS)),
-    CROSSTOWN_START + 80, CROSSTOWN_START + 166, CENTRAL_PARK_WEST_TURN_START,
-    CENTRAL_PARK_WEST_START, CENTRAL_PARK_WEST_START + 52,
-    CENTRAL_PARK_WEST_START + 132, CENTRAL_PARK_WEST_START + 212,
-    CITY_BUS_ROUTE_LENGTH,
-  ]) anchors.add(progress);
+  for (const progress of [0, HIGHWAY_START, HIGHWAY_EXIT_START, ...MANHATTAN_PRIMARY_CUMULATIVE.map(distance => HIGHWAY_EXIT_START + distance), CITY_BUS_ROUTE_LENGTH]) anchors.add(progress);
   const ordered = [...anchors].sort((a, b) => a - b), roads: DriveRoad[] = [];
   for (let index = 0; index < ordered.length - 1; index++) {
     const from = ordered[index], to = ordered[index + 1], middle = (from + to) * .5;
@@ -196,38 +253,31 @@ function buildDriveRoads() {
       id: `recommended-route-${index + 1}`,
       name: primaryRoadName(middle),
       start: routeCenter(from), end: routeCenter(to),
-      halfWidth: middle >= CROSSTOWN_START ? 8.1 : 10.75,
+      halfWidth: middle >= CROSSTOWN_START ? 7.9 : 10.75,
       speedLimit: middle >= 420 && middle < HIGHWAY_EXIT_START ? HIGHWAY_TOP_SPEED : STREET_TOP_SPEED,
       primaryFrom: from, primaryTo: to,
     });
   }
-  const add = (id: string, name: string, start: [number, number], end: [number, number], halfWidth = 8.1, speedLimit = STREET_TOP_SPEED) => roads.push({
-    id, name,
-    start: new THREE.Vector3(start[0], .4, start[1]),
-    end: new THREE.Vector3(end[0], .4, end[1]),
-    halfWidth, speedLimit,
+  roads.push({ id: "missed-w79-highway", name: "Henry Hudson Parkway · Southbound", start: new THREE.Vector3(0, .4, -HIGHWAY_EXIT_START), end: new THREE.Vector3(0, .4, -2985), halfWidth: 10.75, speedLimit: HIGHWAY_TOP_SPEED });
+  for (const road of NYC_OSM_ROADS) roads.push({
+    id: road.id,
+    name: road.name,
+    start: new THREE.Vector3(road.start[0], .4, road.start[1]),
+    end: new THREE.Vector3(road.end[0], .4, road.end[1]),
+    halfWidth: road.halfWidth,
+    speedLimit: /motorway|trunk/.test(road.roadClass) ? HIGHWAY_TOP_SPEED : STREET_TOP_SPEED,
   });
-  add("missed-w79-highway", "West Side Highway · Southbound", [0, -HIGHWAY_EXIT_START], [0, -2854], 10.75, HIGHWAY_TOP_SPEED);
-  const avenueBreaks = [...new Set([...UWS_CROSS_STREETS.map(street => street.z), CENTRAL_PARK_WEST_NORTH_Z])].sort((a, b) => b - a);
-  for (const avenue of UWS_AVENUES.slice(1)) {
-    for (let index = 0; index < avenueBreaks.length - 1; index++) {
-      add(`${avenue.name.toLowerCase().replaceAll(" ", "-")}-${index}`, avenue.name, [avenue.x, avenueBreaks[index]], [avenue.x, avenueBreaks[index + 1]]);
-    }
-  }
-  const avenueBreakpoints = [0, -24, ...UWS_AVENUES.slice(1).map(avenue => avenue.x), -274, CENTRAL_PARK_WEST_X].sort((a, b) => b - a);
-  for (const street of UWS_CROSS_STREETS) for (let index = 0; index < avenueBreakpoints.length - 1; index++) {
-    add(`${street.name.toLowerCase().replaceAll(" ", "-")}-${index}`, street.name, [avenueBreakpoints[index], street.z], [avenueBreakpoints[index + 1], street.z]);
-  }
   return roads;
 }
 
 const DRIVE_ROADS = buildDriveRoads();
+const PRIMARY_DRIVE_ROADS = DRIVE_ROADS.filter(road => road.primaryFrom !== undefined);
 
 const UWS_TRAFFIC_LOOPS = [
-  [new THREE.Vector3(0, .4, CROSSTOWN_Z), new THREE.Vector3(0, .4, -2854), new THREE.Vector3(-92, .4, -2854), new THREE.Vector3(-92, .4, CROSSTOWN_Z)],
-  [new THREE.Vector3(-92, .4, CROSSTOWN_Z), new THREE.Vector3(-92, .4, -2654), new THREE.Vector3(-202, .4, -2654), new THREE.Vector3(-202, .4, CROSSTOWN_Z)],
-  [new THREE.Vector3(-202, .4, -2654), new THREE.Vector3(-202, .4, -2734), new THREE.Vector3(CENTRAL_PARK_WEST_X, .4, -2734), new THREE.Vector3(CENTRAL_PARK_WEST_X, .4, -2654)],
-  [new THREE.Vector3(-146, .4, -2734), new THREE.Vector3(-146, .4, -2814), new THREE.Vector3(-250, .4, -2814), new THREE.Vector3(-250, .4, -2734)],
+  [new THREE.Vector3(-217.844, .4, -2577.899), new THREE.Vector3(-169.934, .4, -2529.773), new THREE.Vector3(-186.126, .4, -2476.918), new THREE.Vector3(-234.265, .4, -2525.14)],
+  [new THREE.Vector3(-201.891, .4, -2630.402), new THREE.Vector3(-153.849, .4, -2582.195), new THREE.Vector3(-169.934, .4, -2529.773), new THREE.Vector3(-217.844, .4, -2577.899)],
+  [new THREE.Vector3(-162.511, .4, -2760.31), new THREE.Vector3(-155.056, .4, -2752.868), new THREE.Vector3(-177.461, .4, -2606.012), new THREE.Vector3(-201.891, .4, -2630.402)],
+  [new THREE.Vector3(-234.265, .4, -2525.14), new THREE.Vector3(-208.088, .4, -2499.015), new THREE.Vector3(-249.817, .4, -2372.077), new THREE.Vector3(-273.769, .4, -2396.222)],
 ] as const;
 
 function closedPathFrame(points: readonly THREE.Vector3[], distance: number) {
@@ -421,8 +471,26 @@ function makeBus(quality: number, textures: GameTextures, passengerTextures: THR
     result.root.scale.multiplyScalar(.72); result.root.position.set(index % 2 ? .78 : -.78, 1.08, -.28 + Math.floor(index / 2) * 1.32); result.root.rotation.y = Math.PI;
     root.add(result.root); passengerTextures.push(...result.ownedTextures);
   }
+  const damageStages = [new THREE.Group(), new THREE.Group(), new THREE.Group()];
+  damageStages.forEach((stage, index) => { stage.name = `museum-shuttle-visible-damage-stage-${index + 1}`; stage.visible = false; root.add(stage); });
+  const scrapeMaterial = new THREE.MeshStandardMaterial({ color: "#3c332b", roughness: .98, metalness: .18 });
+  for (let index = 0; index < 5; index++) {
+    const scrape = new THREE.Mesh(new RoundedBoxGeometry(.48 + index % 2 * .24, .055, .035, 2, .012), scrapeMaterial);
+    scrape.name = "museum-shuttle-impact-scrape-and-dented-paint"; scrape.position.set(-1.05 + index * .52, .76 + index % 3 * .24, -3.985); scrape.rotation.z = -.24 + index * .11; damageStages[0].add(scrape);
+  }
+  const crackMaterial = new THREE.LineBasicMaterial({ color: "#d9e5e5", transparent: true, opacity: .72, toneMapped: false });
+  for (let branch = 0; branch < 7; branch++) {
+    const start = new THREE.Vector3(.62, 2.1, -3.972), angle = -.95 + branch * .31, length = .34 + branch % 3 * .13;
+    const points = [start, start.clone().add(new THREE.Vector3(Math.cos(angle) * length, Math.sin(angle) * length, -.004))];
+    const crack = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), crackMaterial); crack.name = "museum-shuttle-windshield-radiating-impact-crack"; damageStages[1].add(crack);
+  }
+  const smokeMaterial = new THREE.MeshStandardMaterial({ color: "#4c4e4c", transparent: true, opacity: .38, roughness: 1, depthWrite: false });
+  for (let puff = 0; puff < 5; puff++) {
+    const smoke = new THREE.Mesh(new THREE.IcosahedronGeometry(.28 + puff * .045, 1), smokeMaterial);
+    smoke.name = "museum-shuttle-disabled-engine-smoke"; smoke.position.set(-.6 + puff * .22, 2.85 + puff * .34, -3 + puff * .13); smoke.userData.phase = puff * 1.37; damageStages[2].add(smoke);
+  }
   setShadows(root, quality > .58);
-  return { root, steeringWheel, gripAnchors: [leftGrip, rightGrip] };
+  return { root, steeringWheel, gripAnchors: [leftGrip, rightGrip], damageStages };
 }
 
 function makeTrafficCar(index: number, quality: number) {
@@ -466,7 +534,107 @@ function makeTrafficCar(index: number, quality: number) {
   setShadows(root, quality > .65); return root;
 }
 
-function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quality: number, textures: GameTextures, signals: TrafficSignal[]) {
+function addOsmRoadSurfaces(root: THREE.Group, asphalt: THREE.Material, concrete: THREE.Material, lane: THREE.Material) {
+  const roadGeometry = new RoundedBoxGeometry(1, .18, 1, 3, .04), sidewalkGeometry = new RoundedBoxGeometry(1, .28, 1, 3, .05), stripeGeometry = new RoundedBoxGeometry(.09, .025, 1, 2, .01);
+  const roads = new THREE.InstancedMesh(roadGeometry, asphalt, NYC_OSM_ROADS.length);
+  roads.name = "openstreetmap-authored-upper-west-side-driveable-road-surfaces"; roads.receiveShadow = true;
+  const sidewalks = new THREE.InstancedMesh(sidewalkGeometry, concrete, NYC_OSM_ROADS.length * 2);
+  sidewalks.name = "openstreetmap-authored-upper-west-side-continuous-sidewalks"; sidewalks.receiveShadow = true;
+  const marked = NYC_OSM_ROADS.filter(road => /motorway|trunk|primary|secondary|tertiary/.test(road.roadClass));
+  const stripes = new THREE.InstancedMesh(stripeGeometry, lane, marked.length * 2);
+  stripes.name = "openstreetmap-authored-upper-west-side-lane-markings"; stripes.receiveShadow = true;
+  const dummy = new THREE.Object3D(); let sidewalkIndex = 0, stripeIndex = 0;
+  NYC_OSM_ROADS.forEach((road, index) => {
+    const start = new THREE.Vector3(road.start[0], 0, road.start[1]), end = new THREE.Vector3(road.end[0], 0, road.end[1]), tangent = end.clone().sub(start), length = tangent.length();
+    if (length < .01) return;
+    tangent.multiplyScalar(1 / length); const right = new THREE.Vector3(-tangent.z, 0, tangent.x), yaw = Math.atan2(-tangent.x, -tangent.z), center = start.add(end).multiplyScalar(.5);
+    dummy.position.set(center.x, .31, center.z); dummy.rotation.set(0, yaw, 0); dummy.scale.set(road.halfWidth * 2, 1, length + .7); dummy.updateMatrix(); roads.setMatrixAt(index, dummy.matrix);
+    if (length >= 8 && /motorway|trunk/.test(road.roadClass) && !/motorway_link/.test(road.roadClass)) for (const side of [-1, 1]) {
+      dummy.position.set(center.x + right.x * side * (road.halfWidth + .72), .39, center.z + right.z * side * (road.halfWidth + .72)); dummy.rotation.set(0, yaw, 0); dummy.scale.set(1.18, 1, Math.max(2, length - 3.5)); dummy.updateMatrix(); sidewalks.setMatrixAt(sidewalkIndex++, dummy.matrix);
+    }
+    if (length >= 12 && /motorway|trunk|primary|secondary|tertiary/.test(road.roadClass)) for (const side of [-1, 1]) {
+      dummy.position.set(center.x + right.x * side * 1.8, .43, center.z + right.z * side * 1.8); dummy.rotation.set(0, yaw, 0); dummy.scale.set(1, 1, Math.max(1.2, length * .62)); dummy.updateMatrix(); stripes.setMatrixAt(stripeIndex++, dummy.matrix);
+    }
+  });
+  sidewalks.count = sidewalkIndex; stripes.count = stripeIndex;
+  roads.instanceMatrix.needsUpdate = sidewalks.instanceMatrix.needsUpdate = stripes.instanceMatrix.needsUpdate = true;
+  root.add(roads, sidewalks, stripes);
+}
+
+function addOsmBuildingsAndClosures(
+  root: THREE.Group,
+  quality: number,
+  textures: GameTextures,
+  ownedTextures: THREE.Texture[],
+  buildingMaterials: readonly THREE.Material[],
+  corniceMaterials: readonly THREE.Material[],
+  baseMaterials: readonly THREE.Material[],
+  collisionIndex: StaticCollisionIndex,
+) {
+  const buildingGeometry = new RoundedBoxGeometry(1, 1, 1, 3, .025), corniceGeometry = new RoundedBoxGeometry(1, 1, 1, 3, .02), baseGeometry = new RoundedBoxGeometry(1, 1, 1, 3, .02), sidewalkPadGeometry = new RoundedBoxGeometry(1, .18, 1, 3, .025);
+  const sidewalkPadMaterial = new THREE.MeshStandardMaterial({ color: "#797a74", map: textures.stone, roughness: .96 });
+  const variants = buildingMaterials.map((material, variant) => {
+    // The detailed arrival campus replaces the raw OSM massing immediately
+    // around AMNH. Retain the surrounding real footprints so every approach
+    // still reads as a continuous city block.
+    const buildings = NYC_OSM_BUILDINGS.filter(building => building.variant === variant && Math.hypot(building.x - AMNH_END_FRAME.center.x, building.z - AMNH_END_FRAME.center.z) > 52);
+    const mesh = new THREE.InstancedMesh(buildingGeometry, material, buildings.length); mesh.name = `openstreetmap-real-building-footprint-variant-${variant + 1}`; mesh.receiveShadow = true; mesh.castShadow = quality > .84;
+    const cornices = new THREE.InstancedMesh(corniceGeometry, corniceMaterials[variant % corniceMaterials.length], buildings.length); cornices.name = "openstreetmap-building-roofline-and-cornice"; cornices.receiveShadow = true;
+    const bases = new THREE.InstancedMesh(baseGeometry, baseMaterials[variant % baseMaterials.length], buildings.length); bases.name = "openstreetmap-building-articulated-ground-floor-base"; bases.receiveShadow = true;
+    const sidewalkPads = new THREE.InstancedMesh(sidewalkPadGeometry, sidewalkPadMaterial, buildings.length); sidewalkPads.name = "openstreetmap-building-footprint-continuous-block-sidewalk-pad"; sidewalkPads.receiveShadow = true;
+    const dummy = new THREE.Object3D();
+    buildings.forEach((building, index) => {
+      dummy.position.set(building.x, building.height * .5, building.z); dummy.rotation.set(0, building.yaw, 0); dummy.scale.set(building.width, building.height, building.depth); dummy.updateMatrix(); mesh.setMatrixAt(index, dummy.matrix);
+      dummy.position.set(building.x, building.height + .16, building.z); dummy.scale.set(building.width + .34, .34, building.depth + .34); dummy.updateMatrix(); cornices.setMatrixAt(index, dummy.matrix);
+      dummy.position.set(building.x, 1.35, building.z); dummy.scale.set(building.width * .97, 2.7, building.depth * .97); dummy.updateMatrix(); bases.setMatrixAt(index, dummy.matrix);
+      dummy.position.set(building.x, .2, building.z); dummy.scale.set(building.width + 3.1, 1, building.depth + 3.1); dummy.updateMatrix(); sidewalkPads.setMatrixAt(index, dummy.matrix);
+      collisionIndex.add({ id: `osm-building-${building.id}`, kind: "building", label: building.name || "Upper West Side building", x: building.x, z: building.z, halfX: Math.max(.7, building.width * .46), halfZ: Math.max(.7, building.depth * .46), yaw: building.yaw });
+    });
+    mesh.instanceMatrix.needsUpdate = cornices.instanceMatrix.needsUpdate = bases.instanceMatrix.needsUpdate = sidewalkPads.instanceMatrix.needsUpdate = true;
+    root.add(sidewalkPads, mesh, bases, cornices); return mesh;
+  });
+  void variants;
+
+  const roofCount = Math.floor(NYC_OSM_BUILDINGS.length / 7), roof = new THREE.InstancedMesh(new THREE.CylinderGeometry(.75, .9, 1.5, 12), new THREE.MeshStandardMaterial({ color: "#4d3d31", roughness: .94 }), roofCount);
+  roof.name = "openstreetmap-building-rooftop-water-tanks-and-mechanical-detail";
+  const roofDummy = new THREE.Object3D(); let roofIndex = 0;
+  for (const building of NYC_OSM_BUILDINGS) {
+    if (building.id % 7 !== 0 || roofIndex >= roofCount || Math.hypot(building.x - AMNH_END_FRAME.center.x, building.z - AMNH_END_FRAME.center.z) <= 52) continue;
+    roofDummy.position.set(building.x, building.height + .82, building.z); roofDummy.rotation.set(0, building.yaw, 0); roofDummy.scale.set(1, 1, 1); roofDummy.updateMatrix(); roof.setMatrixAt(roofIndex++, roofDummy.matrix);
+  }
+  roof.count = roofIndex; roof.instanceMatrix.needsUpdate = true; root.add(roof);
+
+  const blue = new THREE.MeshPhysicalMaterial({ color: "#176aa3", roughness: .42, clearcoat: .4 }), rubber = new THREE.MeshStandardMaterial({ color: "#171b1c", roughness: .95 }), amber = new THREE.MeshStandardMaterial({ color: "#ffb629", emissive: "#9a4c06", emissiveIntensity: .55, roughness: .4 });
+  const closureTexture = streetBladeTexture("OPEN STREET · LOCAL ACCESS"); ownedTextures.push(closureTexture);
+  const signMaterial = new THREE.MeshBasicMaterial({ map: closureTexture, toneMapped: false });
+  NYC_OSM_BOUNDARY_CLOSURES.forEach((closure, closureIndex) => {
+    const group = new THREE.Group(); group.name = `nyc-blue-open-streets-performance-boundary-${closureIndex + 1}`; group.position.set(closure.x, .35, closure.z); group.rotation.y = closure.heading;
+    for (let segment = -2; segment <= 2; segment++) {
+      const barrier = new THREE.Mesh(new RoundedBoxGeometry(2.9, .72, .55, 4, .08), blue); barrier.name = "nyc-dot-blue-water-filled-street-closure-barrier"; barrier.position.x = segment * 2.75; group.add(barrier);
+      for (const side of [-1, 1]) { const foot = new THREE.Mesh(new THREE.CylinderGeometry(.14, .14, .5, 10), rubber); foot.rotation.z = Math.PI / 2; foot.position.set(segment * 2.75 + side * 1.1, -.32, .18); group.add(foot); }
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(.09, 10, 7), amber); lamp.position.set(segment * 2.75, .52, -.2); group.add(lamp);
+    }
+    const sign = new THREE.Mesh(new RoundedBoxGeometry(4.5, 1.1, .11, 4, .035), signMaterial); sign.name = "open-streets-local-access-closure-sign"; sign.position.set(0, 1.55, 0); group.add(sign); root.add(group);
+    collisionIndex.add({ id: `osm-closure-${closureIndex}`, kind: "barrier", label: `${closure.road} Open Streets closure`, x: closure.x, z: closure.z, halfX: 7.25, halfZ: .72, yaw: closure.heading });
+  });
+
+  // Central Park remains visible east of its OSM-mapped edge; a deep planted
+  // continuation prevents clear color behind boundary closures at the park.
+  const park = new THREE.Mesh(new RoundedBoxGeometry(330, .16, 1120, 4, .04), new THREE.MeshStandardMaterial({ color: "#3f623d", map: textures.ground, roughness: 1 }));
+  park.name = "openstreetmap-central-park-continuous-landscape-context"; park.position.set(-530, .05, -2600); park.rotation.y = -.31; root.add(park);
+  const treeCount = quality < .58 ? 54 : quality < .82 ? 88 : 132, treeDummy = new THREE.Object3D();
+  const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(.22, .34, 6.1, 8), new THREE.MeshStandardMaterial({ color: "#624b38", map: textures.bark, roughness: .98 }), treeCount);
+  const crowns = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(3.6, quality > .82 ? 2 : 1), new THREE.MeshStandardMaterial({ color: "#436b42", map: textures.foliage, roughness: .96 }), treeCount);
+  trunks.name = "openstreetmap-central-park-context-tree-trunks"; crowns.name = "openstreetmap-central-park-context-tree-canopy";
+  for (let index = 0; index < treeCount; index++) {
+    const x = -402 - index % 8 * 24 - (index * 13 % 17), z = -2180 - Math.floor(index / 8) * 52 - index % 3 * 9;
+    treeDummy.position.set(x, 3.2, z); treeDummy.rotation.set(0, index * 1.7, 0); treeDummy.scale.setScalar(.76 + index % 5 * .08); treeDummy.updateMatrix(); trunks.setMatrixAt(index, treeDummy.matrix);
+    treeDummy.position.set(x, 7.3, z); treeDummy.scale.set(1.05 + index % 3 * .12, .82 + index % 4 * .06, 1.05 + (index + 1) % 3 * .12); treeDummy.updateMatrix(); crowns.setMatrixAt(index, treeDummy.matrix);
+  }
+  trunks.instanceMatrix.needsUpdate = crowns.instanceMatrix.needsUpdate = true; root.add(trunks, crowns);
+}
+
+function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quality: number, textures: GameTextures, signals: TrafficSignal[], collisionIndex: StaticCollisionIndex) {
   const roadTexture = roadSurfaceTexture(); roadTexture.wrapS = roadTexture.wrapT = THREE.RepeatWrapping; roadTexture.repeat.set(2, 8); roadTexture.anisotropy = 8; ownedTextures.push(roadTexture);
   const asphalt = new THREE.MeshStandardMaterial({ color: "#5a5e5f", map: roadTexture, bumpMap: roadTexture, bumpScale: .018, roughness: .94 });
   const concrete = new THREE.MeshStandardMaterial({ color: "#8b8980", roughness: .9 });
@@ -479,14 +647,14 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
   bronxGround.name = "continuous-bronx-neighborhood-ground-plane"; bronxGround.position.set(0, -.27, -HIGHWAY_START * .5); root.add(bronxGround);
   const manhattanGround = new THREE.Mesh(new RoundedBoxGeometry(150, .28, HIGHWAY_EXIT_START - HIGHWAY_START + 120, 3, .04), cityGround);
   manhattanGround.name = "continuous-west-side-manhattan-ground-plane"; manhattanGround.position.set(-84, -.27, -(HIGHWAY_START + HIGHWAY_EXIT_START) * .5); root.add(manhattanGround);
-  const upperWestSideGround = new THREE.Mesh(new RoundedBoxGeometry(338, .28, 430, 3, .04), cityGround);
-  upperWestSideGround.name = "finite-no-void-upper-west-side-district-ground-plane";
-  upperWestSideGround.position.set(CENTRAL_PARK_WEST_X * .5, -.27, -2674); root.add(upperWestSideGround);
+  const upperWestSideGround = new THREE.Mesh(new RoundedBoxGeometry(670, .28, 1240, 3, .04), cityGround);
+  upperWestSideGround.name = "finite-no-void-openstreetmap-upper-west-side-district-ground-plane";
+  upperWestSideGround.position.set(-225, -.27, -2605); root.add(upperWestSideGround);
   for (let progress = 0; progress < CITY_BUS_ROUTE_LENGTH; progress += 18) {
     const next = Math.min(CITY_BUS_ROUTE_LENGTH, progress + 18), middle = (progress + next) / 2, a = routeCenter(progress), b = routeCenter(next), frame = routeFrame(middle), length = a.distanceTo(b);
-    const upperWestSide = middle >= CROSSTOWN_START, roadWidth = upperWestSide ? 16.2 : 21.5, sidewalkOffset = roadWidth * .5 + 2.55;
-    const openGridJunction = middle >= CROSSTOWN_START && middle < CENTRAL_PARK_WEST_TURN_START && UWS_AVENUES.slice(1).some(avenue => Math.abs(frame.center.x - avenue.x) < 11)
-      || middle >= CENTRAL_PARK_WEST_START && UWS_CROSS_STREETS.some(street => Math.abs(frame.center.z - street.z) < 11);
+    if (middle >= CROSSTOWN_START) continue; // OSM surfaces take over at West 79th Street.
+    const upperWestSide = middle >= HIGHWAY_EXIT_START, roadWidth = upperWestSide ? 16.2 : 21.5, sidewalkOffset = roadWidth * .5 + 2.55;
+    const openGridJunction = false;
     const road = new THREE.Mesh(new RoundedBoxGeometry(roadWidth, .18, length + .8, 3, .04), asphalt); road.name = upperWestSide ? "upper-west-side-narrower-city-street-segment" : "compressed-nyc-road-segment"; road.position.copy(a).add(b).multiplyScalar(.5); road.position.y -= .08; road.rotation.y = frame.yaw; root.add(road);
     for (const side of openGridJunction ? [] : [-1, 1]) {
       const walk = new THREE.Mesh(new RoundedBoxGeometry(5.2, .28, length + .6, 3, .05), concrete); walk.position.copy(road.position).addScaledVector(frame.right, side * sidewalkOffset); walk.position.y += .07; walk.rotation.y = frame.yaw; root.add(walk);
@@ -511,22 +679,7 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
     }
     root.add(cross);
   }
-  for (const driveRoad of DRIVE_ROADS.filter(candidate => candidate.primaryFrom === undefined)) {
-    const tangent = driveRoad.end.clone().sub(driveRoad.start).setY(0), length = tangent.length(); tangent.normalize();
-    const right = new THREE.Vector3(-tangent.z, 0, tangent.x), yaw = Math.atan2(-tangent.x, -tangent.z), center = driveRoad.start.clone().add(driveRoad.end).multiplyScalar(.5);
-    const roadWidth = driveRoad.halfWidth * 2;
-    const road = new THREE.Mesh(new RoundedBoxGeometry(roadWidth, .18, length + 1.2, 3, .04), asphalt);
-    road.name = `open-world-driveable-${driveRoad.id}`; road.position.copy(center); road.position.y -= .08; road.rotation.y = yaw; root.add(road);
-    for (const side of [-1, 1]) {
-      const walk = new THREE.Mesh(new RoundedBoxGeometry(4.8, .28, Math.max(2, length - 18), 3, .05), concrete);
-      walk.name = "upper-west-side-connected-sidewalk"; walk.position.copy(center).addScaledVector(right, side * (driveRoad.halfWidth + 2.45)); walk.position.y += .07; walk.rotation.y = yaw; root.add(walk);
-    }
-    const laneOffsets = driveRoad.halfWidth > 9 ? [-LANE_WIDTH * 1.5, -LANE_WIDTH * .5, LANE_WIDTH * .5, LANE_WIDTH * 1.5] : [-LANE_WIDTH * .5, LANE_WIDTH * .5];
-    for (const offset of laneOffsets) {
-      const stripe = new THREE.Mesh(new RoundedBoxGeometry(.09, .025, Math.max(2, length * .68), 2, .01), lane);
-      stripe.name = "open-world-alternate-road-lane-marking"; stripe.position.copy(center).addScaledVector(right, offset); stripe.position.y += .12; stripe.rotation.y = yaw; root.add(stripe);
-    }
-  }
+  addOsmRoadSurfaces(root, asphalt, concrete, lane);
   const signalMetal = new THREE.MeshStandardMaterial({ color: "#26302f", metalness: .7, roughness: .35 });
   const signalHousing = new THREE.MeshStandardMaterial({ color: "#151b19", metalness: .42, roughness: .48 });
   for (const stop of SIGNAL_STOPS) {
@@ -587,18 +740,17 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
   for (let index = 0; index < buildingCount; index++) {
     const progress = 18 + index / Math.max(1, buildingCount - 1) * (CITY_BUS_ROUTE_LENGTH - 36), frame = routeFrame(progress), side = index % 2 ? 1 : -1, groundY = frame.center.y;
     const onRiverHighway = progress >= HIGHWAY_START && progress < HIGHWAY_EXIT_START;
-    const onCentralParkWest = progress >= CENTRAL_PARK_WEST_START;
-    const nearCrosstownJunction = progress >= CROSSTOWN_START && progress < CENTRAL_PARK_WEST_TURN_START && UWS_AVENUES.slice(1).some(avenue => Math.abs(frame.center.x - avenue.x) < 11);
-    const nearAvenueJunction = onCentralParkWest && UWS_CROSS_STREETS.some(street => Math.abs(frame.center.z - street.z) < 11);
+    if (progress >= CROSSTOWN_START) continue; // Real OSM footprints own Manhattan local streets.
     // Southbound, the Hudson is on the driver's right and the Manhattan
     // street wall is on the left. Central Park replaces the left street wall
     // after the second turn, while the museum blocks remain on the right.
-    if (onRiverHighway && side === 1 || onCentralParkWest && side === -1 || nearCrosstownJunction || nearAvenueJunction) continue;
+    if (onRiverHighway && side === 1) continue;
     const urban = progress > 700, width = 7 + index % 5 * 2.2, depth = 7 + index % 4 * 2.6, height = urban ? 15 + index % 9 * 5.2 : 7 + index % 6 * 3.1;
     const building = new THREE.Mesh(new RoundedBoxGeometry(width, height, depth, 3, .16), buildingMaterials[index % buildingMaterials.length]);
     building.name = urban ? "west-side-manhattan-streetwall" : "bronx-neighborhood-building";
     const cityStreet = progress >= CROSSTOWN_START, setback = cityStreet ? 12.3 : 17;
     building.position.copy(frame.center).addScaledVector(frame.right, side * (setback + depth * .5 + index % 3 * (cityStreet ? .8 : 2.5))); building.position.y += height * .5 - .05; building.rotation.y = frame.yaw; root.add(building);
+    collisionIndex.add({ id: `route-building-${index}`, kind: "building", label: urban ? "Manhattan streetwall" : "Bronx building", x: building.position.x, z: building.position.z, halfX: width * .46, halfZ: depth * .46, yaw: frame.yaw });
     if (urban || index % 3 === 0) {
       const cornice = new THREE.Mesh(new RoundedBoxGeometry(width + .45, .34, depth + .45, 3, .045), corniceMaterials[index % 2]);
       cornice.name = "new-york-masonry-cornice"; cornice.position.copy(building.position); cornice.position.y += height * .5 + .12; cornice.rotation.y = frame.yaw; root.add(cornice);
@@ -632,6 +784,7 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
   // contiguous at speed; the second row carries the skyline into the haze.
   const highwayPodium = new THREE.Mesh(new RoundedBoxGeometry(9.5, 5.2, HIGHWAY_EXIT_START - HIGHWAY_START + 42, 4, .08), baseMaterials[1]);
   highwayPodium.name = "west-side-highway-continuous-manhattan-streetwall-podium"; highwayPodium.position.set(-15.9, 2.5, -(HIGHWAY_START + HIGHWAY_EXIT_START) * .5); root.add(highwayPodium);
+  collisionIndex.add({ id: "highway-manhattan-streetwall", kind: "building", label: "West Side Manhattan streetwall", x: highwayPodium.position.x, z: highwayPodium.position.z, halfX: 4.75, halfZ: (HIGHWAY_EXIT_START - HIGHWAY_START + 42) * .5, yaw: 0 });
   const highwayBlockCount = Math.ceil((HIGHWAY_EXIT_START - HIGHWAY_START) / 24);
   for (let index = 0; index < highwayBlockCount; index++) {
     const z = -HIGHWAY_START - 12 - index * 24, foregroundHeight = 24 + index % 8 * 5.4;
@@ -658,74 +811,7 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
       const lamp = new THREE.Mesh(new THREE.SphereGeometry(.16, 12, 8), highwayLampGlow); lamp.position.set(x, 6.42, z); root.add(lamp);
     }
   }
-  const blockAvenues = [...UWS_AVENUES.slice(1)].sort((a, b) => a.x - b.x);
-  const blockX = blockAvenues.slice(0, -1).map((avenue, index) => [avenue.x, blockAvenues[index + 1].x] as const);
-  const blockZ = UWS_CROSS_STREETS.slice(0, -1).map((street, index) => [street.z, UWS_CROSS_STREETS[index + 1].z] as const);
-  let blockIndex = 0;
-  for (const [west, east] of blockX) for (const [north, south] of blockZ) {
-    // Reserve the real W 77–81 superblock between Columbus and CPW for the
-    // museum campus instead of filling it with apartment towers.
-    if (west === CENTRAL_PARK_WEST_X && north >= -2654) continue;
-    const blockWidth = east - west - 16, blockDepth = Math.abs(south - north) - 14, centerX = (west + east) * .5;
-    const buildingRows = quality < .58 ? [-1] : [-1, 1];
-    for (const side of buildingRows) {
-      const depth = Math.max(9, blockDepth * (quality < .58 ? .78 : .42)), height = 21 + blockIndex % 7 * 4.8 + (side > 0 ? 3.5 : 0);
-      const building = new THREE.Mesh(new RoundedBoxGeometry(blockWidth, height, depth, 4, .18), buildingMaterials[(blockIndex + (side > 0 ? 2 : 0)) % buildingMaterials.length]);
-      building.name = "osm-referenced-finite-upper-west-side-articulated-block-building";
-      building.position.set(centerX, height * .5, THREE.MathUtils.lerp(north, south, side < 0 ? .27 : .73)); root.add(building);
-      const cornice = new THREE.Mesh(new RoundedBoxGeometry(blockWidth + .5, .42, depth + .5, 3, .055), corniceMaterials[blockIndex % corniceMaterials.length]);
-      cornice.position.copy(building.position); cornice.position.y += height * .5 + .08; root.add(cornice);
-      if (quality > .56) {
-        const shops = new THREE.Mesh(new RoundedBoxGeometry(blockWidth * .82, 2.4, .18, 4, .045), storefrontMaterials[blockIndex % storefrontMaterials.length]);
-        shops.name = "open-world-upper-west-side-cafe-and-shopfront-row"; shops.position.set(centerX, 1.3, building.position.z + (side < 0 ? depth * .5 + .12 : -depth * .5 - .12)); root.add(shops);
-      }
-      blockIndex++;
-    }
-  }
-  const reviewedAvenues = UWS_AVENUES.slice(1);
-  const reviewedStreets = UWS_CROSS_STREETS.filter((_, index) => [0, 2, 4, 6, 9].includes(index));
-  const shortAvenue = (name: string) => name === "Central Park West" ? "Central Park W" : name.replace("Avenue", "Av").replace("Drive", "Dr");
-  const shortStreet = (name: string) => name.replace("West ", "W ").replace("th Street", " St").replace("st Street", " St").replace("nd Street", " St").replace("rd Street", " St");
-  const bladeLabels = [...reviewedAvenues.map(avenue => shortAvenue(avenue.name)), ...reviewedStreets.map(street => shortStreet(street.name))];
-  const bladeTextures = new Map(bladeLabels.map(label => { const texture = streetBladeTexture(label); ownedTextures.push(texture); return [label, texture] as const; }));
-  const intersections = reviewedAvenues.map(avenue => ({ x: avenue.x, avenue: shortAvenue(avenue.name) }));
-  const crossingStreets = reviewedStreets.map(street => ({ z: street.z, name: shortStreet(street.name) }));
-  const crossingStripeCount = quality < .58 ? 3 : 5, crosswalkDummy = new THREE.Object3D(); let crosswalkIndex = 0;
-  const crosswalks = new THREE.InstancedMesh(new RoundedBoxGeometry(.72, .026, 12.8, 2, .01), lane, intersections.length * crossingStreets.length * crossingStripeCount * 4);
-  crosswalks.name = "performance-instanced-open-world-upper-west-side-zebra-crosswalks"; crosswalks.receiveShadow = true;
-  const streetLampSurface = new THREE.MeshStandardMaterial({ color: "#f8e8b0", emissive: "#ffd36e", emissiveIntensity: 1.6, roughness: .25 });
-  const hydrantSurface = new THREE.MeshStandardMaterial({ color: "#a7332b", roughness: .62, metalness: .22 });
-  for (const intersection of intersections) for (const street of crossingStreets) {
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(.065, .09, 4.4, 10), signalMetal); pole.name = "open-world-nyc-intersection-street-sign-pole"; pole.position.set(intersection.x + 9.8, 2.2, street.z + 8.8); root.add(pole);
-    const avenueBlade = new THREE.Mesh(new RoundedBoxGeometry(2.9, .62, .09, 4, .025), new THREE.MeshBasicMaterial({ map: bladeTextures.get(intersection.avenue), toneMapped: false }));
-    avenueBlade.name = "readable-upper-west-side-avenue-blade"; avenueBlade.position.copy(pole.position).add(new THREE.Vector3(0, 2.05, 0)); root.add(avenueBlade);
-    const streetBlade = new THREE.Mesh(new RoundedBoxGeometry(2.9, .62, .09, 4, .025), new THREE.MeshBasicMaterial({ map: bladeTextures.get(street.name), toneMapped: false }));
-    streetBlade.name = "readable-upper-west-side-cross-street-blade"; streetBlade.position.copy(pole.position).add(new THREE.Vector3(0, 1.42, 0)); streetBlade.rotation.y = Math.PI / 2; root.add(streetBlade);
-    for (let stripe = 0; stripe < crossingStripeCount; stripe++) {
-      const offset = (stripe - (crossingStripeCount - 1) * .5) * 1.42;
-      for (const approach of [-1, 1]) {
-        crosswalkDummy.position.set(intersection.x + offset, .135, street.z + approach * 7.2); crosswalkDummy.rotation.set(0, 0, 0); crosswalkDummy.updateMatrix(); crosswalks.setMatrixAt(crosswalkIndex++, crosswalkDummy.matrix);
-        crosswalkDummy.position.set(intersection.x + approach * 7.2, .137, street.z + offset); crosswalkDummy.rotation.set(0, Math.PI / 2, 0); crosswalkDummy.updateMatrix(); crosswalks.setMatrixAt(crosswalkIndex++, crosswalkDummy.matrix);
-      }
-    }
-    const lampPost = new THREE.Mesh(new THREE.CylinderGeometry(.065, .1, 5.2, 10), signalMetal); lampPost.name = "upper-west-side-cast-iron-street-lamp"; lampPost.position.set(intersection.x - 9.6, 2.6, street.z - 8.8); root.add(lampPost);
-    const lamp = new THREE.Mesh(new THREE.SphereGeometry(.19, 14, 10), streetLampSurface); lamp.position.copy(lampPost.position).add(new THREE.Vector3(0, 2.68, 0)); root.add(lamp);
-    const hydrant = new THREE.Group(); hydrant.name = "upper-west-side-grounded-fire-hydrant"; hydrant.position.set(intersection.x + 9.1, .2, street.z - 8.6);
-    const hydrantBody = new THREE.Mesh(new THREE.CylinderGeometry(.16, .19, .55, 12), hydrantSurface); hydrantBody.position.y = .28; hydrant.add(hydrantBody);
-    const hydrantCap = new THREE.Mesh(new THREE.SphereGeometry(.2, 12, 8, 0, Math.PI * 2, 0, Math.PI * .55), hydrantBody.material); hydrantCap.position.y = .56; hydrant.add(hydrantCap); root.add(hydrant);
-  }
-  crosswalks.instanceMatrix.needsUpdate = true; root.add(crosswalks);
-  const shelterGlass = new THREE.MeshPhysicalMaterial({ color: "#a8c1c4", transparent: true, opacity: .34, transmission: .35, roughness: .12, depthWrite: false }); shelterGlass.forceSinglePass = true;
-  const shelterMetal = new THREE.MeshStandardMaterial({ color: "#252c2c", roughness: .36, metalness: .72 });
-  for (const [index, x, z, rotation] of [[0, -92, -2614, 0], [1, -202, -2694, Math.PI], [2, CENTRAL_PARK_WEST_X, -2774, 0]] as const) {
-    const shelter = new THREE.Group(); shelter.name = `upper-west-side-detailed-bus-shelter-${index + 1}`; shelter.position.set(x + (rotation ? -10.7 : 10.7), 0, z); shelter.rotation.y = rotation;
-    const back = new THREE.Mesh(new RoundedBoxGeometry(4.6, 2.55, .09, 4, .03), shelterGlass); back.position.set(0, 1.38, 0); shelter.add(back);
-    const roof = new THREE.Mesh(new RoundedBoxGeometry(5.05, .16, 1.65, 4, .05), shelterMetal); roof.position.set(0, 2.78, -.62); shelter.add(roof);
-    const bench = new THREE.Mesh(new RoundedBoxGeometry(2.8, .16, .52, 4, .04), shelterMetal); bench.position.set(-.4, .72, -.42); shelter.add(bench);
-    for (const side of [-1, 1]) { const post = new THREE.Mesh(new THREE.CylinderGeometry(.045, .06, 2.7, 9), shelterMetal); post.position.set(side * 2.25, 1.35, -.65); shelter.add(post); }
-    const arrivalDisplay = new THREE.Mesh(new RoundedBoxGeometry(.82, 1.65, .12, 4, .035), new THREE.MeshStandardMaterial({ color: "#263a40", emissive: "#5d877c", emissiveIntensity: .35, roughness: .42 })); arrivalDisplay.name = "bus-shelter-live-arrival-display"; arrivalDisplay.position.set(1.75, 1.45, -.12); shelter.add(arrivalDisplay);
-    root.add(shelter);
-  }
+  addOsmBuildingsAndClosures(root, quality, textures, ownedTextures, buildingMaterials, corniceMaterials, baseMaterials, collisionIndex);
   for (const leg of ROUTE_LEGS) {
     const progress = leg.from + 18, frame = routeFrame(progress), texture = signTexture(leg.name.toUpperCase(), leg.detail.toUpperCase()); ownedTextures.push(texture);
     const gantry = new THREE.Group(); gantry.name = "nyc-route-wayfinding-" + leg.name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
@@ -752,6 +838,7 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
   waterfront.name = "hudson-river-greenway-and-seawall"; waterfront.position.set(17.4, .12, -(HIGHWAY_START + HIGHWAY_EXIT_START) * .5); root.add(waterfront);
   const highwayBarrier = new THREE.Mesh(new RoundedBoxGeometry(.52, .72, HIGHWAY_EXIT_START - HIGHWAY_START + 54, 3, .09), concrete);
   highwayBarrier.name = "west-side-highway-hudson-safety-barrier"; highwayBarrier.position.set(11.15, .34, -(HIGHWAY_START + HIGHWAY_EXIT_START) * .5); root.add(highwayBarrier);
+  collisionIndex.add({ id: "highway-hudson-safety-barrier", kind: "barrier", label: "Hudson River safety barrier", x: highwayBarrier.position.x, z: highwayBarrier.position.z, halfX: .4, halfZ: (HIGHWAY_EXIT_START - HIGHWAY_START + 54) * .5, yaw: 0 });
   const greenwayStripe = new THREE.Mesh(new RoundedBoxGeometry(.12, .035, HIGHWAY_EXIT_START - HIGHWAY_START + 110, 2, .012), new THREE.MeshStandardMaterial({ color: "#d6c85f", roughness: .72 }));
   greenwayStripe.name = "hudson-river-greenway-center-stripe"; greenwayStripe.position.set(17.4, .3, -(HIGHWAY_START + HIGHWAY_EXIT_START) * .5); root.add(greenwayStripe);
   const boatMaterials = ["#ece7d8", "#b74b39", "#315c70"].map(color => new THREE.MeshPhysicalMaterial({ color, roughness: .52, clearcoat: .3 }));
@@ -768,27 +855,9 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
     boat.position.set(45 + index % 3 * 23, .02, -(HIGHWAY_START + 70 + index * 92)); boat.rotation.y = index % 2 ? Math.PI : 0; root.add(boat);
   }
 
-  const cpwFrame = routeFrame(CENTRAL_PARK_WEST_START + 128);
-  const centralPark = new THREE.Mesh(new THREE.PlaneGeometry(150, 360), new THREE.MeshStandardMaterial({ color: "#42613b", map: textures.ground, roughness: 1 }));
-  centralPark.name = "central-park-visible-left-side-of-central-park-west"; centralPark.rotation.x = -Math.PI / 2; centralPark.rotation.z = -cpwFrame.yaw; centralPark.position.copy(cpwFrame.center).addScaledVector(cpwFrame.right, -82); centralPark.position.y = .3; root.add(centralPark);
-  const parkTrees = quality < .58 ? 24 : quality < .82 ? 38 : 56;
-  const parkTrunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(.25, .34, 6.4, quality > .72 ? 10 : 7), new THREE.MeshStandardMaterial({ map: textures.bark, color: "#66503c", roughness: .98 }), parkTrees);
-  parkTrunks.name = "central-park-west-mature-park-tree-trunks";
-  const parkCrowns = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(3.8, quality > .82 ? 2 : 1), new THREE.MeshStandardMaterial({ map: textures.foliage, color: "#476d42", roughness: .95 }), parkTrees);
-  parkCrowns.name = "central-park-west-dense-layered-park-canopy";
-  const parkDummy = new THREE.Object3D();
-  for (let index = 0; index < parkTrees; index++) {
-    const progress = CENTRAL_PARK_WEST_START + 10 + index / Math.max(1, parkTrees - 1) * 252, frame = routeFrame(progress);
-    const distance = 23 + index % 5 * 11;
-    const base = frame.center.clone().addScaledVector(frame.right, -distance).addScaledVector(frame.tangent, (index % 4 - 1.5) * 3.4);
-    parkDummy.position.copy(base).add(new THREE.Vector3(0, 3.2, 0)); parkDummy.rotation.set(0, index * 1.7, 0); parkDummy.scale.setScalar(.8 + index % 4 * .11); parkDummy.updateMatrix(); parkTrunks.setMatrixAt(index, parkDummy.matrix);
-    parkDummy.position.copy(base).add(new THREE.Vector3(0, 7.3, 0)); parkDummy.rotation.set(index * .17, index * .83, 0); parkDummy.scale.set(1.05 + index % 3 * .16, .82 + index % 4 * .08, 1.05 + (index + 1) % 3 * .13); parkDummy.updateMatrix(); parkCrowns.setMatrixAt(index, parkDummy.matrix);
-  }
-  parkTrunks.instanceMatrix.needsUpdate = true; parkCrowns.instanceMatrix.needsUpdate = true; root.add(parkTrunks, parkCrowns);
-
   // Zebra-striped crossings make the two actual ninety-degree street turns
   // legible at speed and visually separate the highway, crosstown and avenue.
-  for (const progress of [CROSSTOWN_START + 38, CROSSTOWN_START + 145, CENTRAL_PARK_WEST_START + 35, CENTRAL_PARK_WEST_START + 146]) {
+  for (const progress of [CROSSTOWN_START + 35, AMSTERDAM_TURN_START - 24, AMSTERDAM_TURN_START + 22, WEST_81_START + 38]) {
     const frame = routeFrame(progress);
     for (let stripeIndex = -5; stripeIndex <= 5; stripeIndex++) {
       const stripe = new THREE.Mesh(new RoundedBoxGeometry(1.12, .025, 4.3, 2, .01), lane);
@@ -946,6 +1015,9 @@ export class CityBusWorld {
   private readonly ownedTextures: THREE.Texture[] = [];
   private readonly sun: THREE.DirectionalLight;
   private readonly roadNetwork = new CityRoadNetwork(DRIVE_ROADS);
+  private readonly primaryRoadNetwork = new CityRoadNetwork(PRIMARY_DRIVE_ROADS);
+  private readonly staticCollisionIndex = new StaticCollisionIndex();
+  private readonly collisionCooldowns = new Map<string, number>();
   private readonly busPosition = new THREE.Vector3();
   private busHeading = 0;
   private guidance: RouteGuidance;
@@ -957,24 +1029,37 @@ export class CityBusWorld {
   private initialRouteDistance = CITY_BUS_ROUTE_LENGTH;
   private completionHighWater = 0;
   private trafficMessage = "Zoo shuttle loading zone";
+  private onRecommendedRoute = true;
+  private damage = 0;
+  private lastImpact: ShuttleImpactEvent | null = null;
+  private impactRoll = 0;
+  private collisionArmedAt: number | null = null;
   private disposed = false;
 
-  constructor(scene: THREE.Scene, textures: GameTextures, quality = 1, startProgress = 0, reviewSpawn?: "missed-exit" | "uws-reroute") {
+  constructor(scene: THREE.Scene, textures: GameTextures, quality = 1, startProgress = 0, reviewSpawn?: "missed-exit" | "uws-reroute" | "traffic-impact" | "building-impact" | "failure-impact") {
     this.root.name = "bronx-to-natural-history-museum-driving-level"; scene.add(this.root);
     this.progress = THREE.MathUtils.clamp(startProgress, 0, CITY_BUS_ROUTE_LENGTH - .5);
     const spawnFrame = routeFrame(this.progress);
     this.busPosition.copy(spawnFrame.center).addScaledVector(spawnFrame.right, -LANE_WIDTH * .5);
     this.busHeading = spawnFrame.yaw;
     if (reviewSpawn === "missed-exit") { this.busPosition.set(-1.7, .4, -2635); this.busHeading = 0; this.progress = HIGHWAY_EXIT_START; }
-    if (reviewSpawn === "uws-reroute") { this.busPosition.set(-144.2, .4, -2678); this.busHeading = 0; this.progress = CROSSTOWN_START + 80; }
+    if (reviewSpawn === "uws-reroute") { this.busPosition.set(-169.934, .4, -2529.773); this.busHeading = -2.36; this.progress = CROSSTOWN_START + 80; }
+    if (reviewSpawn === "traffic-impact" || reviewSpawn === "failure-impact") { this.progress = CITY_BUS_HIGHWAY_REVIEW_PROGRESS; this.busPosition.copy(routeFrame(this.progress).center); this.busHeading = routeFrame(this.progress).yaw; this.speed = 36; }
+    if (reviewSpawn === "building-impact") { this.busPosition.set(12, .4, -CITY_BUS_HIGHWAY_REVIEW_PROGRESS); this.busHeading = Math.PI / 2; this.progress = CITY_BUS_HIGHWAY_REVIEW_PROGRESS; this.speed = 28; }
     const spawnHeading = new THREE.Vector3(-Math.sin(this.busHeading), 0, -Math.cos(this.busHeading));
     this.guidance = this.roadNetwork.route(this.busPosition, AMNH_BUS_BAY, spawnHeading);
+    const recommendedSpawn = this.primaryRoadNetwork.nearest(this.busPosition, spawnHeading);
+    this.onRecommendedRoute = recommendedSpawn.distance < recommendedSpawn.road.halfWidth + 3;
+    if (this.onRecommendedRoute && recommendedSpawn.primaryProgress !== null) this.progress = recommendedSpawn.primaryProgress;
     this.initialRouteDistance = Math.max(1, this.guidance.distance);
-    this.roadSurfaceMessage = this.guidance.current.primaryProgress === null ? "OPEN-WORLD REROUTE ACTIVE" : "AUTHORED ROUTE · FREE STEERING";
+    this.roadSurfaceMessage = this.onRecommendedRoute ? "AUTHORED ROUTE · FREE STEERING" : "OPEN-WORLD REROUTE ACTIVE";
     addCitySky(this.root);
-    addRoadNetwork(this.root, this.ownedTextures, quality, textures, this.signals);
+    addRoadNetwork(this.root, this.ownedTextures, quality, textures, this.signals, this.staticCollisionIndex);
     addMuseumArrivalCampus(this.root, this.ownedTextures, textures);
     this.bus = makeBus(quality, textures, this.ownedTextures); this.root.add(this.bus.root);
+    if (reviewSpawn === "failure-impact") {
+      this.damage = 88; this.bus.damageStages[0].visible = true; this.bus.damageStages[1].visible = true; this.bus.damageStages[2].visible = true;
+    }
     const trafficCount = quality < .58 ? 36 : quality < .82 ? 52 : 68;
     for (let index = 0; index < trafficCount; index++) {
       const lane = TRAFFIC_LANES[index % TRAFFIC_LANES.length];
@@ -993,7 +1078,12 @@ export class CityBusWorld {
         cruise: 38 + index % 7 * 2.65,
         phase: index * 1.83,
         nextLaneChange: 3.8 + index % 7 * 1.32,
+        collisionOffset: new THREE.Vector3(),
       };
+      if ((reviewSpawn === "traffic-impact" || reviewSpawn === "failure-impact") && index === 0) {
+        vehicle.progress = this.progress + 26; vehicle.lane = 0; vehicle.targetLane = 0; vehicle.speed = 0; vehicle.cruise = 0; vehicle.nextLaneChange = Infinity;
+        vehicle.root.name = "qa-solid-stationary-traffic-collision-target";
+      }
       this.traffic.push(vehicle); this.root.add(car);
     }
     const localTrafficCount = quality < .58 ? 6 : quality < .82 ? 10 : 14;
@@ -1004,6 +1094,7 @@ export class CityBusWorld {
         distance: index / Math.max(1, localTrafficCount) * frame.total + index % 3 * 17,
         speed: 22 + index % 5 * 2.1,
         laneOffset: index % 2 ? -1.8 : 1.8,
+        collisionOffset: new THREE.Vector3(),
       };
       vehicle.root.name = `upper-west-side-open-world-loop-traffic-${index + 1}`;
       this.localTraffic.push(vehicle); this.root.add(vehicle.root);
@@ -1011,7 +1102,7 @@ export class CityBusWorld {
     const skins = ["#b77859", "#704936", "#d0a17d", "#926047", "#573c32", "#c28b6b"];
     const pedestrianCount = quality < .58 ? 6 : quality < .82 ? 10 : 14;
     for (let index = 0; index < pedestrianCount; index++) {
-      const progress = 16 + index / Math.max(1, pedestrianCount - 1) * (CITY_BUS_ROUTE_LENGTH - 32), atMuseum = progress > CENTRAL_PARK_WEST_START, frame = routeFrame(progress), side = index % 2 ? 1 : -1;
+      const progress = 16 + index / Math.max(1, pedestrianCount - 1) * (CITY_BUS_ROUTE_LENGTH - 32), atMuseum = progress > CROSSTOWN_START, frame = routeFrame(progress), side = index % 2 ? 1 : -1;
       const result = createPremiumHuman({ role: "visitor", quality, variant: 40 + index, faceVariant: 7 + index, coat: ["#476779", "#8a5143", "#596846", "#7a668c"][index % 4], trousers: "#30363c", skin: skins[index % skins.length], outfit: index % 2 ? "knit-chinos" : "cotton-denim", accessory: index % 3 === 1 ? "tote" : "backpack", pose: "neutral" });
       result.root.name = atMuseum ? "central-park-west-pedestrian-" + index : "southern-boulevard-pedestrian-" + index;
       result.root.position.copy(frame.center).addScaledVector(frame.right, side * 13.2); result.root.position.y += .2; this.root.add(result.root); this.ownedTextures.push(...result.ownedTextures);
@@ -1019,12 +1110,16 @@ export class CityBusWorld {
     }
     this.sun = new THREE.DirectionalLight("#fff0cf", 2.75); this.sun.castShadow = quality > .58; this.sun.shadow.mapSize.set(quality > .82 ? 2048 : 1024, quality > .82 ? 2048 : 1024); this.root.add(this.sun, this.sun.target);
     const ambient = new THREE.HemisphereLight("#c7dde3", "#45493c", 1.72); ambient.name = "city-evening-hemisphere-light"; this.root.add(ambient);
+    if (reviewSpawn === "traffic-impact" || reviewSpawn === "building-impact" || reviewSpawn === "failure-impact") this.collisionArmedAt = 0;
     this.updateTransforms(0, 0);
   }
 
   get speedMetersPerSecond() { return Math.abs(this.speed); }
   get signedSpeedMetersPerSecond() { return this.speed; }
   get steeringAmount() { return this.steerAmount; }
+  get integrity() { return THREE.MathUtils.clamp(1 - this.damage / SHUTTLE_MAX_DAMAGE, 0, 1); }
+  get damagePercent() { return Math.round((1 - this.integrity) * 100); }
+  get disabled() { return this.damage >= SHUTTLE_MAX_DAMAGE; }
   get remainingMeters() { return Math.max(0, this.guidance.distance); }
   get routeCompletion() { return this.parkingReached ? 1 : this.completionHighWater; }
   get minimapSnapshot(): ShuttleMinimapSnapshot {
@@ -1041,10 +1136,11 @@ export class CityBusWorld {
     // The primary-route progress is the authoritative leg label. Route search
     // can temporarily select a geometrically close connector at a wide merge,
     // which previously made the highway HUD jump back to Southern Boulevard.
-    return displayRoadName(this.guidance.current.primaryProgress !== null ? primaryRoadName(this.progress) : this.guidance.current.road.name);
+    return displayRoadName(this.onRecommendedRoute ? primaryRoadName(this.progress) : this.guidance.current.road.name);
   }
   get congestionStatus() { return this.trafficMessage; }
   get routeStatus() { return this.roadSurfaceMessage; }
+  consumeImpactEvent() { const event = this.lastImpact; this.lastImpact = null; return event; }
   get navigationBearingDegrees() {
     const forward = new THREE.Vector3(-Math.sin(this.busHeading), 0, -Math.cos(this.busHeading)), right = new THREE.Vector3(-forward.z, 0, forward.x);
     const direction = this.guidance.nextPoint.clone().sub(this.busPosition).setY(0).normalize();
@@ -1060,9 +1156,9 @@ export class CityBusWorld {
     const waypointDistance = toWaypoint.length();
     if (waypointDistance > .01) toWaypoint.multiplyScalar(1 / waypointDistance);
     const turn = Math.atan2(toWaypoint.dot(right), toWaypoint.dot(forward));
-    const rerouting = this.guidance.onRecommendedRoute ? "" : "REROUTING · ";
+    const rerouting = this.onRecommendedRoute ? "" : "REROUTING · ";
     if (waypointDistance < 68 && Math.abs(turn) > .38) return `${rerouting}TURN ${turn > 0 ? "RIGHT" : "LEFT"} ONTO ${displayRoadName(this.guidance.nextRoadName).toUpperCase()}`;
-    if (this.guidance.current.primaryProgress !== null && this.progress >= HIGHWAY_EXIT_START - 170 && this.progress < CROSSTOWN_START) return `EXIT HERE FOR AMERICAN MUSEUM OF NATURAL HISTORY · KEEP LEFT`;
+    if (this.onRecommendedRoute && this.progress >= HIGHWAY_EXIT_START - 170 && this.progress < CROSSTOWN_START) return `EXIT HERE FOR AMERICAN MUSEUM OF NATURAL HISTORY · KEEP LEFT`;
     return `${rerouting}CONTINUE ON ${this.currentRoad.toUpperCase()} · NEXT ${displayRoadName(this.guidance.nextRoadName).toUpperCase()}`;
   }
   get parkingReached() { return this.busPosition.distanceTo(AMNH_BUS_BAY) < 5.2 && Math.abs(this.speed) < .6; }
@@ -1081,6 +1177,7 @@ export class CityBusWorld {
 
   update(delta: number, elapsed: number, input: CityBusInput) {
     if (this.disposed) return;
+    this.collisionArmedAt ??= elapsed + .45;
     const headingVector = new THREE.Vector3(-Math.sin(this.busHeading), 0, -Math.cos(this.busHeading));
     let road = this.roadNetwork.nearest(this.busPosition, headingVector);
     if (elapsed >= this.guidanceRefreshAt) {
@@ -1094,7 +1191,7 @@ export class CityBusWorld {
     const speedRatio = THREE.MathUtils.clamp(Math.abs(this.speed) / HIGHWAY_TOP_SPEED, 0, 1);
     const steeringRate = (.42 + speedRatio * .78) * (input.handbrake ? 1.42 : 1);
     this.busHeading -= this.steerAmount * travelDirection * steeringRate * delta;
-    const driveInput = input.accelerate ? 1 : input.brake ? -1 : 0;
+    const driveInput = this.disabled ? 0 : input.accelerate ? 1 : input.brake ? -1 : 0;
     // Road signals and junction proximity never take throttle authority from
     // the player. Off-route guidance remains visible, but the arcade shuttle
     // keeps its full commanded pace until the player brakes or handbrakes.
@@ -1110,23 +1207,28 @@ export class CityBusWorld {
       const resistance = .38 + Math.abs(this.speed) * .035;
       this.speed = Math.sign(this.speed) * Math.max(0, Math.abs(this.speed) - resistance * delta);
     }
-    if (input.handbrake) this.speed = Math.sign(this.speed) * Math.max(0, Math.abs(this.speed) - delta * 52);
+    if (input.handbrake || this.disabled) this.speed = Math.sign(this.speed) * Math.max(0, Math.abs(this.speed) - delta * (this.disabled ? 74 : 52));
     this.speed = THREE.MathUtils.clamp(this.speed, -11, forwardTopSpeed);
-    const driveForward = new THREE.Vector3(-Math.sin(this.busHeading), 0, -Math.cos(this.busHeading));
-    this.busPosition.addScaledVector(driveForward, this.speed * delta);
-    road = this.roadNetwork.nearest(this.busPosition, driveForward);
-    const hardRoadLimit = road.road.halfWidth + 7.5;
-    if (road.distance > hardRoadLimit) {
-      const correction = road.point.clone().sub(this.busPosition).setY(0).normalize();
-      this.busPosition.addScaledVector(correction, road.distance - hardRoadLimit);
-      road = this.roadNetwork.nearest(this.busPosition, driveForward);
+    let driveForward = new THREE.Vector3(-Math.sin(this.busHeading), 0, -Math.cos(this.busHeading));
+    // Substep at less than one tyre radius so a 70+ m/s arcade run cannot
+    // tunnel through a sedan, blue closure, or building between frames.
+    const movement = this.speed * delta, movementSteps = Math.max(1, Math.ceil(Math.abs(movement) / .62));
+    for (let step = 0; step < movementSteps; step++) {
+      driveForward = new THREE.Vector3(-Math.sin(this.busHeading), 0, -Math.cos(this.busHeading));
+      this.busPosition.addScaledVector(driveForward, movement / movementSteps);
+      this.resolveStaticCollisions(elapsed);
+      this.resolveTrafficCollisions(elapsed);
     }
+    driveForward = new THREE.Vector3(-Math.sin(this.busHeading), 0, -Math.cos(this.busHeading));
+    road = this.roadNetwork.nearest(this.busPosition, driveForward);
+    const recommendedRoad = this.primaryRoadNetwork.nearest(this.busPosition, driveForward);
+    this.onRecommendedRoute = recommendedRoad.distance < recommendedRoad.road.halfWidth + 3;
     this.busPosition.y = THREE.MathUtils.lerp(this.busPosition.y, road.point.y, 1 - Math.exp(-delta * 9));
-    if (road.primaryProgress !== null && road.distance < road.road.halfWidth + 3) this.progress = road.primaryProgress;
+    if (this.onRecommendedRoute && recommendedRoad.primaryProgress !== null) this.progress = recommendedRoad.primaryProgress;
     this.roadSurfaceMessage = road.distance > road.road.halfWidth + 1.4
       ? "OFF STREET · RETURN TO ROAD"
-      : road.primaryProgress === null ? "OPEN-WORLD REROUTE ACTIVE" : "AUTHORED ROUTE · FREE STEERING";
-    const onPrimaryRoad = road.primaryProgress !== null;
+      : this.onRecommendedRoute ? "AUTHORED ROUTE · FREE STEERING" : "OPEN-WORLD REROUTE ACTIVE";
+    const onPrimaryRoad = this.onRecommendedRoute;
     // Hold the authored traffic tableau during the level card. Cars begin
     // flowing as soon as the player takes control, so a debug/load transition
     // cannot silently drain the nearest vehicles out of the opening view.
@@ -1166,7 +1268,8 @@ export class CityBusWorld {
       const headingAgreement = driveForward.dot(frame.tangent);
       if (driveForward.dot(toVehicle) > 0 && headingAgreement > .25 && Math.abs(driveRight.dot(toVehicle)) < 2.35 && toVehicle.length() < 58) nearestGap = Math.min(nearestGap, toVehicle.length());
     }
-    if (this.speed < -.08) this.trafficMessage = "REVERSING · CHECK MIRRORS";
+    if (this.disabled) this.trafficMessage = "SHUTTLE DISABLED · RETURNING TO ZOO CHECKPOINT";
+    else if (this.speed < -.08) this.trafficMessage = "REVERSING · CHECK MIRRORS";
     else if (input.handbrake && this.speed > 8) this.trafficMessage = "HANDBRAKE TURN · REAR WEIGHT TRANSFER";
     else if (nearestGap < 28) this.trafficMessage = nearestGap < 10 ? "DODGE NOW · VEHICLE AHEAD" : "CHANGE LANES TO PASS";
     else if (!onPrimaryRoad) this.trafficMessage = "REROUTING THROUGH LIVE UPPER WEST SIDE TRAFFIC";
@@ -1177,14 +1280,99 @@ export class CityBusWorld {
     this.sun.position.copy(this.busPosition).add(new THREE.Vector3(-40, 58, 30)); this.sun.target.position.copy(this.busPosition);
   }
 
+  private shuttleCollisionCenters() {
+    const forward = new THREE.Vector3(-Math.sin(this.busHeading), 0, -Math.cos(this.busHeading));
+    return SHUTTLE_COLLISION_OFFSETS.map(offset => this.busPosition.clone().addScaledVector(forward, offset));
+  }
+
+  private applyBounce(normal: THREE.Vector3, severity: number) {
+    const forward = new THREE.Vector3(-Math.sin(this.busHeading), 0, -Math.cos(this.busHeading));
+    const cross = forward.x * normal.z - forward.z * normal.x;
+    const frontal = Math.abs(forward.dot(normal));
+    this.busHeading += THREE.MathUtils.clamp(cross * (.1 + severity * .24), -.32, .32);
+    this.impactRoll = THREE.MathUtils.clamp(this.impactRoll - cross * (.045 + severity * .07), -.11, .11);
+    if (frontal > .42) this.speed = -Math.sign(this.speed || 1) * Math.min(9, Math.abs(this.speed) * (.08 + severity * .1));
+    else this.speed *= .32 + (1 - severity) * .18;
+  }
+
+  private recordImpact(kind: ShuttleImpactEvent["kind"], label: string, severity: number, damage: number) {
+    const appliedDamage = Math.min(damage, SHUTTLE_MAX_DAMAGE - this.damage);
+    if (appliedDamage <= 0) return;
+    this.damage += appliedDamage;
+    this.bus.damageStages[0].visible = this.damage >= 8;
+    this.bus.damageStages[1].visible = this.damage >= 48;
+    this.bus.damageStages[2].visible = this.damage >= 76;
+    this.lastImpact = { kind, severity, damage: appliedDamage, integrity: this.integrity, label, disabled: this.disabled };
+  }
+
+  private resolveStaticCollisions(elapsed: number) {
+    const centers = this.shuttleCollisionCenters();
+    for (const center of centers) {
+      for (const collider of this.staticCollisionIndex.nearby(center)) {
+        const contact = circleObbContact(center, SHUTTLE_COLLISION_RADIUS, collider);
+        if (!contact) continue;
+        this.busPosition.addScaledVector(contact.normal, contact.penetration + .025);
+        const cooldown = this.collisionCooldowns.get(collider.id) ?? -Infinity;
+        if (elapsed < cooldown) continue;
+        this.collisionCooldowns.set(collider.id, elapsed + .42);
+        const severity = THREE.MathUtils.clamp(Math.abs(this.speed) / (collider.kind === "barrier" ? 52 : 44), .12, 1);
+        this.applyBounce(contact.normal, severity);
+        if (elapsed >= this.collisionArmedAt!) this.recordImpact(collider.kind, collider.label, severity, (collider.kind === "barrier" ? 4 : 7) + severity * (collider.kind === "barrier" ? 10 : 18));
+      }
+    }
+  }
+
+  private resolveTrafficCollisions(elapsed: number) {
+    const centers = this.shuttleCollisionCenters();
+    const collide = (id: string, label: string, position: THREE.Vector3, vehicleSpeed: number, collisionOffset: THREE.Vector3, vehicleHeading: THREE.Vector3) => {
+      for (const center of centers) {
+        const separation = center.clone().sub(position).setY(0), distance = separation.length(), minimumDistance = SHUTTLE_COLLISION_RADIUS + 1.18;
+        if (distance >= minimumDistance) continue;
+        const normal = distance > .001 ? separation.multiplyScalar(1 / distance) : new THREE.Vector3(1, 0, 0);
+        this.busPosition.addScaledVector(normal, minimumDistance - distance + .035);
+        collisionOffset.addScaledVector(normal, -(minimumDistance - distance + .4));
+        const cooldown = this.collisionCooldowns.get(id) ?? -Infinity;
+        if (elapsed < cooldown) return;
+        this.collisionCooldowns.set(id, elapsed + .48);
+        const shuttleForward = new THREE.Vector3(-Math.sin(this.busHeading), 0, -Math.cos(this.busHeading));
+        const closingSpeed = Math.abs(this.speed - vehicleSpeed * shuttleForward.dot(vehicleHeading));
+        const severity = THREE.MathUtils.clamp(closingSpeed / 58, .16, 1);
+        this.applyBounce(normal, severity);
+        if (elapsed >= this.collisionArmedAt!) this.recordImpact("traffic", label, severity, 5 + severity * 17);
+        return;
+      }
+    };
+    this.traffic.forEach((vehicle, index) => {
+      if (!vehicle.root.visible) return;
+      const frame = routeFrame(vehicle.progress), position = frame.center.clone().addScaledVector(frame.right, vehicle.lane * LANE_WIDTH).add(vehicle.collisionOffset);
+      collide(`traffic-main-${index}`, "city traffic", position, vehicle.speed, vehicle.collisionOffset, frame.tangent);
+    });
+    this.localTraffic.forEach((vehicle, index) => {
+      const frame = closedPathFrame(vehicle.path, vehicle.distance), position = frame.center.clone().addScaledVector(frame.right, vehicle.laneOffset).add(vehicle.collisionOffset);
+      collide(`traffic-local-${index}`, "Upper West Side traffic", position, vehicle.speed, vehicle.collisionOffset, frame.tangent);
+    });
+  }
+
   private updateTransforms(elapsed: number, delta: number) {
     this.bus.root.position.copy(this.busPosition); this.bus.root.rotation.y = this.busHeading;
-    this.bus.root.rotation.z = -this.steerAmount * THREE.MathUtils.clamp(Math.abs(this.speed) / HIGHWAY_TOP_SPEED, 0, 1) * .035;
+    this.impactRoll *= Math.exp(-delta * 4.8);
+    this.bus.root.rotation.z = -this.steerAmount * THREE.MathUtils.clamp(Math.abs(this.speed) / HIGHWAY_TOP_SPEED, 0, 1) * .035 + this.impactRoll;
     this.bus.root.position.y += Math.sin(elapsed * 5.5) * Math.min(.018, Math.abs(this.speed) * .0015);
     this.bus.steeringWheel.rotation.z = -this.steerAmount * .9;
     this.bus.root.traverse(object => { if (object.name === "rescue-bus-road-wheel") object.rotation.x -= this.speed * delta / .49; });
-    for (const vehicle of this.traffic) { const frame = routeFrame(vehicle.progress); vehicle.root.position.copy(frame.center).addScaledVector(frame.right, vehicle.lane * LANE_WIDTH); vehicle.root.position.y += .02; vehicle.root.rotation.y = frame.yaw; }
-    for (const vehicle of this.localTraffic) { const frame = closedPathFrame(vehicle.path, vehicle.distance); vehicle.root.position.copy(frame.center).addScaledVector(frame.right, vehicle.laneOffset); vehicle.root.position.y += .02; vehicle.root.rotation.y = frame.yaw; }
+    this.bus.damageStages[2].children.forEach((smoke, index) => {
+      const phase = elapsed * (.65 + index * .035) + Number(smoke.userData.phase ?? 0);
+      const cycle = ((phase % 1.8) + 1.8) % 1.8;
+      smoke.position.y = 2.75 + cycle * .95; smoke.position.x = -.65 + Math.sin(phase * 1.7) * .28; smoke.scale.setScalar(.65 + cycle * .32);
+    });
+    for (const vehicle of this.traffic) {
+      vehicle.collisionOffset.multiplyScalar(Math.exp(-delta * 2.7));
+      const frame = routeFrame(vehicle.progress); vehicle.root.position.copy(frame.center).addScaledVector(frame.right, vehicle.lane * LANE_WIDTH).add(vehicle.collisionOffset); vehicle.root.position.y += .02; vehicle.root.rotation.y = frame.yaw;
+    }
+    for (const vehicle of this.localTraffic) {
+      vehicle.collisionOffset.multiplyScalar(Math.exp(-delta * 2.7));
+      const frame = closedPathFrame(vehicle.path, vehicle.distance); vehicle.root.position.copy(frame.center).addScaledVector(frame.right, vehicle.laneOffset).add(vehicle.collisionOffset); vehicle.root.position.y += .02; vehicle.root.rotation.y = frame.yaw;
+    }
   }
 
   private updateSignalVisuals(elapsed: number) {

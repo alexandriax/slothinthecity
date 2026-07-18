@@ -365,10 +365,30 @@ button { font: inherit; }
 .minimap-overview-route { fill:none; stroke:#f5c91f; stroke-width:7; stroke-linecap:round; stroke-linejoin:round; }
 .minimap-overview-river { fill:none; stroke:#397b91; stroke-width:20; stroke-linecap:round; opacity:.75; }
 .minimap-player-dot { fill:#fff; stroke:#f5c91f; stroke-width:3; }
+.minimap-osm-local { fill:none; stroke:#6f7772; stroke-width:1.05; stroke-linecap:round; opacity:.78; }
+.minimap-osm-major { fill:none; stroke:#d6d0bc; stroke-width:2.2; stroke-linecap:round; }
+.minimap-osm-route { fill:none; stroke:#f5c91f; stroke-width:3.15; stroke-linecap:round; stroke-linejoin:round; }
+.minimap-closure line { stroke:#2998dd; stroke-width:2.8; stroke-linecap:round; }
+.minimap-closure circle { fill:#79c9f4; stroke:#102c3e; stroke-width:.7; }
+.minimap-osm-label { fill:rgba(242,239,219,.6); font:700 5px "Helvetica Neue",Arial,sans-serif; letter-spacing:.06em; }
 .shuttle-minimap-footer { display:flex; align-items:flex-end; justify-content:space-between; gap:8px; padding:7px 2px 0; }
 .shuttle-minimap-footer span { max-width:132px; color:#f5f0df; font-size:8px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }
 .shuttle-minimap-footer a { color:rgba(245,240,223,.48); font-size:6px; text-decoration:none; }
 .game-shell[data-touch-capable="true"] .shuttle-minimap { display:none; }
+.shuttle-integrity { position:absolute; right:max(24px,env(safe-area-inset-right)); bottom:max(340px,calc(env(safe-area-inset-bottom) + 330px)); width:270px; z-index:15; box-sizing:border-box; padding:10px 12px 11px; border:1px solid rgba(92,223,159,.42); border-left:3px solid #56d99a; background:rgba(5,9,9,.92); box-shadow:0 16px 42px rgba(0,0,0,.4); backdrop-filter:blur(14px); color:#f5f0df; transition:border-color .18s,box-shadow .18s; }
+.shuttle-integrity>div:first-child { display:flex; align-items:baseline; justify-content:space-between; text-transform:uppercase; letter-spacing:.13em; }
+.shuttle-integrity span { color:rgba(245,240,223,.62); font-size:8px; font-weight:800; }
+.shuttle-integrity strong { color:#72e0aa; font-size:14px; font-weight:900; }
+.shuttle-integrity-track { height:7px; margin:7px 0 6px; overflow:hidden; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.08); }
+.shuttle-integrity-track i { display:block; height:100%; background:linear-gradient(90deg,#2eb879,#77e8b2); box-shadow:0 0 14px rgba(79,222,153,.45); transition:width .2s,background .2s; }
+.shuttle-integrity small { display:block; color:rgba(245,240,223,.46); font-size:6px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; }
+.shuttle-integrity.damaged { border-color:rgba(255,180,52,.58); border-left-color:#ffb434; }
+.shuttle-integrity.damaged strong { color:#ffc257; }
+.shuttle-integrity.damaged .shuttle-integrity-track i { background:linear-gradient(90deg,#db7b1d,#ffc157); box-shadow:0 0 14px rgba(255,174,60,.5); }
+.shuttle-integrity.critical { border-color:rgba(255,69,58,.7); border-left-color:#ff453a; box-shadow:0 16px 42px rgba(0,0,0,.4),0 0 18px rgba(255,69,58,.18); }
+.shuttle-integrity.critical strong { color:#ff6c63; }
+.shuttle-integrity.critical .shuttle-integrity-track i { background:linear-gradient(90deg,#b81f1a,#ff594f); box-shadow:0 0 15px rgba(255,69,58,.58); }
+.game-shell[data-touch-capable="true"] .shuttle-integrity { right:max(10px,env(safe-area-inset-right)); top:max(86px,calc(env(safe-area-inset-top) + 72px)); bottom:auto; width:180px; padding:8px 9px; }
 .subway-shell .goal-wayfinder {
   top:max(100px,calc(env(safe-area-inset-top) + 76px));
   min-width:218px;

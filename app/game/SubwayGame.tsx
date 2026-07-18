@@ -49,6 +49,7 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
   const [returnLeg, setReturnLeg] = useState("OUTBOUND");
   const [vehicleSpeed, setVehicleSpeed] = useState(0);
   const [busMap, setBusMap] = useState<ShuttleMinimapSnapshot | null>(null);
+  const [busIntegrity, setBusIntegrity] = useState(100);
   const [mobilityMode, setMobilityMode] = useState<"skateboard" | "scooter" | null>(null);
   const [touchCapable, setTouchCapable] = useState(false), toastTimer = useRef<number | null>(null);
   const [mouseCaptured, setMouseCaptured] = useState(false);
@@ -61,7 +62,7 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
     let transitStage: TransitStage = "FIFTH_AV", currentStation: SubwayStationId = "FIFTH_AV", travelDirection: SubwayTravelDirection = "OUTBOUND", stationClock = 0, gameTime = 0, actionRequested = false, trickRequested = false;
     let skateboarding = false, scooterRiding = false;
     let boarded: BoardingOption | null = null, interiorWorld: TrainInteriorWorld | null = null, zooWorld: BronxZooWorld | null = null, cityBusWorld: CityBusWorld | null = null, museumWorld: NaturalHistoryMuseumWorld | null = null, parkReturnWorld: CentralParkReturnWorld | null = null;
-    let lastHud = 0, lastFootstep = 0, yaw = 0, pitch = -.04, dragging = false, lastTouchX = 0, lastTouchY = 0, transitionTimer: number | null = null;
+    let lastHud = 0, lastFootstep = 0, yaw = 0, pitch = -.04, dragging = false, lastTouchX = 0, lastTouchY = 0, transitionTimer: number | null = null, busFailureAt: number | null = null;
     let previousTrainPhase = "AWAY", previousDoorsOpen = false, previousStreetMix = 1, previousBusRouteStatus = "";
     let museumCompletionArmed = true;
     const budget = quality.getRenderBudget(), scene = new THREE.Scene(), interiorColor = new THREE.Color("#303936"), streetColor = new THREE.Color("#8aa9ad"), fogInterior = new THREE.Color("#303936"), fogStreet = new THREE.Color("#b7c7c1"); scene.background = interiorColor.clone(); scene.fog = new THREE.FogExp2("#303936", .009);
@@ -195,7 +196,7 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
       setTicketHeld(false); setFollowerCount(0); setHud({ bearing: 0, distance, motion: "ZOO EXPLORATION", objective: zooWorld.objectiveLabel, objectiveShort: "FIND TICKET", prompt: "", promptKey: "", station: "BRONX ZOO · WILDLIFE CONSERVATION CAMPUS", status: "ADMISSION REQUIRED", value: `${Math.round(distance)}M`, waypoint: "Visitor with extra ticket", wayfinding: true });
       return zooWorld;
     }
-    function startBusDrive(startProgress = 0, reviewSpawn?: "missed-exit" | "uws-reroute") {
+    function startBusDrive(startProgress = 0, reviewSpawn?: "missed-exit" | "uws-reroute" | "traffic-impact" | "building-impact" | "failure-impact") {
       if (!rescuedParty.isActive || transitStage === "COMPLETE") return null;
       if (zooWorld) { zooWorld.dispose(); zooWorld = null; }
       skateboarding = false; scooterRiding = false; rescuedParty.setScooterMode(false); setMobilityMode(null);
@@ -203,6 +204,7 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
       disposeInterior();
       cityBusWorld?.dispose();
       cityBusWorld = new CityBusWorld(scene, textures, quality.getSnapshot().profile.foliageDensity, startProgress, reviewSpawn);
+      busFailureAt = null; setBusIntegrity(100);
       setBusMap(cityBusWorld.minimapSnapshot);
       previousBusRouteStatus = cityBusWorld.routeStatus;
       scene.background = new THREE.Color("#91a6aa"); scene.fog = new THREE.FogExp2("#8d9c9e", .0032); renderer.toneMappingExposure = 1.28; camera.far = 540; camera.updateProjectionMatrix();
@@ -321,11 +323,11 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
         if (qaInput !== "bronxentry") clearReviewToast();
       }
     }
-    if (["busbronx", "busdrive", "busexit", "buscity", "busreroute", "busarrival", "museumentry", "museumscooters", "museumrotunda", "museumcollections", "museumafrican", "museummegatherium", "museumfinale"].includes(qaInput ?? "") && stationWorld) {
+    if (["busbronx", "busdrive", "busexit", "buscity", "busreroute", "buscollision", "busbuilding", "busfailure", "busarrival", "museumentry", "museumscooters", "museumrotunda", "museumcollections", "museumafrican", "museummegatherium", "museumfinale"].includes(qaInput ?? "") && stationWorld) {
       rescuedParty.setActive(true, player, player.y - 1.48);
-      if (["busbronx", "busdrive", "busexit", "buscity", "busreroute", "busarrival"].includes(qaInput ?? "")) {
+      if (["busbronx", "busdrive", "busexit", "buscity", "busreroute", "buscollision", "busbuilding", "busfailure", "busarrival"].includes(qaInput ?? "")) {
         const reviewProgress = qaInput === "busbronx" ? 18 : qaInput === "busarrival" ? CITY_BUS_ROUTE_LENGTH - 12 : qaInput === "busexit" ? CITY_BUS_EXIT_REVIEW_PROGRESS : qaInput === "buscity" ? CITY_BUS_CITY_REVIEW_PROGRESS : CITY_BUS_HIGHWAY_REVIEW_PROGRESS;
-        startBusDrive(reviewProgress, qaInput === "busreroute" ? "uws-reroute" : undefined);
+        startBusDrive(reviewProgress, qaInput === "busreroute" ? "uws-reroute" : qaInput === "buscollision" ? "traffic-impact" : qaInput === "busbuilding" ? "building-impact" : qaInput === "busfailure" ? "failure-impact" : undefined);
       }
       else {
         const reviewMuseum = enterMuseum(
@@ -454,7 +456,7 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
         if (!skateboarding && moving && gameTime - lastFootstep > .5) { lastFootstep = gameTime; audio.playFootstep("stone", Math.min(1, velocity.length() / 2.5)); }
         const target = zooWorld.objectiveTarget, targetX = target.x - player.x, targetZ = target.z - player.z, distance = Math.hypot(targetX, targetZ), ahead = targetX * -Math.sin(yaw) + targetZ * -Math.cos(yaw), side = targetX * Math.cos(yaw) - targetZ * Math.sin(yaw), bearing = THREE.MathUtils.radToDeg(Math.atan2(side, ahead));
         const hint = zooWorld.interactionHint(player), skateboardNear = zooWorld.skateboardNearby(player);
-        let prompt = skateboarding ? "STEP OFF ZOO SKATEBOARD" : skateboardNear ? "RIDE ZOO SKATEBOARD · SPACE KICKFLIP" : hint?.label ?? "";
+        const prompt = skateboarding ? "STEP OFF ZOO SKATEBOARD" : skateboardNear ? "RIDE ZOO SKATEBOARD · SPACE KICKFLIP" : hint?.label ?? "";
         if (actionRequested && skateboarding) {
           skateboarding = false; zooWorld.setSkateboardMounted(false, player, yaw); setMobilityMode(null); setVehicleSpeed(0); velocity.multiplyScalar(.35); showToast("Skateboard parked beside you.", 2400);
         } else if (actionRequested && skateboardNear) {
@@ -475,15 +477,28 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
         camera.position.copy(player); camera.rotation.set(pitch, yaw, 0); sloth.animate(gameTime, velocity.length(), false);
         if (gameTime - lastHud > .12) { lastHud = gameTime; const quest = zooWorld.questState, released = zooWorld.friendsReleased, status = skateboarding ? "SKATEBOARD · SPACE KICKFLIP" : quest === "NEED_TICKET" ? "ADMISSION REQUIRED" : quest === "ENTER_ZOO" ? "EXTRA TICKET READY" : quest === "FIND_SLOTHS" ? "EXPLORE THE HABITATS" : "FOUR FRIENDS · BOARD TOGETHER", objective = released ? "Lead all four friends out of the zoo and board the museum shuttle" : zooWorld.objectiveLabel; setVehicleSpeed(skateboarding ? velocity.length() : 0); setHud({ bearing, distance, motion: skateboarding ? moving ? "SKATEBOARDING" : "ON SKATEBOARD" : moving ? "WALKING" : released ? "SLOTH RESCUE" : "ZOO EXPLORATION", objective, objectiveShort: quest === "NEED_TICKET" ? "FIND TICKET" : quest === "ENTER_ZOO" ? "ENTER ZOO" : quest === "FIND_SLOTHS" ? "FIND SLOTHS" : "SHUTTLE BUS", prompt, promptKey: prompt ? "E" : "", station: released ? "BRONX ZOO · MUSEUM SHUTTLE STOP" : "BRONX ZOO · WILDLIFE CONSERVATION CAMPUS", status, value: `${Math.round(distance)}M`, waypoint: quest === "NEED_TICKET" ? "Visitor with extra ticket" : quest === "ENTER_ZOO" ? "Asia Gate" : quest === "FIND_SLOTHS" ? "Sloth conservation habitat" : "Natural History Museum shuttle", wayfinding: true }); }
       } else if (transitStage === "BUS_DRIVE" && cityBusWorld) {
+        if (busFailureAt !== null && gameTime >= busFailureAt) {
+          const restarted = startBusDrive(0);
+          if (restarted) { showTransition("Museum shuttle · Bronx checkpoint"); showToast("Shuttle restored at the Bronx Zoo boarding checkpoint. Reach the museum before integrity reaches zero.", 5600); }
+          renderFrame(); return;
+        }
         const input = { accelerate: keys.has("KeyW") || keys.has("ArrowUp"), brake: keys.has("KeyS") || keys.has("ArrowDown"), steerLeft: keys.has("KeyA") || keys.has("ArrowLeft"), steerRight: keys.has("KeyD") || keys.has("ArrowRight"), handbrake: keys.has("Space") };
         cityBusWorld.update(delta, gameTime, input); player.copy(cityBusWorld.cameraPosition); const speed = cityBusWorld.speedMetersPerSecond, signedSpeed = cityBusWorld.signedSpeedMetersPerSecond, liveRouteStatus = cityBusWorld.routeStatus; audio.setCartMotor(true, speed);
+        const impact = cityBusWorld.consumeImpactEvent();
+        if (impact) {
+          audio.playVehicleImpact(impact.severity); setBusIntegrity(Math.round(impact.integrity * 100));
+          if (impact.disabled && busFailureAt === null) {
+            busFailureAt = gameTime + 1.75; audio.playFailure(); audio.setCartMotor(false); keys.clear();
+            showTransition("Shuttle disabled"); showToast("The shuttle took too much damage. Returning to the Bronx Zoo boarding checkpoint…", 3600);
+          } else if (!impact.disabled) showToast(`${impact.label} impact · −${Math.round(impact.damage)} integrity · ${Math.round(impact.integrity * 100)}% remaining`, 2200);
+        }
         if (liveRouteStatus !== previousBusRouteStatus) {
           if (liveRouteStatus === "OPEN-WORLD REROUTE ACTIVE") showToast("Wrong turn — navigation recalculated through the connected street grid. Follow the next-street callout or choose another loop.", 5200);
           else if (liveRouteStatus === "OFF STREET · RETURN TO ROAD") showToast("The shuttle is beyond the curb line. Steer back toward the highlighted street; throttle remains fully yours.", 4200);
           else if (previousBusRouteStatus !== "") showToast("Recommended route reacquired — you can stay on it or keep exploring the street network.", 3600);
           previousBusRouteStatus = liveRouteStatus;
         }
-        const parked = cityBusWorld.parkingReached, prompt = parked ? "OPEN THE BUS DOOR · ENTER THE NATURAL HISTORY MUSEUM" : "";
+        const parked = cityBusWorld.parkingReached, disabled = cityBusWorld.disabled, prompt = parked ? "OPEN THE BUS DOOR · ENTER THE NATURAL HISTORY MUSEUM" : "";
         if (actionRequested && parked) { actionRequested = false; enterMuseum(); renderFrame(); return; }
         actionRequested = false; camera.position.copy(player); camera.rotation.set(THREE.MathUtils.clamp(pitch, -.7, .62), cityBusWorld.headingYaw + yaw, -cityBusWorld.steeringAmount * THREE.MathUtils.clamp(speed / 72, 0, 1) * .07);
         const speedFov = 67 + THREE.MathUtils.clamp(speed / 72, 0, 1) * 15; if (Math.abs(camera.fov - speedFov) > .02) { camera.fov = THREE.MathUtils.lerp(camera.fov, speedFov, 1 - Math.exp(-delta * 6.5)); camera.updateProjectionMatrix(); }
@@ -491,7 +506,7 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
         busGripCamera.left.copy(busGripWorld.left); camera.worldToLocal(busGripCamera.left);
         busGripCamera.right.copy(busGripWorld.right); camera.worldToLocal(busGripCamera.right);
         sloth.setVehiclePose("cart", cityBusWorld.steeringAmount, 0, 0, busGripCamera); sloth.animate(gameTime, speed, false);
-        if (gameTime - lastHud > .1) { lastHud = gameTime; const instruction = cityBusWorld.navigationInstruction, routeStatus = cityBusWorld.routeStatus; setVehicleSpeed(speed); setBusMap(cityBusWorld.minimapSnapshot); setHud({ bearing: cityBusWorld.navigationBearingDegrees, distance: cityBusWorld.remainingMeters, motion: signedSpeed < -.1 ? "REVERSING" : routeStatus.includes("REROUTE") ? "REROUTING" : speed > .35 ? "DRIVING" : parked ? "PARKED" : "IN TRAFFIC", objective: parked ? "Park the bus and bring the sloths inside the museum" : instruction, objectiveShort: parked ? "ENTER AMNH" : "DRIVE TO AMNH", prompt, promptKey: prompt ? "E" : "", progress: parked ? 1 : cityBusWorld.routeCompletion, station: `${cityBusWorld.currentRoad.toUpperCase()} · MUSEUM SHUTTLE`, status: routeStatus === "AUTHORED ROUTE · FREE STEERING" ? cityBusWorld.congestionStatus : routeStatus, value: parked ? "PARKED" : `${Math.round(cityBusWorld.remainingMeters)}M`, waypoint: parked ? "Central Park West entrance" : instruction, wayfinding: true }); }
+        if (gameTime - lastHud > .1) { lastHud = gameTime; const instruction = cityBusWorld.navigationInstruction, routeStatus = cityBusWorld.routeStatus; setVehicleSpeed(speed); setBusMap(cityBusWorld.minimapSnapshot); setHud({ bearing: cityBusWorld.navigationBearingDegrees, distance: cityBusWorld.remainingMeters, motion: disabled ? "DISABLED" : signedSpeed < -.1 ? "REVERSING" : routeStatus.includes("REROUTE") ? "REROUTING" : speed > .35 ? "DRIVING" : parked ? "PARKED" : "IN TRAFFIC", objective: disabled ? "Shuttle disabled — returning to the Bronx Zoo checkpoint" : parked ? "Park the bus and bring the sloths inside the museum" : instruction, objectiveShort: disabled ? "BUS DAMAGED" : parked ? "ENTER AMNH" : "DRIVE TO AMNH", prompt, promptKey: prompt ? "E" : "", progress: parked ? 1 : cityBusWorld.routeCompletion, station: `${cityBusWorld.currentRoad.toUpperCase()} · MUSEUM SHUTTLE`, status: disabled ? "INTEGRITY EXHAUSTED" : routeStatus === "AUTHORED ROUTE · FREE STEERING" ? cityBusWorld.congestionStatus : routeStatus, value: parked ? "PARKED" : `${Math.round(cityBusWorld.remainingMeters)}M`, waypoint: parked ? "Central Park West entrance" : instruction, wayfinding: !disabled }); }
       } else if (transitStage === "MUSEUM" && museumWorld) {
         const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)), right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)), wish = new THREE.Vector3();
         if (keys.has("KeyW") || keys.has("ArrowUp")) wish.add(forward); if (keys.has("KeyS") || keys.has("ArrowDown")) wish.sub(forward); if (keys.has("KeyD") || keys.has("ArrowRight")) wish.add(right); if (keys.has("KeyA") || keys.has("ArrowLeft")) wish.sub(right);
@@ -536,17 +551,20 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
 
   useEffect(() => { const frame = requestAnimationFrame(() => setTouchCapable(hasTouchInput())); return () => cancelAnimationFrame(frame); }, []);
   useEffect(() => () => { if (toastTimer.current !== null) clearTimeout(toastTimer.current); }, []);
-  return <main className="game-shell subway-shell" data-game-state={stage === "COMPLETE" ? "complete" : "playing"} data-touch-capable={touchCapable ? "true" : "false"} data-motion={hud.motion} data-mobility-mode={mobilityMode ?? "on-foot"} data-buds="5" data-level={stage === "BRONX_ZOO" ? "bronx-zoo" : stage === "BUS_DRIVE" ? "city-bus" : stage === "MUSEUM" || stage === "COMPLETE" ? "natural-history-museum" : stage === "CENTRAL_PARK" ? "central-park" : "subway"} data-station={stage} data-campaign-phase={zooPhase} data-zoo-phase={zooPhase} data-ticket-held={ticketHeld ? "true" : "false"} data-follower-count={followerCount} data-return-leg={returnLeg} data-loaded-world={stage === "RIDING" ? "train-interior" : stage === "BRONX_ZOO" ? "bronx-zoo" : stage === "BUS_DRIVE" ? "bronx-manhattan-bus-route" : stage === "MUSEUM" || stage === "COMPLETE" ? "american-museum-of-natural-history" : stage === "CENTRAL_PARK" ? "central-park-homecoming" : "subway-station"} data-goal-distance={hud.distance.toFixed(1)} data-goal-bearing={hud.bearing.toFixed(1)}>
+  return <main className="game-shell subway-shell" data-game-state={stage === "COMPLETE" ? "complete" : "playing"} data-touch-capable={touchCapable ? "true" : "false"} data-motion={hud.motion} data-mobility-mode={mobilityMode ?? "on-foot"} data-buds="5" data-bus-integrity={busIntegrity} data-level={stage === "BRONX_ZOO" ? "bronx-zoo" : stage === "BUS_DRIVE" ? "city-bus" : stage === "MUSEUM" || stage === "COMPLETE" ? "natural-history-museum" : stage === "CENTRAL_PARK" ? "central-park" : "subway"} data-station={stage} data-campaign-phase={zooPhase} data-zoo-phase={zooPhase} data-ticket-held={ticketHeld ? "true" : "false"} data-follower-count={followerCount} data-return-leg={returnLeg} data-loaded-world={stage === "RIDING" ? "train-interior" : stage === "BRONX_ZOO" ? "bronx-zoo" : stage === "BUS_DRIVE" ? "bronx-manhattan-bus-route" : stage === "MUSEUM" || stage === "COMPLETE" ? "american-museum-of-natural-history" : stage === "CENTRAL_PARK" ? "central-park-homecoming" : "subway-station"} data-goal-distance={hud.distance.toFixed(1)} data-goal-bearing={hud.bearing.toFixed(1)}>
     <div ref={mount} className="viewport" aria-label="3D subway game viewport"/><div className="world-grade"/><div className="world-vignette"/><div className="grain"/>
     {transition && <div className="world-transition" role="status"><span>Now entering</span><strong>{transition}</strong><i/></div>}
     {stage !== "COMPLETE" && <div className="hud desktop-hud"><section className="mission"><div className="eyebrow">Current objective</div><h2>{hud.objective}</h2><p>{hud.station}</p></section><div className="compass"><div className="eyebrow">Journey · {hud.station}</div><div className="compass-line"><span>FROM</span><span className="active">{hud.motion}</span><span>TO</span></div></div><div className="status"><div className="eyebrow">Campaign status</div><strong>{hud.status}</strong></div><div className="meters"><div className="motion-state"><span>{hud.motion}</span><small>{stage === "RIDING" ? "Follow the onboard display · keep the group clear of doors · exit together at the lit side" : mobilityMode === "skateboard" ? "Ride at full pace · Space performs a kickflip · E steps off" : mobilityMode === "scooter" ? "All five sloths ride upright together · Space brakes · E parks the scooter group" : stage === "BRONX_ZOO" ? followerCount > 0 ? "Lead the rescued sloths along the visitor paths and board the museum shuttle together" : "Explore every habitat · E talks, presents the ticket, and opens the sloth keeper door" : stage === "BUS_DRIVE" ? "W accelerates without signal assists · dodge traffic · S brakes · Space handbrakes" : stage === "MUSEUM" ? "Explore dense permanent halls · the exterior scooter line offers fast group travel" : stage === "CENTRAL_PARK" ? "Keep moving toward Home Grove · the rescued sloths follow your exact path" : "Follow black signs · stairs connect every playable level · board only the signed service"}</small></div><div className="meter-row"><span>{stage === "RIDING" ? "Stop" : stage === "BUS_DRIVE" ? "Route" : mobilityMode ? "Ride" : stage === "BRONX_ZOO" || stage === "MUSEUM" || stage === "CENTRAL_PARK" ? "Goal" : "Train"}</span><div className="meter-track"><div className="meter-fill" style={{ width: hud.value === "OPEN" || hud.value === "PARKED" ? "100%" : hud.progress !== undefined ? `${Math.round(hud.progress * 100)}%` : "42%" }}/></div><span>{hud.value}</span></div></div>{hud.prompt && <div className="interaction">{hud.promptKey && <span className="key">{hud.promptKey}</span>}{hud.prompt}</div>}<div className="controls-strip"><span>{stage === "BUS_DRIVE" ? "W Forward · S Brake / Reverse" : mobilityMode ? "W / A / S / D Ride" : "W / A / S / D Walk"}</span><span>{stage === "BUS_DRIVE" ? "A / D Steer · Space handbrake" : mobilityMode === "skateboard" ? "Space kickflip" : mobilityMode === "scooter" ? "Space brake" : stage === "RIDING" ? "Any lit platform-side exit · E fallback" : "E interact · walk through open doors"}</span><span>{stage === "BUS_DRIVE" ? "E unload at the museum" : mobilityMode ? "E step off" : stage === "RIDING" ? "Clear doors until your stop" : "Follow the active waypoint"}</span><span>M Sound</span></div></div>}
-    {stage !== "COMPLETE" && <MobileHud alert={stage === "RIDING" || stage === "BUS_DRIVE" || Boolean(mobilityMode) ? 0 : 8} buds={5} driving={stage === "BUS_DRIVE" || Boolean(mobilityMode)} energy={100} hawkPhase="PATROL" motion={hud.motion} objectiveShort={hud.objectiveShort} objectiveValue={hud.value} showMotion={stage === "BUS_DRIVE" || Boolean(mobilityMode)} speed={vehicleSpeed} swimming={false}/>}
+    {stage !== "COMPLETE" && <MobileHud alert={stage === "RIDING" || stage === "BUS_DRIVE" || Boolean(mobilityMode) ? 0 : 8} buds={5} driving={stage === "BUS_DRIVE" || Boolean(mobilityMode)} energy={stage === "BUS_DRIVE" ? busIntegrity : 100} hawkPhase="PATROL" motion={hud.motion} objectiveShort={hud.objectiveShort} objectiveValue={hud.value} showMotion={stage === "BUS_DRIVE" || Boolean(mobilityMode)} speed={vehicleSpeed} swimming={false}/>}
     {stage !== "COMPLETE" && (
       <GoalWayfinder active={hud.wayfinding} bearing={hud.bearing} distance={hud.distance} label={hud.waypoint}/>
     )}
     {stage === "BUS_DRIVE" && (
       <ShuttleMinimap snapshot={busMap}/>
     )}
+    {stage === "BUS_DRIVE" && <aside className={`shuttle-integrity ${busIntegrity <= 25 ? "critical" : busIntegrity <= 55 ? "damaged" : ""}`} aria-label={`Shuttle integrity ${busIntegrity} percent`}>
+      <div><span>Shuttle integrity</span><strong>{busIntegrity}%</strong></div><div className="shuttle-integrity-track"><i style={{ width: `${busIntegrity}%` }}/></div><small>Collisions cause damage · zero returns to the Bronx checkpoint</small>
+    </aside>}
     {stage !== "COMPLETE" && <div className={`crosshair ${hud.prompt ? "targeted" : ""}`}/>} {toast && stage !== "COMPLETE" && <div className="toast" role="status" aria-live="polite">{toast}</div>}
     {stage !== "COMPLETE" && pointerLockAvailable && !mouseCaptured && <button className="mouse-resume" type="button" onClick={() => requestLock(mount.current?.querySelector("canvas") ?? null)}><span>Mouse free</span>Click to look</button>}
     {stage !== "COMPLETE" && <TouchControls arboreal={false} prompt={hud.prompt} promptKey={hud.promptKey} showSense={false} vehicle={stage === "BUS_DRIVE" ? "bus" : mobilityMode}/>}
