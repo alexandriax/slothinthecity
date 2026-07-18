@@ -23,6 +23,8 @@ const DEBUG_DESTINATIONS: Array<{ scene: DebugSceneName; label: string; detail: 
   { scene: "bronx-monkeys", label: "Monkey habitat", detail: "Ropes and canopy" },
   { scene: "bronx-sloths", label: "Sloth habitat", detail: "Rescue enclosure" },
   { scene: "rescue", label: "Rescued friends", detail: "Follower-party review" },
+  { scene: "bus-stop", label: "Shuttle stop", detail: "Doorway and group boarding" },
+  { scene: "bus-bronx", label: "Bronx streets", detail: "Zoo gate to highway ramp" },
   { scene: "bus", label: "Museum shuttle", detail: "West Side Highway drive" },
   { scene: "bus-exit", label: "AMNH exit", detail: "W 79 St highway turn" },
   { scene: "bus-city", label: "Upper West Side", detail: "Crosstown to Central Park West" },

@@ -74,9 +74,9 @@ export function createSkateboard(variant = 0): PersonalMobilityVehicle {
  * The stem, fork, brake line, lights, grips, wheels and standing deck are all
  * modeled separately so the parked row and moving convoy hold up at eye level.
  */
-export function createSegwayScooter(variant = 0): PersonalMobilityVehicle {
+export function createElectricScooter(variant = 0): PersonalMobilityVehicle {
   const root = new THREE.Group();
-  root.name = `amnh-segway-scooter-${variant + 1}`;
+  root.name = `amnh-electric-scooter-${variant + 1}`;
   const bodyColors = ["#2e6267", "#3f5559", "#76533e", "#526248", "#4f4867"];
   const body = new THREE.MeshPhysicalMaterial({ color: bodyColors[variant % bodyColors.length], roughness: .42, clearcoat: .42, clearcoatRoughness: .32 });
   const black = new THREE.MeshStandardMaterial({ color: "#171a1b", roughness: .88 });
@@ -86,41 +86,41 @@ export function createSegwayScooter(variant = 0): PersonalMobilityVehicle {
   const tail = new THREE.MeshStandardMaterial({ color: "#aa302b", emissive: "#72110e", emissiveIntensity: .75, roughness: .25 });
 
   const deck = new THREE.Mesh(new RoundedBoxGeometry(.42, .15, 1.15, 8, .09), body);
-  deck.name = "segway-scooter-battery-standing-deck"; deck.position.set(0, .2, .05); root.add(deck);
+  deck.name = "electric-scooter-battery-standing-deck"; deck.position.set(0, .2, .05); root.add(deck);
   const deckPad = new THREE.Mesh(new RoundedBoxGeometry(.36, .018, .86, 6, .05), black);
-  deckPad.name = "segway-scooter-nonslip-deck-pad"; deckPad.position.set(0, .286, .08); root.add(deckPad);
+  deckPad.name = "electric-scooter-nonslip-deck-pad"; deckPad.position.set(0, .286, .08); root.add(deckPad);
   const rearFender = new THREE.Mesh(new THREE.TorusGeometry(.19, .035, 10, 26, Math.PI), body);
-  rearFender.name = "segway-scooter-rear-wheel-fender"; rearFender.position.set(0, .3, .61); rearFender.rotation.set(0, Math.PI / 2, 0); root.add(rearFender);
+  rearFender.name = "electric-scooter-rear-wheel-fender"; rearFender.position.set(0, .3, .61); rearFender.rotation.set(0, Math.PI / 2, 0); root.add(rearFender);
 
   const wheels: THREE.Group[] = [];
   for (const z of [-.61, .62]) {
     const wheel = rollingWheel(.19, .105, black, metal, 24);
-    wheel.name = "segway-scooter-pneumatic-road-wheel"; wheel.position.set(0, .2, z); root.add(wheel); wheels.push(wheel);
+    wheel.name = "electric-scooter-pneumatic-road-wheel"; wheel.position.set(0, .2, z); root.add(wheel); wheels.push(wheel);
   }
   const fork = cylinderBetween(new THREE.Vector3(0, .2, -.61), new THREE.Vector3(0, .47, -.53), .037, metal, 14);
-  fork.name = "segway-scooter-front-fork"; root.add(fork);
+  fork.name = "electric-scooter-front-fork"; root.add(fork);
   const stem = cylinderBetween(new THREE.Vector3(0, .39, -.54), new THREE.Vector3(0, 1.36, -.31), .052, body, 16);
-  stem.name = "segway-scooter-sloped-steering-stem"; root.add(stem);
+  stem.name = "electric-scooter-sloped-steering-stem"; root.add(stem);
   const handlebar = cylinderBetween(new THREE.Vector3(-.39, 1.37, -.3), new THREE.Vector3(.39, 1.37, -.3), .036, metal, 14);
-  handlebar.name = "segway-scooter-full-width-handlebar"; root.add(handlebar);
+  handlebar.name = "electric-scooter-full-width-handlebar"; root.add(handlebar);
   for (const side of [-1, 1]) {
     const handgrip = cylinderBetween(new THREE.Vector3(side * .27, 1.37, -.3), new THREE.Vector3(side * .43, 1.37, -.3), .048, black, 14);
-    handgrip.name = "segway-scooter-rubber-handgrip"; root.add(handgrip);
+    handgrip.name = "electric-scooter-rubber-handgrip"; root.add(handgrip);
     const brakeLever = new THREE.Mesh(new RoundedBoxGeometry(.13, .025, .035, 3, .01), metal);
-    brakeLever.name = "segway-scooter-hand-brake-lever"; brakeLever.position.set(side * .27, 1.31, -.315); brakeLever.rotation.z = side * .18; root.add(brakeLever);
+    brakeLever.name = "electric-scooter-hand-brake-lever"; brakeLever.position.set(side * .27, 1.31, -.315); brakeLever.rotation.z = side * .18; root.add(brakeLever);
   }
   const display = new THREE.Mesh(new RoundedBoxGeometry(.22, .08, .11, 5, .025), black);
-  display.name = "segway-scooter-speed-display"; display.position.set(0, 1.39, -.3); root.add(display);
+  display.name = "electric-scooter-speed-display"; display.position.set(0, 1.39, -.3); root.add(display);
   const headlight = new THREE.Mesh(new THREE.SphereGeometry(.075, 16, 10), lamp);
-  headlight.name = "segway-scooter-led-headlight"; headlight.position.set(0, 1.25, -.37); root.add(headlight);
+  headlight.name = "electric-scooter-led-headlight"; headlight.position.set(0, 1.25, -.37); root.add(headlight);
   const tailLight = new THREE.Mesh(new RoundedBoxGeometry(.16, .07, .035, 4, .018), tail);
-  tailLight.name = "segway-scooter-rear-brake-light"; tailLight.position.set(0, .34, .72); root.add(tailLight);
+  tailLight.name = "electric-scooter-rear-brake-light"; tailLight.position.set(0, .34, .72); root.add(tailLight);
   const brakeLine = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([
     new THREE.Vector3(-.3, 1.32, -.3), new THREE.Vector3(-.17, .98, -.42), new THREE.Vector3(-.11, .56, -.52), new THREE.Vector3(-.06, .3, -.6),
   ]), 18, .011, 7, false), cable);
-  brakeLine.name = "segway-scooter-visible-brake-cable"; root.add(brakeLine);
-  const leftGrip = new THREE.Object3D(); leftGrip.name = "segway-scooter-left-sloth-grip"; leftGrip.position.set(-.32, 1.37, -.27);
-  const rightGrip = new THREE.Object3D(); rightGrip.name = "segway-scooter-right-sloth-grip"; rightGrip.position.set(.32, 1.37, -.27);
+  brakeLine.name = "electric-scooter-visible-brake-cable"; root.add(brakeLine);
+  const leftGrip = new THREE.Object3D(); leftGrip.name = "electric-scooter-left-sloth-grip"; leftGrip.position.set(-.32, 1.37, -.27);
+  const rightGrip = new THREE.Object3D(); rightGrip.name = "electric-scooter-right-sloth-grip"; rightGrip.position.set(.32, 1.37, -.27);
   root.add(leftGrip, rightGrip);
   root.traverse(object => { if (object instanceof THREE.Mesh) { object.castShadow = true; object.receiveShadow = true; } });
   return { root, wheels, gripAnchors: [leftGrip, rightGrip] };

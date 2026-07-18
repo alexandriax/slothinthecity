@@ -62,15 +62,18 @@ export const CITY_BUS_EXIT_REVIEW_PROGRESS = HIGHWAY_EXIT_START - 150;
 export const CITY_BUS_CITY_REVIEW_PROGRESS = CROSSTOWN_START + 86;
 const LANE_WIDTH = 3.35;
 const TRAFFIC_LANES = [-1.5, -.5, .5, 1.5] as const;
-const STREET_TOP_SPEED = 24;
-const HIGHWAY_TOP_SPEED = 32;
-const SIGNAL_STOPS = [126, 282, CROSSTOWN_START + 92, CROSSTOWN_START + 190, CENTRAL_PARK_WEST_START + 84, CENTRAL_PARK_WEST_START + 188] as const;
+// Arcade pace is intentional: the sloth is slow on foot, but the vehicles are
+// exhilarating. These caps are roughly 2–2.5× the previous values while road
+// proximity, collision braking and signal logic still provide readable risk.
+const STREET_TOP_SPEED = 48;
+const HIGHWAY_TOP_SPEED = 72;
+const SIGNAL_STOPS = [150, 335, 565, CROSSTOWN_START + 72, CROSSTOWN_START + 176, CENTRAL_PARK_WEST_START + 72, CENTRAL_PARK_WEST_START + 170] as const;
 const SIGNAL_COLORS: Record<TrafficSignalAspect, string> = { RED: "#ff3b2f", YELLOW: "#ffd02f", GREEN: "#37e778" };
 const ROUTE_LEGS = [
-  { from: 0, to: 180, name: "Southern Boulevard", detail: "Bronx Zoo shuttle gate" },
-  { from: 180, to: 420, name: "Bronx River Parkway", detail: "south toward East 177th Street" },
-  { from: 420, to: 670, name: "Cross Bronx Expressway", detail: "westbound toward the Hudson" },
-  { from: 670, to: HIGHWAY_START, name: "Henry Hudson Parkway", detail: "Manhattan-bound river crossing" },
+  { from: 0, to: 220, name: "Southern Boulevard", detail: "Bronx Zoo shuttle gate · neighborhood traffic" },
+  { from: 220, to: 470, name: "East 180th Street", detail: "West Farms shops · local intersections" },
+  { from: 470, to: 700, name: "Fordham Road Connector", detail: "follow signs for the Henry Hudson" },
+  { from: 700, to: HIGHWAY_START, name: "Henry Hudson Parkway Ramp", detail: "merge toward Manhattan" },
   { from: HIGHWAY_START, to: HIGHWAY_EXIT_START, name: "West Side Highway", detail: "south along the Hudson River" },
   { from: HIGHWAY_EXIT_START, to: CROSSTOWN_START, name: "West 79th Street Exit", detail: "take the museum exit" },
   { from: CROSSTOWN_START, to: CENTRAL_PARK_WEST_TURN_START, name: "West 79th Street", detail: "cross town toward Central Park West" },
@@ -451,6 +454,14 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
   const asphalt = new THREE.MeshStandardMaterial({ color: "#5a5e5f", map: roadTexture, bumpMap: roadTexture, bumpScale: .018, roughness: .94 });
   const concrete = new THREE.MeshStandardMaterial({ color: "#8b8980", roughness: .9 });
   const lane = new THREE.MeshStandardMaterial({ color: "#ebe5c5", roughness: .75, emissive: "#4a4632", emissiveIntensity: .06 });
+  // Opaque city ground closes the pale void that was visible between detached
+  // building footprints. These slabs sit below every driveable surface and
+  // establish continuous Bronx blocks and the Manhattan riverbank.
+  const cityGround = new THREE.MeshStandardMaterial({ color: "#66665f", map: textures.ground, roughness: 1 });
+  const bronxGround = new THREE.Mesh(new RoundedBoxGeometry(250, .28, HIGHWAY_START + 90, 3, .04), cityGround);
+  bronxGround.name = "continuous-bronx-neighborhood-ground-plane"; bronxGround.position.set(0, -.27, -HIGHWAY_START * .5); root.add(bronxGround);
+  const manhattanGround = new THREE.Mesh(new RoundedBoxGeometry(150, .28, HIGHWAY_EXIT_START - HIGHWAY_START + 120, 3, .04), cityGround);
+  manhattanGround.name = "continuous-west-side-manhattan-ground-plane"; manhattanGround.position.set(-84, -.27, -(HIGHWAY_START + HIGHWAY_EXIT_START) * .5); root.add(manhattanGround);
   for (let progress = 0; progress < CITY_BUS_ROUTE_LENGTH; progress += 18) {
     const next = Math.min(CITY_BUS_ROUTE_LENGTH, progress + 18), middle = (progress + next) / 2, a = routeCenter(progress), b = routeCenter(next), frame = routeFrame(middle), length = a.distanceTo(b);
     const upperWestSide = middle >= CROSSTOWN_START, roadWidth = upperWestSide ? 16.2 : 21.5, sidewalkOffset = roadWidth * .5 + 2.55;
@@ -464,6 +475,21 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
     for (const offset of [-LANE_WIDTH * 1.5, -LANE_WIDTH * .5, LANE_WIDTH * .5, LANE_WIDTH * 1.5]) {
       const stripe = new THREE.Mesh(new RoundedBoxGeometry(.09, .025, length * .62, 2, .01), lane); stripe.position.copy(road.position).addScaledVector(frame.right, offset); stripe.position.y += .12; stripe.rotation.y = frame.yaw; root.add(stripe);
     }
+  }
+  // The trip now begins on actual Bronx surface streets: each controlled
+  // intersection has a full cross street, curb returns and lane markings
+  // before the expressway ramp. No traffic signals are authored on the river
+  // highway itself.
+  for (const [index, progress] of [150, 335, 565].entries()) {
+    const frame = routeFrame(progress), cross = new THREE.Group(); cross.name = `bronx-surface-street-intersection-${index + 1}`;
+    const road = new THREE.Mesh(new RoundedBoxGeometry(14.8, .16, 86, 3, .04), asphalt); road.name = "bronx-driveable-cross-street"; road.position.copy(frame.center); road.position.y -= .07; road.rotation.y = frame.yaw + Math.PI / 2; cross.add(road);
+    for (const side of [-1, 1]) {
+      const walk = new THREE.Mesh(new RoundedBoxGeometry(4.5, .26, 86, 3, .05), concrete); walk.name = "bronx-cross-street-sidewalk-with-curb-return"; walk.position.copy(frame.center).addScaledVector(frame.tangent, side * 9.65); walk.position.y += .06; walk.rotation.y = frame.yaw + Math.PI / 2; cross.add(walk);
+    }
+    for (const offset of [-LANE_WIDTH * .5, LANE_WIDTH * .5]) {
+      const marking = new THREE.Mesh(new RoundedBoxGeometry(.09, .025, 70, 2, .01), lane); marking.position.copy(frame.center).addScaledVector(frame.tangent, offset); marking.position.y += .12; marking.rotation.y = frame.yaw + Math.PI / 2; cross.add(marking);
+    }
+    root.add(cross);
   }
   for (const driveRoad of DRIVE_ROADS.filter(candidate => candidate.primaryFrom === undefined)) {
     const tangent = driveRoad.end.clone().sub(driveRoad.start).setY(0), length = tangent.length(); tangent.normalize();
@@ -506,9 +532,13 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
       YELLOW: signalLensMaterial("YELLOW"),
       GREEN: signalLensMaterial("GREEN"),
     } satisfies Record<TrafficSignalAspect, THREE.MeshStandardMaterial>;
+    // Signals belong on the near side of the intersection. The crosswalk stays
+    // centered on the junction while the mast arms and stop logic sit twelve
+    // metres upstream in the shuttle's direction of travel.
+    const signalAnchor = frame.center.clone().addScaledVector(frame.tangent, -12);
     for (const side of [-1, 1]) {
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(.08, .11, 5.2, 10), signalMetal);
-      pole.position.copy(frame.center).addScaledVector(frame.right, side * 10.25); pole.position.y += 2.6; crossing.add(pole);
+      pole.name = "nyc-near-side-before-intersection-signal-pole"; pole.position.copy(signalAnchor).addScaledVector(frame.right, side * 10.25); pole.position.y += 2.6; crossing.add(pole);
       const arm = new THREE.Mesh(new THREE.CylinderGeometry(.055, .065, 4.7, 9), signalMetal);
       arm.position.copy(pole.position).addScaledVector(frame.right, -side * 2.25).add(new THREE.Vector3(0, 2.25, 0)); arm.rotation.z = Math.PI / 2; crossing.add(arm);
       const housing = new THREE.Mesh(new RoundedBoxGeometry(.46, 1.18, .34, 4, .045), signalHousing);
@@ -574,6 +604,38 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
     }
     if (index % 7 === 0) {
       const tank = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.35, 2.1, 14), new THREE.MeshStandardMaterial({ color: "#4e3c2d", roughness: .93 })); tank.position.copy(building.position); tank.position.y += height * .5 + 1.15; root.add(tank);
+    }
+  }
+  // A continuous two-depth street wall replaces the isolated boxes and white
+  // gaps on the driver's left along the West Side Highway. The foreground
+  // podiums, varied setbacks, roof plant and water towers are deliberately
+  // contiguous at speed; the second row carries the skyline into the haze.
+  const highwayPodium = new THREE.Mesh(new RoundedBoxGeometry(9.5, 5.2, HIGHWAY_EXIT_START - HIGHWAY_START + 42, 4, .08), baseMaterials[1]);
+  highwayPodium.name = "west-side-highway-continuous-manhattan-streetwall-podium"; highwayPodium.position.set(-15.9, 2.5, -(HIGHWAY_START + HIGHWAY_EXIT_START) * .5); root.add(highwayPodium);
+  const highwayBlockCount = Math.ceil((HIGHWAY_EXIT_START - HIGHWAY_START) / 24);
+  for (let index = 0; index < highwayBlockCount; index++) {
+    const z = -HIGHWAY_START - 12 - index * 24, foregroundHeight = 24 + index % 8 * 5.4;
+    const foreground = new THREE.Mesh(new RoundedBoxGeometry(18 + index % 3 * 3.2, foregroundHeight, 25.2, 4, .16), buildingMaterials[(index + 2) % buildingMaterials.length]);
+    foreground.name = "dense-west-side-highway-riverfront-building"; foreground.position.set(-25.2 - index % 3 * 1.8, foregroundHeight * .5, z); root.add(foreground);
+    const cornice = new THREE.Mesh(new RoundedBoxGeometry(18.5 + index % 3 * 3.2, .42, 25.6, 3, .045), corniceMaterials[index % corniceMaterials.length]);
+    cornice.position.copy(foreground.position); cornice.position.y += foregroundHeight * .5 + .12; root.add(cornice);
+    if (index % 2 === 0) {
+      const towerHeight = 35 + index % 6 * 8.5;
+      const tower = new THREE.Mesh(new RoundedBoxGeometry(23 + index % 4 * 3, towerHeight, 27, 4, .18), buildingMaterials[(index + 4) % buildingMaterials.length]);
+      tower.name = "west-side-highway-layered-background-skyline-tower"; tower.position.set(-58 - index % 4 * 8, towerHeight * .5, z - 5); root.add(tower);
+      if (index % 6 === 0) {
+        const tank = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.65, 2.4, 14), new THREE.MeshStandardMaterial({ color: "#4b392b", roughness: .94 }));
+        tank.name = "west-side-highway-rooftop-water-tank"; tank.position.set(tower.position.x, towerHeight + 1.3, tower.position.z); root.add(tank);
+      }
+    }
+  }
+  const highwayLampMaterial = new THREE.MeshStandardMaterial({ color: "#26302f", metalness: .68, roughness: .36 });
+  const highwayLampGlow = new THREE.MeshStandardMaterial({ color: "#f7e6b0", emissive: "#ffd279", emissiveIntensity: 1.7, roughness: .22 });
+  for (let index = 0; index < 34; index++) {
+    const z = -HIGHWAY_START - 26 - index * 48;
+    for (const x of [-10.9, 14.8]) {
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(.055, .09, 6.4, 9), highwayLampMaterial); pole.name = "west-side-highway-roadway-light-not-traffic-signal"; pole.position.set(x, 3.2, z); root.add(pole);
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(.16, 12, 8), highwayLampGlow); lamp.position.set(x, 6.42, z); root.add(lamp);
     }
   }
   const blockX = [[CENTRAL_PARK_WEST_X, -190], [-190, -104], [-104, 0]] as const;
@@ -865,6 +927,7 @@ export class CityBusWorld {
   private steerAmount = 0;
   private roadSurfaceMessage = "ON AUTHORED ROUTE";
   private guidanceRefreshAt = -Infinity;
+  private initialRouteDistance = CITY_BUS_ROUTE_LENGTH;
   private upcomingSignalAspect: TrafficSignalAspect | null = null;
   private upcomingSignalDistance = Infinity;
   private trafficMessage = "Zoo shuttle loading zone";
@@ -880,21 +943,28 @@ export class CityBusWorld {
     if (reviewSpawn === "uws-reroute") { this.busPosition.set(-105.8, .4, -2688); this.busHeading = 0; this.progress = CROSSTOWN_START + 80; }
     const spawnHeading = new THREE.Vector3(-Math.sin(this.busHeading), 0, -Math.cos(this.busHeading));
     this.guidance = this.roadNetwork.route(this.busPosition, AMNH_BUS_BAY, spawnHeading);
+    this.initialRouteDistance = Math.max(1, this.guidance.distance);
     this.roadSurfaceMessage = this.guidance.current.primaryProgress === null ? "OPEN-WORLD REROUTE ACTIVE" : "AUTHORED ROUTE · FREE STEERING";
     addCitySky(this.root);
     addRoadNetwork(this.root, this.ownedTextures, quality, textures, this.signals);
     addMuseumArrivalCampus(this.root, this.ownedTextures, textures);
     this.bus = makeBus(quality, textures, this.ownedTextures); this.root.add(this.bus.root);
-    const trafficCount = quality < .58 ? 28 : quality < .82 ? 40 : 52;
+    const trafficCount = quality < .58 ? 36 : quality < .82 ? 52 : 68;
     for (let index = 0; index < trafficCount; index++) {
       const lane = TRAFFIC_LANES[index % TRAFFIC_LANES.length];
+      // Seed a readable near-field pack at every review/start point. The rest
+      // remains distributed across the route so traffic keeps arriving rather
+      // than appearing as a one-time set piece.
+      const trafficOffset = index < 12
+        ? 20 + index * 17
+        : 220 + (index - 12) * (CITY_BUS_ROUTE_LENGTH - 245) / Math.max(1, trafficCount - 12);
       const car = makeTrafficCar(index, quality), vehicle: TrafficVehicle = {
         root: car,
-        progress: (this.progress + 18 + index * CITY_BUS_ROUTE_LENGTH / trafficCount) % CITY_BUS_ROUTE_LENGTH,
+        progress: (this.progress + trafficOffset) % CITY_BUS_ROUTE_LENGTH,
         lane,
         targetLane: lane,
-        speed: 14.5 + index % 5 * 1.35,
-        cruise: 18.5 + index % 7 * 1.42,
+        speed: 28 + index % 5 * 2.4,
+        cruise: 38 + index % 7 * 2.65,
         phase: index * 1.83,
         nextLaneChange: 3.8 + index % 7 * 1.32,
       };
@@ -906,7 +976,7 @@ export class CityBusWorld {
       const vehicle: LocalTrafficVehicle = {
         root: makeTrafficCar(100 + index, quality), path,
         distance: index / Math.max(1, localTrafficCount) * frame.total + index % 3 * 17,
-        speed: 11.5 + index % 5 * 1.25,
+        speed: 22 + index % 5 * 2.1,
         laneOffset: index % 2 ? -1.8 : 1.8,
       };
       vehicle.root.name = `upper-west-side-open-world-loop-traffic-${index + 1}`;
@@ -930,7 +1000,13 @@ export class CityBusWorld {
   get signedSpeedMetersPerSecond() { return this.speed; }
   get steeringAmount() { return this.steerAmount; }
   get remainingMeters() { return Math.max(0, this.guidance.distance); }
-  get currentRoad() { return displayRoadName(this.guidance.current.road.name); }
+  get routeCompletion() { return THREE.MathUtils.clamp(1 - this.remainingMeters / this.initialRouteDistance, 0, 1); }
+  get currentRoad() {
+    // The primary-route progress is the authoritative leg label. Route search
+    // can temporarily select a geometrically close connector at a wide merge,
+    // which previously made the highway HUD jump back to Southern Boulevard.
+    return displayRoadName(this.guidance.current.primaryProgress !== null ? primaryRoadName(this.progress) : this.guidance.current.road.name);
+  }
   get congestionStatus() { return this.trafficMessage; }
   get routeStatus() { return this.roadSurfaceMessage; }
   get navigationBearingDegrees() {
@@ -976,24 +1052,24 @@ export class CityBusWorld {
     this.steerAmount += (steerInput - this.steerAmount) * (1 - Math.exp(-delta * 8.5));
     const travelDirection = Math.abs(this.speed) > .08 ? Math.sign(this.speed) : input.brake && !input.accelerate ? -1 : 1;
     const speedRatio = THREE.MathUtils.clamp(Math.abs(this.speed) / HIGHWAY_TOP_SPEED, 0, 1);
-    const steeringRate = (.32 + speedRatio * .72) * (input.handbrake ? 1.35 : 1);
+    const steeringRate = (.42 + speedRatio * .78) * (input.handbrake ? 1.42 : 1);
     this.busHeading -= this.steerAmount * travelDirection * steeringRate * delta;
     const driveInput = input.accelerate ? 1 : input.brake ? -1 : 0;
     const beyondCurb = road.distance > road.road.halfWidth + 1.4;
-    const forwardTopSpeed = beyondCurb ? 9.5 : road.road.speedLimit;
+    const forwardTopSpeed = beyondCurb ? 15 : road.road.speedLimit;
     if (driveInput !== 0) {
       if (this.speed * driveInput < -.05) {
-        this.speed = Math.sign(this.speed) * Math.max(0, Math.abs(this.speed) - delta * 16);
+        this.speed = Math.sign(this.speed) * Math.max(0, Math.abs(this.speed) - delta * 38);
       } else {
-        const targetSpeed = driveInput > 0 ? forwardTopSpeed : -6.2;
-        this.speed += (targetSpeed - this.speed) * (1 - Math.exp(-delta * (driveInput > 0 ? 1.04 : 1.35)));
+        const targetSpeed = driveInput > 0 ? forwardTopSpeed : -11;
+        this.speed += (targetSpeed - this.speed) * (1 - Math.exp(-delta * (driveInput > 0 ? 2.55 : 2.1)));
       }
     } else {
       const resistance = .38 + Math.abs(this.speed) * .035;
       this.speed = Math.sign(this.speed) * Math.max(0, Math.abs(this.speed) - resistance * delta);
     }
-    if (input.handbrake) this.speed = Math.sign(this.speed) * Math.max(0, Math.abs(this.speed) - delta * 24);
-    this.speed = THREE.MathUtils.clamp(this.speed, -6.2, forwardTopSpeed);
+    if (input.handbrake) this.speed = Math.sign(this.speed) * Math.max(0, Math.abs(this.speed) - delta * 52);
+    this.speed = THREE.MathUtils.clamp(this.speed, -11, forwardTopSpeed);
     const driveForward = new THREE.Vector3(-Math.sin(this.busHeading), 0, -Math.cos(this.busHeading));
     this.busPosition.addScaledVector(driveForward, this.speed * delta);
     road = this.roadNetwork.nearest(this.busPosition, driveForward);
@@ -1020,6 +1096,7 @@ export class CityBusWorld {
     // flowing as soon as the player takes control, so a debug/load transition
     // cannot silently drain the nearest vehicles out of the opening view.
     const trafficDelta = input.accelerate || input.brake || Math.abs(this.speed) > .05 ? delta : 0;
+    const driveRight = new THREE.Vector3(-driveForward.z, 0, driveForward.x);
     const busLaneOffset = this.busPosition.clone().sub(road.point).dot(road.right);
     let nearestGap = Infinity;
     for (let index = 0; index < this.traffic.length; index++) {
@@ -1044,7 +1121,8 @@ export class CityBusWorld {
         vehicle.root.visible = true;
       } else vehicle.root.visible = vehicle.progress <= CITY_BUS_ROUTE_LENGTH + 7;
       const vehicleFrame = routeFrame(vehicle.progress), vehiclePosition = vehicleFrame.center.clone().addScaledVector(vehicleFrame.right, vehicle.lane * LANE_WIDTH);
-      const toVehicle = vehiclePosition.sub(this.busPosition); if (driveForward.dot(toVehicle) > 0 && driveForward.dot(vehicleFrame.tangent) > .25 && toVehicle.length() < 46) nearestGap = Math.min(nearestGap, toVehicle.length());
+      const toVehicle = vehiclePosition.sub(this.busPosition);
+      if (driveForward.dot(toVehicle) > 0 && driveForward.dot(vehicleFrame.tangent) > .25 && Math.abs(driveRight.dot(toVehicle)) < 2.35 && toVehicle.length() < 62) nearestGap = Math.min(nearestGap, toVehicle.length());
     }
     for (const vehicle of this.localTraffic) {
       vehicle.distance += vehicle.speed * trafficDelta;
@@ -1052,17 +1130,17 @@ export class CityBusWorld {
       vehicle.root.position.copy(frame.center).addScaledVector(frame.right, vehicle.laneOffset); vehicle.root.position.y += .02; vehicle.root.rotation.y = frame.yaw;
       const toVehicle = vehicle.root.position.clone().sub(this.busPosition);
       const headingAgreement = driveForward.dot(frame.tangent);
-      if (driveForward.dot(toVehicle) > 0 && headingAgreement > .25 && toVehicle.length() < 42) nearestGap = Math.min(nearestGap, toVehicle.length());
+      if (driveForward.dot(toVehicle) > 0 && headingAgreement > .25 && Math.abs(driveRight.dot(toVehicle)) < 2.35 && toVehicle.length() < 58) nearestGap = Math.min(nearestGap, toVehicle.length());
     }
     if (this.speed < -.08) this.trafficMessage = "REVERSING · CHECK MIRRORS";
     else if (input.handbrake && this.speed > 8) this.trafficMessage = "HANDBRAKE TURN · REAR WEIGHT TRANSFER";
-    else if (nearestGap < 21) { const cap = Math.max(0, (nearestGap - 6.5) * 1.25); this.speed = Math.min(this.speed, cap); this.trafficMessage = nearestGap < 10 ? "BRAKING · VEHICLE AHEAD" : "CHANGE LANES TO PASS"; }
+    else if (nearestGap < 28) { const cap = Math.max(0, (nearestGap - 5.5) * 4.2); this.speed = Math.min(this.speed, cap); this.trafficMessage = nearestGap < 10 ? "BRAKING · VEHICLE AHEAD" : "CHANGE LANES TO PASS"; }
     else if (signalRed && signal !== undefined) { this.speed = Math.min(this.speed, Math.max(0, (signal - this.progress - 4) * .7)); this.trafficMessage = "RED LIGHT · HOLD POSITION"; }
     else if (this.upcomingSignalAspect === "YELLOW" && this.upcomingSignalDistance < 30) this.trafficMessage = "YELLOW LIGHT · PREPARE TO STOP";
     else if (!onPrimaryRoad) this.trafficMessage = "REROUTING THROUGH LIVE UPPER WEST SIDE TRAFFIC";
-    else this.trafficMessage = this.speed > 25 ? "HIGH-SPEED RUN · WEST SIDE HIGHWAY" : Math.abs(this.speed) < 2 && input.accelerate ? "TRAFFIC OPENING AHEAD" : "FAST CITY TRAFFIC · ALL LANES SOUTHBOUND";
+    else this.trafficMessage = this.speed > 42 ? "HIGH-SPEED RUN · WEST SIDE HIGHWAY" : Math.abs(this.speed) < 2 && input.accelerate ? "TRAFFIC OPENING AHEAD" : "FAST CITY TRAFFIC · ALL LANES SOUTHBOUND";
     const remaining = this.guidance.distance;
-    if (remaining < 58 && this.speed > 0) { this.speed = Math.min(this.speed, Math.max(0, (remaining - 1.2) * .55)); this.trafficMessage = "MUSEUM BUS BAY · BRAKE TO PARK"; }
+    if (remaining < 82 && this.speed > 0) { this.speed = Math.min(this.speed, Math.max(0, (remaining - 1.2) * 1.1)); this.trafficMessage = "MUSEUM BUS BAY · BRAKE TO PARK"; }
     this.updateSignalVisuals(elapsed);
     this.updateTransforms(elapsed, delta);
     this.pedestrians.forEach(agent => updateAmbientHumanAgent(agent, elapsed, delta));

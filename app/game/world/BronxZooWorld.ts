@@ -253,11 +253,20 @@ function addPathKerbs(root: THREE.Group, points: ReadonlyArray<readonly [number,
   points.slice(1).forEach((end, index) => {
     const start = points[index];
     const dx = end[0] - start[0], dz = end[1] - start[1], length = Math.hypot(dx, dz);
+    const unitX = dx / length, unitZ = dz / length;
     const normalX = -dz / length, normalZ = dx / length;
+    const atJunction = (point: readonly [number, number]) => ZOO_PATH_JUNCTIONS.some(junction => Math.hypot(point[0] - junction[0], point[1] - junction[1]) < .25);
+    // Kerbs stop before the shared path envelope. Previously every branch was
+    // authored edge-to-edge, so long rectangular kerbs crossed the promenade
+    // and each other like loose boards. Small miter trims remain at ordinary
+    // bends; true circulation junctions get a full curb-cut opening.
+    const startTrim = atJunction(start) ? Math.min(width * .64, length * .28) : index > 0 ? .12 : .3;
+    const endTrim = atJunction(end) ? Math.min(width * .64, length * .28) : index < points.length - 2 ? .12 : .3;
+    const kerbLength = Math.max(.35, length - startTrim - endTrim);
     for (const side of [-1, 1]) {
-      const midpointX = (start[0] + end[0]) * .5 + normalX * width * .5 * side;
-      const midpointZ = (start[1] + end[1]) * .5 + normalZ * width * .5 * side;
-      const kerb = setShadow(new THREE.Mesh(new THREE.BoxGeometry(length, .14, .19), material), false, true);
+      const midpointX = start[0] + unitX * (startTrim + kerbLength * .5) + normalX * width * .5 * side;
+      const midpointZ = start[1] + unitZ * (startTrim + kerbLength * .5) + normalZ * width * .5 * side;
+      const kerb = setShadow(new THREE.Mesh(new THREE.BoxGeometry(kerbLength, .14, .19), material), false, true);
       kerb.position.set(midpointX, terrainHeight(midpointX, midpointZ) + .085, midpointZ);
       kerb.rotation.y = -Math.atan2(dz, dx);
       kerbs.add(kerb);
@@ -270,7 +279,7 @@ function addPathKerbs(root: THREE.Group, points: ReadonlyArray<readonly [number,
 // branch terminates at an observation edge instead of crossing a fence or
 // pool, and the two sea-lion bypasses reconnect into one readable promenade.
 const ZOO_VISITOR_PATHS = [
-  { name: "bronx-zoo-entry-promenade", width: 8.2, points: [[0, 10], [0, -26], [0, -52]] },
+  { name: "bronx-zoo-entry-promenade", width: 8.2, points: [[0, 10], [0, -26], [0, -32], [0, -52]] },
   { name: "bronx-zoo-sea-lion-west-bypass", width: 6.8, points: [[0, -52], [-18.5, -62], [-18.5, -87], [0, -97]] },
   { name: "bronx-zoo-sea-lion-east-bypass", width: 6.8, points: [[0, -52], [18.5, -62], [18.5, -87], [0, -97]] },
   { name: "bronx-zoo-rescue-promenade", width: 7.6, points: [[0, -97], [0, -116], [0, -139]] },
@@ -280,6 +289,11 @@ const ZOO_VISITOR_PATHS = [
   { name: "bronx-zoo-flamingo-wetland-spur", width: 4.8, points: [[-25, -39], [-46, -44], [-60.5, -47]] },
   { name: "bronx-zoo-bison-range-spur", width: 4.8, points: [[25, -90], [47, -94], [61.5, -97]] },
 ] as const satisfies ReadonlyArray<{ name: string; width: number; points: ReadonlyArray<readonly [number, number]> }>;
+
+const ZOO_PATH_JUNCTIONS = [
+  [0, -32], [0, -52], [0, -97], [0, -116],
+  [-25, -39], [25, -39], [-25, -90], [25, -90], [-23, -121], [23, -121],
+] as const satisfies ReadonlyArray<readonly [number, number]>;
 
 function addStationExit(root: THREE.Group, materials: ZooMaterials, textures: GameTextures, ownedTextures: THREE.Texture[], quality: number) {
   const exit = new THREE.Group();
@@ -596,10 +610,23 @@ function addMuseumShuttleBus(root: THREE.Group, materials: ZooMaterials, ownedTe
   const yellow = new THREE.MeshPhysicalMaterial({ color: "#dfaa20", roughness: .46, clearcoat: .5, clearcoatRoughness: .28 });
   const rubber = new THREE.MeshStandardMaterial({ color: "#101112", roughness: .95 });
   const glass = new THREE.MeshPhysicalMaterial({ color: "#8db9c1", roughness: .1, transmission: .24, transparent: true, opacity: .62 });
-  const body = new THREE.Mesh(new RoundedBoxGeometry(3.1, 2.15, 8.1, 8, .24), yellow);
-  body.name = "museum-shuttle-continuous-coach-body";
-  body.position.y = 1.65;
-  shuttle.add(body);
+  // Build the parked coach as a real shell with a cut-through curb-side
+  // doorway. A single solid yellow capsule previously sat behind the open
+  // glass leaf, so the player saw bodywork where an aisle should be.
+  const roof = new THREE.Mesh(new RoundedBoxGeometry(3.1, .34, 8.1, 7, .14), yellow);
+  roof.name = "museum-shuttle-roof-shell"; roof.position.y = 2.7; shuttle.add(roof);
+  const lowerBody = new THREE.Mesh(new RoundedBoxGeometry(3.1, .72, 8.1, 6, .15), yellow);
+  lowerBody.name = "museum-shuttle-lower-body-shell"; lowerBody.position.y = 1.02; shuttle.add(lowerBody);
+  const driverSide = new THREE.Mesh(new RoundedBoxGeometry(.16, 1.55, 7.78, 5, .06), yellow);
+  driverSide.name = "museum-shuttle-driver-side-body-shell"; driverSide.position.set(-1.48, 1.87, 0); shuttle.add(driverSide);
+  const curbFront = new THREE.Mesh(new RoundedBoxGeometry(.16, 1.55, 1.18, 5, .06), yellow);
+  curbFront.name = "museum-shuttle-curb-side-front-pillar"; curbFront.position.set(1.48, 1.87, -3.38); shuttle.add(curbFront);
+  const curbRear = new THREE.Mesh(new RoundedBoxGeometry(.16, 1.55, 4.85, 5, .06), yellow);
+  curbRear.name = "museum-shuttle-curb-side-body-behind-door"; curbRear.position.set(1.48, 1.87, .56); shuttle.add(curbRear);
+  for (const z of [-4.0, 4.0]) {
+    const endCap = new THREE.Mesh(new RoundedBoxGeometry(3.02, 1.76, .16, 5, .06), yellow);
+    endCap.name = z < 0 ? "museum-shuttle-front-body-shell" : "museum-shuttle-rear-body-shell"; endCap.position.set(0, 1.78, z); shuttle.add(endCap);
+  }
   const skirt = new THREE.Mesh(new RoundedBoxGeometry(3.18, .64, 8.2, 5, .12), materials.iron);
   skirt.position.y = .7;
   shuttle.add(skirt);
@@ -607,22 +634,40 @@ function addMuseumShuttleBus(root: THREE.Group, materials: ZooMaterials, ownedTe
   windshield.position.set(0, 2.04, -4.08);
   shuttle.add(windshield);
   for (const side of [-1, 1]) for (let windowIndex = 0; windowIndex < 4; windowIndex++) {
+    if (side > 0 && windowIndex === 0) continue;
     const window = new THREE.Mesh(new RoundedBoxGeometry(.08, 1.1, 1.36, 4, .035), glass);
     window.position.set(side * 1.57, 2.03, -2.42 + windowIndex * 1.6);
     shuttle.add(window);
   }
+  const aisle = new THREE.Mesh(new RoundedBoxGeometry(2.62, .12, 7.45, 4, .04), new THREE.MeshStandardMaterial({ color: "#4a4c49", roughness: .92 }));
+  aisle.name = "museum-shuttle-visible-interior-aisle"; aisle.position.set(0, .91, .12); shuttle.add(aisle);
+  const interiorWall = new THREE.Mesh(new RoundedBoxGeometry(.06, 1.5, 6.8, 3, .02), new THREE.MeshStandardMaterial({ color: "#d8d0b9", emissive: "#755f35", emissiveIntensity: .12, roughness: .82 }));
+  interiorWall.name = "museum-shuttle-visible-warm-interior-wall"; interiorWall.position.set(-1.37, 1.8, .3); shuttle.add(interiorWall);
+  for (let row = 0; row < 3; row++) {
+    const seat = new THREE.Mesh(new RoundedBoxGeometry(1.05, .62, .7, 5, .08), new THREE.MeshStandardMaterial({ color: row % 2 ? "#386b72" : "#315963", roughness: .78 }));
+    seat.name = "museum-shuttle-visible-passenger-seat"; seat.position.set(-.68, 1.22, -.35 + row * 1.45); shuttle.add(seat);
+  }
   const wheelGeometry = new THREE.CylinderGeometry(.5, .5, .34, quality > .72 ? 28 : 18);
-  for (const side of [-1, 1]) for (const z of [-2.55, 2.45]) {
+  for (const side of [-1, 1]) for (const z of [-3.12, 2.55]) {
     const wheel = new THREE.Mesh(wheelGeometry, rubber);
     wheel.rotation.z = Math.PI / 2;
     wheel.position.set(side * 1.59, .52, z);
     shuttle.add(wheel);
   }
-  const door = new THREE.Mesh(new RoundedBoxGeometry(.08, 1.72, 1.32, 4, .035), glass);
-  door.name = "museum-shuttle-open-boarding-door";
-  door.position.set(1.6, 1.55, -2.32);
-  door.rotation.y = -.72;
-  shuttle.add(door);
+  const stepwell = new THREE.Mesh(new RoundedBoxGeometry(1.48, .14, 1.42, 4, .04), materials.iron);
+  stepwell.name = "museum-shuttle-recessed-stepwell-through-open-door"; stepwell.position.set(1.04, .86, -2.14); shuttle.add(stepwell);
+  const doorway = new THREE.Group(); doorway.name = "museum-shuttle-true-open-boarding-doorway"; doorway.position.set(1.5, 0, -2.14);
+  for (const z of [-.62, .62]) {
+    const jamb = new THREE.Mesh(new RoundedBoxGeometry(.15, 1.85, .14, 4, .035), materials.iron); jamb.name = "museum-shuttle-grounded-door-jamb"; jamb.position.set(0, 1.78, z); doorway.add(jamb);
+  }
+  const header = new THREE.Mesh(new RoundedBoxGeometry(.15, .14, 1.38, 4, .035), materials.iron); header.position.set(0, 2.68, 0); doorway.add(header);
+  for (const side of [-1, 1]) {
+    const pivot = new THREE.Group(); pivot.name = "museum-shuttle-folded-open-door-pivot"; pivot.position.set(.04, 1.77, side * .62); pivot.rotation.y = side * .86;
+    const leaf = new THREE.Mesh(new RoundedBoxGeometry(.08, 1.68, .58, 4, .035), glass); leaf.name = "museum-shuttle-folded-glass-door-leaf"; leaf.position.z = -side * .3; pivot.add(leaf); doorway.add(pivot);
+  }
+  const grabRail = new THREE.Mesh(new THREE.TorusGeometry(.42, .045, 10, 28, Math.PI), new THREE.MeshStandardMaterial({ color: "#e2c53e", metalness: .5, roughness: .38 }));
+  grabRail.name = "museum-shuttle-doorway-yellow-grab-rail"; grabRail.position.set(-.22, 1.78, -.02); grabRail.rotation.y = Math.PI / 2; doorway.add(grabRail);
+  shuttle.add(doorway);
   const destinationTexture = signTexture("MUSEUM SHUTTLE", "BRONX ZOO  →  AMNH", "#f4d25f");
   ownedTextures.push(destinationTexture);
   const destination = new THREE.Mesh(new RoundedBoxGeometry(2.32, .46, .08, 4, .025), new THREE.MeshBasicMaterial({ map: destinationTexture, toneMapped: false }));
@@ -630,7 +675,7 @@ function addMuseumShuttleBus(root: THREE.Group, materials: ZooMaterials, ownedTe
   shuttle.add(destination);
   const boardingPad = new THREE.Group();
   boardingPad.name = "museum-shuttle-visible-exterior-boarding-zone";
-  boardingPad.position.set(16.9, 1.035, 21.72);
+  boardingPad.position.set(17.05, 1.035, 22.48);
   const boardingYellow = new THREE.MeshStandardMaterial({ color: "#f3c722", emissive: "#7d5c05", emissiveIntensity: .22, roughness: .68 });
   const pad = new THREE.Mesh(new RoundedBoxGeometry(3.4, .055, 2.15, 4, .035), new THREE.MeshStandardMaterial({ color: "#29302e", roughness: .9 }));
   pad.position.y = .028; boardingPad.add(pad);
@@ -655,7 +700,7 @@ function addMuseumShuttleBus(root: THREE.Group, materials: ZooMaterials, ownedTe
   marker.position.y = 3.15;
   stop.add(marker);
   root.add(shuttle, boardingPad, stop);
-  setShadow(body, quality > .6, true);
+  shuttle.traverse(object => { if (object instanceof THREE.Mesh) setShadow(object, quality > .6, true); });
 }
 
 export class BronxZooWorld {
@@ -670,8 +715,10 @@ export class BronxZooWorld {
   readonly slothHabitatPosition = new THREE.Vector3(0, 1.48, -128.6);
   // Exterior of the visible open door. Boarding is an explicit interaction;
   // the player never needs to intersect the coach body to trigger it.
-  readonly busBoardingPosition = new THREE.Vector3(16.9, 2.5, 21.72);
-  readonly skateboardPosition = new THREE.Vector3(-13.5, 1.02, 23.2);
+  readonly busBoardingPosition = new THREE.Vector3(17.05, 2.5, 22.48);
+  // Deliberately placed on the donor-to-gate desire line so the player sees
+  // the mobility option immediately after receiving the extra ticket.
+  readonly skateboardPosition = new THREE.Vector3(-4.1, 1.02, -1.1);
   readonly cameraPosition = new THREE.Vector3(0, 4.2, -118);
   readonly cameraTarget = new THREE.Vector3(0, 3.8, -140);
   readonly worldBounds = Object.freeze({ minX: -84, maxX: 84, minZ: -158, maxZ: 39.5 });
@@ -758,8 +805,8 @@ export class BronxZooWorld {
     this.ownedTextures.push(skateboardSignTexture);
     const skateboardSign = new THREE.Mesh(new RoundedBoxGeometry(2.8, .82, .1, 4, .035), new THREE.MeshBasicMaterial({ map: skateboardSignTexture, toneMapped: false }));
     skateboardSign.name = "bronx-zoo-skateboard-fast-travel-instruction-sign";
-    skateboardSign.position.set(-15.6, 2.45, 23.45);
-    skateboardSign.rotation.y = .38;
+    skateboardSign.position.set(-5.7, 2.45, -.72);
+    skateboardSign.rotation.y = .18;
     this.root.add(skateboardSign);
 
     this.addEntryGate(materials, quality);

@@ -162,9 +162,13 @@ test("opening the keeper door preserves every authored sloth transform until it 
   assert.doesNotMatch(activation.slice(activation.indexOf("private releaseFromEnclosure")), /follower\.root\.position\.set\(leader/);
 
   assert.match(party, /const catchingUp = !follower\.formationJoined/);
-  assert.match(party, /if \(!catchingUp\) desired\.addScaledVector\(side, offset\.x\)\.addScaledVector\(tangent, offset\.y\)/);
+  assert.match(party, /targetDistance = catchingUp \? 1\.35 \+ index \* 1\.08/);
+  assert.match(party, /desired\.addScaledVector\(side, offset\.x \* \(catchingUp \? \.62 : 1\)\)\.addScaledVector\(tangent, offset\.y\)/);
   assert.match(party, /if \(catchingUp && distance <= 2\.15\) follower\.formationJoined = true/);
   assert.match(party, /maximumSpeed = catchingUp \? 3\.25/);
+  assert.match(party, /for \(let iteration = 0; iteration < 4; iteration\+\+\)/);
+  assert.match(party, /if \(distance <= \.001\) \{ const angle =/);
+  assert.match(party, /formation === "scooter" \? 1\.78 : 1\.34/);
   assert.match(party, /"release-climb-down"/);
 });
 
@@ -214,7 +218,7 @@ test("mobile prompts, debug checkpoints, and runtime data expose the full rescue
 
   assert.match(touch, /prompt\.includes\("OPEN SLOTH"\) \|\| prompt\.includes\("HABITAT DOOR"\) \? "Open"/);
   assert.match(touch, /prompt\.includes\("TICKET DONOR"\) \|\| prompt\.includes\("SPEAK WITH"\) \? "Talk"/);
-  for (const checkpoint of ["bronxentry", "bronxpolar", "bronxbirds", "bronxmonkeys", "bronxsloths", "rescuefollowers", "busdrive", "busarrival", "museumentry", "museumrotunda", "museummegatherium", "museumfinale"]) {
+  for (const checkpoint of ["bronxentry", "bronxpolar", "bronxbirds", "bronxmonkeys", "bronxsloths", "rescuefollowers", "busboarding", "busbronx", "busdrive", "busarrival", "museumentry", "museumrotunda", "museummegatherium", "museumfinale"]) {
     assert.match(checkpoints, new RegExp(`"?${checkpoint}"?`));
     assert.match(game, new RegExp(`"${checkpoint}"`));
   }

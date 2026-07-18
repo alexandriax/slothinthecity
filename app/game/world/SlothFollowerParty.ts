@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { GameTextures } from "../rendering/textures";
 import { createPremiumSlothFriend } from "./PremiumCharacter";
 import { cloneZooAnimalAtlasCell } from "./ZooAnimals";
-import { createSegwayScooter, rollPersonalMobility, type PersonalMobilityVehicle } from "./PersonalMobility";
+import { createElectricScooter, rollPersonalMobility, type PersonalMobilityVehicle } from "./PersonalMobility";
 
 export type SlothPartyFormation = "grove" | "open" | "station" | "train";
 type SlothPartyMovementFormation = SlothPartyFormation | "scooter";
@@ -27,7 +27,7 @@ type Follower = {
 const FOLLOWER_TINTS = ["#514536", "#423a31", "#594936", "#443a30"] as const;
 const FORMATION_OFFSETS: Record<SlothPartyMovementFormation, readonly THREE.Vector2[]> = {
   open: [new THREE.Vector2(-.72, 0), new THREE.Vector2(.72, -.25), new THREE.Vector2(-.48, -.6), new THREE.Vector2(.5, -.9)],
-  scooter: [new THREE.Vector2(-.8, 0), new THREE.Vector2(.8, -.18), new THREE.Vector2(-.72, -.62), new THREE.Vector2(.72, -.82)],
+  scooter: [new THREE.Vector2(-1.18, -.1), new THREE.Vector2(1.18, -.32), new THREE.Vector2(-1.18, -1.02), new THREE.Vector2(1.18, -1.24)],
   station: [new THREE.Vector2(-.42, 0), new THREE.Vector2(.42, -.18), new THREE.Vector2(-.35, -.48), new THREE.Vector2(.35, -.72)],
   train: [new THREE.Vector2(-.26, 0), new THREE.Vector2(.26, -.22), new THREE.Vector2(-.24, -.56), new THREE.Vector2(.24, -.82)],
   grove: [new THREE.Vector2(-1.35, .2), new THREE.Vector2(1.25, -.1), new THREE.Vector2(-.7, -1.1), new THREE.Vector2(.8, -1.35)],
@@ -75,8 +75,8 @@ export class SlothFollowerParty {
         });
       });
       this.root.add(result.root);
-      const scooter = createSegwayScooter(index + 1);
-      scooter.root.name = `rescued-sloth-friend-${index + 1}-ridden-segway-scooter`;
+      const scooter = createElectricScooter(index + 1);
+      scooter.root.name = `rescued-sloth-friend-${index + 1}-ridden-electric-scooter`;
       scooter.root.visible = false;
       this.root.add(scooter.root);
       this.ownedTextures.push(...result.ownedTextures);
@@ -100,7 +100,7 @@ export class SlothFollowerParty {
     this.scooterMode = active;
     this.followers.forEach(follower => {
       follower.scooter.root.visible = active;
-      follower.root.userData.ridingSegwayScooter = active;
+      follower.root.userData.ridingElectricScooter = active;
     });
   }
 
@@ -251,9 +251,9 @@ export class SlothFollowerParty {
     this.recordLeader(leader, leaderFloor);
     const offsets = FORMATION_OFFSETS[formation], target = new THREE.Vector3(), tangent = new THREE.Vector3(), desired = new THREE.Vector3(), toTarget = new THREE.Vector3();
     this.followers.forEach((follower, index) => {
-      const compressedDistance = follower.trailingDistance * (formation === "train" ? .54 : formation === "station" ? .78 : formation === "scooter" ? .68 : 1);
+      const compressedDistance = follower.trailingDistance * (formation === "train" ? .72 : formation === "station" ? .9 : formation === "scooter" ? 1.12 : 1);
       const catchingUp = !follower.formationJoined;
-      const targetDistance = catchingUp ? .55 + index * .26 : compressedDistance;
+      const targetDistance = catchingUp ? 1.35 + index * 1.08 : compressedDistance;
       this.pointBehind(targetDistance, target);
       this.pointBehind(targetDistance + .34, tangent).sub(target).setY(0);
       if (tangent.lengthSq() < .0001) tangent.set(0, 0, 1); else tangent.normalize();
@@ -261,7 +261,10 @@ export class SlothFollowerParty {
       desired.copy(target);
       // Released sloths first converge on the walked route. Formation offsets
       // are introduced only after each animal has physically caught up.
-      if (!catchingUp) desired.addScaledVector(side, offset.x).addScaledVector(tangent, offset.y);
+      // Separation begins immediately during enclosure release. Waiting until
+      // every friend joined formation sent all four animals toward one point
+      // and allowed the exact-overlap blob captured in zoo QA.
+      desired.addScaledVector(side, offset.x * (catchingUp ? .62 : 1)).addScaledVector(tangent, offset.y);
       desired.y = formation === "station" || formation === "train" ? target.y : floorYAt(desired.x, desired.z);
       toTarget.set(desired.x - follower.root.position.x, 0, desired.z - follower.root.position.z);
       const distance = toTarget.length();
@@ -284,7 +287,7 @@ export class SlothFollowerParty {
         ? Math.max(delta * .72, planarStep * .58)
         : maximumVerticalStep;
       follower.groundY += THREE.MathUtils.clamp(elevation - follower.groundY, -releaseVerticalStep, releaseVerticalStep);
-      follower.root.position.y = follower.groundY + (this.scooterMode ? .27 : 0);
+      follower.root.position.y = follower.groundY + (this.scooterMode ? .42 : 0);
       const movedX = follower.root.position.x - follower.previous.x, movedZ = follower.root.position.z - follower.previous.z, locomoting = Math.hypot(movedX, movedZ) > .0012;
       if (locomoting) {
         const desiredYaw = Math.atan2(-movedX, -movedZ);
@@ -294,22 +297,38 @@ export class SlothFollowerParty {
       const gait = locomoting ? Math.sin(elapsed * 6.2 + follower.gaitPhase) : Math.sin(elapsed * 1.35 + follower.gaitPhase) * .18;
       follower.root.position.y += this.scooterMode ? Math.sin(elapsed * 4.2 + follower.gaitPhase) * .006 : locomoting ? Math.abs(gait) * .018 : gait * .008;
       follower.root.rotation.z = THREE.MathUtils.lerp(follower.root.rotation.z, this.scooterMode ? -follower.velocity.x * .008 : gait * (locomoting ? .018 : .008), 1 - Math.exp(-delta * 5));
-      follower.root.rotation.x = THREE.MathUtils.lerp(follower.root.rotation.x, this.scooterMode ? -.075 : locomoting ? -.025 : 0, 1 - Math.exp(-delta * 5));
-      follower.root.userData.motion = this.scooterMode ? locomoting ? "ride-segway-scooter" : "balance-on-segway-scooter" : catchingUp ? locomoting ? "release-climb-down" : "release-catch-up" : locomoting ? "walk" : "idle";
-      follower.scooter.root.position.set(follower.root.position.x, follower.groundY, follower.root.position.z);
-      follower.scooter.root.rotation.set(0, follower.root.rotation.y, 0);
-      if (this.scooterMode) rollPersonalMobility(follower.scooter, planarStep, .19);
+      // Tilting the authored quadrupedal rig around its grounded origin places
+      // its head upright and both long foreclaws at the real handlebar height.
+      // The result reads as a balanced rider holding the grips, not a sloth
+      // crouched lengthwise across the deck.
+      follower.root.rotation.x = THREE.MathUtils.lerp(follower.root.rotation.x, this.scooterMode ? 1.2 : locomoting ? -.025 : 0, 1 - Math.exp(-delta * 7));
+      follower.root.userData.motion = this.scooterMode ? locomoting ? "ride-electric-scooter-upright" : "balance-on-electric-scooter-upright" : catchingUp ? locomoting ? "release-climb-down" : "release-catch-up" : locomoting ? "walk" : "idle";
     });
-    const minimumSpacing = formation === "train" ? .52 : formation === "station" ? .68 : formation === "scooter" ? 1.05 : .82;
-    for (let left = 0; left < this.followers.length; left++) for (let right = left + 1; right < this.followers.length; right++) {
-      const a = this.followers[left].root.position, b = this.followers[right].root.position, dx = b.x - a.x, dz = b.z - a.z, distance = Math.hypot(dx, dz);
-      if (distance <= .001 || distance >= minimumSpacing) continue;
+    const minimumSpacing = formation === "train" ? .86 : formation === "station" ? 1.05 : formation === "scooter" ? 1.78 : 1.34;
+    // Iterative circle separation is deterministic even for identical
+    // positions. A single pass skipped exact overlaps and could be undone by
+    // the next target integration; four passes make the collision invariant
+    // hold while the group turns or catches up.
+    for (let iteration = 0; iteration < 4; iteration++) for (let left = 0; left < this.followers.length; left++) for (let right = left + 1; right < this.followers.length; right++) {
+      const first = this.followers[left], second = this.followers[right], a = first.root.position, b = second.root.position;
+      let dx = b.x - a.x, dz = b.z - a.z, distance = Math.hypot(dx, dz);
+      if (distance >= minimumSpacing) continue;
+      if (distance <= .001) { const angle = (left * 2.17 + right * 1.31) % (Math.PI * 2); dx = Math.cos(angle); dz = Math.sin(angle); distance = 1; }
       const correction = (minimumSpacing - distance) * .5 / distance; a.x -= dx * correction; a.z -= dz * correction; b.x += dx * correction; b.z += dz * correction;
+      first.velocity.addScaledVector(new THREE.Vector3(-dx, 0, -dz).normalize(), .08);
+      second.velocity.addScaledVector(new THREE.Vector3(dx, 0, dz).normalize(), .08);
     }
     for (const follower of this.followers) {
-      const dx = follower.root.position.x - leader.x, dz = follower.root.position.z - leader.z, distance = Math.hypot(dx, dz), clearance = formation === "train" ? .48 : .72;
-      if (distance <= .001 || distance >= clearance) continue;
-      const correction = (clearance - distance) / distance; follower.root.position.x += dx * correction; follower.root.position.z += dz * correction;
+      let dx = follower.root.position.x - leader.x, dz = follower.root.position.z - leader.z, distance = Math.hypot(dx, dz), clearance = formation === "train" ? .68 : formation === "scooter" ? 1.72 : 1.15;
+      if (distance < clearance) {
+        if (distance <= .001) { dx = Math.cos(follower.gaitPhase); dz = Math.sin(follower.gaitPhase); distance = 1; }
+        const correction = (clearance - distance) / distance; follower.root.position.x += dx * correction; follower.root.position.z += dz * correction;
+      }
+      // Synchronize vehicle transforms after collision resolution so neither
+      // the scooters nor their riders can visually drift back into a pile.
+      follower.scooter.root.position.set(follower.root.position.x, follower.groundY, follower.root.position.z);
+      follower.scooter.root.rotation.set(0, follower.root.rotation.y, 0);
+      if (this.scooterMode) rollPersonalMobility(follower.scooter, Math.hypot(follower.root.position.x - follower.previous.x, follower.root.position.z - follower.previous.z), .19);
     }
   }
 
