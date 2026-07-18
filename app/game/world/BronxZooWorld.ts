@@ -42,7 +42,7 @@ export type BronxZooEvent = {
 };
 
 export type BronxZooInteractionHint = {
-  kind: "TICKET_DONOR" | "ENTRY_GATE" | "SLOTH_HABITAT";
+  kind: "TICKET_DONOR" | "ENTRY_GATE" | "SLOTH_HABITAT" | "BUS_BOARDING";
   label: string;
   target: THREE.Vector3;
   distance: number;
@@ -627,16 +627,33 @@ function addMuseumShuttleBus(root: THREE.Group, materials: ZooMaterials, ownedTe
   const destination = new THREE.Mesh(new RoundedBoxGeometry(2.32, .46, .08, 4, .025), new THREE.MeshBasicMaterial({ map: destinationTexture, toneMapped: false }));
   destination.position.set(0, 2.58, -4.12);
   shuttle.add(destination);
+  const boardingPad = new THREE.Group();
+  boardingPad.name = "museum-shuttle-visible-exterior-boarding-zone";
+  boardingPad.position.set(16.9, 1.035, 21.72);
+  const boardingYellow = new THREE.MeshStandardMaterial({ color: "#f3c722", emissive: "#7d5c05", emissiveIntensity: .22, roughness: .68 });
+  const pad = new THREE.Mesh(new RoundedBoxGeometry(3.4, .055, 2.15, 4, .035), new THREE.MeshStandardMaterial({ color: "#29302e", roughness: .9 }));
+  pad.position.y = .028; boardingPad.add(pad);
+  for (const x of [-1.5, 1.5]) {
+    const edge = new THREE.Mesh(new RoundedBoxGeometry(.12, .07, 2.05, 2, .018), boardingYellow);
+    edge.position.set(x, .07, 0); boardingPad.add(edge);
+  }
+  for (const z of [-.92, .92]) {
+    const edge = new THREE.Mesh(new RoundedBoxGeometry(3.05, .07, .12, 2, .018), boardingYellow);
+    edge.position.set(0, .07, z); boardingPad.add(edge);
+  }
+  const step = new THREE.Mesh(new RoundedBoxGeometry(1.55, .16, .72, 4, .04), materials.stone);
+  step.name = "museum-shuttle-grounded-door-step";
+  step.position.set(.12, .1, .64); boardingPad.add(step);
   const stop = new THREE.Group();
   stop.name = "bronx-zoo-museum-shuttle-stop";
-  stop.position.set(21.7, 1.02, 18.1);
+  stop.position.set(15.1, 1.02, 20.4);
   const post = new THREE.Mesh(new THREE.CylinderGeometry(.08, .11, 3.2, 10), materials.iron);
   post.position.y = 1.6;
   stop.add(post);
   const marker = new THREE.Mesh(new RoundedBoxGeometry(1.65, 1.65, .14, 4, .04), new THREE.MeshBasicMaterial({ map: destinationTexture, toneMapped: false }));
   marker.position.y = 3.15;
   stop.add(marker);
-  root.add(shuttle, stop);
+  root.add(shuttle, boardingPad, stop);
   setShadow(body, quality > .6, true);
 }
 
@@ -650,7 +667,9 @@ export class BronxZooWorld {
   readonly ticketDonorPosition = new THREE.Vector3(-8.5, 1.48, 6.2);
   readonly gatePosition = new THREE.Vector3(0, 1.48, -8);
   readonly slothHabitatPosition = new THREE.Vector3(0, 1.48, -128.6);
-  readonly busBoardingPosition = new THREE.Vector3(21.7, 2.5, 20.4);
+  // Exterior of the visible open door. Boarding is an explicit interaction;
+  // the player never needs to intersect the coach body to trigger it.
+  readonly busBoardingPosition = new THREE.Vector3(16.9, 2.5, 21.72);
   readonly cameraPosition = new THREE.Vector3(0, 4.2, -118);
   readonly cameraTarget = new THREE.Vector3(0, 3.8, -140);
   readonly worldBounds = Object.freeze({ minX: -84, maxX: 84, minZ: -158, maxZ: 39.5 });
@@ -823,6 +842,8 @@ export class BronxZooWorld {
     if (!this.hasAdmissionTicket && gateDistance <= 3.5) return { kind: "ENTRY_GATE", label: "ADMISSION TICKET REQUIRED", target: this.gatePosition.clone(), distance: gateDistance };
     const habitatDistance = this.distanceXZ(player, this.slothHabitatPosition);
     if (this.hasAdmissionTicket && !this.releasedFriends && habitatDistance <= 3.2) return { kind: "SLOTH_HABITAT", label: "OPEN THE SLOTH KEEPER DOOR", target: this.slothHabitatPosition.clone(), distance: habitatDistance };
+    const boardingDistance = this.distanceXZ(player, this.busBoardingPosition);
+    if (this.releasedFriends && boardingDistance <= 4.2) return { kind: "BUS_BOARDING", label: "BOARD MUSEUM SHUTTLE WITH ALL FOUR FRIENDS", target: this.busBoardingPosition.clone(), distance: boardingDistance };
     return null;
   }
 
@@ -834,6 +855,7 @@ export class BronxZooWorld {
       return { kind: "TICKET_RECEIVED", message: "“I couldn’t make it today, so please take my extra ticket.” Admission ticket received." };
     }
     if (hint.kind === "ENTRY_GATE") return { kind: "ENTRY_DENIED", message: "The entrance scanner flashes red. Find someone outside with an extra ticket." };
+    if (hint.kind === "BUS_BOARDING") return null;
     this.setFriendsReleased(true);
     return { kind: "SLOTHS_RELEASED", message: "The keeper door is open. Lead your four friends along the promenade and board the museum shuttle bus." };
   }
