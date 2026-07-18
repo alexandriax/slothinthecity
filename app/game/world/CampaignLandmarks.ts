@@ -134,13 +134,28 @@ function sidewalkWithStairOpeningGeometry() {
 }
 
 function addSouthboundParkPath(root: THREE.Group, textures: GameTextures, heightAt: (x: number, z: number) => number) {
-  const points = [
+  const zooApproach = [
     BOW_BRIDGE_TARGET.clone(), new THREE.Vector3(-18, 0, -105), new THREE.Vector3(38, 0, -96), new THREE.Vector3(105, 0, -98),
     new THREE.Vector3(178, 0, -116), new THREE.Vector3(232, 0, -157), new THREE.Vector3(257, 0, -220), new THREE.Vector3(266, 0, -288),
-    new THREE.Vector3(275, 0, -329), ZOO_TARGET.clone(), new THREE.Vector3(306, 0, -359), new THREE.Vector3(327, 0, -374), SUBWAY_TARGET.clone(),
+    // Stop at the beveled north edge of the authored zoo forecourt. The old
+    // single strip continued underneath the rounded plaza and exposed a
+    // gravel/paving overlap along the curb.
+    new THREE.Vector3(274.8, 0, -327.35),
+  ];
+  const subwayDeparture = [
+    // Resume at the east edge of the forecourt instead of drawing another
+    // surface beneath it. The plaza itself is the walkable connection.
+    new THREE.Vector3(304.25, 0, -349.7), new THREE.Vector3(315, 0, -360.5),
+    new THREE.Vector3(327, 0, -374), SUBWAY_TARGET.clone(),
   ];
   const material = new THREE.MeshStandardMaterial({ map: textures.gravel, bumpMap: textures.gravel, bumpScale: .075, color: "#a8997e", roughness: .98 });
-  const path = new THREE.Mesh(parkPathGeometry(points, 4.4, heightAt), material); path.name = "bow-bridge-to-zoo-and-subway-landscaped-path"; path.receiveShadow = true; root.add(path);
+  const approach = new THREE.Mesh(parkPathGeometry(zooApproach, 4.4, heightAt), material);
+  approach.name = "bow-bridge-to-central-park-zoo-curb-safe-path";
+  approach.receiveShadow = true;
+  const departure = new THREE.Mesh(parkPathGeometry(subwayDeparture, 4.4, heightAt), material);
+  departure.name = "central-park-zoo-to-subway-curb-safe-path";
+  departure.receiveShadow = true;
+  root.add(approach, departure);
 }
 
 function addBowBridge(root: THREE.Group, textures: GameTextures, heightAt: (x: number, z: number) => number, ownedTextures: THREE.Texture[]) {

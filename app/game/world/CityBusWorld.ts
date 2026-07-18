@@ -4,6 +4,7 @@ import { Sky } from "three/addons/objects/Sky.js";
 import type { GameTextures } from "../rendering/textures";
 import { createPremiumHuman, createPremiumSlothFriend, markPremiumCharactersDisposed } from "./PremiumCharacter";
 import { createAmbientHumanAgent, updateAmbientHumanAgent, type AmbientHumanAgent } from "./characters/AmbientHumanMotion";
+import type { SlothVehicleGripTargets } from "../player/SlothRig";
 
 export type CityBusInput = {
   accelerate: boolean;
@@ -22,8 +23,24 @@ type TrafficVehicle = {
   phase: number;
 };
 
+type TrafficSignalAspect = "RED" | "YELLOW" | "GREEN";
+
+type TrafficSignal = {
+  progress: number;
+  lenses: Record<TrafficSignalAspect, THREE.MeshStandardMaterial>;
+};
+
+type BuiltBus = {
+  root: THREE.Group;
+  steeringWheel: THREE.Group;
+  gripAnchors: readonly [THREE.Object3D, THREE.Object3D];
+  dashboardLenses: Record<TrafficSignalAspect, THREE.MeshStandardMaterial>;
+};
+
 const ROUTE_LENGTH = 1180;
 const LANE_WIDTH = 3.35;
+const SIGNAL_STOPS = [126, 282, 1044, 1114] as const;
+const SIGNAL_COLORS: Record<TrafficSignalAspect, string> = { RED: "#ff3b2f", YELLOW: "#ffd02f", GREEN: "#37e778" };
 const ROUTE_LEGS = [
   { from: 0, to: 155, name: "Southern Boulevard", detail: "Bronx Zoo shuttle gate" },
   { from: 155, to: 330, name: "Bronx River Parkway", detail: "south toward East 177th Street" },
@@ -32,6 +49,30 @@ const ROUTE_LEGS = [
   { from: 705, to: 1038, name: "West Side Highway", detail: "south along the Hudson River" },
   { from: 1038, to: ROUTE_LENGTH, name: "West 79th Street · Central Park West", detail: "American Museum of Natural History" },
 ] as const;
+
+function signalAspectAt(elapsed: number, stop: number): TrafficSignalAspect {
+  const phase = ((elapsed + stop * .07) % 16 + 16) % 16;
+  return phase < 6.2 ? "RED" : phase < 12.8 ? "GREEN" : "YELLOW";
+}
+
+function signalLensMaterial(aspect: TrafficSignalAspect) {
+  return new THREE.MeshStandardMaterial({
+    color: "#161a18",
+    emissive: SIGNAL_COLORS[aspect],
+    emissiveIntensity: .035,
+    roughness: .18,
+    metalness: .02,
+  });
+}
+
+function setSignalLens(material: THREE.MeshStandardMaterial, aspect: TrafficSignalAspect, active: boolean) {
+  material.color.set(active ? SIGNAL_COLORS[aspect] : "#151a18");
+  material.emissive.set(SIGNAL_COLORS[aspect]);
+  // Preserve the hue under ACES tone mapping. Very high emissive values clip
+  // every active lens to white, making red, amber, and green indistinguishable.
+  material.emissiveIntensity = active ? (aspect === "YELLOW" ? 2.85 : 2.45) : .035;
+  material.roughness = active ? .1 : .42;
+}
 
 function routeCenter(progress: number) {
   const p = THREE.MathUtils.clamp(progress, 0, ROUTE_LENGTH);
@@ -68,8 +109,20 @@ function signTexture(title: string, subtitle: string) {
     context.fillStyle = "#123f2f"; context.fillRect(0, 0, 1024, 384);
     context.strokeStyle = "#f0f4df"; context.lineWidth = 15; context.strokeRect(18, 18, 988, 348);
     context.fillStyle = "#ffffff"; context.textAlign = "center"; context.textBaseline = "middle";
-    context.font = "700 78px Helvetica, Arial, sans-serif"; context.fillText(title, 512, 145);
-    context.fillStyle = "#d3e7d0"; context.font = "600 35px Helvetica, Arial, sans-serif"; context.fillText(subtitle, 512, 252);
+    const fittedSize = (text: string, start: number, minimum: number, weight: number, maxWidth: number) => {
+      let size = start;
+      while (size > minimum) {
+        context.font = `${weight} ${size}px Helvetica, Arial, sans-serif`;
+        if (context.measureText(text).width <= maxWidth) break;
+        size -= 2;
+      }
+      return size;
+    };
+    const titleSize = fittedSize(title, 78, 38, 700, 880);
+    context.font = `700 ${titleSize}px Helvetica, Arial, sans-serif`; context.fillText(title, 512, 145, 880);
+    context.fillStyle = "#d3e7d0";
+    const subtitleSize = fittedSize(subtitle, 35, 22, 600, 880);
+    context.font = `600 ${subtitleSize}px Helvetica, Arial, sans-serif`; context.fillText(subtitle, 512, 252, 880);
   });
 }
 
@@ -150,7 +203,7 @@ function addCitySky(root: THREE.Group) {
   root.add(sky);
 }
 
-function makeBus(quality: number, textures: GameTextures, passengerTextures: THREE.Texture[]) {
+function makeBus(quality: number, textures: GameTextures, passengerTextures: THREE.Texture[]): BuiltBus {
   const root = new THREE.Group(); root.name = "bronx-to-amnh-rescue-shuttle-bus";
   const yellow = new THREE.MeshPhysicalMaterial({ color: "#e0ad22", roughness: .48, clearcoat: .5, clearcoatRoughness: .3 });
   const dark = new THREE.MeshStandardMaterial({ color: "#171d1e", roughness: .62 });
@@ -178,7 +231,41 @@ function makeBus(quality: number, textures: GameTextures, passengerTextures: THR
     const hub = new THREE.Mesh(new THREE.CylinderGeometry(.2, .2, .34, 18), metal); hub.rotation.z = Math.PI / 2; hub.position.copy(wheel.position); root.add(hub);
   }
   const dashboard = new THREE.Mesh(new RoundedBoxGeometry(2.7, .5, .72, 5, .08), dark); dashboard.position.set(0, 1.38, -3.48); root.add(dashboard);
-  const steering = new THREE.Mesh(new THREE.TorusGeometry(.27, .045, 9, 30), rubber); steering.position.set(-.82, 1.74, -3.28); steering.rotation.x = -.25; root.add(steering);
+  const steeringWheel = new THREE.Group();
+  steeringWheel.name = "museum-shuttle-steering-wheel-assembly";
+  steeringWheel.position.set(-.82, 1.74, -3.28);
+  steeringWheel.rotation.x = -.25;
+  const steeringRim = new THREE.Mesh(new THREE.TorusGeometry(.235, .034, 12, 36), rubber);
+  steeringRim.name = "museum-shuttle-steering-wheel-rim";
+  steeringWheel.add(steeringRim);
+  for (const angle of [0, Math.PI * 2 / 3, Math.PI * 4 / 3]) {
+    const end = new THREE.Vector3(Math.cos(angle) * .19, Math.sin(angle) * .19, 0);
+    const spoke = new THREE.Mesh(new THREE.CylinderGeometry(.015, .018, end.length(), 9), metal);
+    spoke.position.copy(end).multiplyScalar(.5);
+    spoke.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.clone().normalize());
+    steeringWheel.add(spoke);
+  }
+  // The wrists sit just camera-side of the rim. Sloth claws project forward
+  // from each wrist, so this clearance keeps the digits wrapped visibly over
+  // the wheel instead of disappearing behind its silhouette in the cockpit.
+  const leftGrip = new THREE.Object3D(); leftGrip.name = "museum-shuttle-steering-wheel-left-paw-grip"; leftGrip.position.set(-.205, .055, .19);
+  const rightGrip = new THREE.Object3D(); rightGrip.name = "museum-shuttle-steering-wheel-right-paw-grip"; rightGrip.position.set(.205, .055, .19);
+  steeringWheel.add(leftGrip, rightGrip);
+  root.add(steeringWheel);
+
+  // A small in-cab repeater keeps the current light readable when the bus is
+  // already close enough that the overhead signal leaves the windshield.
+  const dashboardLenses = {
+    RED: signalLensMaterial("RED"),
+    YELLOW: signalLensMaterial("YELLOW"),
+    GREEN: signalLensMaterial("GREEN"),
+  } satisfies Record<TrafficSignalAspect, THREE.MeshStandardMaterial>;
+  (["RED", "YELLOW", "GREEN"] as const).forEach((aspect, index) => {
+    const lens = new THREE.Mesh(new THREE.SphereGeometry(.055, 16, 10), dashboardLenses[aspect]);
+    lens.name = `museum-shuttle-dashboard-${aspect.toLowerCase()}-signal-repeater`;
+    lens.position.set(.38 + index * .16, 1.69, -3.68);
+    root.add(lens);
+  });
   for (let row = 0; row < 4; row++) for (const side of [-1, 1]) {
     const seat = new THREE.Mesh(new RoundedBoxGeometry(.64, .88, .68, 4, .08), new THREE.MeshStandardMaterial({ color: row % 2 ? "#315b69" : "#3b6d72", roughness: .8 }));
     seat.position.set(side * .78, 1.25, -.9 + row * 1.25); seat.name = "museum-shuttle-passenger-seat"; root.add(seat);
@@ -189,7 +276,8 @@ function makeBus(quality: number, textures: GameTextures, passengerTextures: THR
     result.root.scale.multiplyScalar(.72); result.root.position.set(index % 2 ? .78 : -.78, 1.08, -.28 + Math.floor(index / 2) * 1.32); result.root.rotation.y = Math.PI;
     root.add(result.root); passengerTextures.push(...result.ownedTextures);
   }
-  setShadows(root, quality > .58); return root;
+  setShadows(root, quality > .58);
+  return { root, steeringWheel, gripAnchors: [leftGrip, rightGrip], dashboardLenses };
 }
 
 function makeTrafficCar(index: number, quality: number) {
@@ -233,7 +321,7 @@ function makeTrafficCar(index: number, quality: number) {
   setShadows(root, quality > .65); return root;
 }
 
-function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quality: number, textures: GameTextures) {
+function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quality: number, textures: GameTextures, signals: TrafficSignal[]) {
   const roadTexture = roadSurfaceTexture(); roadTexture.wrapS = roadTexture.wrapT = THREE.RepeatWrapping; roadTexture.repeat.set(2, 8); roadTexture.anisotropy = 8; ownedTextures.push(roadTexture);
   const asphalt = new THREE.MeshStandardMaterial({ color: "#5a5e5f", map: roadTexture, bumpMap: roadTexture, bumpScale: .018, roughness: .94 });
   const concrete = new THREE.MeshStandardMaterial({ color: "#8b8980", roughness: .9 });
@@ -251,19 +339,29 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
   }
   const signalMetal = new THREE.MeshStandardMaterial({ color: "#26302f", metalness: .7, roughness: .35 });
   const signalHousing = new THREE.MeshStandardMaterial({ color: "#151b19", metalness: .42, roughness: .48 });
-  const signalColors = [
-    new THREE.MeshStandardMaterial({ color: "#b52d24", emissive: "#8a110d", emissiveIntensity: .65, roughness: .3 }),
-    new THREE.MeshStandardMaterial({ color: "#e0aa21", emissive: "#8a5e08", emissiveIntensity: .35, roughness: .3 }),
-    new THREE.MeshStandardMaterial({ color: "#3c9b5b", emissive: "#12602d", emissiveIntensity: .52, roughness: .3 }),
-  ];
-  for (const stop of [126, 282, 1044, 1114]) {
+  for (const stop of SIGNAL_STOPS) {
     const frame = routeFrame(stop);
     const crossing = new THREE.Group(); crossing.name = "new-york-signalized-crosswalk";
-    for (let stripe = -7; stripe <= 7; stripe++) {
-      const mark = new THREE.Mesh(new RoundedBoxGeometry(.82, .022, 4.7, 2, .012), lane);
-      mark.position.copy(frame.center).addScaledVector(frame.right, stripe * 1.25).addScaledVector(frame.tangent, -1.2);
-      mark.position.y += .13; mark.rotation.y = frame.yaw; crossing.add(mark);
+    // NYC ladder crossing: two full-width boundary lines and separated bars
+    // across the pedestrian path. The old longitudinal comb collapsed into a
+    // single white slab at driving distance.
+    for (const longitudinal of [-2.4, 2.4]) {
+      const boundary = new THREE.Mesh(new RoundedBoxGeometry(19.2, .026, .2, 2, .012), lane);
+      boundary.name = "nyc-crosswalk-full-width-boundary-line";
+      boundary.position.copy(frame.center).addScaledVector(frame.tangent, longitudinal);
+      boundary.position.y += .132; boundary.rotation.y = frame.yaw; crossing.add(boundary);
     }
+    for (let stripe = -3; stripe <= 3; stripe++) {
+      const mark = new THREE.Mesh(new RoundedBoxGeometry(18.4, .024, .34, 2, .012), lane);
+      mark.name = "nyc-crosswalk-separated-ladder-bar";
+      mark.position.copy(frame.center).addScaledVector(frame.tangent, stripe * .62);
+      mark.position.y += .134; mark.rotation.y = frame.yaw; crossing.add(mark);
+    }
+    const lenses = {
+      RED: signalLensMaterial("RED"),
+      YELLOW: signalLensMaterial("YELLOW"),
+      GREEN: signalLensMaterial("GREEN"),
+    } satisfies Record<TrafficSignalAspect, THREE.MeshStandardMaterial>;
     for (const side of [-1, 1]) {
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(.08, .11, 5.2, 10), signalMetal);
       pole.position.copy(frame.center).addScaledVector(frame.right, side * 10.25); pole.position.y += 2.6; crossing.add(pole);
@@ -271,12 +369,18 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
       arm.position.copy(pole.position).addScaledVector(frame.right, -side * 2.25).add(new THREE.Vector3(0, 2.25, 0)); arm.rotation.z = Math.PI / 2; crossing.add(arm);
       const housing = new THREE.Mesh(new RoundedBoxGeometry(.46, 1.18, .34, 4, .045), signalHousing);
       housing.position.copy(arm.position).addScaledVector(frame.right, -side * 2.15).add(new THREE.Vector3(0, -.42, 0)); housing.rotation.y = frame.yaw; crossing.add(housing);
-      for (let lens = 0; lens < 3; lens++) {
-        const light = new THREE.Mesh(new THREE.CircleGeometry(.12, 18), signalColors[lens]);
-        light.position.copy(housing.position).add(new THREE.Vector3(0, .34 - lens * .34, 0)).addScaledVector(frame.tangent, -.18);
+      (["RED", "YELLOW", "GREEN"] as const).forEach((aspect, lensIndex) => {
+        const light = new THREE.Mesh(new THREE.CircleGeometry(.19, 24), lenses[aspect]);
+        light.name = `nyc-traffic-signal-${aspect.toLowerCase()}-lens`;
+        light.position.copy(housing.position).add(new THREE.Vector3(0, .34 - lensIndex * .34, 0)).addScaledVector(frame.tangent, -.181);
         light.rotation.set(0, frame.yaw, 0); crossing.add(light);
-      }
+        const visor = new THREE.Mesh(new THREE.TorusGeometry(.2, .028, 8, 24, Math.PI), signalHousing);
+        visor.name = "nyc-traffic-signal-lens-visor";
+        visor.position.copy(light.position).add(new THREE.Vector3(0, .045, 0)).addScaledVector(frame.tangent, -.012);
+        visor.rotation.set(0, frame.yaw, Math.PI); crossing.add(visor);
+      });
     }
+    signals.push({ progress: stop, lenses });
     root.add(crossing);
   }
   const windows = windowTexture(); windows.wrapS = windows.wrapT = THREE.RepeatWrapping; windows.repeat.set(1, 2.25); ownedTextures.push(windows);
@@ -364,18 +468,91 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
   root.add(trunk, crown, lampPost, lampGlow);
 }
 
+function addMuseumArrivalCampus(root: THREE.Group, ownedTextures: THREE.Texture[], textures: GameTextures) {
+  const frame = routeFrame(ROUTE_LENGTH);
+  const arrival = new THREE.Group();
+  arrival.name = "amnh-visible-city-route-arrival-campus";
+  arrival.position.copy(frame.center);
+  arrival.rotation.y = frame.yaw;
+  const asphalt = new THREE.MeshStandardMaterial({ color: "#4f5354", roughness: .96, map: textures.gravel, bumpMap: textures.gravel, bumpScale: .012 });
+  const limestone = new THREE.MeshStandardMaterial({ color: "#c8c0ae", roughness: .84, map: textures.stone, bumpMap: textures.stone, bumpScale: .022 });
+  const redStone = new THREE.MeshStandardMaterial({ color: "#765047", roughness: .88, map: textures.stone });
+  const bronze = new THREE.MeshStandardMaterial({ color: "#2f3431", roughness: .34, metalness: .72 });
+  const warmDark = new THREE.MeshStandardMaterial({ color: "#181c1b", emissive: "#70562d", emissiveIntensity: .3, roughness: .76 });
+
+  // Continue the asphalt beyond the playable stop so the route resolves into
+  // a real bus bay instead of ending against fog/clear color like a white wall.
+  const apron = new THREE.Mesh(new RoundedBoxGeometry(21.5, .18, 42, 4, .05), asphalt);
+  apron.name = "central-park-west-amnh-arrival-asphalt-continuation";
+  apron.position.set(0, -.08, -18); arrival.add(apron);
+  const baySurface = new THREE.Mesh(new RoundedBoxGeometry(4.6, .035, 25, 3, .015), new THREE.MeshStandardMaterial({ color: "#424748", roughness: .96 }));
+  baySurface.name = "amnh-museum-shuttle-signed-curb-bay"; baySurface.position.set(-6.8, .032, -10); arrival.add(baySurface);
+  const bayStripeMaterial = new THREE.MeshStandardMaterial({ color: "#e4bd25", emissive: "#4f3b04", emissiveIntensity: .08, roughness: .72 });
+  for (const x of [-8.95, -4.65]) {
+    const stripe = new THREE.Mesh(new RoundedBoxGeometry(.12, .045, 24.6, 2, .012), bayStripeMaterial);
+    stripe.name = "amnh-shuttle-bay-yellow-perimeter-line"; stripe.position.set(x, .065, -10); arrival.add(stripe);
+  }
+  for (const z of [-22.2, 2.2]) {
+    const stripe = new THREE.Mesh(new RoundedBoxGeometry(4.4, .045, .12, 2, .012), bayStripeMaterial);
+    stripe.name = "amnh-shuttle-bay-yellow-perimeter-line"; stripe.position.set(-6.8, .065, z); arrival.add(stripe);
+  }
+  const crossStreet = new THREE.Mesh(new RoundedBoxGeometry(112, .16, 17, 4, .045), asphalt);
+  crossStreet.name = "west-77th-street-visible-cross-street-at-route-end"; crossStreet.position.set(0, -.07, -38); arrival.add(crossStreet);
+  for (const side of [-1, 1]) {
+    const sidewalk = new THREE.Mesh(new RoundedBoxGeometry(5.6, .3, 44, 4, .06), limestone);
+    sidewalk.position.set(side * 13.25, .08, -18); arrival.add(sidewalk);
+  }
+
+  const facade = new THREE.Group(); facade.name = "amnh-route-end-grounded-preview-facade"; facade.position.set(0, 0, -42);
+  const center = new THREE.Mesh(new RoundedBoxGeometry(42, 18, 7, 6, .18), limestone); center.position.y = 9; facade.add(center);
+  for (const side of [-1, 1]) {
+    const wing = new THREE.Mesh(new RoundedBoxGeometry(17, 14, 8.5, 5, .18), redStone); wing.position.set(side * 28, 7, .4); facade.add(wing);
+    const annex = new THREE.Mesh(new RoundedBoxGeometry(28, 18, 9.5, 5, .18), redStone);
+    annex.name = "amnh-route-end-continuous-masonry-annex"; annex.position.set(side * 49.5, 9, .2); facade.add(annex);
+    for (let bayIndex = 0; bayIndex < 4; bayIndex++) for (let floorIndex = 0; floorIndex < 2; floorIndex++) {
+      const window = new THREE.Mesh(new RoundedBoxGeometry(3.8, 4.1, .12, 5, .06), warmDark);
+      window.name = "amnh-route-end-annex-recessed-window";
+      window.position.set(side * (39.5 + bayIndex * 6.5), 5.1 + floorIndex * 5.3, 4.98);
+      facade.add(window);
+    }
+  }
+  const porticoFloor = new THREE.Mesh(new RoundedBoxGeometry(28, .6, 7.5, 4, .08), limestone); porticoFloor.position.set(0, .3, 4.2); facade.add(porticoFloor);
+  for (const x of [-10.5, -7, -3.5, 3.5, 7, 10.5]) {
+    const base = new THREE.Mesh(new RoundedBoxGeometry(1.45, .48, 1.45, 4, .06), limestone); base.position.set(x, .84, 4.25); facade.add(base);
+    const column = new THREE.Mesh(new THREE.CylinderGeometry(.48, .58, 10.5, 22), limestone); column.position.set(x, 6.32, 4.25); facade.add(column);
+    const capital = new THREE.Mesh(new RoundedBoxGeometry(1.55, .48, 1.55, 4, .06), limestone); capital.position.set(x, 11.8, 4.25); facade.add(capital);
+  }
+  for (const x of [-6, 0, 6]) {
+    const portal = new THREE.Mesh(new RoundedBoxGeometry(4.7, 7.4, .18, 6, .08), warmDark); portal.position.set(x, 4.25, 3.58); facade.add(portal);
+  }
+  const arrivalTexture = signTexture("AMERICAN MUSEUM OF NATURAL HISTORY", "CENTRAL PARK WEST · SHUTTLE ARRIVAL");
+  ownedTextures.push(arrivalTexture);
+  const sign = new THREE.Mesh(new RoundedBoxGeometry(23, 2.25, .18, 4, .05), new THREE.MeshBasicMaterial({ map: arrivalTexture, toneMapped: false }));
+  sign.position.set(0, 14.4, 3.62); facade.add(sign);
+  for (const x of [-13.8, 13.8]) {
+    const lantern = new THREE.Mesh(new THREE.SphereGeometry(.32, 18, 12), new THREE.MeshStandardMaterial({ color: "#ffe4a2", emissive: "#ffc65a", emissiveIntensity: 2.8, roughness: .18 }));
+    lantern.position.set(x, 4.2, 4.45); facade.add(lantern);
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(.055, .08, 3.4, 10), bronze); post.position.set(x, 2.4, 4.45); facade.add(post);
+  }
+  arrival.add(facade); root.add(arrival);
+}
+
 export class CityBusWorld {
   readonly root = new THREE.Group();
   readonly arrivalTarget = routeCenter(ROUTE_LENGTH).add(new THREE.Vector3(0, 0, -3));
   readonly routeMilestones = ROUTE_LEGS;
-  private readonly bus: THREE.Group;
+  private readonly bus: BuiltBus;
   private readonly traffic: TrafficVehicle[] = [];
+  private readonly signals: TrafficSignal[] = [];
   private readonly pedestrians: AmbientHumanAgent[] = [];
   private readonly ownedTextures: THREE.Texture[] = [];
   private readonly sun: THREE.DirectionalLight;
   private progress = 0;
   private lateral = -LANE_WIDTH * .5;
   private speed = 0;
+  private steerAmount = 0;
+  private upcomingSignalAspect: TrafficSignalAspect | null = null;
+  private upcomingSignalDistance = Infinity;
   private trafficMessage = "Zoo shuttle loading zone";
   private disposed = false;
 
@@ -383,8 +560,9 @@ export class CityBusWorld {
     this.root.name = "bronx-to-natural-history-museum-driving-level"; scene.add(this.root);
     this.progress = THREE.MathUtils.clamp(startProgress, 0, ROUTE_LENGTH - .5);
     addCitySky(this.root);
-    addRoadNetwork(this.root, this.ownedTextures, quality, textures);
-    this.bus = makeBus(quality, textures, this.ownedTextures); this.root.add(this.bus);
+    addRoadNetwork(this.root, this.ownedTextures, quality, textures, this.signals);
+    addMuseumArrivalCampus(this.root, this.ownedTextures, textures);
+    this.bus = makeBus(quality, textures, this.ownedTextures); this.root.add(this.bus.root);
     const trafficCount = quality < .58 ? 16 : quality < .82 ? 24 : 30;
     for (let index = 0; index < trafficCount; index++) {
       const car = makeTrafficCar(index, quality), vehicle: TrafficVehicle = { root: car, progress: (this.progress + 12 + index * ROUTE_LENGTH / trafficCount) % ROUTE_LENGTH, lane: [-.5, .5, -1.5, 1.5][index % 4], speed: 3.2 + index % 4 * .45, cruise: 4.6 + index % 5 * .52, phase: index * 1.83 };
@@ -404,55 +582,101 @@ export class CityBusWorld {
     this.updateTransforms(0, 0);
   }
 
-  get speedMetersPerSecond() { return this.speed; }
+  get speedMetersPerSecond() { return Math.abs(this.speed); }
+  get signedSpeedMetersPerSecond() { return this.speed; }
+  get steeringAmount() { return this.steerAmount; }
   get remainingMeters() { return Math.max(0, ROUTE_LENGTH - this.progress); }
   get currentRoad() { return ROUTE_LEGS.find(leg => this.progress >= leg.from && this.progress < leg.to)?.name ?? "American Museum of Natural History"; }
   get congestionStatus() { return this.trafficMessage; }
-  get parkingReached() { return this.progress >= ROUTE_LENGTH - 2.2 && this.speed < .6; }
+  get navigationInstruction() {
+    const remaining = ROUTE_LENGTH - this.progress;
+    if (remaining <= 45) return `BRAKE FOR MARKED MUSEUM SHUTTLE BAY · ${Math.max(0, Math.round(remaining))} M`;
+    if (this.upcomingSignalAspect && this.upcomingSignalDistance < 72) return `${this.upcomingSignalAspect} SIGNAL · ${Math.max(0, Math.round(this.upcomingSignalDistance))} M`;
+    const leg = ROUTE_LEGS.find(candidate => this.progress >= candidate.from && this.progress < candidate.to) ?? ROUTE_LEGS[ROUTE_LEGS.length - 1];
+    return `CONTINUE · ${leg.detail.toUpperCase()}`;
+  }
+  get parkingReached() { return this.progress >= ROUTE_LENGTH - 2.2 && Math.abs(this.speed) < .6; }
   get headingYaw() { return routeFrame(this.progress).yaw; }
   get cameraPosition() {
     const frame = routeFrame(this.progress), point = frame.center.addScaledVector(frame.right, this.lateral - .72).addScaledVector(frame.tangent, 2.15);
     point.y += 2.27; return point;
   }
 
+  getWorldGripPositions(target: SlothVehicleGripTargets) {
+    this.bus.root.updateMatrixWorld(true);
+    this.bus.gripAnchors[0].getWorldPosition(target.left);
+    this.bus.gripAnchors[1].getWorldPosition(target.right);
+    return target;
+  }
+
   update(delta: number, elapsed: number, input: CityBusInput) {
     if (this.disposed) return;
-    const frame = routeFrame(this.progress), desiredLateral = this.lateral + ((input.steerRight ? 1 : 0) - (input.steerLeft ? 1 : 0)) * delta * (2.1 + this.speed * .17);
+    const frame = routeFrame(this.progress);
+    const steerInput = (input.steerRight ? 1 : 0) - (input.steerLeft ? 1 : 0);
+    this.steerAmount += (steerInput - this.steerAmount) * (1 - Math.exp(-delta * 8.5));
+    const travelDirection = Math.abs(this.speed) > .08 ? Math.sign(this.speed) : input.brake && !input.accelerate ? -1 : 1;
+    const desiredLateral = this.lateral + this.steerAmount * travelDirection * delta * (.42 + Math.abs(this.speed) * .17);
     this.lateral = THREE.MathUtils.clamp(desiredLateral, -LANE_WIDTH * 1.35, LANE_WIDTH * 1.35);
-    const targetThrottle = input.accelerate ? 12.5 : 0;
-    this.speed += (targetThrottle - this.speed) * (1 - Math.exp(-delta * (input.accelerate ? .72 : .42)));
-    if (input.brake) this.speed = Math.max(0, this.speed - delta * 8.5);
-    if (input.handbrake) this.speed = Math.max(0, this.speed - delta * 15);
-    const signalStops = [126, 282, 1044, 1114], signal = signalStops.find(stop => stop > this.progress && stop - this.progress < 28);
-    const signalRed = signal !== undefined && ((elapsed + signal * .07) % 16) < 6.2;
+    const driveInput = input.accelerate ? 1 : input.brake ? -1 : 0;
+    if (driveInput !== 0) {
+      if (this.speed * driveInput < -.05) {
+        this.speed = Math.sign(this.speed) * Math.max(0, Math.abs(this.speed) - delta * 9.5);
+      } else {
+        const targetSpeed = driveInput > 0 ? 12.5 : -4.2;
+        this.speed += (targetSpeed - this.speed) * (1 - Math.exp(-delta * (driveInput > 0 ? .72 : 1.15)));
+      }
+    } else {
+      const resistance = .48 + Math.abs(this.speed) * .08;
+      this.speed = Math.sign(this.speed) * Math.max(0, Math.abs(this.speed) - resistance * delta);
+    }
+    if (input.handbrake) this.speed = Math.sign(this.speed) * Math.max(0, Math.abs(this.speed) - delta * 15);
+    this.speed = THREE.MathUtils.clamp(this.speed, -4.2, 12.5);
+    const nextSignal = SIGNAL_STOPS.find(stop => stop > this.progress + .5);
+    this.upcomingSignalDistance = nextSignal === undefined ? Infinity : nextSignal - this.progress;
+    this.upcomingSignalAspect = nextSignal === undefined ? null : signalAspectAt(elapsed, nextSignal);
+    const signal = nextSignal !== undefined && nextSignal - this.progress < 28 ? nextSignal : undefined;
+    const signalRed = signal !== undefined && signalAspectAt(elapsed, signal) === "RED";
     // Hold the authored traffic tableau during the level card. Cars begin
     // flowing as soon as the player takes control, so a debug/load transition
     // cannot silently drain the nearest vehicles out of the opening view.
-    const trafficDelta = input.accelerate || this.speed > .05 ? delta : 0;
+    const trafficDelta = input.accelerate || input.brake || Math.abs(this.speed) > .05 ? delta : 0;
     let nearestGap = Infinity;
     for (const vehicle of this.traffic) {
       const wave = .28 + .72 * (Math.sin(elapsed * .34 + vehicle.phase) * .5 + .5);
-      const signalAhead = signalStops.find(stop => stop > vehicle.progress && stop - vehicle.progress < 22 && ((elapsed + stop * .07) % 16) < 6.2);
+      const signalAhead = SIGNAL_STOPS.find(stop => stop > vehicle.progress && stop - vehicle.progress < 22 && signalAspectAt(elapsed, stop) !== "GREEN");
       const target = signalAhead ? Math.max(0, (signalAhead - vehicle.progress - 4) * .65) : vehicle.cruise * wave;
       vehicle.speed += (target - vehicle.speed) * (1 - Math.exp(-trafficDelta * 1.25)); vehicle.progress = Math.min(ROUTE_LENGTH + 30, vehicle.progress + vehicle.speed * trafficDelta);
       if (Math.abs(vehicle.lane * LANE_WIDTH - this.lateral) < 2.3 && vehicle.progress > this.progress) nearestGap = Math.min(nearestGap, vehicle.progress - this.progress);
     }
-    if (nearestGap < 18) { const cap = Math.max(0, (nearestGap - 7) * .75); this.speed = Math.min(this.speed, cap); this.trafficMessage = nearestGap < 10 ? "BRAKING · VEHICLE AHEAD" : "STOP-AND-GO TRAFFIC"; }
+    if (this.speed < -.08) this.trafficMessage = "REVERSING · CHECK MIRRORS";
+    else if (nearestGap < 18) { const cap = Math.max(0, (nearestGap - 7) * .75); this.speed = Math.min(this.speed, cap); this.trafficMessage = nearestGap < 10 ? "BRAKING · VEHICLE AHEAD" : "STOP-AND-GO TRAFFIC"; }
     else if (signalRed && signal !== undefined) { this.speed = Math.min(this.speed, Math.max(0, (signal - this.progress - 4) * .7)); this.trafficMessage = "RED LIGHT · HOLD POSITION"; }
-    else this.trafficMessage = this.speed < 2 && input.accelerate ? "CONGESTION CLEARING" : "MOVING WITH CITY TRAFFIC";
+    else if (this.upcomingSignalAspect === "YELLOW" && this.upcomingSignalDistance < 30) this.trafficMessage = "YELLOW LIGHT · PREPARE TO STOP";
+    else this.trafficMessage = Math.abs(this.speed) < 2 && input.accelerate ? "CONGESTION CLEARING" : "MOVING WITH CITY TRAFFIC";
     const remaining = ROUTE_LENGTH - this.progress;
-    if (remaining < 35) { this.speed = Math.min(this.speed, Math.max(0, (remaining - 1.2) * .34)); this.trafficMessage = "MUSEUM BUS BAY · BRAKE TO PARK"; }
-    this.progress = Math.min(ROUTE_LENGTH, this.progress + this.speed * delta);
+    if (remaining < 35 && this.speed > 0) { this.speed = Math.min(this.speed, Math.max(0, (remaining - 1.2) * .34)); this.trafficMessage = "MUSEUM BUS BAY · BRAKE TO PARK"; }
+    this.progress = THREE.MathUtils.clamp(this.progress + this.speed * delta, 0, ROUTE_LENGTH);
+    this.updateSignalVisuals(elapsed);
     this.updateTransforms(elapsed, delta);
     this.pedestrians.forEach(agent => updateAmbientHumanAgent(agent, elapsed, delta));
     this.sun.position.copy(frame.center).add(new THREE.Vector3(-40, 58, 30)); this.sun.target.position.copy(frame.center);
   }
 
   private updateTransforms(elapsed: number, delta: number) {
-    const busFrame = routeFrame(this.progress); this.bus.position.copy(busFrame.center).addScaledVector(busFrame.right, this.lateral); this.bus.rotation.y = busFrame.yaw;
-    this.bus.position.y += Math.sin(elapsed * 5.5) * Math.min(.018, this.speed * .0015);
-    this.bus.traverse(object => { if (object.name === "rescue-bus-road-wheel") object.rotation.x -= this.speed * delta / .49; });
+    const busFrame = routeFrame(this.progress); this.bus.root.position.copy(busFrame.center).addScaledVector(busFrame.right, this.lateral); this.bus.root.rotation.y = busFrame.yaw;
+    this.bus.root.position.y += Math.sin(elapsed * 5.5) * Math.min(.018, Math.abs(this.speed) * .0015);
+    this.bus.steeringWheel.rotation.z = -this.steerAmount * .9;
+    this.bus.root.traverse(object => { if (object.name === "rescue-bus-road-wheel") object.rotation.x -= this.speed * delta / .49; });
     for (const vehicle of this.traffic) { const frame = routeFrame(vehicle.progress); vehicle.root.position.copy(frame.center).addScaledVector(frame.right, vehicle.lane * LANE_WIDTH); vehicle.root.position.y += .02; vehicle.root.rotation.y = frame.yaw; }
+  }
+
+  private updateSignalVisuals(elapsed: number) {
+    for (const signal of this.signals) {
+      const active = signalAspectAt(elapsed, signal.progress);
+      for (const aspect of ["RED", "YELLOW", "GREEN"] as const) setSignalLens(signal.lenses[aspect], aspect, aspect === active);
+    }
+    const dashboardAspect = this.upcomingSignalAspect ?? "GREEN";
+    for (const aspect of ["RED", "YELLOW", "GREEN"] as const) setSignalLens(this.bus.dashboardLenses[aspect], aspect, aspect === dashboardAspect);
   }
 
   dispose() {

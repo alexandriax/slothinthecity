@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { GameTextures } from "../rendering/textures";
-import { createPremiumHuman, markPremiumCharactersDisposed } from "./PremiumCharacter";
+import { createPremiumHuman, createPremiumSlothFriend, markPremiumCharactersDisposed } from "./PremiumCharacter";
 import { createAmbientHumanAgent, updateAmbientHumanAgent, type AmbientHumanAgent } from "./characters/AmbientHumanMotion";
 
 type BoxObstacle = { minX: number; maxX: number; minZ: number; maxZ: number };
@@ -23,8 +23,20 @@ function exhibitTexture(title: string, subtitle: string, accent = "#d6c18a") {
     context.fillStyle = "#17221e"; context.fillRect(0, 0, 1280, 480);
     context.strokeStyle = accent; context.lineWidth = 13; context.strokeRect(18, 18, 1244, 444);
     context.fillStyle = "#f8f2de"; context.textAlign = "center"; context.textBaseline = "middle";
-    context.font = "700 88px Georgia, serif"; context.fillText(title, 640, 175);
-    context.fillStyle = accent; context.font = "600 34px Helvetica, Arial, sans-serif"; context.fillText(subtitle, 640, 312);
+    const fit = (text: string, start: number, minimum: number, weight: number, family: string, maxWidth: number) => {
+      let size = start;
+      while (size > minimum) {
+        context.font = `${weight} ${size}px ${family}`;
+        if (context.measureText(text).width <= maxWidth) break;
+        size -= 2;
+      }
+      return size;
+    };
+    const titleSize = fit(title, 88, 42, 700, "Georgia, serif", 1120);
+    context.font = `700 ${titleSize}px Georgia, serif`; context.fillText(title, 640, 172, 1120);
+    context.fillStyle = accent;
+    const subtitleSize = fit(subtitle, 34, 23, 600, "Helvetica, Arial, sans-serif", 1120);
+    context.font = `600 ${subtitleSize}px Helvetica, Arial, sans-serif`; context.fillText(subtitle, 640, 314, 1120);
   });
 }
 
@@ -32,8 +44,13 @@ function facadeBannerTexture() {
   return canvasTexture(1536, 512, context => {
     context.fillStyle = "#d9d1bd"; context.fillRect(0, 0, 1536, 512);
     context.fillStyle = "#3c3932"; context.textAlign = "center"; context.textBaseline = "middle";
-    context.font = "700 83px Georgia, serif"; context.fillText("AMERICAN MUSEUM OF NATURAL HISTORY", 768, 210);
-    context.font = "600 34px Helvetica, Arial, sans-serif"; context.fillText("CENTRAL PARK WEST · THEODORE ROOSEVELT MEMORIAL", 768, 340);
+    const title = "AMERICAN MUSEUM OF NATURAL HISTORY", subtitle = "CENTRAL PARK WEST · THEODORE ROOSEVELT MEMORIAL";
+    let titleSize = 83; context.font = `700 ${titleSize}px Georgia, serif`;
+    while (titleSize > 54 && context.measureText(title).width > 1370) { titleSize -= 2; context.font = `700 ${titleSize}px Georgia, serif`; }
+    context.fillText(title, 768, 210, 1370);
+    let subtitleSize = 34; context.font = `600 ${subtitleSize}px Helvetica, Arial, sans-serif`;
+    while (subtitleSize > 24 && context.measureText(subtitle).width > 1320) { subtitleSize -= 1; context.font = `600 ${subtitleSize}px Helvetica, Arial, sans-serif`; }
+    context.fillText(subtitle, 768, 340, 1320);
   });
 }
 
@@ -164,10 +181,31 @@ function addArchitecture(root: THREE.Group, textures: GameTextures, ownedTexture
   for (let step = 0; step < steps; step++) { const stair = new THREE.Mesh(new RoundedBoxGeometry(34 + step * 1.25, .22, 1.25, 3, .04), limestone); stair.position.set(0, step * .18, 30 - step * 1.12); facade.add(stair); }
   for (let column = -5; column <= 5; column++) {
     if (column === 0) continue;
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(.62, .72, 10.5, quality > .72 ? 22 : 14), limestone); shaft.position.set(column * 4.5, 7.2, 24); facade.add(shaft);
-    const capital = new THREE.Mesh(new RoundedBoxGeometry(1.7, .55, 1.7, 3, .08), limestone); capital.position.set(column * 4.5, 12.55, 24); facade.add(capital);
+    const base = new THREE.Mesh(new RoundedBoxGeometry(1.68, .5, 1.68, 4, .07), limestone);
+    base.name = "roosevelt-portico-grounded-column-base"; base.position.set(column * 4.5, 1.15, 24); facade.add(base);
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(.62, .72, 12, quality > .72 ? 22 : 14), limestone);
+    shaft.name = "roosevelt-portico-column-shaft-touching-base"; shaft.position.set(column * 4.5, 7.4, 24); facade.add(shaft);
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(.78, .65, .34, quality > .72 ? 22 : 14), limestone);
+    neck.position.set(column * 4.5, 13.48, 24); facade.add(neck);
+    const capital = new THREE.Mesh(new RoundedBoxGeometry(1.82, .52, 1.82, 4, .08), limestone);
+    capital.name = "roosevelt-portico-capital-touching-entablature"; capital.position.set(column * 4.5, 13.74, 24); facade.add(capital);
   }
-  for (const x of [-6, 0, 6]) { const door = new THREE.Mesh(new RoundedBoxGeometry(4.6, 7.2, .16, 6, .08), glass); door.position.set(x, 4.35, 23.92); facade.add(door); }
+  const portalDark = new THREE.MeshStandardMaterial({ color: "#171b1a", emissive: "#6a4d24", emissiveIntensity: .42, roughness: .72 });
+  const entryBrass = new THREE.MeshStandardMaterial({ color: "#9d824b", metalness: .68, roughness: .36 });
+  for (const x of [-6, 0, 6]) {
+    const recess = new THREE.Mesh(new RoundedBoxGeometry(4.6, 7.2, .22, 6, .08), portalDark);
+    recess.name = "amnh-open-warm-lit-public-entrance"; recess.position.set(x, 4.78, 23.92); facade.add(recess);
+    for (const side of [-1, 1]) {
+      const door = new THREE.Mesh(new RoundedBoxGeometry(1.84, 6.35, .09, 5, .04), glass);
+      door.name = "amnh-open-glass-entrance-door-leaf"; door.position.set(x + side * 2.02, 4.55, 24.2); door.rotation.y = side * .9; facade.add(door);
+      const pull = new THREE.Mesh(new RoundedBoxGeometry(.055, 1.25, .08, 3, .02), entryBrass);
+      pull.position.set(x + side * 1.38, 4.55, 24.42); facade.add(pull);
+    }
+    const threshold = new THREE.Mesh(new RoundedBoxGeometry(4.9, .16, 1.25, 3, .035), limestone);
+    threshold.name = "amnh-grounded-public-entry-threshold"; threshold.position.set(x, 1.1, 24.7); facade.add(threshold);
+  }
+  const entryCarpet = new THREE.Mesh(new RoundedBoxGeometry(8.8, .035, 8.4, 4, .014), new THREE.MeshStandardMaterial({ color: "#65342b", roughness: .94 }));
+  entryCarpet.name = "amnh-clearly-marked-public-entry-carpet"; entryCarpet.position.set(0, 1.12, 28.2); facade.add(entryCarpet);
   for (const x of [-6, 0, 6]) {
     const arch = new THREE.Mesh(new THREE.TorusGeometry(2.42, .24, 12, quality > .72 ? 36 : 24, Math.PI), limestone);
     arch.name = "central-park-west-carved-entrance-arch"; arch.position.set(x, 8, 24.08); facade.add(arch);
@@ -189,6 +227,7 @@ function addArchitecture(root: THREE.Group, textures: GameTextures, ownedTexture
   const statue = new THREE.Mesh(new THREE.CapsuleGeometry(1.05, 3.1, 8, 22), bronze); statue.position.set(0, 3.6, 37); facade.add(statue);
   const pedestal = new THREE.Mesh(new RoundedBoxGeometry(4.6, 2.4, 4.6, 5, .12), limestone); pedestal.position.set(0, 1.2, 37); facade.add(pedestal);
   root.add(facade);
+  addExhibitSign(root, ownedTextures, "PUBLIC ENTRANCE", "THEODORE ROOSEVELT ROTUNDA · ALL VISITORS", 0, 10.65, 24.18, 0, .62);
   // Keep only the masonry beside the three open doors collidable.
   boxes.push({ minX: -38, maxX: -8.4, minZ: 22, maxZ: 26 }, { minX: 8.4, maxX: 38, minZ: 22, maxZ: 26 });
 
@@ -393,6 +432,47 @@ function addBlueWhale(root: THREE.Group, circles: CircleObstacle[]) {
   root.add(group); circles.push({ x: -28, z: -66, radius: 8.5 });
 }
 
+function addMilsteinOceanLifeDetails(root: THREE.Group, quality: number, circles: CircleObstacle[]) {
+  const hall = new THREE.Group(); hall.name = "milstein-ocean-life-coral-reef-and-deep-ocean-exhibits";
+  const deepBlue = new THREE.MeshStandardMaterial({ color: "#153746", roughness: .76 });
+  const reefPalette = ["#ba7057", "#d99a61", "#a95e78", "#7c9b83", "#d1b86c"].map(color => new THREE.MeshStandardMaterial({ color, roughness: .86 }));
+  const glass = new THREE.MeshPhysicalMaterial({ color: "#9cc4ce", transparent: true, opacity: .16, transmission: .55, roughness: .08, depthWrite: false });
+  glass.forceSinglePass = true;
+  const reef = new THREE.Group(); reef.name = "andros-coral-reef-diorama"; reef.position.set(-31, 0, -92);
+  const reefBackdrop = new THREE.Mesh(new RoundedBoxGeometry(18, 7.6, .35, 6, .12), deepBlue); reefBackdrop.position.set(0, 3.8, 3.6); reef.add(reefBackdrop);
+  const reefFloor = new THREE.Mesh(new RoundedBoxGeometry(17.4, .46, 7.6, 7, .16), new THREE.MeshStandardMaterial({ color: "#b39c76", roughness: .96 })); reefFloor.position.y = .23; reef.add(reefFloor);
+  const coralCount = quality < .65 ? 18 : 30;
+  for (let index = 0; index < coralCount; index++) {
+    const x = -7.4 + index * 2.91 % 14.8, z = -2.6 + index * 1.73 % 5.4, height = .55 + index % 5 * .22;
+    const coral = new THREE.Group(); coral.name = "andros-reef-original-branching-coral"; coral.position.set(x, .42, z);
+    const material = reefPalette[index % reefPalette.length];
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.11, .2, height, 9), material); trunk.position.y = height * .5; coral.add(trunk);
+    for (const side of [-1, 1]) {
+      const branch = cylinderBetween(new THREE.Vector3(0, height * .55, 0), new THREE.Vector3(side * (.3 + index % 3 * .08), height * (.82 + index % 2 * .12), .08), .065, material, 8);
+      coral.add(branch);
+    }
+    reef.add(coral);
+  }
+  const reefGlass = new THREE.Mesh(new RoundedBoxGeometry(17.9, 7.4, .14, 6, .06), glass); reefGlass.name = "andros-reef-diorama-glazing"; reefGlass.position.set(0, 3.65, -3.72); reef.add(reefGlass);
+  hall.add(reef); circles.push({ x: -31, z: -92, radius: 8.6 });
+
+  const encounter = new THREE.Group(); encounter.name = "sperm-whale-and-giant-squid-deep-ocean-display"; encounter.position.set(-27, 3.7, -112);
+  const whale = new THREE.Mesh(new THREE.CapsuleGeometry(.74, 3.6, 10, quality > .7 ? 24 : 16), new THREE.MeshStandardMaterial({ color: "#445a63", roughness: .82 }));
+  whale.name = "deep-ocean-sperm-whale-model"; whale.rotation.x = Math.PI / 2; whale.rotation.z = -.08; encounter.add(whale);
+  const squidMaterial = new THREE.MeshPhysicalMaterial({ color: "#8d403b", roughness: .8, sheen: .25, sheenColor: new THREE.Color("#c3715d") });
+  const mantle = new THREE.Mesh(new THREE.CapsuleGeometry(.48, 1.3, 9, 20), squidMaterial); mantle.name = "giant-squid-sculpted-mantle"; mantle.position.set(1.8, -.45, .6); mantle.rotation.x = Math.PI / 2; encounter.add(mantle);
+  for (let tentacle = 0; tentacle < 8; tentacle++) {
+    const angle = tentacle / 8 * Math.PI * 2;
+    const curve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(1.8 + Math.cos(angle) * .2, -.45 + Math.sin(angle) * .15, -.15),
+      new THREE.Vector3(1.3 + Math.cos(angle) * .5, -.7 + Math.sin(angle) * .28, -1.2),
+      new THREE.Vector3(.65 + Math.cos(angle) * .75, -.35 + Math.sin(angle) * .4, -2.4 - tentacle % 2 * .55),
+    ], false, "centripetal");
+    const arm = new THREE.Mesh(new THREE.TubeGeometry(curve, 22, .055, 8, false), squidMaterial); arm.name = "giant-squid-curled-tentacle"; encounter.add(arm);
+  }
+  hall.add(encounter); root.add(hall);
+}
+
 function addAfricanMammals(root: THREE.Group, bone: THREE.Material, circles: CircleObstacle[]) {
   const group = new THREE.Group(); group.name = "akeley-hall-african-elephant-group"; group.position.set(27, 0, -70);
   const skin = new THREE.MeshStandardMaterial({ color: "#716f67", roughness: .96 });
@@ -407,12 +487,126 @@ function addAfricanMammals(root: THREE.Group, bone: THREE.Material, circles: Cir
   root.add(group); circles.push({ x: 27, z: -70, radius: 6.3 });
 }
 
+function addAkeleyHabitatDioramas(root: THREE.Group, quality: number, circles: CircleObstacle[]) {
+  const hall = new THREE.Group(); hall.name = "akeley-african-mammals-water-hole-habitat-dioramas";
+  const earth = new THREE.MeshStandardMaterial({ color: "#8e6f4d", roughness: .98 });
+  const hide = new THREE.MeshStandardMaterial({ color: "#b59663", roughness: .96 });
+  const dark = new THREE.MeshStandardMaterial({ color: "#392f28", roughness: .93 });
+  const savanna = new THREE.Group(); savanna.name = "akeley-water-hole-panoramic-diorama"; savanna.position.set(28, 0, -98);
+  const floor = new THREE.Mesh(new RoundedBoxGeometry(17, .4, 10, 7, .14), earth); floor.position.y = .2; savanna.add(floor);
+  const water = new THREE.Mesh(new RoundedBoxGeometry(7.2, .05, 3.1, 10, .14), new THREE.MeshPhysicalMaterial({ color: "#547f86", roughness: .18, clearcoat: .52 })); water.position.set(-1.8, .43, .5); savanna.add(water);
+  for (let tree = 0; tree < (quality < .7 ? 3 : 5); tree++) {
+    const x = -6.5 + tree * 3.2, z = tree % 2 ? 3.2 : -3;
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.12, .22, 2.7, 9), dark); trunk.position.set(x, 1.55, z); savanna.add(trunk);
+    const crown = new THREE.Mesh(new THREE.SphereGeometry(1.1 + tree % 2 * .3, 18, 10), new THREE.MeshStandardMaterial({ color: "#647348", roughness: 1 })); crown.name = "akeley-sculpted-savanna-acacia-crown"; crown.position.set(x, 3.05, z); crown.scale.set(1.8, .42, 1.1); savanna.add(crown);
+  }
+  for (let animal = 0; animal < 4; animal++) {
+    const antelope = new THREE.Group(); antelope.name = "akeley-water-hole-antelope-specimen"; antelope.position.set(-4.2 + animal * 2.7, .35, -1.8 + animal % 2 * 4.1); antelope.rotation.y = animal % 2 ? 2.6 : .3;
+    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(.35, .95, 8, 18), hide); torso.position.y = 1.28; torso.rotation.x = Math.PI / 2; antelope.add(torso);
+    const neck = cylinderBetween(new THREE.Vector3(0, 1.35, -.45), new THREE.Vector3(0, 2.05, -.78), .18, hide, 14); antelope.add(neck);
+    const head = new THREE.Mesh(new THREE.CapsuleGeometry(.2, .38, 7, 16), hide); head.position.set(0, 2.08, -1.02); head.rotation.x = Math.PI / 2; antelope.add(head);
+    for (const side of [-1, 1]) for (const z of [-.34, .35]) antelope.add(cylinderBetween(new THREE.Vector3(side * .24, 1.18, z), new THREE.Vector3(side * .26, .18, z + .06), .075, dark, 10));
+    for (const side of [-1, 1]) antelope.add(cylinderBetween(new THREE.Vector3(side * .09, 2.23, -1.14), new THREE.Vector3(side * .18, 2.72, -1.03), .025, dark, 8));
+    savanna.add(antelope);
+  }
+  hall.add(savanna); root.add(hall); circles.push({ x: 28, z: -98, radius: 8.5 });
+}
+
 function addEarthAndMeteoriteHalls(root: THREE.Group, circles: CircleObstacle[]) {
   const meteor = new THREE.Mesh(new THREE.IcosahedronGeometry(2.25, 4), new THREE.MeshStandardMaterial({ color: "#373b3b", roughness: .55, metalness: .72 })); meteor.name = "arthur-ross-hall-ahnighito-meteorite"; meteor.position.set(-28, 2.5, -128); meteor.scale.set(1.35, .85, 1.1); root.add(meteor); circles.push({ x: -28, z: -128, radius: 4.4 });
   const planet = new THREE.Group(); planet.name = "gottesman-hall-of-planet-earth-exhibits"; planet.position.set(27, 0, -127);
   const globe = new THREE.Mesh(new THREE.SphereGeometry(2.5, 40, 28), new THREE.MeshStandardMaterial({ color: "#547b87", roughness: .54, metalness: .08 })); globe.position.y = 3.5; planet.add(globe);
   for (let index = 0; index < 9; index++) { const rock = new THREE.Mesh(new THREE.IcosahedronGeometry(.55 + index % 3 * .14, 2), new THREE.MeshStandardMaterial({ color: ["#7f6854", "#665f59", "#8b7867"][index % 3], roughness: .96 })); rock.position.set(Math.cos(index * 2.3) * 4, .65, Math.sin(index * 2.3) * 4); planet.add(rock); }
   root.add(planet); circles.push({ x: 27, z: -127, radius: 5.2 });
+}
+
+function createCompactGroundSlothSkeleton(name: string, bone: THREE.Material, scale = 1) {
+  const skeleton = new THREE.Group(); skeleton.name = name;
+  const spine = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, 2.45, 1.4),
+    new THREE.Vector3(0, 2.85, .45),
+    new THREE.Vector3(0, 2.95, -.55),
+    new THREE.Vector3(0, 2.6, -1.35),
+  ], false, "centripetal");
+  const vertebrae: THREE.Vector3[] = [];
+  for (let index = 0; index < 11; index++) {
+    const amount = index / 10, point = spine.getPoint(amount); vertebrae.push(point);
+    skeleton.add(fossilVertebra(point, .17 - Math.abs(.5 - amount) * .035, bone));
+  }
+  for (let index = 2; index < 9; index += 2) {
+    const point = vertebrae[index], fullness = 1 - Math.abs(index - 5) / 6;
+    skeleton.add(fossilRib(point, -1, .82 + fullness * .38, .58 + fullness * .28, bone), fossilRib(point, 1, .82 + fullness * .38, .58 + fullness * .28, bone));
+  }
+  const skull = new THREE.Group(); skull.name = `${name}-sculpted-skull`; skull.position.set(0, 2.58, -1.72);
+  const cranium = new THREE.Mesh(new RoundedBoxGeometry(.68, .54, .72, 7, .16), bone); skull.add(cranium);
+  const muzzle = new THREE.Mesh(new RoundedBoxGeometry(.48, .3, .64, 6, .1), bone); muzzle.position.set(0, -.1, -.55); skull.add(muzzle);
+  for (const side of [-1, 1]) { const orbit = new THREE.Mesh(new THREE.TorusGeometry(.12, .035, 8, 18), bone); orbit.position.set(side * .3, .08, -.12); orbit.rotation.y = Math.PI / 2; skull.add(orbit); }
+  skeleton.add(skull);
+  for (const side of [-1, 1] as const) {
+    const hip = new THREE.Vector3(side * .58, 2.38, 1.0), knee = new THREE.Vector3(side * .72, 1.2, .78), heel = new THREE.Vector3(side * .78, .32, .5);
+    skeleton.add(fossilBoneBetween(hip, knee, .17, bone, 16), fossilBoneBetween(knee, heel, .135, bone, 14));
+    const shoulder = new THREE.Vector3(side * .5, 2.45, -.92), elbow = new THREE.Vector3(side * .76, 1.42, -1.08), wrist = new THREE.Vector3(side * .9, .56, -1.35);
+    skeleton.add(fossilBoneBetween(shoulder, elbow, .145, bone, 15), fossilBoneBetween(elbow, wrist, .11, bone, 14));
+    for (let digit = 0; digit < 3; digit++) {
+      const spread = (digit - 1) * .13;
+      const curve = new THREE.CatmullRomCurve3([
+        wrist.clone().add(new THREE.Vector3(side * spread, 0, 0)),
+        wrist.clone().add(new THREE.Vector3(side * (spread + .12), -.18, -.35 - digit * .06)),
+        wrist.clone().add(new THREE.Vector3(side * (spread + .08), -.38, -.28 - digit * .08)),
+      ], false, "centripetal");
+      const claw = new THREE.Mesh(new THREE.TubeGeometry(curve, 16, .045, 8, false), bone); claw.name = `${name}-curved-manual-ungual`; skeleton.add(claw);
+    }
+  }
+  const tail = new THREE.CatmullRomCurve3([new THREE.Vector3(0, 2.25, 1.42), new THREE.Vector3(0, 1.7, 2.35), new THREE.Vector3(0, .78, 3.18)], false, "centripetal");
+  for (let index = 0; index < 10; index++) skeleton.add(fossilVertebra(tail.getPoint(index / 9), .14 - index * .009, bone));
+  mergeMuseumFossils(skeleton, bone, `${name}-merged-anatomical-fossil-mesh`);
+  skeleton.scale.setScalar(scale);
+  return skeleton;
+}
+
+function addSlothEvolutionGallery(root: THREE.Group, textures: GameTextures, ownedTextures: THREE.Texture[], bone: THREE.Material, quality: number, circles: CircleObstacle[]) {
+  const gallery = new THREE.Group(); gallery.name = "fossil-mammal-halls-expanded-sloths-through-time-gallery";
+  const walnut = new THREE.MeshStandardMaterial({ color: "#4d3327", map: textures.bark, roughness: .88 });
+  const plinthMaterial = new THREE.MeshStandardMaterial({ color: "#302f2b", map: textures.stone, roughness: .8 });
+  const glass = new THREE.MeshPhysicalMaterial({ color: "#b7d0d0", transparent: true, opacity: .14, transmission: .58, roughness: .08, depthWrite: false });
+  glass.forceSinglePass = true;
+  const specimens = [
+    { name: "lestodon-armatus", title: "LESTODON ARMATUS", subtitle: "ARMORED-SKIN GROUND SLOTH · SOUTH AMERICA", x: -27, z: -169, yaw: .34, scale: 1.02 },
+    { name: "mylodon-darwinii", title: "MYLODON DARWINII", subtitle: "PATAGONIAN GROUND SLOTH · SKIN AND HAIR PRESERVED", x: 27, z: -175, yaw: -.34, scale: .9 },
+    { name: "megalonyx-jeffersonii", title: "MEGALONYX JEFFERSONII", subtitle: "JEFFERSON'S GROUND SLOTH · NORTH AMERICA", x: -27, z: -195, yaw: .3, scale: .84 },
+    { name: "acratocnus-odontrigonus", title: "ACRATOCNUS", subtitle: "CARIBBEAN ISLAND SLOTH · COMPACT GROUND-DWELLER", x: 27, z: -207, yaw: -.3, scale: .68 },
+  ] as const;
+  for (const specimen of specimens) {
+    const display = new THREE.Group(); display.name = `${specimen.name}-museum-study-case`; display.position.set(specimen.x, 0, specimen.z); display.rotation.y = specimen.yaw;
+    const plinth = new THREE.Mesh(new RoundedBoxGeometry(8.8, .68, 6.2, 6, .14), plinthMaterial); plinth.position.y = .34; display.add(plinth);
+    const skeleton = createCompactGroundSlothSkeleton(specimen.name, bone, specimen.scale); skeleton.position.set(0, .72, 0); skeleton.rotation.y = Math.PI / 2; display.add(skeleton);
+    const hood = new THREE.Mesh(new RoundedBoxGeometry(8.3, 5.3, 5.75, 6, .08), glass); hood.name = "sloth-evolution-low-reflection-study-case"; hood.position.y = 3.22; display.add(hood);
+    gallery.add(display); circles.push({ x: specimen.x, z: specimen.z, radius: 5.2 });
+    addExhibitSign(root, ownedTextures, specimen.title, specimen.subtitle, specimen.x + (specimen.x < 0 ? 5.1 : -5.1), 3.2, specimen.z, specimen.x < 0 ? Math.PI / 2 : -Math.PI / 2, .58);
+  }
+
+  const living = new THREE.Group(); living.name = "living-sloth-adaptations-canopy-diorama"; living.position.set(27.5, 0, -158.5);
+  const dioramaFloor = new THREE.Mesh(new RoundedBoxGeometry(12, .42, 8.5, 7, .13), new THREE.MeshStandardMaterial({ color: "#4f5d3b", map: textures.ground, roughness: 1 })); dioramaFloor.position.y = .21; living.add(dioramaFloor);
+  const branch = new THREE.Mesh(new THREE.CylinderGeometry(.32, .48, 9.2, 16), walnut); branch.name = "living-sloth-diorama-continuous-canopy-branch"; branch.position.set(0, 3.55, 0); branch.rotation.z = Math.PI / 2; branch.rotation.y = .16; living.add(branch);
+  const livingSloth = createPremiumSlothFriend(textures, quality, 8, "#51483b");
+  livingSloth.root.name = "bradypus-living-three-toed-sloth-anatomy-model"; livingSloth.root.position.set(-1.2, 3.78, -.1); livingSloth.root.rotation.set(0, .5, .06); livingSloth.root.scale.multiplyScalar(.9); living.add(livingSloth.root); ownedTextures.push(...livingSloth.ownedTextures);
+  const canopyGlass = new THREE.Mesh(new RoundedBoxGeometry(11.6, 6.8, 8.1, 7, .1), glass); canopyGlass.name = "living-sloth-canopy-diorama-glazing"; canopyGlass.position.y = 3.65; living.add(canopyGlass);
+  gallery.add(living); circles.push({ x: 27.5, z: -158.5, radius: 6.3 });
+  addExhibitSign(root, ownedTextures, "BRADYPUS · LIVING THREE-TOED SLOTH", "CANOPY ANATOMY · SUSPENSORY LOCOMOTION · LIVING XENARTHRAN", 22.2, 3.4, -158.5, -Math.PI / 2, .62);
+
+  const rooseveltCase = new THREE.Group(); rooseveltCase.name = "roosevelt-collection-ground-sloth-skin-and-dung-case"; rooseveltCase.position.set(-28, 0, -213);
+  const rooseveltPlinth = new THREE.Mesh(new RoundedBoxGeometry(10, .72, 6.3, 6, .14), plinthMaterial); rooseveltPlinth.position.y = .36; rooseveltCase.add(rooseveltPlinth);
+  const skinSample = new THREE.Mesh(new RoundedBoxGeometry(6.8, .18, 2.9, 8, .08), new THREE.MeshStandardMaterial({ color: "#665343", map: textures.fur, bumpMap: textures.fur, bumpScale: .035, roughness: 1 })); skinSample.name = "roosevelt-collection-giant-ground-sloth-skin-study"; skinSample.position.set(0, 1.18, .65); skinSample.rotation.y = -.14; rooseveltCase.add(skinSample);
+  for (let index = 0; index < 4; index++) { const coprolite = new THREE.Mesh(new THREE.IcosahedronGeometry(.35 + index % 2 * .09, 3), new THREE.MeshStandardMaterial({ color: "#514333", roughness: 1 })); coprolite.name = "roosevelt-collection-ground-sloth-coprolite"; coprolite.position.set(-2 + index * 1.3, 1.2, -1.25); coprolite.scale.set(1.45, .7, .9); rooseveltCase.add(coprolite); }
+  const rooseveltGlass = new THREE.Mesh(new RoundedBoxGeometry(9.6, 3.4, 5.9, 6, .08), glass); rooseveltGlass.position.y = 2.18; rooseveltCase.add(rooseveltGlass); gallery.add(rooseveltCase); circles.push({ x: -28, z: -213, radius: 5.4 });
+  addExhibitSign(root, ownedTextures, "ROOSEVELT COLLECTION", "GIANT GROUND SLOTH SKIN · DUNG · SOUTH AMERICAN PEOPLES", -22.5, 3.2, -213, Math.PI / 2, .62);
+
+  const familyTreePanels = [
+    ["SLOTH FAMILY TREE", "ACRATOCNUS · BRADYPUS · MYLODON · MEGALONYX · MEGATHERIUM", -42.9, -182, Math.PI / 2],
+    ["XENARTHRAN RELATIVES", "SLOTHS · ARMADILLOS · GLYPTODONTS · SHARED DEEP ANCESTRY", 42.9, -190, -Math.PI / 2],
+  ] as const;
+  for (const [title, subtitle, x, z, yaw] of familyTreePanels) addExhibitSign(root, ownedTextures, title, subtitle, x, 5.8, z, yaw, 1.02);
+  root.add(gallery);
 }
 
 function addMegatherium(root: THREE.Group, ownedTextures: THREE.Texture[], bone: THREE.Material, circles: CircleObstacle[]) {
@@ -610,15 +804,18 @@ export class NaturalHistoryMuseumWorld {
     addGalleryFixtures(this.root, textures, quality);
     addRotundaDinosaurs(this.root, bone, this.circles);
     addBlueWhale(this.root, this.circles);
+    addMilsteinOceanLifeDetails(this.root, quality, this.circles);
     addAfricanMammals(this.root, bone, this.circles);
+    addAkeleyHabitatDioramas(this.root, quality, this.circles);
     addEarthAndMeteoriteHalls(this.root, this.circles);
+    addSlothEvolutionGallery(this.root, textures, this.ownedTextures, bone, quality, this.circles);
     addMegatherium(this.root, this.ownedTextures, bone, this.circles);
     addExhibitSign(this.root, this.ownedTextures, "THEODORE ROOSEVELT ROTUNDA", "BAROSAURUS · ALLOSAURUS · FLOOR 1", 0, 6.7, 14.2, 0, 1.12);
-    addExhibitSign(this.root, this.ownedTextures, "MILSTEIN HALL OF OCEAN LIFE", "LIFE-SIZE BLUE WHALE MODEL", -34.5, 3.1, -45, Math.PI / 2, .78);
-    addExhibitSign(this.root, this.ownedTextures, "AKELEY HALL OF AFRICAN MAMMALS", "AFRICAN ELEPHANT GROUP AND HABITAT DIORAMAS", 34.5, 3.1, -47, -Math.PI / 2, .78);
+    addExhibitSign(this.root, this.ownedTextures, "MILSTEIN HALL OF OCEAN LIFE", "94-FOOT BLUE WHALE · ANDROS REEF · DEEP-OCEAN ENCOUNTER", -34.5, 3.1, -45, Math.PI / 2, .78);
+    addExhibitSign(this.root, this.ownedTextures, "AKELEY HALL OF AFRICAN MAMMALS", "ELEPHANT GROUP · WATER HOLE · HABITAT DIORAMAS", 34.5, 3.1, -47, -Math.PI / 2, .78);
     addExhibitSign(this.root, this.ownedTextures, "ARTHUR ROSS HALL OF METEORITES", "AHNIGHITO · CAPE YORK METEORITE", -34.5, 3.1, -109, Math.PI / 2, .72);
     addExhibitSign(this.root, this.ownedTextures, "GOTTESMAN HALL OF PLANET EARTH", "ROCKS · MINERALS · PLANETARY PROCESSES", 34.5, 3.1, -109, -Math.PI / 2, .72);
-    addExhibitSign(this.root, this.ownedTextures, "FOSSIL MAMMAL HALLS", "ADVANCED MAMMALS · GIANT GROUND SLOTH AHEAD", 0, 4.4, -158, 0, .9);
+    addExhibitSign(this.root, this.ownedTextures, "FOSSIL MAMMAL HALLS", "SLOTHS THROUGH TIME · GIANT GROUND SLOTH AHEAD", 0, 4.4, -158, 0, .9);
     const guestSpawns = [
       [-10, 6], [11, 4], [-28, -45], [-25, -82], [27, -44], [30, -86],
       [-26, -143], [26, -143], [-10, -171], [10, -174], [-5, -214], [7, -216],
