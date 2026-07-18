@@ -1,0 +1,12 @@
+{
+  "generatedSourceBlend": "tools/animal-pipeline/source/california-sea-lion-source.blend",
+  "license": "Original-Project-Asset",
+  "referenceUse": "Anatomy and locomotion study only; no geometry or pixels copied.",
+  "source": "tools/animal-pipeline/build_sea_lion.py",
+  "speciesId": "california-sea-lion",
+  "thirdPartyAssets": [],
+  "visualReferences": [
+    "https://www.fisheries.noaa.gov/species/california-sea-lion",
+    "https://animals.sandiegozoo.org/animals/sea-lion"
+  ]
+}

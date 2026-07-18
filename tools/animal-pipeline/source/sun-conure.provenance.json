@@ -1,0 +1,29 @@
+{
+  "speciesId": "sun-conure",
+  "creator": "Sloth in the City original animal pipeline",
+  "source": "tools/animal-pipeline/build_sun_conure_manual_production.py",
+  "sourceMethod": "Approved manual edge loops and profile lofts, project-authored UVs, analytic PBR maps, 45-joint avian rig, independent primary fan controls, zygodactyl contact controls, four authored clips, runtime consolidation, and one fresh-import QA pass",
+  "referenceUse": "Morphology, plumage, locomotion, and perch-contact study only; no reference mesh, texture, rig, animation, file, or sampled pixel was copied",
+  "thirdPartyAssets": [],
+  "externalMeshes": [],
+  "externalTextures": [],
+  "externalMotion": [],
+  "license": "Original-Project-Asset",
+  "review": {
+    "clayGate": "approved v07 complete clay",
+    "productionGate": "approved symmetric primary fan and restrained axial preen dip",
+    "freshImportCount": 1,
+    "lod0Triangles": 20924,
+    "lod2Triangles": 10462,
+    "runtimeMeshNodes": 1,
+    "runtimeMaterialPrimitives": 10,
+    "joints": 45,
+    "maximumConnectedJointGapMeters": 0,
+    "maximumEndpointFootDeltaMeters": 0,
+    "minimumBodyExtentRatio": 0.9360061280870284,
+    "leftWingSurfaceSeatMeters": 0.0009563436033204198,
+    "rightWingSurfaceSeatMeters": 0.0009563386556692421,
+    "leftTarsusSurfaceSeatMeters": 0.0033381974790245295,
+    "rightTarsusSurfaceSeatMeters": 0.0033381974790245295
+  }
+}

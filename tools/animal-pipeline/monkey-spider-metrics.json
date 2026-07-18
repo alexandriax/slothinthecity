@@ -1,0 +1,370 @@
+{
+  "speciesId": "spider-monkey",
+  "authorship": "Original in-repository Blender generation; no third-party mesh, texture, rig, or animation data",
+  "referenceFacts": {
+    "forelimbs": "approximately 25% longer than hind limbs",
+    "hands": "four elongated hook-like fingers with vestigial thumb",
+    "tail": "prehensile, longer than head/body, bare gripping pad at tip"
+  },
+  "orientation": {
+    "units": "metres",
+    "up": "+Y in glTF",
+    "forward": "+Z in glTF"
+  },
+  "skeleton": {
+    "bones": 28,
+    "deformingBones": 27
+  },
+  "clips": [
+    {
+      "name": "MonkeyIdle",
+      "start": 1,
+      "end": 72,
+      "fps": 30,
+      "loop": true
+    },
+    {
+      "name": "MonkeyWalk",
+      "start": 1,
+      "end": 49,
+      "fps": 30,
+      "loop": true
+    },
+    {
+      "name": "MonkeyPerch",
+      "start": 1,
+      "end": 90,
+      "fps": 30,
+      "loop": true
+    },
+    {
+      "name": "MonkeyClimb",
+      "start": 1,
+      "end": 61,
+      "fps": 30,
+      "loop": true
+    },
+    {
+      "name": "MonkeySwing",
+      "start": 1,
+      "end": 61,
+      "fps": 30,
+      "loop": true
+    }
+  ],
+  "contactPlaneQA": {
+    "MonkeyIdle": {
+      "targetMinZ": -0.007,
+      "evaluatedMinZ": -0.007,
+      "evaluatedMaxZ": -0.007,
+      "maximumErrorMeters": 5e-08,
+      "sampledFrames": 72
+    },
+    "MonkeyWalk": {
+      "targetMinZ": -0.007,
+      "evaluatedMinZ": -0.007,
+      "evaluatedMaxZ": -0.007,
+      "maximumErrorMeters": 1e-07,
+      "sampledFrames": 49
+    },
+    "MonkeyPerch": {
+      "targetMinZ": -0.007,
+      "evaluatedMinZ": -0.007,
+      "evaluatedMaxZ": -0.007,
+      "maximumErrorMeters": 4e-08,
+      "sampledFrames": 90
+    },
+    "MonkeyClimb": {
+      "targetMinZ": -0.007,
+      "evaluatedMinZ": -0.007,
+      "evaluatedMaxZ": -0.007,
+      "maximumErrorMeters": 5e-08,
+      "sampledFrames": 61
+    },
+    "MonkeySwing": {
+      "targetMinZ": -0.007,
+      "evaluatedMinZ": -0.007,
+      "evaluatedMaxZ": -0.007,
+      "maximumErrorMeters": 8e-08,
+      "sampledFrames": 61
+    }
+  },
+  "locomotionContactQA": {
+    "MonkeyIdle": {
+      "groundZ": 0.01,
+      "maximumDistalTranslationMeters": 0.019349,
+      "extremityMinima": {
+        "Hand.L": {
+          "min": 0.009916,
+          "max": 0.010162
+        },
+        "Hand.R": {
+          "min": 0.009914,
+          "max": 0.01016
+        },
+        "Foot.L": {
+          "min": 0.010014,
+          "max": 0.010014
+        },
+        "Foot.R": {
+          "min": 0.010027,
+          "max": 0.010027
+        }
+      }
+    },
+    "MonkeyWalk": {
+      "groundZ": 0.01,
+      "maximumDistalTranslationMeters": 0.171877,
+      "extremityMinima": {
+        "Hand.L": {
+          "min": 0.009807,
+          "max": 0.30315
+        },
+        "Hand.R": {
+          "min": 0.009803,
+          "max": 0.303026
+        },
+        "Foot.L": {
+          "min": 0.009541,
+          "max": 0.071459
+        },
+        "Foot.R": {
+          "min": 0.009823,
+          "max": 0.071982
+        }
+      }
+    }
+  },
+  "exportedContactCalibration": {
+    "targetImportedMinZ": -0.007,
+    "maximumResidualMeters": 0.124388,
+    "sampledFrames": 333,
+    "method": "fresh GLB reimport full-mesh residual written to MonkeyRoot"
+  },
+  "supportAnchors": {
+    "coordinateSystem": {
+      "unit": "meter",
+      "up": "+Y",
+      "forward": "+Z"
+    },
+    "supportSemantics": "Finite cylinders; endpoints are centerline endpoints and radius is radial clearance.",
+    "MonkeyPerch": {
+      "reviewFrame": 45,
+      "handSupport": {
+        "center": [
+          0.0,
+          0.738797,
+          0.941977
+        ],
+        "endpointA": [
+          -0.7,
+          0.738797,
+          0.941977
+        ],
+        "endpointB": [
+          0.7,
+          0.738797,
+          0.941977
+        ],
+        "length": 1.4,
+        "radius": 0.052,
+        "contactPoints": {
+          "Hand.L": [
+            0.062418,
+            0.710797,
+            0.941977
+          ],
+          "Hand.R": [
+            -0.062418,
+            0.710797,
+            0.941977
+          ]
+        }
+      },
+      "footSupport": {
+        "center": [
+          0.0,
+          0.041345,
+          0.278193
+        ],
+        "endpointA": [
+          -0.7,
+          0.041345,
+          0.278193
+        ],
+        "endpointB": [
+          0.7,
+          0.041345,
+          0.278193
+        ],
+        "length": 1.4,
+        "radius": 0.052,
+        "contactPoints": {
+          "Foot.L": [
+            -0.078645,
+            0.023345,
+            0.278193
+          ],
+          "Foot.R": [
+            0.078645,
+            0.023345,
+            0.278193
+          ]
+        }
+      }
+    },
+    "MonkeySwing": {
+      "reviewFrame": 16,
+      "handSupport": {
+        "center": [
+          0.034081,
+          1.036024,
+          1.008346
+        ],
+        "endpointA": [
+          -0.665919,
+          1.036024,
+          1.008346
+        ],
+        "endpointB": [
+          0.734081,
+          1.036024,
+          1.008346
+        ],
+        "length": 1.4,
+        "radius": 0.052,
+        "contactPoints": {
+          "Hand.L": [
+            -0.055154,
+            1.008024,
+            1.01147
+          ],
+          "Hand.R": [
+            0.123316,
+            1.008024,
+            1.005221
+          ]
+        }
+      },
+      "tailSupport": {
+        "center": [
+          0.009373,
+          1.563347,
+          -0.100766
+        ],
+        "endpointA": [
+          -0.094583,
+          1.563347,
+          -0.589839
+        ],
+        "endpointB": [
+          0.113329,
+          1.563347,
+          0.388308
+        ],
+        "length": 1.0,
+        "radius": 0.04,
+        "contactPoints": {
+          "Tail.07": [
+            0.009373,
+            1.581347,
+            -0.100766
+          ]
+        }
+      },
+      "feet": "free-swinging; no authored support contact"
+    }
+  },
+  "materials": [
+    "MonkeySpider_FurPBR",
+    "MonkeySpider_FaceAndPalms",
+    "MonkeySpider_Eyes",
+    "MonkeySpider_MouthAndNostrils",
+    "MonkeySpider_Catchlight"
+  ],
+  "textures": {
+    "basecolor": {
+      "kind": "baseColor",
+      "sourceFile": "tools/animal-pipeline/source/monkey-spider-fur-basecolor.png",
+      "embeddedImageName": "monkey-spider-fur-basecolor",
+      "width": 2048,
+      "height": 2048,
+      "bytes": 3544547,
+      "sha256": "6d05e8c6a257a55dd4e07df948d767699011d248256954c06bef3c129326fc6a"
+    },
+    "normal": {
+      "kind": "normal",
+      "sourceFile": "tools/animal-pipeline/source/monkey-spider-fur-normal.png",
+      "embeddedImageName": "monkey-spider-fur-normal",
+      "width": 2048,
+      "height": 2048,
+      "bytes": 5967017,
+      "sha256": "db46ee998b49aee84a5c0d4de9f62b99d8e0d759bc0500a248aaffe44c428127"
+    },
+    "roughness": {
+      "kind": "roughness",
+      "sourceFile": "tools/animal-pipeline/source/monkey-spider-fur-roughness.png",
+      "embeddedImageName": "monkey-spider-fur-roughness",
+      "width": 2048,
+      "height": 2048,
+      "bytes": 2582100,
+      "sha256": "c7e7809d249ae60eef3dea74a658d04621e6d8d5cd0825bc590eb35d7a01a098"
+    }
+  },
+  "sourceBlend": {
+    "sourceFile": "tools/animal-pipeline/source/monkey-spider-source.blend",
+    "bytes": 8007895,
+    "sha256": "8a57d00d2a5a3e2cba16bae71055fb20040a652077e22a6c0ca71981c84d5f9c",
+    "generator": "tools/animal-pipeline/build_spider_monkey.py"
+  },
+  "boundsBlender": {
+    "min": [
+      -0.31394389271736145,
+      -0.7912282943725586,
+      0.11738789081573486
+    ],
+    "max": [
+      0.3223744332790375,
+      0.6818356513977051,
+      1.634772539138794
+    ]
+  },
+  "lod0": {
+    "animations": [
+      "MonkeyClimb",
+      "MonkeyIdle",
+      "MonkeyPerch",
+      "MonkeySwing",
+      "MonkeyWalk"
+    ],
+    "bones": 28,
+    "embeddedImages": 3,
+    "materials": 5,
+    "meshes": 1,
+    "nodes": 30,
+    "skins": 1,
+    "triangles": 137016,
+    "vertices": 79202,
+    "bytes": 19595324,
+    "sha256": "cc3962d7eb39201387349aeb1d617ccaff0cad9b5e0c8f17d14d16e047f9cb5a"
+  },
+  "lod2": {
+    "animations": [
+      "MonkeyClimb",
+      "MonkeyIdle",
+      "MonkeyPerch",
+      "MonkeySwing",
+      "MonkeyWalk"
+    ],
+    "bones": 28,
+    "embeddedImages": 3,
+    "materials": 5,
+    "meshes": 1,
+    "nodes": 30,
+    "skins": 1,
+    "triangles": 32882,
+    "vertices": 21097,
+    "bytes": 13788288,
+    "sha256": "ed77071b55e8c027313cff77a2c2e28d00b26e6d7e3e7dcd16f40798d32260c9"
+  }
+}

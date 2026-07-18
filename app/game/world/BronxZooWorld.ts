@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { Sky } from "three/addons/objects/Sky.js";
 import type { GameTextures } from "../rendering/textures";
 import {
   createPremiumHuman,
@@ -31,8 +32,9 @@ import {
   type ZooHabitatMotionOptions,
   type ZooAnimalRig,
 } from "./ZooAnimals";
+import { markAuthoredZooAnimalsDisposed } from "./animals/AuthoredZooAnimalAssets";
 
-export type BronxZooQuestState = "NEED_TICKET" | "ENTER_ZOO" | "FIND_SLOTHS" | "ESCORT_TO_STATION";
+export type BronxZooQuestState = "NEED_TICKET" | "ENTER_ZOO" | "FIND_SLOTHS" | "ESCORT_TO_BUS";
 
 export type BronxZooEvent = {
   kind: "TICKET_RECEIVED" | "ENTRY_DENIED" | "SLOTHS_RELEASED";
@@ -137,7 +139,7 @@ function plaqueTexture() {
     context.font = "500 35px Helvetica, Arial, sans-serif";
     context.fillText("Provided thanks to generous support by", width / 2, 380);
     context.fillStyle = "#fff0b7";
-    context.font = "700 62px Georgia, serif";
+    context.font = "700 44px Helvetica, Arial, sans-serif";
     context.fillText("TOGYL", width / 2, 505);
   });
 }
@@ -153,7 +155,7 @@ function seeded(seed: number) {
   return () => ((value = Math.imul(value ^ (value >>> 15), 1 | value), value ^= value + Math.imul(value ^ (value >>> 7), 61 | value), ((value ^ (value >>> 14)) >>> 0) / 4294967296));
 }
 
-function distanceToSegmentXZ(x: number, z: number, start: [number, number], end: [number, number]) {
+function distanceToSegmentXZ(x: number, z: number, start: readonly [number, number], end: readonly [number, number]) {
   const dx = end[0] - start[0], dz = end[1] - start[1];
   const lengthSquared = dx * dx + dz * dz;
   const amount = lengthSquared > 0 ? THREE.MathUtils.clamp(((x - start[0]) * dx + (z - start[1]) * dz) / lengthSquared, 0, 1) : 0;
@@ -196,6 +198,23 @@ function addTerrain(root: THREE.Group, textures: GameTextures) {
   root.add(ground);
 }
 
+function addZooSky(root: THREE.Group) {
+  const sky = new Sky();
+  sky.name = "bronx-zoo-atmospheric-daylight-sky";
+  sky.scale.setScalar(620);
+  sky.frustumCulled = false;
+  sky.onBeforeRender = (_renderer, _scene, camera) => {
+    sky.position.copy(camera.position);
+    sky.updateMatrixWorld(true);
+  };
+  sky.material.uniforms.turbidity.value = 6.8;
+  sky.material.uniforms.rayleigh.value = 2.2;
+  sky.material.uniforms.mieCoefficient.value = .008;
+  sky.material.uniforms.mieDirectionalG.value = .84;
+  sky.material.uniforms.sunPosition.value.setFromSphericalCoords(1, THREE.MathUtils.degToRad(72), THREE.MathUtils.degToRad(214));
+  root.add(sky);
+}
+
 function addPathRibbon(root: THREE.Group, points: Array<[number, number]>, width: number, material: THREE.Material, name: string) {
   const positions: number[] = [];
   const uvs: number[] = [];
@@ -226,6 +245,40 @@ function addPathRibbon(root: THREE.Group, points: Array<[number, number]>, width
   path.name = name;
   root.add(path);
 }
+
+function addPathKerbs(root: THREE.Group, points: ReadonlyArray<readonly [number, number]>, width: number, material: THREE.Material, name: string) {
+  const kerbs = new THREE.Group();
+  kerbs.name = `${name}-stone-kerbs-and-drainage-edge`;
+  points.slice(1).forEach((end, index) => {
+    const start = points[index];
+    const dx = end[0] - start[0], dz = end[1] - start[1], length = Math.hypot(dx, dz);
+    const normalX = -dz / length, normalZ = dx / length;
+    for (const side of [-1, 1]) {
+      const midpointX = (start[0] + end[0]) * .5 + normalX * width * .5 * side;
+      const midpointZ = (start[1] + end[1]) * .5 + normalZ * width * .5 * side;
+      const kerb = setShadow(new THREE.Mesh(new THREE.BoxGeometry(length, .14, .19), material), false, true);
+      kerb.position.set(midpointX, terrainHeight(midpointX, midpointZ) + .085, midpointZ);
+      kerb.rotation.y = -Math.atan2(dz, dx);
+      kerbs.add(kerb);
+    }
+  });
+  root.add(kerbs);
+}
+
+// Visitor circulation is authored independently from habitat geometry. Every
+// branch terminates at an observation edge instead of crossing a fence or
+// pool, and the two sea-lion bypasses reconnect into one readable promenade.
+const ZOO_VISITOR_PATHS = [
+  { name: "bronx-zoo-entry-promenade", width: 8.2, points: [[0, 10], [0, -26], [0, -52]] },
+  { name: "bronx-zoo-sea-lion-west-bypass", width: 6.8, points: [[0, -52], [-18.5, -62], [-18.5, -87], [0, -97]] },
+  { name: "bronx-zoo-sea-lion-east-bypass", width: 6.8, points: [[0, -52], [18.5, -62], [18.5, -87], [0, -97]] },
+  { name: "bronx-zoo-rescue-promenade", width: 7.6, points: [[0, -97], [0, -116], [0, -139]] },
+  { name: "bronx-zoo-north-habitat-overlook", width: 5.4, points: [[-25, -39], [0, -32], [25, -39]] },
+  { name: "bronx-zoo-monkey-and-plains-overlook", width: 5.4, points: [[-25, -90], [0, -97], [25, -90]] },
+  { name: "bronx-zoo-south-conservation-overlook", width: 5.2, points: [[-23, -121], [0, -116], [23, -121]] },
+  { name: "bronx-zoo-flamingo-wetland-spur", width: 4.8, points: [[-25, -39], [-46, -44], [-60.5, -47]] },
+  { name: "bronx-zoo-bison-range-spur", width: 4.8, points: [[25, -90], [47, -94], [61.5, -97]] },
+] as const satisfies ReadonlyArray<{ name: string; width: number; points: ReadonlyArray<readonly [number, number]> }>;
 
 function addStationExit(root: THREE.Group, materials: ZooMaterials, textures: GameTextures, ownedTextures: THREE.Texture[], quality: number) {
   const exit = new THREE.Group();
@@ -382,7 +435,8 @@ function addCircularFence(root: THREE.Group, materials: ZooMaterials, x: number,
 function addLandscape(root: THREE.Group, materials: ZooMaterials, textures: GameTextures, quality: number, obstacles: Obstacle[]) {
   const random = seeded(12031966);
   const treeCount = Math.round(120 + quality * 180);
-  const branchesPerTree = quality > .75 ? 7 : 5, canopyCardsPerTree = quality > .75 ? 6 : 4;
+  const branchesPerTree = quality > .75 ? 18 : quality > .5 ? 10 : 6;
+  const canopyCardsPerTree = quality > .75 ? 32 : quality > .5 ? 16 : 8;
   const trunkGeometry = new THREE.CylinderGeometry(.32, .52, 7.1, quality > .75 ? 12 : 8, 3);
   const trunks = new THREE.InstancedMesh(trunkGeometry, materials.bark, treeCount);
   trunks.name = "bronx-zoo-instanced-landscape-trunks";
@@ -397,6 +451,7 @@ function addLandscape(root: THREE.Group, materials: ZooMaterials, textures: Game
   canopies.name = "bronx-zoo-instanced-foliage-branch-canopies";
   canopies.castShadow = quality > .82;
   const dummy = new THREE.Object3D();
+  const canopyPalette = [new THREE.Color("#335f35"), new THREE.Color("#477642"), new THREE.Color("#5d874b"), new THREE.Color("#2d5231"), new THREE.Color("#6f9255")];
   const branchStart = new THREE.Vector3(), branchEnd = new THREE.Vector3(), branchDirection = new THREE.Vector3();
   let placed = 0, attempts = 0;
   const habitatClearings = [
@@ -405,10 +460,7 @@ function addLandscape(root: THREE.Group, materials: ZooMaterials, textures: Game
     [-68, -26, 13], [68, -28, 14], [-68, -82, 14], [69, -82, 15], [-66, -128, 14], [66, -129, 14],
     [22, -151, 9], [-13, -69, 3], [14, -107, 3], [-18, -122, 3],
   ];
-  const clearRoutes: Array<Array<[number, number]>> = [
-    [[0, 10], [0, -27], [-30, -43], [-39, -79], [-34, -118], [0, -139], [34, -118], [39, -79], [30, -43], [0, -27]],
-    [[0, -27], [0, -66], [0, -112], [0, -130]],
-  ];
+  const clearRoutes = ZOO_VISITOR_PATHS.map(path => path.points);
   while (placed < treeCount && attempts++ < treeCount * 30) {
     const x = (random() * 2 - 1) * 84, z = -157 + random() * 164;
     const nearMainAxis = Math.abs(x) < 9 && z > -145;
@@ -434,11 +486,15 @@ function addLandscape(root: THREE.Group, materials: ZooMaterials, textures: Game
       branches.setMatrixAt(placed * branchesPerTree + branch, dummy.matrix);
     }
     for (let card = 0; card < canopyCardsPerTree; card++) {
-      dummy.position.set(x + (random() - .5) * 1.7, y + (6.5 + random() * 1.5) * scale, z + (random() - .5) * 1.7);
+      const crownRadius = 1.1 + random() * 2.35;
+      const crownAngle = random() * Math.PI * 2;
+      dummy.position.set(x + Math.cos(crownAngle) * crownRadius * scale, y + (5.75 + random() * 2.45) * scale, z + Math.sin(crownAngle) * crownRadius * scale);
       dummy.rotation.set(0, card * Math.PI / canopyCardsPerTree + random() * .2, (random() - .5) * .09);
-      dummy.scale.set(scale * (.82 + random() * .34), scale * (.82 + random() * .3), scale);
+      dummy.scale.set(scale * (.46 + random() * .36), scale * (.48 + random() * .38), scale);
       dummy.updateMatrix();
-      canopies.setMatrixAt(placed * canopyCardsPerTree + card, dummy.matrix);
+      const canopyIndex = placed * canopyCardsPerTree + card;
+      canopies.setMatrixAt(canopyIndex, dummy.matrix);
+      canopies.setColorAt(canopyIndex, canopyPalette[(placed + card * 3) % canopyPalette.length]);
     }
     if (placed % 3 === 0) obstacles.push({ kind: "circle", x, z, radius: .44 * scale });
     placed++;
@@ -449,6 +505,7 @@ function addLandscape(root: THREE.Group, materials: ZooMaterials, textures: Game
   trunks.instanceMatrix.needsUpdate = true;
   branches.instanceMatrix.needsUpdate = true;
   canopies.instanceMatrix.needsUpdate = true;
+  if (canopies.instanceColor) canopies.instanceColor.needsUpdate = true;
   root.add(trunks, branches, canopies);
 
   const fernCount = Math.round(420 + quality * 480);
@@ -530,6 +587,59 @@ function placeAnimal(
   animals.push(motion ? configureAutonomousZooAnimal(rig, { ...motion, floorHeight: terrainHeight }) : rig);
 }
 
+function addMuseumShuttleBus(root: THREE.Group, materials: ZooMaterials, ownedTextures: THREE.Texture[], quality: number) {
+  const shuttle = new THREE.Group();
+  shuttle.name = "bronx-zoo-parked-natural-history-museum-shuttle";
+  shuttle.position.set(19.5, 1.02, 24.2);
+  shuttle.rotation.y = Math.PI / 2;
+  const yellow = new THREE.MeshPhysicalMaterial({ color: "#dfaa20", roughness: .46, clearcoat: .5, clearcoatRoughness: .28 });
+  const rubber = new THREE.MeshStandardMaterial({ color: "#101112", roughness: .95 });
+  const glass = new THREE.MeshPhysicalMaterial({ color: "#8db9c1", roughness: .1, transmission: .24, transparent: true, opacity: .62 });
+  const body = new THREE.Mesh(new RoundedBoxGeometry(3.1, 2.15, 8.1, 8, .24), yellow);
+  body.name = "museum-shuttle-continuous-coach-body";
+  body.position.y = 1.65;
+  shuttle.add(body);
+  const skirt = new THREE.Mesh(new RoundedBoxGeometry(3.18, .64, 8.2, 5, .12), materials.iron);
+  skirt.position.y = .7;
+  shuttle.add(skirt);
+  const windshield = new THREE.Mesh(new RoundedBoxGeometry(2.55, 1.25, .08, 5, .04), glass);
+  windshield.position.set(0, 2.04, -4.08);
+  shuttle.add(windshield);
+  for (const side of [-1, 1]) for (let windowIndex = 0; windowIndex < 4; windowIndex++) {
+    const window = new THREE.Mesh(new RoundedBoxGeometry(.08, 1.1, 1.36, 4, .035), glass);
+    window.position.set(side * 1.57, 2.03, -2.42 + windowIndex * 1.6);
+    shuttle.add(window);
+  }
+  const wheelGeometry = new THREE.CylinderGeometry(.5, .5, .34, quality > .72 ? 28 : 18);
+  for (const side of [-1, 1]) for (const z of [-2.55, 2.45]) {
+    const wheel = new THREE.Mesh(wheelGeometry, rubber);
+    wheel.rotation.z = Math.PI / 2;
+    wheel.position.set(side * 1.59, .52, z);
+    shuttle.add(wheel);
+  }
+  const door = new THREE.Mesh(new RoundedBoxGeometry(.08, 1.72, 1.32, 4, .035), glass);
+  door.name = "museum-shuttle-open-boarding-door";
+  door.position.set(1.6, 1.55, -2.32);
+  door.rotation.y = -.72;
+  shuttle.add(door);
+  const destinationTexture = signTexture("MUSEUM SHUTTLE", "BRONX ZOO  →  AMNH", "#f4d25f");
+  ownedTextures.push(destinationTexture);
+  const destination = new THREE.Mesh(new RoundedBoxGeometry(2.32, .46, .08, 4, .025), new THREE.MeshBasicMaterial({ map: destinationTexture, toneMapped: false }));
+  destination.position.set(0, 2.58, -4.12);
+  shuttle.add(destination);
+  const stop = new THREE.Group();
+  stop.name = "bronx-zoo-museum-shuttle-stop";
+  stop.position.set(21.7, 1.02, 18.1);
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(.08, .11, 3.2, 10), materials.iron);
+  post.position.y = 1.6;
+  stop.add(post);
+  const marker = new THREE.Mesh(new RoundedBoxGeometry(1.65, 1.65, .14, 4, .04), new THREE.MeshBasicMaterial({ map: destinationTexture, toneMapped: false }));
+  marker.position.y = 3.15;
+  stop.add(marker);
+  root.add(shuttle, stop);
+  setShadow(body, quality > .6, true);
+}
+
 export class BronxZooWorld {
   readonly root = new THREE.Group();
   readonly spawn = new THREE.Vector3(0, 2.5, 25.5);
@@ -540,7 +650,7 @@ export class BronxZooWorld {
   readonly ticketDonorPosition = new THREE.Vector3(-8.5, 1.48, 6.2);
   readonly gatePosition = new THREE.Vector3(0, 1.48, -8);
   readonly slothHabitatPosition = new THREE.Vector3(0, 1.48, -128.6);
-  readonly stationReturnPosition = new THREE.Vector3(0, 2.5, 19.5);
+  readonly busBoardingPosition = new THREE.Vector3(21.7, 2.5, 20.4);
   readonly cameraPosition = new THREE.Vector3(0, 4.2, -118);
   readonly cameraTarget = new THREE.Vector3(0, 3.8, -140);
   readonly worldBounds = Object.freeze({ minX: -84, maxX: 84, minZ: -158, maxZ: 39.5 });
@@ -575,10 +685,25 @@ export class BronxZooWorld {
     this.sun.shadow.camera.bottom = -42;
     this.root.add(this.sun, this.sun.target);
 
+    // Thin habitat panels were previously rendered as double-sided, depth-writing
+    // translucent sheets. At grazing angles their overlapping passes accumulated
+    // into the tall milky bands visible in first person. Keep the physical edge
+    // catches, but render each pane once and never let it occlude later geometry.
+    const habitatGlass = new THREE.MeshPhysicalMaterial({
+      color: "#a9c8c0",
+      transparent: true,
+      opacity: .085,
+      roughness: .2,
+      clearcoat: .34,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    habitatGlass.forceSinglePass = true;
+
     const materials: ZooMaterials = {
       bark: new THREE.MeshStandardMaterial({ map: textures.bark, bumpMap: textures.bark, bumpScale: .1, color: "#715a42", roughness: .97 }),
       earth: new THREE.MeshStandardMaterial({ map: textures.ground, bumpMap: textures.ground, bumpScale: .09, color: "#776b4d", roughness: .98 }),
-      glass: new THREE.MeshPhysicalMaterial({ color: "#b7d2cb", transparent: true, opacity: .22, roughness: .08, clearcoat: .86, side: THREE.DoubleSide }),
+      glass: habitatGlass,
       iron: new THREE.MeshStandardMaterial({ map: textures.stone, bumpMap: textures.stone, bumpScale: .014, color: "#17221d", metalness: .79, roughness: .31 }),
       leaf: new THREE.MeshStandardMaterial({ map: textures.foliageBranch, alphaTest: .23, color: "#4d7646", roughness: .9, side: THREE.DoubleSide }),
       path: new THREE.MeshStandardMaterial({ map: textures.gravel, bumpMap: textures.gravel, bumpScale: .055, color: "#b7a98c", roughness: .94 }),
@@ -587,11 +712,15 @@ export class BronxZooWorld {
       wood: new THREE.MeshStandardMaterial({ map: textures.bark, bumpMap: textures.bark, bumpScale: .075, color: "#86674a", roughness: .94 }),
     };
 
+    addZooSky(this.root);
     addTerrain(this.root, textures);
-    addPathRibbon(this.root, [[0, 10], [0, -27], [-30, -43], [-39, -79], [-34, -118], [0, -139], [34, -118], [39, -79], [30, -43], [0, -27]], 7.4, materials.path, "bronx-zoo-grand-conservation-loop");
-    addPathRibbon(this.root, [[0, -27], [0, -66], [0, -112], [0, -130]], 6.1, materials.path, "bronx-zoo-central-rescue-walk");
+    ZOO_VISITOR_PATHS.forEach(path => {
+      addPathRibbon(this.root, path.points.map(point => [...point] as [number, number]), path.width, materials.path, path.name);
+      addPathKerbs(this.root, path.points, path.width, materials.stone, path.name);
+    });
     addStationExit(this.root, materials, textures, this.ownedTextures, quality);
     addArrivalFountain(this.root, materials, quality);
+    addMuseumShuttleBus(this.root, materials, this.ownedTextures, quality);
 
     this.addEntryGate(materials, quality);
     this.addTicketPavilions(materials);
@@ -677,14 +806,14 @@ export class BronxZooWorld {
     if (this.state === "NEED_TICKET") return this.ticketDonorPosition.clone();
     if (this.state === "ENTER_ZOO") return this.gatePosition.clone();
     if (this.state === "FIND_SLOTHS") return this.slothHabitatPosition.clone();
-    return this.stationReturnPosition.clone();
+    return this.busBoardingPosition.clone();
   }
 
   get objectiveLabel() {
     if (this.state === "NEED_TICKET") return "Find an admission ticket outside the Bronx Zoo";
     if (this.state === "ENTER_ZOO") return "Use the ticket to enter the Bronx Zoo";
     if (this.state === "FIND_SLOTHS") return "Find and release your sloth friends";
-    return "Bring your friends to the West Farms station";
+    return "Bring your friends to the zoo shuttle bus";
   }
 
   interactionHint(player: THREE.Vector3): BronxZooInteractionHint | null {
@@ -706,7 +835,7 @@ export class BronxZooWorld {
     }
     if (hint.kind === "ENTRY_GATE") return { kind: "ENTRY_DENIED", message: "The entrance scanner flashes red. Find someone outside with an extra ticket." };
     this.setFriendsReleased(true);
-    return { kind: "SLOTHS_RELEASED", message: "The keeper door is open. Your four sloth friends are free — bring them back to Central Park." };
+    return { kind: "SLOTHS_RELEASED", message: "The keeper door is open. Lead your four friends along the promenade and board the museum shuttle bus." };
   }
 
   setTicketCollected(collected: boolean) {
@@ -720,14 +849,14 @@ export class BronxZooWorld {
     this.captiveSloths.forEach(sloth => { sloth.visible = !released; });
     if (released) {
       this.hasAdmissionTicket = true;
-      this.state = "ESCORT_TO_STATION";
+      this.state = "ESCORT_TO_BUS";
     } else this.state = this.hasAdmissionTicket ? "FIND_SLOTHS" : "NEED_TICKET";
   }
 
   ticketDonorNearby(player: THREE.Vector3, distance = 2.6) { return this.distanceXZ(player, this.ticketDonorPosition) <= distance; }
   gateNearby(player: THREE.Vector3, distance = 3.5) { return this.distanceXZ(player, this.gatePosition) <= distance; }
   slothHabitatNearby(player: THREE.Vector3, distance = 3.2) { return this.distanceXZ(player, this.slothHabitatPosition) <= distance; }
-  stationReturnReached(player: THREE.Vector3, distance = 2.4) { return this.releasedFriends && this.distanceXZ(player, this.stationReturnPosition) <= distance; }
+  busBoardingReached(player: THREE.Vector3, distance = 2.8) { return this.releasedFriends && this.distanceXZ(player, this.busBoardingPosition) <= distance; }
 
   attendantNearby(player: THREE.Vector3, distance = 2.35) {
     return this.hasAdmissionTicket && this.distanceXZ(player, this.attendantPosition) <= distance;
@@ -777,6 +906,7 @@ export class BronxZooWorld {
   }
 
   dispose() {
+    markAuthoredZooAnimalsDisposed(this.root);
     markPremiumCharactersDisposed(this.root);
     this.root.removeFromParent();
     const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
@@ -890,12 +1020,141 @@ export class BronxZooWorld {
       branch.name = "world-of-birds-natural-perch";
       habitat.add(branch);
     }
+    type AviaryPerch = {
+      contactPosition: THREE.Vector3;
+      name: string;
+      yaw: number;
+    };
+    const addContactPerch = (
+      name: string,
+      perchX: number,
+      perchZ: number,
+      height: number,
+      yaw: number,
+      halfLength: number,
+      footContactOffset: number,
+      branchRadius = .095,
+    ): AviaryPerch => {
+      // Bird roots are normalized to a floor/contact plane while the
+      // procedural companions publish their toe tips a few centimetres above
+      // or below it. Build the branch from that measured offset so the visible
+      // toe geometry lands on timber instead of hovering beside a decorative
+      // limb. The same contactPosition remains valid for a hydrated host.
+      const contactTopY = terrainHeight(perchX, perchZ) + height;
+      // A bird's paired feet sit on its local X axis. Rotate that lateral
+      // axis into world space so both feet, not only the root origin, lie over
+      // the branch centreline after the bird receives the matching yaw.
+      const along = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+      const center = new THREE.Vector3(perchX, contactTopY - branchRadius, perchZ);
+      const start = center.clone().addScaledVector(along, -halfLength);
+      const end = center.clone().addScaledVector(along, halfLength);
+      const branch = cylinderBetween(start, end, branchRadius, materials.wood, quality > .72 ? 18 : 12);
+      branch.name = `${name}-load-bearing-foot-contact-branch`;
+      branch.castShadow = branch.receiveShadow = true;
+      branch.userData.contactTopY = contactTopY;
+      branch.userData.footContactOffset = footContactOffset;
+      habitat.add(branch);
+      // Paired suspension ropes make the load path readable from the visitor
+      // overlook and prevent the contact branch looking like another loose,
+      // arbitrary cylinder in the canopy.
+      [start, end].forEach((anchor, index) => {
+        const upper = anchor.clone().add(new THREE.Vector3(index === 0 ? -.3 : .3, 2.7, index === 0 ? .18 : -.18));
+        const rope = cylinderBetween(anchor, upper, .026, materials.iron, quality > .72 ? 10 : 7);
+        rope.name = `${name}-visible-suspension-rope-${index + 1}`;
+        rope.castShadow = true;
+        habitat.add(rope);
+      });
+      return {
+        name,
+        yaw,
+        contactPosition: new THREE.Vector3(perchX, contactTopY - footContactOffset, perchZ),
+      };
+    };
+    const conurePerch = addContactPerch("sun-conure", -46, -49, 4.7, .4, 1.55, .0162);
+    const macawPerch = addContactPerch("blue-and-gold-macaw", -39, -52, 5.7, -1.2, 1.9, .0204, .115);
+    const ibisPerch = addContactPerch("scarlet-ibis", -45, -56, 1.55, 2.4, 1.7, -.0236, .11);
+    const aracariTakeoffPerch = addContactPerch("green-aracari-takeoff", -40, -45, 4.2, -2.6, 1.35, .0168);
+    const aracariLandingPerch = addContactPerch("green-aracari-landing", -47, -46.5, 5.05, -.35, 1.35, .0168);
     this.root.add(habitat);
-    const birds = [createSunConure(textures, quality), createBlueAndGoldMacaw(textures, quality), createScarletIbis(textures, quality), createGreenAracari(textures, quality)];
-    const positions = [[-46, -49, 4.7, .4], [-39, -52, 5.7, -1.2], [-45, -56, 3.6, 2.4], [-40, -45, 4.2, -2.6]];
-    birds.forEach((bird, index) => placeAnimal(this.root, this.animals, bird, positions[index][0], positions[index][1], positions[index][3], positions[index][2], {
-      mode: "perch", radius: 1.1 + index * .22, speed: .42 + index * .03, phase: index * 2.8, verticalRange: 1.2 + index * .15,
-    }));
+    const addContactPerchedBird = (
+      bird: ZooAnimalRig,
+      perch: AviaryPerch,
+      phase: number,
+      animationSpeeds: readonly [number, number],
+    ) => {
+      bird.root.position.copy(perch.contactPosition);
+      bird.root.rotation.y = perch.yaw;
+      bird.root.userData.habitatRole = "fixed-contact-percher";
+      bird.root.userData.motionPhase = phase;
+      bird.root.userData.contactSupport = `${perch.name}-load-bearing-foot-contact-branch`;
+      this.root.add(bird.root);
+      this.animals.push({
+        root: bird.root,
+        ownedTextures: bird.ownedTextures,
+        update(elapsed, delta) {
+          // Perching and preening retain a fixed root; the feet therefore
+          // remain on the same load-bearing branch through both clips.
+          const cycle = ((elapsed * .72 + phase) % 15 + 15) % 15;
+          const state = cycle < 10.5 ? "perch" : "preen";
+          bird.root.userData.animationState = state;
+          bird.root.userData.animationSpeed = state === "perch" ? animationSpeeds[0] : animationSpeeds[1];
+          bird.root.userData.activeContactSupport = perch.name;
+          bird.update(elapsed + phase, delta);
+        },
+      });
+    };
+    addContactPerchedBird(createSunConure(textures, quality), conurePerch, .8, [.74, .86]);
+    addContactPerchedBird(createBlueAndGoldMacaw(textures, quality), macawPerch, 4.9, [.81, .94]);
+    addContactPerchedBird(createScarletIbis(textures, quality), ibisPerch, 9.2, [.68, .79]);
+
+    // Only the aracari flies. It travels between two published foot-contact
+    // positions in a clear, short corridor at the front of the aviary. The
+    // smooth arc is exactly zero at both endpoints, so takeoff and landing
+    // begin and end on the corresponding support rather than in open air.
+    const aracari = createGreenAracari(textures, quality);
+    aracari.root.position.copy(aracariTakeoffPerch.contactPosition);
+    aracari.root.rotation.y = aracariTakeoffPerch.yaw;
+    aracari.root.userData.habitatRole = "contained-contact-flyer";
+    aracari.root.userData.motionPhase = 3.4;
+    aracari.root.userData.flightSupports = [aracariTakeoffPerch.name, aracariLandingPerch.name];
+    this.root.add(aracari.root);
+    const flightFrom = new THREE.Vector3(), flightTo = new THREE.Vector3(), nextFlightPoint = new THREE.Vector3();
+    this.animals.push({
+      root: aracari.root,
+      ownedTextures: aracari.ownedTextures,
+      update(elapsed, delta) {
+        const cycle = ((elapsed + 3.4) % 24 + 24) % 24;
+        const outbound = cycle >= 8.4 && cycle < 11.2;
+        const inbound = cycle >= 19.4 && cycle < 22.2;
+        const flying = outbound || inbound;
+        const atLandingPerch = cycle >= 11.2 && cycle < 19.4;
+        const state = flying ? "short-flight" : cycle >= 6.5 && cycle < 8.4 || cycle >= 17.5 && cycle < 19.4 ? "preen" : "perch";
+        aracari.root.userData.animationState = state;
+        aracari.root.userData.animationSpeed = flying ? 1.08 : state === "preen" ? .88 : .76;
+        if (flying) {
+          flightFrom.copy(outbound ? aracariTakeoffPerch.contactPosition : aracariLandingPerch.contactPosition);
+          flightTo.copy(outbound ? aracariLandingPerch.contactPosition : aracariTakeoffPerch.contactPosition);
+          const flightStart = outbound ? 8.4 : 19.4;
+          const flightT = THREE.MathUtils.clamp((cycle - flightStart) / 2.8, 0, 1);
+          const eased = flightT * flightT * (3 - 2 * flightT);
+          aracari.root.position.lerpVectors(flightFrom, flightTo, eased);
+          aracari.root.position.y += Math.sin(flightT * Math.PI) * 1.35;
+          const nextT = Math.min(1, flightT + .015);
+          const nextEased = nextT * nextT * (3 - 2 * nextT);
+          nextFlightPoint.lerpVectors(flightFrom, flightTo, nextEased);
+          nextFlightPoint.y += Math.sin(nextT * Math.PI) * 1.35;
+          const dx = nextFlightPoint.x - aracari.root.position.x, dz = nextFlightPoint.z - aracari.root.position.z;
+          if (dx * dx + dz * dz > .000001) aracari.root.rotation.y = Math.atan2(-dx, -dz);
+          aracari.root.userData.activeContactSupport = "airborne-between-published-supports";
+        } else {
+          const perch = atLandingPerch ? aracariLandingPerch : aracariTakeoffPerch;
+          aracari.root.position.copy(perch.contactPosition);
+          aracari.root.rotation.y = perch.yaw;
+          aracari.root.userData.activeContactSupport = perch.name;
+        }
+        aracari.update(elapsed + 3.4, delta);
+      },
+    });
     addHabitatLabel(this.root, this.ownedTextures, materials, "WORLD OF BIRDS", "SUN CONURE · MACAW · SCARLET IBIS · GREEN ARACARI", -31, -39, -.74);
   }
 
@@ -917,13 +1176,17 @@ export class BronxZooWorld {
     this.ownedTextures.push(texture);
     const plaque = new THREE.Group();
     plaque.name = "gary-polar-bear-togyl-support-plaque";
-    plaque.position.set(31.6, terrainHeight(31.6, -41.3), -41.3);
-    plaque.rotation.y = -.72;
-    const pedestal = new THREE.Mesh(new RoundedBoxGeometry(3.9, 2.45, .42, 5, .07), new THREE.MeshStandardMaterial({ color: "#6d5730", metalness: .58, roughness: .31 }));
-    pedestal.position.y = 1.225;
+    // Place the interpretation plaque at the shoulder of the overlook.  The
+    // old billboard-sized placement sat directly between the fixed review
+    // camera and Gary, making the habitat feel staged around a sign instead of
+    // giving the animal a clear sightline.
+    plaque.position.set(28.6, terrainHeight(28.6, -36.8), -36.8);
+    plaque.rotation.y = -2.12;
+    const pedestal = new THREE.Mesh(new RoundedBoxGeometry(3.15, 1.95, .36, 5, .07), new THREE.MeshStandardMaterial({ color: "#6d5730", metalness: .58, roughness: .31 }));
+    pedestal.position.y = .975;
     plaque.add(pedestal);
-    const face = new THREE.Mesh(new RoundedBoxGeometry(3.55, 2.12, .08, 4, .04), new THREE.MeshBasicMaterial({ map: texture, toneMapped: false }));
-    face.position.set(0, 1.3, .25);
+    const face = new THREE.Mesh(new RoundedBoxGeometry(2.86, 1.7, .08, 4, .04), new THREE.MeshBasicMaterial({ map: texture, toneMapped: false }));
+    face.position.set(0, 1.04, .22);
     plaque.add(face);
     this.root.add(plaque);
     addHabitatLabel(this.root, this.ownedTextures, materials, "POLAR BEAR", "GARY · ARCTIC CONSERVATION", 32, -61.5, -.15);
@@ -948,6 +1211,168 @@ export class BronxZooWorld {
   private addMonkeyHabitat(materials: ZooMaterials, textures: GameTextures, quality: number) {
     const x = -43, z = -101, radius = 14.5;
     addCircularFence(this.root, materials, x, z, radius, quality > .72 ? 26 : 18, true);
+
+    // Give the habitat a legible forest-floor composition instead of leaving
+    // the climbing poles on an empty copy of the park terrain.  The inset is
+    // intentionally irregular so its edge reads as planted mulch, not a
+    // circular stage under the animals.
+    const mulchShape = new THREE.Shape();
+    for (let index = 0; index < 28; index++) {
+      const angle = index / 28 * Math.PI * 2;
+      const insetRadius = radius - 1.05 + Math.sin(index * 2.17) * .38 + Math.cos(index * .73) * .22;
+      const px = Math.cos(angle) * insetRadius, py = Math.sin(angle) * insetRadius;
+      if (index === 0) mulchShape.moveTo(px, py); else mulchShape.lineTo(px, py);
+    }
+    mulchShape.closePath();
+    const mulch = new THREE.Mesh(
+      new THREE.ShapeGeometry(mulchShape, 10),
+      new THREE.MeshStandardMaterial({ color: "#2b261c", roughness: 1, bumpMap: textures.ground, bumpScale: .09 }),
+    );
+    mulch.name = "monkey-forest-irregular-mulch-floor";
+    mulch.rotation.x = -Math.PI / 2;
+    mulch.position.set(x, terrainHeight(x, z) + .055, z);
+    mulch.receiveShadow = true;
+    this.root.add(mulch);
+
+    const branchMaterial = new THREE.MeshStandardMaterial({
+      color: "#4a3320", roughness: .94, bumpMap: textures.bark, bumpScale: .085,
+    });
+    const branchPaths = [
+      [[-8.8, 1.2, -4.4], [-6.4, 2.8, -2.7], [-2.2, 4.4, -1.4], [2.7, 5.2, .8]],
+      [[8.1, 1.1, 4.8], [6.2, 2.6, 2.4], [3.1, 3.7, -.4], [-1.5, 4.25, -2.4]],
+      [[-6.8, 1.0, 5.7], [-4.2, 2.4, 4.1], [-.8, 3.15, 2.5], [4.8, 3.4, 2.1]],
+      [[7.4, 1.15, -5.2], [5.6, 2.5, -3.6], [1.7, 3.2, -2.2], [-4.4, 3.5, -.5]],
+    ];
+    branchPaths.forEach((points, index) => {
+      const curve = new THREE.CatmullRomCurve3(points.map(([px, py, pz]) => new THREE.Vector3(x + px, terrainHeight(x, z) + py, z + pz)));
+      const branch = new THREE.Mesh(
+        new THREE.TubeGeometry(curve, quality > .72 ? 42 : 26, .19 - index * .018, quality > .72 ? 12 : 8, false),
+        branchMaterial,
+      );
+      branch.name = "monkey-forest-continuous-climbing-tree";
+      branch.castShadow = branch.receiveShadow = true;
+      this.root.add(branch);
+    });
+
+    const habitatCanopyCount = quality > .72 ? 56 : 32;
+    const habitatCanopy = new THREE.InstancedMesh(new THREE.PlaneGeometry(2.8, 3.35), materials.leaf, habitatCanopyCount);
+    habitatCanopy.name = "monkey-forest-layered-live-canopy";
+    habitatCanopy.castShadow = quality > .78;
+    const canopyDummy = new THREE.Object3D();
+    const canopyRandom = seeded(19360711);
+    const canopyColors = [new THREE.Color("#315c35"), new THREE.Color("#477a42"), new THREE.Color("#567f45"), new THREE.Color("#294d32")];
+    for (let index = 0; index < habitatCanopyCount; index++) {
+      const cluster = index % 4;
+      const anchor = branchPaths[cluster][branchPaths[cluster].length - 1];
+      const angle = canopyRandom() * Math.PI * 2, spread = .55 + canopyRandom() * 2.7;
+      canopyDummy.position.set(
+        x + anchor[0] + Math.cos(angle) * spread,
+        terrainHeight(x, z) + anchor[1] + .9 + canopyRandom() * 2.2,
+        z + anchor[2] + Math.sin(angle) * spread,
+      );
+      canopyDummy.rotation.set((canopyRandom() - .5) * .12, angle + index * .71, (canopyRandom() - .5) * .18);
+      const canopyScale = .58 + canopyRandom() * .54;
+      canopyDummy.scale.set(canopyScale, canopyScale * (.84 + canopyRandom() * .28), canopyScale);
+      canopyDummy.updateMatrix();
+      habitatCanopy.setMatrixAt(index, canopyDummy.matrix);
+      habitatCanopy.setColorAt(index, canopyColors[index % canopyColors.length]);
+    }
+    habitatCanopy.instanceMatrix.needsUpdate = true;
+    if (habitatCanopy.instanceColor) habitatCanopy.instanceColor.needsUpdate = true;
+    this.root.add(habitatCanopy);
+
+    const understoryCount = quality > .72 ? 44 : 28;
+    const understory = new THREE.InstancedMesh(
+      new THREE.PlaneGeometry(1.6, 1.55),
+      new THREE.MeshStandardMaterial({ map: textures.fern, alphaTest: .23, color: "#4c7648", roughness: .94, side: THREE.DoubleSide }),
+      understoryCount * 2,
+    );
+    understory.name = "monkey-forest-dense-understory";
+    for (let index = 0; index < understoryCount; index++) {
+      const angle = index / understoryCount * Math.PI * 2 + canopyRandom() * .18;
+      const distance = 6.2 + canopyRandom() * 5.6;
+      const visitorSightline = Math.cos(angle) > .72;
+      for (let card = 0; card < 2; card++) {
+        canopyDummy.position.set(
+          x + Math.cos(angle) * distance,
+          terrainHeight(x, z) + .72,
+          z + Math.sin(angle) * distance,
+        );
+        canopyDummy.rotation.set(0, angle + card * Math.PI / 2, 0);
+        // Preserve a deliberate viewing aperture on the east overlook. Dense
+        // planting still frames the exhibit, but no longer hides the closest
+        // walking monkey behind two crossed fern cards.
+        const foliageScale = visitorSightline ? .12 : .72 + canopyRandom() * .5;
+        canopyDummy.scale.set(foliageScale, foliageScale, foliageScale);
+        canopyDummy.updateMatrix();
+        understory.setMatrixAt(index * 2 + card, canopyDummy.matrix);
+      }
+    }
+    understory.instanceMatrix.needsUpdate = true;
+    this.root.add(understory);
+
+    // Two joined timber decks create distinct high and low destinations for
+    // the climb/swing clips.  Their braces and rope net make the apparatus
+    // feel engineered for a real primate habitat rather than decorative poles.
+    const decks = [
+      { px: x - 4.8, pz: z - 2.3, py: 4.35, rotation: .22 },
+      { px: x + 4.9, pz: z + 2.6, py: 3.35, rotation: -.3 },
+    ];
+    decks.forEach((deck, index) => {
+      const platform = new THREE.Group();
+      platform.name = "monkey-forest-timber-lookout-platform";
+      platform.position.set(deck.px, terrainHeight(x, z) + deck.py, deck.pz);
+      platform.rotation.y = deck.rotation;
+      const slab = setShadow(new THREE.Mesh(new RoundedBoxGeometry(3.6, .24, 2.3, 5, .08), branchMaterial), true, true);
+      platform.add(slab);
+      for (const side of [-1, 1]) {
+        const brace = cylinderBetween(
+          new THREE.Vector3(side * 1.35, -.08, -.65),
+          new THREE.Vector3(side * 1.72, -deck.py + .15, side * .36),
+          .1,
+          branchMaterial,
+          10,
+        );
+        brace.name = "monkey-platform-diagonal-timber-brace";
+        platform.add(brace);
+      }
+      const shadeRoof = setShadow(new THREE.Mesh(new RoundedBoxGeometry(3.95, .16, 2.7, 4, .07), materials.iron), true, true);
+      shadeRoof.position.y = 2.15;
+      shadeRoof.rotation.z = index ? -.055 : .055;
+      platform.add(shadeRoof);
+      for (const cornerX of [-1.55, 1.55]) for (const cornerZ of [-.88, .88]) {
+        const support = new THREE.Mesh(new THREE.CylinderGeometry(.07, .085, 2.15, 10), materials.iron);
+        support.position.set(cornerX, 1.03, cornerZ);
+        platform.add(support);
+      }
+      this.root.add(platform);
+    });
+
+    const netOrigin = new THREE.Vector3(x - .5, terrainHeight(x, z) + 3.15, z + .1);
+    for (let column = -3; column <= 3; column++) {
+      const top = netOrigin.clone().add(new THREE.Vector3(column * .52, 1.45 - Math.abs(column) * .08, -.35));
+      const bottom = netOrigin.clone().add(new THREE.Vector3(column * .52, -1.18 + Math.abs(column) * .06, .35));
+      const cord = cylinderBetween(top, bottom, .026, materials.iron, 7);
+      cord.name = "monkey-forest-knotted-rope-net-vertical";
+      this.root.add(cord);
+    }
+    for (let row = -2; row <= 2; row++) {
+      const left = netOrigin.clone().add(new THREE.Vector3(-1.68, row * .5, row * .05));
+      const right = netOrigin.clone().add(new THREE.Vector3(1.68, row * .5, -row * .05));
+      const cord = cylinderBetween(left, right, .025, materials.iron, 7);
+      cord.name = "monkey-forest-knotted-rope-net-horizontal";
+      this.root.add(cord);
+    }
+
+    for (let index = 0; index < 9; index++) {
+      const angle = index * 2.399, distance = 8.2 + index % 3 * 1.35;
+      const stone = setShadow(new THREE.Mesh(new THREE.DodecahedronGeometry(.65 + index % 2 * .28, 2), materials.stone), true, true);
+      stone.name = "monkey-forest-naturalistic-rockwork";
+      stone.scale.set(1.35, .62 + index % 3 * .08, .9);
+      stone.rotation.set(index * .13, angle, index * .09);
+      stone.position.set(x + Math.cos(angle) * distance, terrainHeight(x, z) + .33, z + Math.sin(angle) * distance);
+      this.root.add(stone);
+    }
     for (let index = 0; index < 5; index++) {
       const angle = index / 5 * Math.PI * 2;
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(.16, .2, 8, 12), materials.wood);
@@ -957,8 +1382,131 @@ export class BronxZooWorld {
       rope.name = "spider-monkey-climbing-rope";
       this.root.add(rope);
     }
-    for (let index = 0; index < 3; index++) placeAnimal(this.root, this.animals, createSpiderMonkey(textures, quality, index), x - 3 + index * 3.2, z + (index % 2 ? 2 : -2), index * .8, 3.1 + index * .35, {
-      mode: "arboreal", radius: 1.5 + index * .3, speed: .42 + index * .05, phase: index * 3.4, verticalRange: .8 + index * .15,
+    // The authored perch and swing clips publish their support cylinders in
+    // source-GLTF coordinates. Recreate those exact supports in the habitat,
+    // including the loader's +Z-to-world rotation and height normalization,
+    // so hands, feet and prehensile tail meet real timber on every reviewed
+    // frame instead of hovering near a decorative diagonal branch.
+    const monkeySupportRoot = new THREE.Group();
+    monkeySupportRoot.name = "spider-monkey-authored-contact-support-rig";
+    monkeySupportRoot.userData.canopyMonkeyCount = 1;
+    monkeySupportRoot.userData.canopyMotionUsesRootTranslation = false;
+    monkeySupportRoot.userData.supportedClipStates = ["perch", "climb", "swing"];
+    const perchedMonkeyX = x + 6.5, perchedMonkeyZ = z + .3;
+    monkeySupportRoot.position.set(perchedMonkeyX, terrainHeight(perchedMonkeyX, perchedMonkeyZ) + 3.15, perchedMonkeyZ);
+    monkeySupportRoot.rotation.y = .35;
+    const monkeyAssetSpace = new THREE.Group();
+    monkeyAssetSpace.name = "spider-monkey-runtime-gltf-support-space";
+    monkeyAssetSpace.rotation.y = Math.PI;
+    const monkeyAssetScale = 1.48 / 1.520934375;
+    monkeyAssetSpace.scale.setScalar(monkeyAssetScale);
+    monkeyAssetSpace.position.y = .007 * monkeyAssetScale;
+    const authoredSupports = [
+      {
+        name: "spider-monkey-load-bearing-contact-branch",
+        a: [-.7, .041345, .278193], b: [.7, .041345, .278193], radius: .052,
+      },
+      {
+        name: "spider-monkey-perch-hand-contact-branch",
+        a: [-.7, .738797, .941977], b: [.7, .738797, .941977], radius: .052,
+      },
+      {
+        name: "spider-monkey-swing-hand-contact-branch",
+        a: [-.665919, 1.036024, 1.008346], b: [.734081, 1.036024, 1.008346], radius: .052,
+      },
+      {
+        name: "spider-monkey-prehensile-tail-contact-branch",
+        a: [-.094583, 1.563347, -.589839], b: [.113329, 1.563347, .388308], radius: .04,
+      },
+    ] as const;
+    authoredSupports.forEach(support => {
+      const timber = cylinderBetween(
+        new THREE.Vector3(...support.a),
+        new THREE.Vector3(...support.b),
+        support.radius,
+        branchMaterial,
+        quality > .72 ? 16 : 10,
+      );
+      timber.name = support.name;
+      timber.castShadow = timber.receiveShadow = true;
+      monkeyAssetSpace.add(timber);
+    });
+    // The authored climb clip alternates its hands between a low/front and a
+    // high/rear contact while its feet remain on the low rung.  This rope
+    // follows the measured project-source hand path at frames 1/16/31/46/61;
+    // the canopy wrapper never translates the monkey through empty air.
+    const climbContactPath = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-.14, .98, 1.05),
+      new THREE.Vector3(0, 1.431, .715),
+      new THREE.Vector3(.14, 1.78, .12),
+    ]);
+    const climbContactRope = new THREE.Mesh(
+      new THREE.TubeGeometry(climbContactPath, quality > .72 ? 32 : 20, .038, quality > .72 ? 10 : 7, false),
+      materials.iron,
+    );
+    climbContactRope.name = "spider-monkey-authored-climb-hand-contact-rope";
+    climbContactRope.userData.measuredHandContacts = [
+      [-.034, 1.431, .715], [.101, 1.088, .958], [.053, 1.681, .212],
+      [-.053, 1.678, .212], [-.101, 1.084, .958], [.034, 1.431, .715],
+    ];
+    climbContactRope.castShadow = climbContactRope.receiveShadow = true;
+    monkeyAssetSpace.add(climbContactRope);
+    const climbFootRung = cylinderBetween(
+      new THREE.Vector3(-.34, .04, .34),
+      new THREE.Vector3(.34, .04, .34),
+      .045,
+      branchMaterial,
+      quality > .72 ? 14 : 9,
+    );
+    climbFootRung.name = "spider-monkey-authored-climb-foot-contact-rung";
+    climbFootRung.castShadow = climbFootRung.receiveShadow = true;
+    monkeyAssetSpace.add(climbFootRung);
+    monkeyAssetSpace.userData.supportCoordinateSystem = "+Y up · +Z forward · meters";
+    monkeyAssetSpace.userData.perchContactFrame = 45;
+    monkeyAssetSpace.userData.swingContactFrame = 16;
+    monkeyAssetSpace.userData.climbContactFrames = [1, 16, 31, 46, 61];
+    monkeySupportRoot.add(monkeyAssetSpace);
+    this.root.add(monkeySupportRoot);
+    const perched = createSpiderMonkey(textures, quality, 0);
+    perched.root.userData.habitatRole = "canopy-contact-climber";
+    perched.root.userData.motionPhase = 2.6;
+    const contactAnimatedCanopy: ZooAnimalRig = {
+      root: perched.root,
+      ownedTextures: perched.ownedTextures,
+      update(elapsed, delta) {
+        // A fixed-root contact schedule keeps every state on its measured
+        // support. Distinct state speeds and the non-zero behavior phase stop
+        // this animal synchronizing with either ground walker.
+        const cycle = ((elapsed * .83 + 2.6) % 24 + 24) % 24;
+        const state = cycle < 10.2 ? "perch" : cycle < 16.4 ? "climb" : "swing";
+        perched.root.userData.animationState = state;
+        perched.root.userData.animationSpeed = state === "perch" ? .78 : state === "climb" ? .93 : 1.07;
+        perched.root.userData.activeContactSupport = state === "perch"
+          ? "foot-and-hand-branches"
+          : state === "climb"
+            ? "measured-climb-rope-and-foot-rung"
+            : "hand-and-prehensile-tail-branches";
+        perched.update(elapsed + 2.6, delta);
+      },
+    };
+    placeAnimal(this.root, this.animals, contactAnimatedCanopy, perchedMonkeyX, perchedMonkeyZ, .35, 3.15);
+    // Two animals remain grounded and use the habitat floor for every update;
+    // they forage and walk rather than all orbiting invisibly in the canopy.
+    // Keep one ground route in the eastern third of the habitat so visitors
+    // at the overlook can actually read the authored gait, hands and face.
+    // The previous orbit was buried behind the central fern bank and made a
+    // 137k-triangle hero animal disappear into the backdrop.
+    const eastGroundMonkey = createSpiderMonkey(textures, quality, 1);
+    eastGroundMonkey.root.userData.habitatRole = "ground-walk-forage";
+    eastGroundMonkey.root.userData.motionPhase = 2.8;
+    placeAnimal(this.root, this.animals, eastGroundMonkey, x + 7.8, z + 2.6, -1.35, 0, {
+      mode: "terrestrial", radius: 1.8, speed: .16, phase: 2.8, animationSpeed: .91,
+    });
+    const westGroundMonkey = createSpiderMonkey(textures, quality, 2);
+    westGroundMonkey.root.userData.habitatRole = "ground-walk-forage";
+    westGroundMonkey.root.userData.motionPhase = 7.1;
+    placeAnimal(this.root, this.animals, westGroundMonkey, x - 3.8, z + 6, 1.7, 0, {
+      mode: "terrestrial", radius: 1.65, speed: .13, phase: 7.1, animationSpeed: 1.08,
     });
     addHabitatLabel(this.root, this.ownedTextures, materials, "MONKEY FOREST", "GEOFFROY'S SPIDER MONKEYS", -31, -89, -.75);
   }

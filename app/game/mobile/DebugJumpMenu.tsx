@@ -23,12 +23,12 @@ const DEBUG_DESTINATIONS: Array<{ scene: DebugSceneName; label: string; detail: 
   { scene: "bronx-monkeys", label: "Monkey habitat", detail: "Ropes and canopy" },
   { scene: "bronx-sloths", label: "Sloth habitat", detail: "Rescue enclosure" },
   { scene: "rescue", label: "Rescued friends", detail: "Follower-party review" },
-  { scene: "return-westfarms", label: "Return platform", detail: "Downtown 5 service" },
-  { scene: "return-train-5", label: "Return 5 train", detail: "Followers onboard" },
-  { scene: "return-lexington", label: "Return transfer", detail: "Downtown N / R" },
-  { scene: "return-train-nr", label: "Return N / R", detail: "Fifth Avenue ride" },
-  { scene: "homecoming", label: "Central Park return", detail: "Escort to Home Grove" },
-  { scene: "finale", label: "Finale", detail: "Home Grove reunion" },
+  { scene: "bus", label: "Museum shuttle", detail: "West Side Highway drive" },
+  { scene: "bus-arrival", label: "Bus arrival", detail: "Central Park West parking" },
+  { scene: "museum", label: "AMNH exterior", detail: "Central Park West entrance" },
+  { scene: "museum-rotunda", label: "Museum rotunda", detail: "Dinosaurs and galleries" },
+  { scene: "museum-megatherium", label: "Fossil mammals", detail: "Megatherium approach" },
+  { scene: "finale", label: "Finale", detail: "Giant ground sloth reunion" },
 ];
 
 export function DebugJumpMenu({ activeScene }: { activeScene: DebugSceneName | null }) {

@@ -7,7 +7,7 @@ const readSource = path => readFile(new URL(path, import.meta.url), "utf8");
 test("Bronx Zoo admission requires the donor's exact extra-ticket interaction", async () => {
   const zoo = await readSource("../app/game/world/BronxZooWorld.ts");
 
-  assert.match(zoo, /BronxZooQuestState = "NEED_TICKET" \| "ENTER_ZOO" \| "FIND_SLOTHS" \| "ESCORT_TO_STATION"/);
+  assert.match(zoo, /BronxZooQuestState = "NEED_TICKET" \| "ENTER_ZOO" \| "FIND_SLOTHS" \| "ESCORT_TO_BUS"/);
   assert.match(zoo, /bronx-zoo-extra-ticket-donor/);
   assert.match(zoo, /userData\.dialogue = "I couldn’t make it today, so please take my extra ticket\."/);
   assert.match(zoo, /userData\.givesExtraTicket = true/);
@@ -32,12 +32,12 @@ test("Gary's polar-bear habitat carries the exact TOGYL support plaque", async (
   assert.match(zoo, /context\.fillText\("POLAR BEAR", width \/ 2, 252\)/);
   assert.match(zoo, /context\.fillText\("Provided thanks to generous support by", width \/ 2, 380\)/);
   assert.match(zoo, /context\.fillText\("TOGYL", width \/ 2, 505\)/);
-  assert.match(zoo, /context\.font = "700 62px Georgia, serif"/);
+  assert.match(zoo, /context\.font = "700 44px Helvetica, Arial, sans-serif"/);
   assert.match(zoo, /gary-polar-bear-togyl-support-plaque/);
   assert.match(zoo, /createGaryPolarBear\(textures, quality\)/);
 });
 
-test("zoo species use the licensed project atlas and enclosure-safe multi-state motion", async () => {
+test("zoo species use the project atlas and enclosure-safe multi-state motion", async () => {
   const [zoo, animals, textures, provenance] = await Promise.all([
     readSource("../app/game/world/BronxZooWorld.ts"),
     readSource("../app/game/world/ZooAnimals.ts"),
@@ -95,7 +95,14 @@ test("the expansive zoo includes the sun conure, companion birds, monkeys, and a
   assert.match(animals, /commonName = "Sun conure"/);
   assert.match(zoo, /SUN CONURE · MACAW · SCARLET IBIS · GREEN ARACARI/);
   assert.match(zoo, /MONKEY FOREST/);
-  assert.match(zoo, /for \(let index = 0; index < 3; index\+\+\) placeAnimal[\s\S]{0,120}createSpiderMonkey/);
+  assert.match(zoo, /spider-monkey-load-bearing-contact-branch/);
+  assert.match(zoo, /spider-monkey-authored-contact-support-rig/);
+  assert.match(zoo, /spider-monkey-perch-hand-contact-branch/);
+  assert.match(zoo, /spider-monkey-prehensile-tail-contact-branch/);
+  assert.match(zoo, /const state = cycle < 10\.2 \? "perch" : cycle < 16\.4 \? "climb" : "swing"/);
+  assert.match(zoo, /spider-monkey-authored-climb-hand-contact-rope/);
+  assert.match(zoo, /spider-monkey-authored-climb-foot-contact-rung/);
+  assert.equal((zoo.match(/mode: "terrestrial"[\s\S]{0,80}speed: \.1/g) ?? []).length >= 2, true);
   assert.match(zoo, /spider-monkey-climbing-rope/);
   for (const habitat of ["SEA LION POOL", "AFRICAN PLAINS", "RED PANDA", "GIANT TORTOISE", "FLAMINGO WETLAND", "AMERICAN BISON"]) assert.match(zoo, new RegExp(habitat));
   for (const amenity of ["bronx-zoo-water-refill-and-snack-station", "bronx-zoo-waste-recycling-pair", "bronx-zoo-low-glare-path-lamp", "bronx-zoo-keeper-service-yard-detail"]) assert.match(zoo, new RegExp(amenity));
@@ -118,7 +125,7 @@ test("the keeper door releases four branch-dwelling sloths into a scene-owned fo
   assert.match(zoo, /sloth-enclosure-load-bearing-tree-branch-\$\{index \+ 1\}/);
   assert.match(zoo, /captive-sloth-friend-\$\{index \+ 1\}-on-real-branch/);
   assert.match(zoo, /OPEN THE SLOTH KEEPER DOOR/);
-  assert.match(zoo, /The keeper door is open\. Your four sloth friends are free — bring them back to Central Park\./);
+  assert.match(zoo, /The keeper door is open\. Lead your four friends along the promenade and board the museum shuttle bus\./);
   assert.match(zoo, /this\.captiveSloths\.forEach\(sloth => \{ sloth\.visible = !released; \}\)/);
 
   const tints = party.slice(party.indexOf("const FOLLOWER_TINTS"), party.indexOf("as const;", party.indexOf("const FOLLOWER_TINTS")));
@@ -161,42 +168,39 @@ test("opening the keeper door preserves every authored sloth transform until it 
   assert.match(party, /"release-climb-down"/);
 });
 
-test("rescued sloths persist through zoo disposal and both reverse subway journeys", async () => {
-  const [game, party, journeys] = await Promise.all([
+test("rescued sloths persist through zoo disposal, shuttle boarding, and the museum", async () => {
+  const [game, party, bus, museum] = await Promise.all([
     readSource("../app/game/SubwayGame.tsx"),
     readSource("../app/game/world/SlothFollowerParty.ts"),
-    readSource("../app/game/world/TrainInteriorWorld.ts"),
+    readSource("../app/game/world/CityBusWorld.ts"),
+    readSource("../app/game/world/NaturalHistoryMuseumWorld.ts"),
   ]);
 
-  assert.match(game, /zooWorld\.stationReturnReached\(player\)[\s\S]{0,120}rescuedParty\.allWithin[\s\S]{0,100}startReturnTransit\(\)/);
-  assert.match(game, /function startReturnTransit\(\)[\s\S]{0,180}zooWorld\.dispose\(\); zooWorld = null[\s\S]{0,260}createStationWorld\("WEST_FARMS", "RETURN"\)/);
-  assert.match(game, /const base = TRAIN_INTERIOR_JOURNEYS\[option\.journeyKey\]/);
-  assert.match(game, /option\.journeyKey === "WEST_FARMS_TO_LEXINGTON"/);
-  assert.match(game, /const destination = boarded\.destination/);
-  assert.match(game, /checkpoint\(destination, message, false, true, destination !== "LEXINGTON"\)/);
-  assert.match(journeys, /WEST_FARMS_TO_LEXINGTON/);
-  assert.match(journeys, /LEXINGTON_TO_FIFTH/);
-  assert.match(game, /travelDirection === "RETURN" && currentStation === "FIFTH_AV" && distance < 1\.45\) enterCentralPark\(\)/);
+  assert.match(game, /zooWorld\.busBoardingReached\(player\)[\s\S]{0,140}rescuedParty\.allWithin[\s\S]{0,100}startBusDrive\(\)/);
+  assert.match(game, /function startBusDrive\(startProgress = 0\)[\s\S]{0,300}zooWorld\.dispose\(\); zooWorld = null[\s\S]{0,420}new CityBusWorld/);
+  assert.match(game, /rescuedParty\.root\.visible = false/);
+  assert.match(bus, /rescued-sloth-on-museum-shuttle-/);
+  assert.match(bus, /createPremiumSlothFriend\(textures, quality, index/);
+  assert.match(game, /function enterMuseum/);
+  assert.match(game, /cityBusWorld\.dispose\(\); cityBusWorld = null/);
+  assert.match(game, /museumWorld = new NaturalHistoryMuseumWorld/);
+  assert.match(game, /rescuedParty\.root\.visible = true; rescuedParty\.reset\(player/);
+  assert.match(museum, /american-museum-of-natural-history-exploration-level/);
   assert.match(party, /deliberately outlives streamed zoo, station,[\s\S]{0,80}and train worlds/);
-  assert.match(game, /zooWorld\?\.dispose\(\); parkReturnWorld\?\.dispose\(\); rescuedParty\.dispose\(\)/);
+  assert.match(game, /zooWorld\?\.dispose\(\); cityBusWorld\?\.dispose\(\); museumWorld\?\.dispose\(\); parkReturnWorld\?\.dispose\(\); rescuedParty\.dispose\(\)/);
 });
 
-test("only all four followers reaching the designated Home Grove completes the campaign", async () => {
-  const [game, park] = await Promise.all([
+test("only all four followers reaching Megatherium completes the campaign", async () => {
+  const [game, museum] = await Promise.all([
     readSource("../app/game/SubwayGame.tsx"),
-    readSource("../app/game/world/CentralParkReturnWorld.ts"),
+    readSource("../app/game/world/NaturalHistoryMuseumWorld.ts"),
   ]);
 
-  assert.match(park, /root\.name = "central-park-homecoming-original-world"/);
-  assert.match(park, /readonly spawn = SUBWAY_ENTRY_TRIGGER\.clone\(\)/);
-  assert.match(park, /readonly sanctuaryTarget = START\.clone\(\)/);
-  assert.match(park, /homeMarker\.userData\.originalTreeIndex/);
-  assert.match(park, /context\.fillText\("HOME GROVE"/);
-  assert.match(park, /central-park-sloth-sanctuary-sign/);
-  assert.match(game, /function completeMission\(\)[\s\S]{0,220}!parkReturnWorld \|\| transitStage !== "CENTRAL_PARK" \|\| !rescuedParty\.allWithin\(parkReturnWorld\.sanctuaryTarget, 9\.5\)/);
-  assert.match(game, /parkReturnWorld\.sanctuaryNearby\(player\) && rescuedParty\.allWithin\(target, 9\.5\)[\s\S]{0,80}completeMission\(\)/);
-  assert.match(game, /Bring all four rescued sloths to the Home Grove/);
-  assert.match(game, /<h2>Your friends are home\.<\/h2>/);
+  assert.match(museum, /readonly megatheriumTarget = new THREE\.Vector3/);
+  assert.match(museum, /megatherium-americanum-giant-ground-sloth-articulated-skeleton/);
+  assert.match(game, /function completeMission\(\)[\s\S]{0,300}!museumCompletionArmed \|\| !museumWorld \|\| transitStage !== "MUSEUM" \|\| !museumWorld\.megatheriumNearby\(player\) \|\| !rescuedParty\.allWithin\(museumWorld\.megatheriumTarget, 9\.5\)/);
+  assert.match(game, /museumCompletionArmed && museumWorld\.megatheriumNearby\(player\) && rescuedParty\.allWithin\(target, 9\.5\)[\s\S]{0,80}completeMission\(\)/);
+  assert.match(game, /<h2>Your friends found a giant ancestor\.<\/h2>/);
 });
 
 test("mobile prompts, debug checkpoints, and runtime data expose the full rescue path", async () => {
@@ -209,11 +213,11 @@ test("mobile prompts, debug checkpoints, and runtime data expose the full rescue
 
   assert.match(touch, /prompt\.includes\("OPEN SLOTH"\) \|\| prompt\.includes\("HABITAT DOOR"\) \? "Open"/);
   assert.match(touch, /prompt\.includes\("TICKET DONOR"\) \|\| prompt\.includes\("SPEAK WITH"\) \? "Talk"/);
-  for (const checkpoint of ["bronxentry", "bronxpolar", "bronxbirds", "bronxmonkeys", "bronxsloths", "rescuefollowers", "returnwestfarms", "returntrain5", "returnlexington", "returntrainnr", "homecoming", "finale"]) {
+  for (const checkpoint of ["bronxentry", "bronxpolar", "bronxbirds", "bronxmonkeys", "bronxsloths", "rescuefollowers", "busdrive", "busarrival", "museumentry", "museumrotunda", "museummegatherium", "museumfinale"]) {
     assert.match(checkpoints, new RegExp(`"?${checkpoint}"?`));
     assert.match(game, new RegExp(`"${checkpoint}"`));
   }
-  for (const label of ["Gary", "World of Birds", "Monkey habitat", "Sloth habitat", "Rescued friends", "Return platform", "Return 5 train", "Return transfer", "Return N / R", "Central Park return", "Finale"]) assert.match(menu, new RegExp(label.replace("/", "\\/")));
+  for (const label of ["Gary", "World of Birds", "Monkey habitat", "Sloth habitat", "Rescued friends", "Museum shuttle", "Bus arrival", "AMNH exterior", "Museum rotunda", "Fossil mammals", "Finale"]) assert.match(menu, new RegExp(label.replace("/", "\\/")));
   for (const attribute of ["data-campaign-phase", "data-zoo-phase", "data-ticket-held", "data-follower-count", "data-return-leg", "data-loaded-world"]) assert.match(game, new RegExp(attribute));
 });
 
@@ -232,5 +236,7 @@ test("follower resources have one idempotent owner and are disposed after stream
   assert.doesNotMatch(zoo, /SlothFollowerParty|rescuedParty/);
   const cleanup = game.slice(game.indexOf("return () => { cancelAnimationFrame"), game.indexOf("}, [audio, quality, showToast])"));
   assert.ok(cleanup.indexOf("zooWorld?.dispose()") < cleanup.indexOf("rescuedParty.dispose()"));
+  assert.ok(cleanup.indexOf("cityBusWorld?.dispose()") < cleanup.indexOf("rescuedParty.dispose()"));
+  assert.ok(cleanup.indexOf("museumWorld?.dispose()") < cleanup.indexOf("rescuedParty.dispose()"));
   assert.ok(cleanup.indexOf("parkReturnWorld?.dispose()") < cleanup.indexOf("rescuedParty.dispose()"));
 });

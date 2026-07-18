@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { markTextureCloneReadyAfterSource } from "../rendering/textures";
 
 export type SlothVehicleGripTargets = {
   left: THREE.Vector3;
@@ -356,11 +357,18 @@ export function createSlothRig(furTexture: THREE.Texture): SlothRig {
   // The world texture repeats vertically for large creature meshes. A private
   // clamped viewmodel sampler maps it once along each arm so a tile boundary
   // can never masquerade as a dark wrist or elbow joint.
-  const viewmodelFur = furTexture.clone();
+  // Texture.clone() always marks the result for upload, even when the shared
+  // TextureLoader source has not decoded yet. Build the independent sampler
+  // explicitly and arm it only after the source owns real pixels.
+  const viewmodelFur = new THREE.Texture();
+  viewmodelFur.source = furTexture.source;
+  viewmodelFur.colorSpace = furTexture.colorSpace;
   viewmodelFur.wrapS = THREE.RepeatWrapping;
   viewmodelFur.wrapT = THREE.ClampToEdgeWrapping;
   viewmodelFur.repeat.set(1.1, .92);
   viewmodelFur.offset.set(.03, .04);
+  viewmodelFur.anisotropy = furTexture.anisotropy;
+  markTextureCloneReadyAfterSource(viewmodelFur, furTexture);
   const fur = new THREE.MeshPhysicalMaterial({
     map: viewmodelFur,
     bumpMap: viewmodelFur,

@@ -1,0 +1,106 @@
+{
+  "clips": [
+    "SeaLionIdle",
+    "SeaLionSwim",
+    "SeaLionSurface",
+    "SeaLionDive"
+  ],
+  "dimensionsMeters": {
+    "height": 1.588,
+    "length": 2.955,
+    "width": 1.631
+  },
+  "lod0": {
+    "animations": [
+      "SeaLionDive",
+      "SeaLionIdle",
+      "SeaLionSurface",
+      "SeaLionSwim"
+    ],
+    "bones": 17,
+    "bytes": 3644264,
+    "embeddedImages": 3,
+    "file": "california-sea-lion-lod0.glb",
+    "materials": 7,
+    "meshes": 9,
+    "sha256": "d47fc03b324dcae432aaa9387220c4e9bc55a04f7c7cdebaa5eab0138ef2a134",
+    "skins": 1,
+    "triangles": 152004,
+    "vertices": 87392
+  },
+  "lod2": {
+    "animations": [
+      "SeaLionDive",
+      "SeaLionIdle",
+      "SeaLionSurface",
+      "SeaLionSwim"
+    ],
+    "bones": 17,
+    "bytes": 3205312,
+    "embeddedImages": 3,
+    "file": "california-sea-lion-lod2.glb",
+    "materials": 7,
+    "meshes": 9,
+    "sha256": "8d3ec0e2f986cce170752138869dbd6e5bdd0e31d35ecb4b45ef29c6e3ffa49d",
+    "skins": 1,
+    "triangles": 48960,
+    "vertices": 31884
+  },
+  "maps": {
+    "albedo": {
+      "bytes": 2500541,
+      "embeddedImageName": "california-sea-lion-albedo",
+      "height": 2048,
+      "kind": "albedo",
+      "runtimeMimeType": "image/jpeg",
+      "sha256": "8c31525bc505ffd9e93f178f2f5fa2ce275193db63c8358853081d9f5070b0a4",
+      "sourceFile": "tools/animal-pipeline/source/california-sea-lion-albedo.png",
+      "width": 2048
+    },
+    "normal": {
+      "bytes": 10673998,
+      "embeddedImageName": "california-sea-lion-normal",
+      "height": 2048,
+      "kind": "normal",
+      "runtimeMimeType": "image/jpeg",
+      "sha256": "9ee346d73f404272ac36969632fa3efd46bcb78aeb6a65c60d5f040cddfb57e1",
+      "sourceFile": "tools/animal-pipeline/source/california-sea-lion-normal.png",
+      "width": 2048
+    },
+    "roughness": {
+      "bytes": 2960177,
+      "embeddedImageName": "california-sea-lion-roughness",
+      "height": 2048,
+      "kind": "roughness",
+      "runtimeMimeType": "image/png",
+      "sha256": "74de98941960488154e9489ca0194cec7517dd30adfd851847d910c8a56e60a1",
+      "sourceFile": "tools/animal-pipeline/source/california-sea-lion-roughness.png",
+      "width": 2048
+    }
+  },
+  "previews": {},
+  "skeleton": {
+    "bones": [
+      "Root",
+      "Pelvis",
+      "Spine",
+      "Chest",
+      "NeckLower",
+      "NeckUpper",
+      "Head",
+      "Jaw",
+      "ForeFlipper.L",
+      "ForeTip.L",
+      "ForeFlipper.R",
+      "ForeTip.R",
+      "TailBase",
+      "HindFlipper.L",
+      "HindTip.L",
+      "HindFlipper.R",
+      "HindTip.R"
+    ],
+    "maxInfluences": 4,
+    "name": "CaliforniaSeaLionRig"
+  },
+  "speciesId": "california-sea-lion"
+}

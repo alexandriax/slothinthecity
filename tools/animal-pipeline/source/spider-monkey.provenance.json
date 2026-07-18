@@ -1,0 +1,15 @@
+{
+  "speciesId": "spider-monkey",
+  "creator": "Sloth in the City original animal pipeline",
+  "source": "tools/animal-pipeline/build_spider_monkey.py",
+  "sourceMethod": "Deterministic fused-surface anatomy, modeled eyelids/corneas/digits, authored skeleton/weights/clips, generated image PBR maps",
+  "referenceUse": "Morphology and locomotion facts only; no reference mesh, texture, rig, or animation copied",
+  "references": [
+    "https://animaldiversity.org/accounts/Ateles_geoffroyi/",
+    "https://animals.sandiegozoo.org/animals/monkey",
+    "https://www.brookfieldzoo.org/animals/black-handed-spider-monkey"
+  ],
+  "thirdPartyAssets": [],
+  "license": "Original-Project-Asset",
+  "metrics": "tools/animal-pipeline/monkey-spider-metrics.json"
+}

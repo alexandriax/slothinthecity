@@ -210,7 +210,6 @@ button { font: inherit; }
 .subway-shell .world-grade {
   opacity:.92;
   background:
-    linear-gradient(90deg,transparent 0 16%,rgba(208,226,211,.045) 16.2% 16.45%,transparent 16.7% 83.3%,rgba(208,226,211,.04) 83.55% 83.8%,transparent 84%),
     radial-gradient(ellipse at 50% 5%,rgba(222,236,218,.17),transparent 42%),
     linear-gradient(180deg,rgba(17,37,31,.04),rgba(0,5,5,.32));
   mix-blend-mode:screen;
@@ -509,7 +508,7 @@ button { font: inherit; }
   line-height:1;
 }
 .subway-shell .finale-screen .pause-card:after {
-  content:"BRONX ZOO \2192  CENTRAL PARK · HOME GROVE";
+  content:"BRONX ZOO \2192  AMNH · FOSSIL MAMMAL HALLS";
   position:absolute;
   left:0;
   right:0;

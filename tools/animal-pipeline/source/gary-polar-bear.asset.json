@@ -1,0 +1,147 @@
+{
+  "clips": [
+    {
+      "name": "BearIdle"
+    },
+    {
+      "name": "BearWalk"
+    },
+    {
+      "name": "BearForage"
+    },
+    {
+      "name": "BearTurn"
+    }
+  ],
+  "coordinateSystem": {
+    "forward": "-Z",
+    "origin": "ground-under-torso",
+    "unit": "meter",
+    "up": "+Y"
+  },
+  "dimensionsMeters": {
+    "height": 1.681,
+    "length": 3.159,
+    "width": 1.43
+  },
+  "displayName": "Gary",
+  "generator": "tools/animal-pipeline/build_gary.py",
+  "id": "gary-polar-bear",
+  "license": "Original-Project-Asset",
+  "lod0": {
+    "animations": [
+      "BearForage",
+      "BearIdle",
+      "BearTurn",
+      "BearWalk"
+    ],
+    "bytes": 5316148,
+    "embeddedImages": 3,
+    "file": "gary-polar-bear-lod0.glb",
+    "materials": 6,
+    "meshes": 6,
+    "nodes": 26,
+    "sha256": "1e9f215de84cf1543b94a85241302146d7110dca49890dedf57a92f8c96f787e",
+    "skins": 1,
+    "triangles": 128656,
+    "vertices": 72251
+  },
+  "lod2": {
+    "animations": [
+      "BearForage",
+      "BearIdle",
+      "BearTurn",
+      "BearWalk"
+    ],
+    "bytes": 4907500,
+    "embeddedImages": 3,
+    "file": "gary-polar-bear-lod2.glb",
+    "materials": 6,
+    "meshes": 6,
+    "nodes": 26,
+    "sha256": "3967223af91d820bcd21a28f5f917a1a8aaf8460fca04670d48c45a44b283b54",
+    "skins": 1,
+    "triangles": 44320,
+    "vertices": 27289
+  },
+  "maps": {
+    "albedo": {
+      "bytes": 6439196,
+      "embeddedImageName": "gary-polar-bear-albedo",
+      "height": 2048,
+      "kind": "albedo",
+      "runtimeEncoding": "2048px JPEG quality 90 (Blender image output)",
+      "runtimeMimeType": "image/jpeg",
+      "sha256": "faef6aa0369cd2353b52d3c4bc1be4b690b713dcbf8dc7447dfcea72c00ef4f3",
+      "sourceFile": "tools/animal-pipeline/source/gary-polar-bear-albedo.png",
+      "width": 2048
+    },
+    "normal": {
+      "bytes": 12518339,
+      "embeddedImageName": "gary-polar-bear-normal",
+      "height": 2048,
+      "kind": "normal",
+      "runtimeEncoding": "2048px JPEG quality 90 (Blender image output)",
+      "runtimeMimeType": "image/jpeg",
+      "sha256": "9a6492b6f52f1f1578fbaea2718390ad497c17d1f47174539fae259d46756a00",
+      "sourceFile": "tools/animal-pipeline/source/gary-polar-bear-normal.png",
+      "width": 2048
+    },
+    "roughness": {
+      "bytes": 3958483,
+      "embeddedImageName": "gary-polar-bear-roughness",
+      "height": 2048,
+      "kind": "roughness",
+      "runtimeEncoding": "1024px glTF packed PNG",
+      "runtimeMimeType": "image/png",
+      "sha256": "2f87f351ed7cec7d8935fea74419fe3b1d6b28cfc04684e17364913e97ae34d8",
+      "sourceFile": "tools/animal-pipeline/source/gary-polar-bear-roughness.png",
+      "width": 2048
+    }
+  },
+  "materials": [
+    "GaryPolarBearFur",
+    "GaryEyes",
+    "GaryNose",
+    "GaryMouth",
+    "GaryInnerEar",
+    "GaryClawKeratin"
+  ],
+  "preview": "/private/tmp/gary-production-preview-19/gary-polar-bear.png",
+  "provenance": {
+    "geometry": "Original procedural sculpt authored and fused in Blender by this repository pipeline; no third-party geometry.",
+    "referencePolicy": "Wildlife photographs used only for visual proportion study.",
+    "textures": "Original deterministic NumPy-generated fur PBR maps; no source texture pixels.",
+    "visualReferences": [
+      "https://www.fws.gov/media/polar-bear-walking-ice",
+      "https://animals.sandiegozoo.org/animals/polar-bear"
+    ]
+  },
+  "schemaVersion": 1,
+  "skeleton": {
+    "bones": [
+      "Root",
+      "Pelvis",
+      "Spine",
+      "Chest",
+      "Neck",
+      "Head",
+      "ForeUpper.L",
+      "ForeLower.L",
+      "ForePaw.L",
+      "ForeUpper.R",
+      "ForeLower.R",
+      "ForePaw.R",
+      "Tail",
+      "HindUpper.L",
+      "HindLower.L",
+      "HindPaw.L",
+      "HindUpper.R",
+      "HindLower.R",
+      "HindPaw.R"
+    ],
+    "maxInfluences": 4,
+    "name": "GaryQuadrupedRig"
+  },
+  "species": "Ursus maritimus"
+}

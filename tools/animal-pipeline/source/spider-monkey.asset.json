@@ -1,0 +1,309 @@
+{
+  "clips": [
+    {
+      "name": "MonkeyIdle"
+    },
+    {
+      "name": "MonkeyWalk"
+    },
+    {
+      "name": "MonkeyPerch"
+    },
+    {
+      "name": "MonkeyClimb"
+    },
+    {
+      "name": "MonkeySwing"
+    }
+  ],
+  "coordinateSystem": {
+    "forward": "+Z",
+    "origin": "ground-contact plane",
+    "unit": "meter",
+    "up": "+Y"
+  },
+  "dimensionsMeters": {
+    "height": 1.517,
+    "length": 1.473,
+    "width": 0.636
+  },
+  "displayName": "Black-handed spider monkey",
+  "generator": "tools/animal-pipeline/build_spider_monkey.py",
+  "id": "spider-monkey",
+  "license": "Original-Project-Asset",
+  "lod0": {
+    "animations": [
+      "MonkeyClimb",
+      "MonkeyIdle",
+      "MonkeyPerch",
+      "MonkeySwing",
+      "MonkeyWalk"
+    ],
+    "bones": 28,
+    "bytes": 19595324,
+    "embeddedImages": 3,
+    "file": "spider-monkey-lod0.glb",
+    "materials": 5,
+    "meshes": 1,
+    "nodes": 30,
+    "sha256": "cc3962d7eb39201387349aeb1d617ccaff0cad9b5e0c8f17d14d16e047f9cb5a",
+    "skins": 1,
+    "triangles": 137016,
+    "vertices": 79202
+  },
+  "lod2": {
+    "animations": [
+      "MonkeyClimb",
+      "MonkeyIdle",
+      "MonkeyPerch",
+      "MonkeySwing",
+      "MonkeyWalk"
+    ],
+    "bones": 28,
+    "bytes": 13788288,
+    "embeddedImages": 3,
+    "file": "spider-monkey-lod2.glb",
+    "materials": 5,
+    "meshes": 1,
+    "nodes": 30,
+    "sha256": "ed77071b55e8c027313cff77a2c2e28d00b26e6d7e3e7dcd16f40798d32260c9",
+    "skins": 1,
+    "triangles": 32882,
+    "vertices": 21097
+  },
+  "maps": {
+    "albedo": {
+      "bytes": 3544547,
+      "embeddedImageName": "monkey-spider-fur-basecolor",
+      "height": 2048,
+      "kind": "albedo",
+      "runtimeMimeType": "image/png",
+      "sha256": "6d05e8c6a257a55dd4e07df948d767699011d248256954c06bef3c129326fc6a",
+      "sourceFile": "tools/animal-pipeline/source/monkey-spider-fur-basecolor.png",
+      "width": 2048
+    },
+    "normal": {
+      "bytes": 5967017,
+      "embeddedImageName": "monkey-spider-fur-normal",
+      "height": 2048,
+      "kind": "normal",
+      "runtimeMimeType": "image/png",
+      "sha256": "db46ee998b49aee84a5c0d4de9f62b99d8e0d759bc0500a248aaffe44c428127",
+      "sourceFile": "tools/animal-pipeline/source/monkey-spider-fur-normal.png",
+      "width": 2048
+    },
+    "roughness": {
+      "bytes": 2582100,
+      "embeddedImageName": "monkey-spider-fur-roughness",
+      "height": 2048,
+      "kind": "roughness",
+      "runtimeMimeType": "image/png",
+      "sha256": "c7e7809d249ae60eef3dea74a658d04621e6d8d5cd0825bc590eb35d7a01a098",
+      "sourceFile": "tools/animal-pipeline/source/monkey-spider-fur-roughness.png",
+      "width": 2048
+    }
+  },
+  "materials": [
+    "MonkeySpider_FurPBR",
+    "MonkeySpider_FaceAndPalms",
+    "MonkeySpider_Eyes",
+    "MonkeySpider_MouthAndNostrils",
+    "MonkeySpider_Catchlight"
+  ],
+  "previews": {
+    "ClimbContact": "tools/animal-pipeline/previews/monkey-climb-contact-closeup.png",
+    "FaceCloseup": "tools/animal-pipeline/previews/monkey-face-closeup.png",
+    "FaceThreeQuarter": "tools/animal-pipeline/previews/monkey-face-three-quarter.png",
+    "HandContact": "tools/animal-pipeline/previews/monkey-hand-contact-closeup.png",
+    "IdleContact": "tools/animal-pipeline/previews/monkey-idle-contact-closeup.png",
+    "MonkeyClimb": "tools/animal-pipeline/previews/monkey-climb.png",
+    "MonkeyIdle": "tools/animal-pipeline/previews/monkey-idle.png",
+    "MonkeyPerch": "tools/animal-pipeline/previews/monkey-perch.png",
+    "MonkeySwing": "tools/animal-pipeline/previews/monkey-swing.png",
+    "MonkeyWalk": "tools/animal-pipeline/previews/monkey-walk.png",
+    "PerchContact": "tools/animal-pipeline/previews/monkey-perch-contact-closeup.png",
+    "SwingContact": "tools/animal-pipeline/previews/monkey-swing-contact-closeup.png",
+    "WalkContact": "tools/animal-pipeline/previews/monkey-walk-contact-closeup.png"
+  },
+  "provenance": {
+    "geometry": "Original repository-authored fused anatomical surface with modeled eyelids, dark corneas, hooked digits and prehensile tail; no third-party geometry.",
+    "referencePolicy": "Wildlife photography and zoo facts used only for anatomical proportion and locomotion study.",
+    "rigging": "Original spider-monkey skeleton, weights and five animation clips authored by this pipeline.",
+    "textures": "Original deterministic NumPy-generated fur PBR maps and vertex face blend; no third-party pixels.",
+    "visualReferences": [
+      "https://animaldiversity.org/accounts/Ateles_geoffroyi/",
+      "https://animals.sandiegozoo.org/animals/monkey",
+      "https://www.brookfieldzoo.org/animals/black-handed-spider-monkey"
+    ]
+  },
+  "schemaVersion": 1,
+  "skeleton": {
+    "bones": [
+      "MonkeyRoot",
+      "Pelvis",
+      "Spine",
+      "Chest",
+      "Neck",
+      "Head",
+      "Shoulder.L",
+      "UpperArm.L",
+      "Forearm.L",
+      "Hand.L",
+      "Shoulder.R",
+      "UpperArm.R",
+      "Forearm.R",
+      "Hand.R",
+      "Thigh.L",
+      "Shin.L",
+      "Foot.L",
+      "Thigh.R",
+      "Shin.R",
+      "Foot.R",
+      "Tail.00",
+      "Tail.01",
+      "Tail.02",
+      "Tail.03",
+      "Tail.04",
+      "Tail.05",
+      "Tail.06",
+      "Tail.07"
+    ],
+    "maxInfluences": 4,
+    "name": "MonkeySpider_Rig"
+  },
+  "species": "Ateles geoffroyi",
+  "supportAnchors": {
+    "MonkeyPerch": {
+      "footSupport": {
+        "center": [
+          0.0,
+          0.041345,
+          0.278193
+        ],
+        "contactPoints": {
+          "Foot.L": [
+            -0.078645,
+            0.023345,
+            0.278193
+          ],
+          "Foot.R": [
+            0.078645,
+            0.023345,
+            0.278193
+          ]
+        },
+        "endpointA": [
+          -0.7,
+          0.041345,
+          0.278193
+        ],
+        "endpointB": [
+          0.7,
+          0.041345,
+          0.278193
+        ],
+        "length": 1.4,
+        "radius": 0.052
+      },
+      "handSupport": {
+        "center": [
+          0.0,
+          0.738797,
+          0.941977
+        ],
+        "contactPoints": {
+          "Hand.L": [
+            0.062418,
+            0.710797,
+            0.941977
+          ],
+          "Hand.R": [
+            -0.062418,
+            0.710797,
+            0.941977
+          ]
+        },
+        "endpointA": [
+          -0.7,
+          0.738797,
+          0.941977
+        ],
+        "endpointB": [
+          0.7,
+          0.738797,
+          0.941977
+        ],
+        "length": 1.4,
+        "radius": 0.052
+      },
+      "reviewFrame": 45
+    },
+    "MonkeySwing": {
+      "feet": "free-swinging; no authored support contact",
+      "handSupport": {
+        "center": [
+          0.034081,
+          1.036024,
+          1.008346
+        ],
+        "contactPoints": {
+          "Hand.L": [
+            -0.055154,
+            1.008024,
+            1.01147
+          ],
+          "Hand.R": [
+            0.123316,
+            1.008024,
+            1.005221
+          ]
+        },
+        "endpointA": [
+          -0.665919,
+          1.036024,
+          1.008346
+        ],
+        "endpointB": [
+          0.734081,
+          1.036024,
+          1.008346
+        ],
+        "length": 1.4,
+        "radius": 0.052
+      },
+      "reviewFrame": 16,
+      "tailSupport": {
+        "center": [
+          0.009373,
+          1.563347,
+          -0.100766
+        ],
+        "contactPoints": {
+          "Tail.07": [
+            0.009373,
+            1.581347,
+            -0.100766
+          ]
+        },
+        "endpointA": [
+          -0.094583,
+          1.563347,
+          -0.589839
+        ],
+        "endpointB": [
+          0.113329,
+          1.563347,
+          0.388308
+        ],
+        "length": 1.0,
+        "radius": 0.04
+      }
+    },
+    "coordinateSystem": {
+      "forward": "+Z",
+      "unit": "meter",
+      "up": "+Y"
+    },
+    "supportSemantics": "Finite cylinders; endpoints are centerline endpoints and radius is radial clearance."
+  }
+}

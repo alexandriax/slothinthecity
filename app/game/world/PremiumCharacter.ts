@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
-import type { GameTextures } from "../rendering/textures";
+import { hasDecodedTextureImage, type GameTextures } from "../rendering/textures";
 import { hydrateAuthoredHuman, markAuthoredHumanDisposed, markAuthoredHumansDisposed } from "./characters/AuthoredHumanAssets";
 
 type SurfaceKind = "cloth" | "skin" | "hair" | "leather" | "metal" | "ivory" | "fur";
@@ -129,6 +129,7 @@ function texturedMaterial(texture: THREE.Texture, roughness: number, options: { 
 
 const atlasSources = new Map<string, THREE.Texture>();
 const pendingAtlasClones = new WeakMap<THREE.Texture, THREE.Texture[]>();
+const disposedAtlasClones = new WeakSet<THREE.Texture>();
 
 /**
  * The generated atlases are 2 x 2 sheets. Cloning shares the decoded image but
@@ -142,7 +143,9 @@ function atlasTile(url: string, tile: number, quality: number) {
   let source = atlasSources.get(url);
   if (!source) {
     source = new THREE.TextureLoader().load(url, loaded => {
-      pendingAtlasClones.get(loaded)?.forEach(texture => { texture.needsUpdate = true; });
+      pendingAtlasClones.get(loaded)?.forEach(texture => {
+        if (!disposedAtlasClones.has(texture) && hasDecodedTextureImage(loaded)) texture.needsUpdate = true;
+      });
       pendingAtlasClones.delete(loaded);
     });
     source.colorSpace = THREE.SRGBColorSpace;
@@ -150,6 +153,7 @@ function atlasTile(url: string, tile: number, quality: number) {
     atlasSources.set(url, source);
   }
   const texture = new THREE.Texture();
+  texture.addEventListener("dispose", () => disposedAtlasClones.add(texture));
   texture.source = source.source;
   texture.colorSpace = source.colorSpace;
   const index = ((tile % 4) + 4) % 4;
@@ -157,7 +161,10 @@ function atlasTile(url: string, tile: number, quality: number) {
   texture.offset.set((index % 2) * .5, index < 2 ? .5 : 0);
   texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
   texture.anisotropy = quality > .86 ? 8 : quality > .62 ? 4 : 2;
-  if (source.image) texture.needsUpdate = true;
+  // TextureLoader exposes its HTMLImageElement before decoded pixels exist.
+  // Keep this clone hidden from WebGL until the shared atlas callback fires;
+  // early uploads create blank visitor materials and warning storms in the zoo.
+  if (hasDecodedTextureImage(source)) texture.needsUpdate = true;
   else {
     const pending = pendingAtlasClones.get(source) ?? [];
     pending.push(texture);
