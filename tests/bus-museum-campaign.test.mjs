@@ -98,6 +98,11 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
   assert.match(bus, /closure\.road !== "West Side Highway"/);
   assert.match(bus, /west-side-highway-following-streetwall-podium-section/);
   assert.match(bus, /const highwayStreetwallEnd = HIGHWAY_EXIT_START - 138/);
+  assert.match(bus, /const HIGHWAY_COLLIDER_STEP = 4/);
+  assert.match(bus, /routeFollowingStaticColliders/);
+  assert.match(bus, /filterCollidersOutsidePrimaryLanes/);
+  assert.match(bus, /SHUTTLE_COLLISION_RADIUS \+ \.22/);
+  assert.match(bus, /CITY_BUS_EXIT_REVIEW_PROGRESS = HIGHWAY_EXIT_START - 220/);
   assert.match(bus, /segmentIntersectsExpandedBuilding/);
   assert.match(bus, /const VISIBLE_OSM_BUILDINGS = NYC_OSM_BUILDINGS\.filter/);
   assert.match(bus, /exitRamp \? road\.halfWidth \+ 1\.4/);
@@ -113,7 +118,8 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
   assert.match(bus, /openstreetmap-authored-upper-west-side-driveable-road-surfaces/);
   assert.match(game, /Wrong turn — navigation recalculated through the connected street grid/);
   assert.match(bus, /CITY_BUS_ROUTE_LENGTH = CENTRAL_PARK_WEST_START/);
-  assert.match(bus, /hudson-river-right-side-of-southbound-west-side-highway/);
+  assert.match(bus, /hudson-river-route-following-surface/);
+  assert.doesNotMatch(bus, /new THREE\.PlaneGeometry\(320, 2380\)/);
   assert.match(bus, /openstreetmap-central-park-continuous-landscape-context/);
   assert.match(bus, /exit-here-for-american-museum-of-natural-history-sign/);
   assert.match(bus, /get signedSpeedMetersPerSecond\(\)/);
@@ -124,11 +130,16 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
   assert.match(bus, /central-park-west-amnh-arrival-asphalt-continuation/);
   assert.match(bus, /amnh-route-end-grounded-preview-facade/);
   assert.match(bus, /continuous-bronx-neighborhood-ground-plane/);
+  assert.match(bus, /bronx-continuous-streetwall-infill/);
+  assert.match(bus, /continuous-painted-road-edge-line/);
   assert.match(bus, /bronx-surface-street-intersection-/);
   assert.match(bus, /nyc-near-side-before-intersection-signal-pole/);
   assert.match(bus, /west-side-highway-continuous-manhattan-streetwall-podium/);
   assert.match(bus, /dense-west-side-highway-riverfront-building/);
   assert.match(bus, /west-side-highway-roadway-light-not-traffic-signal/);
+  assert.match(bus, /rescue-bus-roofline-sealed-panoramic-windshield/);
+  assert.match(bus, /museum-shuttle-unclipped-destination-sign-frame/);
+  assert.match(bus, /museum-shuttle-full-width-visible-destination-sign/);
   assert.match(bus, /get routeCompletion\(\)/);
   assert.match(bus, /completionHighWater = Math\.max/);
   assert.doesNotMatch(bus, /UWS_AVENUES|UWS_CROSS_STREETS/);

@@ -112,10 +112,11 @@ const WEST_81_START = HIGHWAY_EXIT_START + MANHATTAN_PRIMARY_CUMULATIVE[9];
 const CENTRAL_PARK_WEST_START = HIGHWAY_EXIT_START + MANHATTAN_PRIMARY_LENGTH;
 export const CITY_BUS_ROUTE_LENGTH = CENTRAL_PARK_WEST_START;
 export const CITY_BUS_HIGHWAY_REVIEW_PROGRESS = 1450;
-export const CITY_BUS_EXIT_REVIEW_PROGRESS = HIGHWAY_EXIT_START + 32;
+export const CITY_BUS_EXIT_REVIEW_PROGRESS = HIGHWAY_EXIT_START - 220;
 export const CITY_BUS_CITY_REVIEW_PROGRESS = CROSSTOWN_START + 62;
 const LANE_WIDTH = 3.35;
 const TRAFFIC_LANES = [-1.5, -.5, .5, 1.5] as const;
+const HIGHWAY_COLLIDER_STEP = 4;
 // Arcade pace is intentional: the sloth is slow on foot, but the vehicles are
 // exhilarating. These caps are roughly 2–2.5× the previous values; traffic
 // proximity remains readable, but only player brake/handbrake input takes pace.
@@ -188,6 +189,57 @@ function circleObbContact(center: THREE.Vector3, radius: number, collider: Stati
   normalX /= distance; normalZ /= distance;
   const worldCosine = Math.cos(collider.yaw), worldSine = Math.sin(collider.yaw);
   return { collider, penetration, normal: new THREE.Vector3(normalX * worldCosine - normalZ * worldSine, 0, normalX * worldSine + normalZ * worldCosine) };
+}
+
+type RouteColliderCandidate = { collider: StaticCollider; progress: number };
+
+function filterCollidersOutsidePrimaryLanes(candidates: RouteColliderCandidate[]) {
+  // Scenery collision is authored from short route-following pieces, then
+  // rejected if any piece reaches the complete four-lane shuttle envelope.
+  // This is a production safety gate for curved roads: a visible shoulder may
+  // look correct while the chord of a long rectangular hitbox crosses a lane.
+  return candidates.filter(({ collider, progress }) => {
+    for (let sample = progress - HIGHWAY_COLLIDER_STEP * 2; sample <= progress + HIGHWAY_COLLIDER_STEP * 2; sample += 1) {
+      for (const lane of TRAFFIC_LANES) {
+        const laneFrame = routeFrame(sample);
+        for (const shuttleOffset of SHUTTLE_COLLISION_OFFSETS) {
+          const center = routeCenter(sample + shuttleOffset).addScaledVector(laneFrame.right, lane * LANE_WIDTH);
+          if (circleObbContact(center, SHUTTLE_COLLISION_RADIUS + .22, collider)) return false;
+        }
+      }
+    }
+    return true;
+  }).map(candidate => candidate.collider);
+}
+
+function routeFollowingStaticColliders(options: {
+  from: number;
+  to: number;
+  offset: number;
+  halfX: number;
+  kind: StaticCollider["kind"];
+  label: string;
+  idPrefix: string;
+}) {
+  const candidates: RouteColliderCandidate[] = [];
+  for (let progress = options.from, index = 0; progress < options.to; progress += HIGHWAY_COLLIDER_STEP, index++) {
+    const next = Math.min(options.to, progress + HIGHWAY_COLLIDER_STEP), middle = (progress + next) * .5;
+    const a = routeCenter(progress), b = routeCenter(next), frame = routeFrame(middle), center = a.clone().add(b).multiplyScalar(.5).addScaledVector(frame.right, options.offset);
+    candidates.push({
+      progress: middle,
+      collider: {
+        id: `${options.idPrefix}-${index + 1}`,
+        kind: options.kind,
+        label: options.label,
+        x: center.x,
+        z: center.z,
+        halfX: options.halfX,
+        halfZ: Math.max(.35, a.distanceTo(b) * .5),
+        yaw: frame.yaw,
+      },
+    });
+  }
+  return filterCollidersOutsidePrimaryLanes(candidates);
 }
 
 function signalAspectAt(elapsed: number, stop: number): TrafficSignalAspect {
@@ -489,23 +541,25 @@ function makeBus(quality: number, textures: GameTextures, passengerTextures: THR
   const yellow = new THREE.MeshPhysicalMaterial({ color: "#e0ad22", roughness: .48, clearcoat: .5, clearcoatRoughness: .3 });
   const dark = new THREE.MeshStandardMaterial({ color: "#171d1e", roughness: .62 });
   const metal = new THREE.MeshStandardMaterial({ color: "#778184", roughness: .28, metalness: .7 });
-  const glass = new THREE.MeshPhysicalMaterial({ color: "#9ac0c8", roughness: .1, transmission: .52, transparent: true, opacity: .3, metalness: .03, depthWrite: false });
+  const glass = new THREE.MeshPhysicalMaterial({ color: "#dce8e7", roughness: .055, transmission: .82, transparent: true, opacity: .11, metalness: .01, clearcoat: .38, depthWrite: false });
   glass.forceSinglePass = true;
   const rubber = new THREE.MeshStandardMaterial({ color: "#101112", roughness: .92 });
   const body = new THREE.Mesh(new RoundedBoxGeometry(3.05, 2.05, 7.8, 8, .22), yellow); body.position.y = 1.65; body.name = "rescue-bus-continuous-coach-body"; root.add(body);
   const lower = new THREE.Mesh(new RoundedBoxGeometry(3.14, .68, 7.9, 6, .16), dark); lower.position.y = .72; root.add(lower);
   const roof = new THREE.Mesh(new RoundedBoxGeometry(3.08, .24, 7.55, 7, .12), yellow); roof.position.y = 2.82; root.add(roof);
-  const windshield = new THREE.Mesh(new RoundedBoxGeometry(2.55, 1.25, .07, 5, .04), glass); windshield.position.set(0, 2.02, -3.92); windshield.rotation.x = -.08; windshield.name = "rescue-bus-panoramic-windshield"; root.add(windshield);
+  const windshield = new THREE.Mesh(new RoundedBoxGeometry(2.72, 1.48, .07, 5, .04), glass); windshield.position.set(0, 2.01, -3.92); windshield.rotation.x = -.035; windshield.name = "rescue-bus-roofline-sealed-panoramic-windshield"; root.add(windshield);
   for (const side of [-1, 1]) for (let row = 0; row < 4; row++) {
     const window = new THREE.Mesh(new RoundedBoxGeometry(.07, 1.08, 1.35, 4, .035), glass);
     window.position.set(side * 1.55, 2.05, -2.35 + row * 1.55); root.add(window);
   }
   const destinationTexture = signTexture("MUSEUM SHUTTLE", "BRONX ZOO  →  AMNH");
   passengerTextures.push(destinationTexture);
-  const destination = new THREE.Mesh(new RoundedBoxGeometry(1.08, .17, .045, 4, .02), new THREE.MeshBasicMaterial({ map: destinationTexture, toneMapped: false }));
-  // Keep the route box in the header above the driver's eye line; it should
-  // identify the vehicle without becoming a billboard across the windshield.
-  destination.position.set(.42, 2.78, -3.965); root.add(destination);
+  const destinationFrame = new THREE.Mesh(new RoundedBoxGeometry(1.78, .36, .055, 5, .03), dark);
+  destinationFrame.name = "museum-shuttle-unclipped-destination-sign-frame"; destinationFrame.position.set(0, 2.49, -3.91); root.add(destinationFrame);
+  const destination = new THREE.Mesh(new RoundedBoxGeometry(1.62, .255, .045, 4, .018), new THREE.MeshBasicMaterial({ map: destinationTexture, toneMapped: false }));
+  // Keep the entire route box below the roof seam, inside a legible black
+  // header, so the driver's view never crops either line of destination copy.
+  destination.name = "museum-shuttle-full-width-visible-destination-sign"; destination.position.set(0, 2.49, -3.875); root.add(destination);
   const wheelGeometry = new THREE.CylinderGeometry(.49, .49, .32, quality > .75 ? 28 : 18);
   for (const side of [-1, 1]) for (const z of [-2.5, 2.45]) {
     const wheel = new THREE.Mesh(wheelGeometry, rubber); wheel.rotation.z = Math.PI / 2; wheel.position.set(side * 1.58, .55, z); wheel.name = "rescue-bus-road-wheel"; root.add(wheel);
@@ -743,6 +797,11 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
     for (const offset of [-LANE_WIDTH * 1.5, -LANE_WIDTH * .5, LANE_WIDTH * .5, LANE_WIDTH * 1.5]) {
       const stripe = new THREE.Mesh(new RoundedBoxGeometry(.09, .025, length * .62, 2, .01), lane); stripe.position.copy(road.position).addScaledVector(frame.right, offset); stripe.position.y += .12; stripe.rotation.y = frame.yaw; root.add(stripe);
     }
+    for (const side of [-1, 1]) {
+      const edgeLine = new THREE.Mesh(new RoundedBoxGeometry(.13, .027, length + .14, 2, .012), lane);
+      edgeLine.name = "continuous-painted-road-edge-line";
+      edgeLine.position.copy(road.position).addScaledVector(frame.right, side * (roadWidth * .5 - .58)); edgeLine.position.y += .125; edgeLine.rotation.y = frame.yaw; root.add(edgeLine);
+    }
   }
   // The trip now begins on actual Bronx surface streets: each controlled
   // intersection has a full cross street, curb returns and lane markings
@@ -816,6 +875,31 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
   const baseMaterials = ["#403f3b", "#6f6458", "#514b45"].map(color => new THREE.MeshStandardMaterial({ color, map: textures.stone, bumpMap: textures.stone, bumpScale: .025, roughness: .9 }));
   const storefrontMaterials = ["#7fa2a7", "#b49065", "#648b84", "#8e6b82"].map(color => new THREE.MeshPhysicalMaterial({ color, roughness: .2, transmission: .12, transparent: true, opacity: .82, metalness: .06 }));
   const fireEscapeMaterial = new THREE.MeshStandardMaterial({ color: "#242a29", roughness: .56, metalness: .68 });
+  // The first nine hundred metres need a close, continuous street edge at
+  // driving speed. Two-sided infill closes the large procedural gaps while
+  // preserving the three real cross-street openings and their sight lines.
+  const bronxInfillStep = quality < .58 ? 21 : quality < .82 ? 17 : 13.5;
+  let bronxInfillIndex = 0;
+  for (let progress = 8; progress < HIGHWAY_START - 8; progress += bronxInfillStep) {
+    if ([150, 335, 565].some(intersection => Math.abs(progress - intersection) < 15)) continue;
+    const frame = routeFrame(progress), depth = bronxInfillStep + 1.35;
+    for (const side of [-1, 1]) {
+      const index = bronxInfillIndex++, width = 8.4 + index % 4 * 1.15, height = 10.5 + index % 7 * 2.35;
+      const building = new THREE.Mesh(new RoundedBoxGeometry(width, height, depth, 3, .12), buildingMaterials[(index + 1) % buildingMaterials.length]);
+      building.name = "bronx-continuous-streetwall-infill";
+      building.position.copy(frame.center).addScaledVector(frame.right, side * (16.35 + width * .5)); building.position.y = height * .5 - .04; building.rotation.y = frame.yaw; root.add(building);
+      collisionIndex.add({ id: `bronx-streetwall-infill-${index}`, kind: "building", label: "Bronx neighborhood building", x: building.position.x, z: building.position.z, halfX: width * .46, halfZ: depth * .46, yaw: frame.yaw });
+      const base = new THREE.Mesh(new RoundedBoxGeometry(width + .08, 2.65, depth + .18, 3, .055), baseMaterials[index % baseMaterials.length]);
+      base.name = "bronx-articulated-ground-floor-streetwall"; base.position.copy(building.position); base.position.y = 1.32; base.rotation.y = frame.yaw; root.add(base);
+      const cornice = new THREE.Mesh(new RoundedBoxGeometry(width + .42, .34, depth + .42, 3, .04), corniceMaterials[index % corniceMaterials.length]);
+      cornice.name = "bronx-continuous-block-cornice"; cornice.position.copy(building.position); cornice.position.y = height + .12; cornice.rotation.y = frame.yaw; root.add(cornice);
+      if (index % 3 === 0) {
+        const storefront = new THREE.Mesh(new RoundedBoxGeometry(.14, 1.95, depth * .7, 4, .03), storefrontMaterials[index % storefrontMaterials.length]);
+        storefront.name = "bronx-local-storefront-glazing-and-awning";
+        storefront.position.copy(building.position).addScaledVector(frame.right, -side * (width * .5 + .1)); storefront.position.y = 1.22; storefront.rotation.y = frame.yaw; root.add(storefront);
+      }
+    }
+  }
   const buildingCount = quality < .58 ? 82 : quality < .82 ? 124 : 168;
   for (let index = 0; index < buildingCount; index++) {
     const progress = 18 + index / Math.max(1, buildingCount - 1) * (CITY_BUS_ROUTE_LENGTH - 36), frame = routeFrame(progress), side = index % 2 ? 1 : -1, groundY = frame.center.y;
@@ -867,15 +951,16 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
   // the signed W 79th Street ramp.
   const highwayStreetwallEnd = HIGHWAY_EXIT_START - 138;
   const podiumGroup = new THREE.Group(); podiumGroup.name = "west-side-highway-continuous-manhattan-streetwall-podium";
-  let podiumIndex = 0;
-  for (let progress = HIGHWAY_START; progress < highwayStreetwallEnd; progress += 22) {
-    const next = Math.min(highwayStreetwallEnd, progress + 22), a = routeCenter(progress), b = routeCenter(next), frame = routeFrame((progress + next) * .5), length = a.distanceTo(b);
+  for (let progress = HIGHWAY_START; progress < highwayStreetwallEnd;) {
+    const visualStep = progress < HIGHWAY_OSM_BLEND_START ? 22 : 8;
+    const next = Math.min(highwayStreetwallEnd, progress + visualStep), a = routeCenter(progress), b = routeCenter(next), frame = routeFrame((progress + next) * .5), length = a.distanceTo(b);
     const podium = new THREE.Mesh(new RoundedBoxGeometry(9.5, 5.2, length + .8, 4, .08), baseMaterials[1]);
     podium.name = "west-side-highway-following-streetwall-podium-section";
     podium.position.copy(a).add(b).multiplyScalar(.5).addScaledVector(frame.right, -15.9); podium.position.y = 2.5; podium.rotation.y = frame.yaw; podiumGroup.add(podium);
-    collisionIndex.add({ id: `highway-manhattan-streetwall-${++podiumIndex}`, kind: "building", label: "West Side Manhattan streetwall", x: podium.position.x, z: podium.position.z, halfX: 4.75, halfZ: length * .5, yaw: frame.yaw });
+    progress = next;
   }
   root.add(podiumGroup);
+  routeFollowingStaticColliders({ from: HIGHWAY_START, to: highwayStreetwallEnd, offset: -15.9, halfX: 4.75, kind: "building", label: "West Side Manhattan streetwall", idPrefix: "highway-manhattan-streetwall" }).forEach(collider => collisionIndex.add(collider));
   // Varied setbacks, roof plant and water towers carry the left-side building
   // canyon into the OSM district without placing massing in the exit corridor.
   const highwayBlockCount = Math.ceil((highwayStreetwallEnd - HIGHWAY_START) / 24);
@@ -925,19 +1010,21 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
   exitSign.name = "exit-here-for-american-museum-of-natural-history-sign"; exitSign.position.set(-2.1, 5.05, -.2); exitGantry.add(exitSign);
   exitGantry.position.copy(exitFrame.center); exitGantry.rotation.y = exitFrame.yaw; root.add(exitGantry);
 
-  const river = new THREE.Mesh(new THREE.PlaneGeometry(320, 2380), new THREE.MeshPhysicalMaterial({ color: "#446d79", normalMap: textures.waterNormal, normalScale: new THREE.Vector2(.32, .32), roughness: .2, metalness: .04, clearcoat: .72 }));
-  river.name = "hudson-river-right-side-of-southbound-west-side-highway"; river.rotation.x = -Math.PI / 2; river.position.set(104, .05, -1960); root.add(river);
+  const hudsonWaterMaterial = new THREE.MeshPhysicalMaterial({ color: "#446d79", normalMap: textures.waterNormal, normalScale: new THREE.Vector2(.32, .32), roughness: .2, metalness: .04, clearcoat: .72 });
   const greenwayStripeMaterial = new THREE.MeshStandardMaterial({ color: "#d6c85f", roughness: .72 });
   const highwayEdgeSegments: Array<{ start: THREE.Vector3; end: THREE.Vector3; halfWidth: number; source: "authored" | "osm" }> = [];
-  for (let progress = HIGHWAY_START; progress < HIGHWAY_EXIT_START; progress += 30) {
-    const next = Math.min(HIGHWAY_EXIT_START, progress + 30);
+  for (let progress = HIGHWAY_START; progress < HIGHWAY_EXIT_START;) {
+    const visualStep = progress < HIGHWAY_OSM_BLEND_START ? 30 : 8;
+    const next = Math.min(HIGHWAY_EXIT_START, progress + visualStep);
     highwayEdgeSegments.push({ start: routeCenter(progress), end: routeCenter(next), halfWidth: 10.75, source: "authored" });
+    progress = next;
   }
   // Continue the same river edge along the real southbound OSM carriageway.
   // This is the path the shuttle occupies after deliberately skipping W 79th.
   for (const road of NYC_OSM_ROADS.filter(road => /Henry Hudson Parkway|West Side Highway/.test(road.name) && road.oneWay && road.end[1] < road.start[1] && road.end[1] < HIGHWAY_EXIT_JUNCTION[1])) {
     highwayEdgeSegments.push({ start: new THREE.Vector3(road.start[0], .4, road.start[1]), end: new THREE.Vector3(road.end[0], .4, road.end[1]), halfWidth: road.halfWidth, source: "osm" });
   }
+  routeFollowingStaticColliders({ from: HIGHWAY_START, to: HIGHWAY_EXIT_START, offset: 11.17, halfX: .4, kind: "barrier", label: "Hudson River safety barrier", idPrefix: "highway-hudson-safety-barrier" }).forEach(collider => collisionIndex.add(collider));
   highwayEdgeSegments.forEach((segment, index) => {
     const tangent = segment.end.clone().sub(segment.start).setY(0), length = tangent.length();
     if (length < .05) return;
@@ -946,12 +1033,15 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
     const barrier = new THREE.Mesh(new RoundedBoxGeometry(.52, .72, length + .5, 3, .09), concrete);
     barrier.name = segment.source === "osm" ? "west-side-highway-osm-continuation-hudson-safety-barrier" : "west-side-highway-hudson-safety-barrier";
     barrier.position.copy(center).addScaledVector(right, segment.halfWidth + .42); barrier.position.y = .34; barrier.rotation.y = yaw; root.add(barrier);
-    collisionIndex.add({ id: `highway-hudson-safety-barrier-${index}`, kind: "barrier", label: "Hudson River safety barrier", x: barrier.position.x, z: barrier.position.z, halfX: .4, halfZ: length * .5, yaw });
+    if (segment.source === "osm") collisionIndex.add({ id: `highway-osm-continuation-safety-barrier-${index}`, kind: "barrier", label: "Hudson River safety barrier", x: barrier.position.x, z: barrier.position.z, halfX: .4, halfZ: length * .5, yaw });
     const greenway = new THREE.Mesh(new RoundedBoxGeometry(8.6, .3, length + .6, 3, .05), concrete);
     greenway.name = segment.source === "osm" ? "hudson-river-greenway-mapped-highway-continuation" : "hudson-river-greenway-and-seawall";
     greenway.position.copy(center).addScaledVector(right, segment.halfWidth + 5.05); greenway.position.y = .12; greenway.rotation.y = yaw; root.add(greenway);
     const stripe = new THREE.Mesh(new RoundedBoxGeometry(.12, .035, length + .25, 2, .012), greenwayStripeMaterial);
     stripe.name = "hudson-river-greenway-center-stripe"; stripe.position.copy(greenway.position); stripe.position.y = .3; stripe.rotation.y = yaw; root.add(stripe);
+    const water = new THREE.Mesh(new RoundedBoxGeometry(130, .035, length + 1.5, 2, .01), hudsonWaterMaterial);
+    water.name = "hudson-river-route-following-surface";
+    water.position.copy(center).addScaledVector(right, segment.halfWidth + 74.35); water.position.y = .015; water.rotation.y = yaw; root.add(water);
     if (segment.source === "osm" && index % 3 === 0) {
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(.055, .09, 6.4, 9), highwayLampMaterial); pole.name = "west-side-highway-continuation-roadway-light"; pole.position.copy(center).addScaledVector(right, segment.halfWidth + .9); pole.position.y = 3.2; root.add(pole);
       const lamp = new THREE.Mesh(new THREE.SphereGeometry(.16, 12, 8), highwayLampGlow); lamp.position.copy(pole.position); lamp.position.y = 6.42; root.add(lamp);
