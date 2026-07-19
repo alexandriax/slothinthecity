@@ -55,6 +55,8 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
   assert.match(bus, /input\.steerLeft/);
   assert.match(bus, /input\.steerRight/);
   assert.match(bus, /input\.handbrake/);
+  assert.match(bus, /shiftUp: boolean/);
+  assert.match(bus, /shiftDown: boolean/);
   assert.match(bus, /createPremiumHuman/);
   assert.match(bus, /createAmbientHumanAgent/);
   assert.match(bus, /updateAmbientHumanAgent/);
@@ -65,6 +67,20 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
   assert.match(game, /cityBusWorld\.parkingReached/);
   assert.match(bus, /const STREET_TOP_SPEED = 48/);
   assert.match(bus, /const HIGHWAY_TOP_SPEED = 72/);
+  assert.match(bus, /const SHUTTLE_GEARS = \[/);
+  for (const speedBand of [20, 36, 52]) assert.match(bus, new RegExp(`topSpeed: ${speedBand}`));
+  assert.match(bus, /topSpeed: HIGHWAY_TOP_SPEED/);
+  assert.match(bus, /private forwardGear = 2/);
+  assert.match(bus, /input\.shiftUp !== input\.shiftDown/);
+  assert.match(bus, /Math\.min\(road\.road\.speedLimit, this\.gearTopSpeedMetersPerSecond\)/);
+  assert.match(bus, /this\.speed > forwardTopSpeed/);
+  assert.match(game, /event\.code === "KeyR"/);
+  assert.match(game, /event\.code === "KeyF"/);
+  assert.match(game, /data-bus-gear=\{busGear\}/);
+  assert.match(game, /data-bus-gear-limit=\{busGearLimit\}/);
+  assert.match(game, /data-bus-impact=\{busImpactStatus\}/);
+  assert.match(game, /data-bus-speed=\{vehicleSpeed\.toFixed\(1\)\}/);
+  assert.match(game, /className="shuttle-transmission"/);
   assert.match(bus, /targetSpeed = driveInput > 0 \? forwardTopSpeed : -11/);
   assert.match(bus, /targetLane/);
   assert.match(bus, /vehicle\.lane \+= \(vehicle\.targetLane - vehicle\.lane\)/);
@@ -128,6 +144,23 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
   assert.match(game, /Returning to the Bronx Zoo boarding checkpoint/);
   assert.match(game, /startBusDrive\(0\)/);
   assert.match(game, /audio\.playVehicleImpact\(impact\.severity\)/);
+  assert.match(bus, /rearTrafficCatch/);
+  assert.match(bus, /vehicleForwardSpeed - this\.speed > \.35/);
+  assert.match(bus, /rearTrafficCatch \? 0 : 2 \+ severity \* 7/);
+  assert.match(bus, /protected: true/);
+  assert.match(game, /Rear impact absorbed · traffic pushed the shuttle forward · no integrity lost/);
+  assert.match(bus, /collider\.kind === "barrier" \? 1\.5 : 3/);
+  assert.match(bus, /collider\.kind === "barrier" \? 4\.5 : 9/);
+});
+
+test("mobile shuttle controls expose both sequential gear shifts", async () => {
+  const touch = await readSource("../app/game/mobile/TouchControls.tsx");
+
+  assert.match(touch, /vehicle === "bus" && <div className="touch-gears"/);
+  assert.match(touch, /aria-label="Shift shuttle gear up"/);
+  assert.match(touch, /emitKey\("KeyR", true\)/);
+  assert.match(touch, /aria-label="Shift shuttle gear down"/);
+  assert.match(touch, /emitKey\("KeyF", true\)/);
 });
 
 test("the zoo skateboard and AMNH five-scooter convoy provide fast travel", async () => {

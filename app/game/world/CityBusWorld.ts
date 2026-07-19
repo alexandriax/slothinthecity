@@ -14,6 +14,8 @@ export type CityBusInput = {
   steerLeft: boolean;
   steerRight: boolean;
   handbrake: boolean;
+  shiftUp: boolean;
+  shiftDown: boolean;
 };
 
 export type ShuttleMinimapSnapshot = {
@@ -32,6 +34,7 @@ export type ShuttleImpactEvent = {
   integrity: number;
   label: string;
   disabled: boolean;
+  protected: boolean;
 };
 
 type StaticCollider = {
@@ -115,6 +118,12 @@ const TRAFFIC_LANES = [-1.5, -.5, .5, 1.5] as const;
 // proximity remains readable, but only player brake/handbrake input takes pace.
 const STREET_TOP_SPEED = 48;
 const HIGHWAY_TOP_SPEED = 72;
+const SHUTTLE_GEARS = [
+  { gear: 1, topSpeed: 20 },
+  { gear: 2, topSpeed: 36 },
+  { gear: 3, topSpeed: 52 },
+  { gear: 4, topSpeed: HIGHWAY_TOP_SPEED },
+] as const;
 const SHUTTLE_MAX_DAMAGE = 100;
 const SHUTTLE_COLLISION_RADIUS = 1.08;
 const SHUTTLE_COLLISION_OFFSETS = [-2.75, 0, 2.75] as const;
@@ -1023,6 +1032,7 @@ export class CityBusWorld {
   private guidance: RouteGuidance;
   private progress = 0;
   private speed = 0;
+  private forwardGear = 2;
   private steerAmount = 0;
   private roadSurfaceMessage = "ON AUTHORED ROUTE";
   private guidanceRefreshAt = -Infinity;
@@ -1032,11 +1042,12 @@ export class CityBusWorld {
   private onRecommendedRoute = true;
   private damage = 0;
   private lastImpact: ShuttleImpactEvent | null = null;
+  private latestImpactStatus = "none";
   private impactRoll = 0;
   private collisionArmedAt: number | null = null;
   private disposed = false;
 
-  constructor(scene: THREE.Scene, textures: GameTextures, quality = 1, startProgress = 0, reviewSpawn?: "missed-exit" | "uws-reroute" | "traffic-impact" | "building-impact" | "failure-impact") {
+  constructor(scene: THREE.Scene, textures: GameTextures, quality = 1, startProgress = 0, reviewSpawn?: "missed-exit" | "uws-reroute" | "traffic-impact" | "rear-impact" | "building-impact" | "failure-impact") {
     this.root.name = "bronx-to-natural-history-museum-driving-level"; scene.add(this.root);
     this.progress = THREE.MathUtils.clamp(startProgress, 0, CITY_BUS_ROUTE_LENGTH - .5);
     const spawnFrame = routeFrame(this.progress);
@@ -1045,6 +1056,7 @@ export class CityBusWorld {
     if (reviewSpawn === "missed-exit") { this.busPosition.set(-1.7, .4, -2635); this.busHeading = 0; this.progress = HIGHWAY_EXIT_START; }
     if (reviewSpawn === "uws-reroute") { this.busPosition.set(-169.934, .4, -2529.773); this.busHeading = -2.36; this.progress = CROSSTOWN_START + 80; }
     if (reviewSpawn === "traffic-impact" || reviewSpawn === "failure-impact") { this.progress = CITY_BUS_HIGHWAY_REVIEW_PROGRESS; this.busPosition.copy(routeFrame(this.progress).center); this.busHeading = routeFrame(this.progress).yaw; this.speed = 36; }
+    if (reviewSpawn === "rear-impact") { this.progress = CITY_BUS_HIGHWAY_REVIEW_PROGRESS; this.busPosition.copy(routeFrame(this.progress).center); this.busHeading = routeFrame(this.progress).yaw; this.speed = 12; }
     if (reviewSpawn === "building-impact") { this.busPosition.set(12, .4, -CITY_BUS_HIGHWAY_REVIEW_PROGRESS); this.busHeading = Math.PI / 2; this.progress = CITY_BUS_HIGHWAY_REVIEW_PROGRESS; this.speed = 28; }
     const spawnHeading = new THREE.Vector3(-Math.sin(this.busHeading), 0, -Math.cos(this.busHeading));
     this.guidance = this.roadNetwork.route(this.busPosition, AMNH_BUS_BAY, spawnHeading);
@@ -1058,7 +1070,7 @@ export class CityBusWorld {
     addMuseumArrivalCampus(this.root, this.ownedTextures, textures);
     this.bus = makeBus(quality, textures, this.ownedTextures); this.root.add(this.bus.root);
     if (reviewSpawn === "failure-impact") {
-      this.damage = 88; this.bus.damageStages[0].visible = true; this.bus.damageStages[1].visible = true; this.bus.damageStages[2].visible = true;
+      this.damage = 97; this.bus.damageStages[0].visible = true; this.bus.damageStages[1].visible = true; this.bus.damageStages[2].visible = true;
     }
     const trafficCount = quality < .58 ? 36 : quality < .82 ? 52 : 68;
     for (let index = 0; index < trafficCount; index++) {
@@ -1083,6 +1095,10 @@ export class CityBusWorld {
       if ((reviewSpawn === "traffic-impact" || reviewSpawn === "failure-impact") && index === 0) {
         vehicle.progress = this.progress + 26; vehicle.lane = 0; vehicle.targetLane = 0; vehicle.speed = 0; vehicle.cruise = 0; vehicle.nextLaneChange = Infinity;
         vehicle.root.name = "qa-solid-stationary-traffic-collision-target";
+      }
+      if (reviewSpawn === "rear-impact" && index === 0) {
+        vehicle.progress = this.progress - 5; vehicle.lane = 0; vehicle.targetLane = 0; vehicle.speed = 48; vehicle.cruise = 48; vehicle.nextLaneChange = Infinity;
+        vehicle.root.name = "qa-rear-impact-integrity-protection-target";
       }
       this.traffic.push(vehicle); this.root.add(car);
     }
@@ -1110,12 +1126,15 @@ export class CityBusWorld {
     }
     this.sun = new THREE.DirectionalLight("#fff0cf", 2.75); this.sun.castShadow = quality > .58; this.sun.shadow.mapSize.set(quality > .82 ? 2048 : 1024, quality > .82 ? 2048 : 1024); this.root.add(this.sun, this.sun.target);
     const ambient = new THREE.HemisphereLight("#c7dde3", "#45493c", 1.72); ambient.name = "city-evening-hemisphere-light"; this.root.add(ambient);
-    if (reviewSpawn === "traffic-impact" || reviewSpawn === "building-impact" || reviewSpawn === "failure-impact") this.collisionArmedAt = 0;
+    if (reviewSpawn === "traffic-impact" || reviewSpawn === "rear-impact" || reviewSpawn === "building-impact" || reviewSpawn === "failure-impact") this.collisionArmedAt = 0;
     this.updateTransforms(0, 0);
   }
 
   get speedMetersPerSecond() { return Math.abs(this.speed); }
   get signedSpeedMetersPerSecond() { return this.speed; }
+  get selectedForwardGear() { return this.forwardGear; }
+  get gearDisplay() { return this.speed < -.25 ? "R" : `${this.forwardGear}`; }
+  get gearTopSpeedMetersPerSecond() { return SHUTTLE_GEARS[this.forwardGear - 1].topSpeed; }
   get steeringAmount() { return this.steerAmount; }
   get integrity() { return THREE.MathUtils.clamp(1 - this.damage / SHUTTLE_MAX_DAMAGE, 0, 1); }
   get damagePercent() { return Math.round((1 - this.integrity) * 100); }
@@ -1140,6 +1159,7 @@ export class CityBusWorld {
   }
   get congestionStatus() { return this.trafficMessage; }
   get routeStatus() { return this.roadSurfaceMessage; }
+  get impactStatus() { return this.latestImpactStatus; }
   consumeImpactEvent() { const event = this.lastImpact; this.lastImpact = null; return event; }
   get navigationBearingDegrees() {
     const forward = new THREE.Vector3(-Math.sin(this.busHeading), 0, -Math.cos(this.busHeading)), right = new THREE.Vector3(-forward.z, 0, forward.x);
@@ -1180,6 +1200,7 @@ export class CityBusWorld {
     this.collisionArmedAt ??= elapsed + .45;
     const headingVector = new THREE.Vector3(-Math.sin(this.busHeading), 0, -Math.cos(this.busHeading));
     let road = this.roadNetwork.nearest(this.busPosition, headingVector);
+    if (input.shiftUp !== input.shiftDown) this.forwardGear = THREE.MathUtils.clamp(this.forwardGear + (input.shiftUp ? 1 : -1), 1, SHUTTLE_GEARS.length);
     if (elapsed >= this.guidanceRefreshAt) {
       this.guidance = this.roadNetwork.route(this.busPosition, AMNH_BUS_BAY, headingVector);
       this.completionHighWater = Math.max(this.completionHighWater, THREE.MathUtils.clamp(1 - this.guidance.distance / this.initialRouteDistance, 0, 1));
@@ -1195,7 +1216,7 @@ export class CityBusWorld {
     // Road signals and junction proximity never take throttle authority from
     // the player. Off-route guidance remains visible, but the arcade shuttle
     // keeps its full commanded pace until the player brakes or handbrakes.
-    const forwardTopSpeed = road.road.speedLimit;
+    const forwardTopSpeed = Math.min(road.road.speedLimit, this.gearTopSpeedMetersPerSecond);
     if (driveInput !== 0) {
       if (this.speed * driveInput < -.05) {
         this.speed = Math.sign(this.speed) * Math.max(0, Math.abs(this.speed) - delta * 38);
@@ -1207,8 +1228,9 @@ export class CityBusWorld {
       const resistance = .38 + Math.abs(this.speed) * .035;
       this.speed = Math.sign(this.speed) * Math.max(0, Math.abs(this.speed) - resistance * delta);
     }
+    if (this.speed > forwardTopSpeed) this.speed = Math.max(forwardTopSpeed, this.speed - delta * 12);
     if (input.handbrake || this.disabled) this.speed = Math.sign(this.speed) * Math.max(0, Math.abs(this.speed) - delta * (this.disabled ? 74 : 52));
-    this.speed = THREE.MathUtils.clamp(this.speed, -11, forwardTopSpeed);
+    this.speed = THREE.MathUtils.clamp(this.speed, -11, HIGHWAY_TOP_SPEED);
     let driveForward = new THREE.Vector3(-Math.sin(this.busHeading), 0, -Math.cos(this.busHeading));
     // Substep at less than one tyre radius so a 70+ m/s arcade run cannot
     // tunnel through a sedan, blue closure, or building between frames.
@@ -1295,14 +1317,20 @@ export class CityBusWorld {
     else this.speed *= .32 + (1 - severity) * .18;
   }
 
-  private recordImpact(kind: ShuttleImpactEvent["kind"], label: string, severity: number, damage: number) {
+  private recordImpact(kind: ShuttleImpactEvent["kind"], label: string, severity: number, damage: number, protectedImpact = false) {
+    if (protectedImpact) {
+      this.latestImpactStatus = "rear-protected";
+      this.lastImpact = { kind, severity, damage: 0, integrity: this.integrity, label, disabled: this.disabled, protected: true };
+      return;
+    }
     const appliedDamage = Math.min(damage, SHUTTLE_MAX_DAMAGE - this.damage);
     if (appliedDamage <= 0) return;
     this.damage += appliedDamage;
+    this.latestImpactStatus = kind;
     this.bus.damageStages[0].visible = this.damage >= 8;
     this.bus.damageStages[1].visible = this.damage >= 48;
     this.bus.damageStages[2].visible = this.damage >= 76;
-    this.lastImpact = { kind, severity, damage: appliedDamage, integrity: this.integrity, label, disabled: this.disabled };
+    this.lastImpact = { kind, severity, damage: appliedDamage, integrity: this.integrity, label, disabled: this.disabled, protected: false };
   }
 
   private resolveStaticCollisions(elapsed: number) {
@@ -1317,7 +1345,7 @@ export class CityBusWorld {
         this.collisionCooldowns.set(collider.id, elapsed + .42);
         const severity = THREE.MathUtils.clamp(Math.abs(this.speed) / (collider.kind === "barrier" ? 52 : 44), .12, 1);
         this.applyBounce(contact.normal, severity);
-        if (elapsed >= this.collisionArmedAt!) this.recordImpact(collider.kind, collider.label, severity, (collider.kind === "barrier" ? 4 : 7) + severity * (collider.kind === "barrier" ? 10 : 18));
+        if (elapsed >= this.collisionArmedAt!) this.recordImpact(collider.kind, collider.label, severity, (collider.kind === "barrier" ? 1.5 : 3) + severity * (collider.kind === "barrier" ? 4.5 : 9));
       }
     }
   }
@@ -1328,17 +1356,24 @@ export class CityBusWorld {
       for (const center of centers) {
         const separation = center.clone().sub(position).setY(0), distance = separation.length(), minimumDistance = SHUTTLE_COLLISION_RADIUS + 1.18;
         if (distance >= minimumDistance) continue;
+        const shuttleForward = new THREE.Vector3(-Math.sin(this.busHeading), 0, -Math.cos(this.busHeading));
+        const vehicleForwardSpeed = vehicleSpeed * shuttleForward.dot(vehicleHeading);
+        const relativeAlongShuttle = position.clone().sub(this.busPosition).dot(shuttleForward);
+        const rearTrafficCatch = relativeAlongShuttle < -.6 && this.speed >= -.05 && shuttleForward.dot(vehicleHeading) > .35 && vehicleSpeed > .5 && vehicleForwardSpeed - this.speed > .35;
         const normal = distance > .001 ? separation.multiplyScalar(1 / distance) : new THREE.Vector3(1, 0, 0);
         this.busPosition.addScaledVector(normal, minimumDistance - distance + .035);
         collisionOffset.addScaledVector(normal, -(minimumDistance - distance + .4));
         const cooldown = this.collisionCooldowns.get(id) ?? -Infinity;
         if (elapsed < cooldown) return;
         this.collisionCooldowns.set(id, elapsed + .48);
-        const shuttleForward = new THREE.Vector3(-Math.sin(this.busHeading), 0, -Math.cos(this.busHeading));
-        const closingSpeed = Math.abs(this.speed - vehicleSpeed * shuttleForward.dot(vehicleHeading));
+        this.latestImpactStatus = rearTrafficCatch ? "rear-protected" : "traffic-contact";
+        const closingSpeed = Math.abs(this.speed - vehicleForwardSpeed);
         const severity = THREE.MathUtils.clamp(closingSpeed / 58, .16, 1);
-        this.applyBounce(normal, severity);
-        if (elapsed >= this.collisionArmedAt!) this.recordImpact("traffic", label, severity, 5 + severity * 17);
+        if (rearTrafficCatch) {
+          this.speed = Math.min(HIGHWAY_TOP_SPEED, Math.max(this.speed, this.speed + (vehicleForwardSpeed - this.speed) * (.16 + severity * .12)));
+          this.impactRoll = THREE.MathUtils.clamp(this.impactRoll + (normal.x * shuttleForward.z - normal.z * shuttleForward.x) * .035, -.08, .08);
+        } else this.applyBounce(normal, severity);
+        if (elapsed >= this.collisionArmedAt!) this.recordImpact("traffic", rearTrafficCatch ? "traffic from behind" : label, severity, rearTrafficCatch ? 0 : 2 + severity * 7, rearTrafficCatch);
         return;
       }
     };

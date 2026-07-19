@@ -30,6 +30,7 @@ const DEBUG_DESTINATIONS: Array<{ scene: DebugSceneName; label: string; detail: 
   { scene: "bus-city", label: "Upper West Side", detail: "Crosstown to Central Park West" },
   { scene: "bus-reroute", label: "Bus reroute", detail: "Wrong turn · recover through the street grid" },
   { scene: "bus-collision", label: "Traffic impact", detail: "Solid cars · shuttle damage" },
+  { scene: "bus-rear-impact", label: "Rear impact", detail: "Traffic push · zero shuttle damage" },
   { scene: "bus-building", label: "Building impact", detail: "Curb escape · solid streetwall" },
   { scene: "bus-failure", label: "Damage failure", detail: "Zero integrity · checkpoint restart" },
   { scene: "bus-arrival", label: "Bus arrival", detail: "Central Park West parking" },
