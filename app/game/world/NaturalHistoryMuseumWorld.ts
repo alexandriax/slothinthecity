@@ -1149,6 +1149,10 @@ const MUSEUM_GUEST_SPAWNS = [
   [-26, -143], [26, -143], [-10, -171], [10, -174], [-5, -214], [7, -216],
   [-18, -194], [18, -202], [-12, -208], [13, -190], [-30, -116], [31, -117],
 ] as const;
+// Build one deliberately distributed cohort during the existing offscreen
+// museum prewarm. Creating new premium rigs as the player crossed each hall
+// caused the repeatable multi-second hitches reported on the museum approach.
+const MUSEUM_RESIDENT_GUEST_INDEXES = [0, 1, 2, 6, 10, 4, 7, 11] as const;
 
 export class NaturalHistoryMuseumWorld {
   readonly root = new THREE.Group();
@@ -1162,14 +1166,11 @@ export class NaturalHistoryMuseumWorld {
   private readonly boxes: BoxObstacle[] = [];
   private readonly circles: CircleObstacle[] = [];
   private readonly guests: AmbientHumanAgent[] = [];
-  private readonly createdGuestIndexes = new Set<number>();
   private readonly ownedTextures: THREE.Texture[] = [];
   private readonly scooters: PersonalMobilityVehicle[] = [];
-  private readonly streamedSections: Array<{ object: THREE.Object3D; centerZ: number; halfDepth: number }> = [];
   private readonly scooterPrevious = new THREE.Vector3();
   private scooterConvoyActive = false;
   private scooterHeading = 0;
-  private streamedFromZ = Infinity;
   private disposed = false;
   private readonly quality: number;
 
@@ -1211,11 +1212,9 @@ export class NaturalHistoryMuseumWorld {
     addExhibitSign(this.root, this.ownedTextures, "ARTHUR ROSS HALL OF METEORITES", "AHNIGHITO · CAPE YORK METEORITE", -34.5, 3.1, -109, Math.PI / 2, .72);
     addExhibitSign(this.root, this.ownedTextures, "GOTTESMAN HALL OF PLANET EARTH", "ROCKS · MINERALS · PLANETARY PROCESSES", 34.5, 3.1, -109, -Math.PI / 2, .72);
     addExhibitSign(this.root, this.ownedTextures, "FOSSIL MAMMAL HALLS", "SLOTHS THROUGH TIME · GIANT GROUND SLOTH AHEAD", 0, 4.4, -158, 0, .9);
-    // Only hydrate visitors in the first two visible halls during cold entry.
-    // The same authored rigs are added ahead of the player as they progress,
-    // avoiding a burst of eighteen procedural scaffolds and Draco requests in
-    // the frame that hands control back after the shuttle unloads.
-    this.ensureGuestsNear(this.spawn.z);
+    // This work happens once while SubwayGame's museum scene is still
+    // offscreen. The update loop never constructs or hydrates a character.
+    this.createResidentGuests();
     const hemi = new THREE.HemisphereLight("#c8d9df", "#352f2a", .7);
     const galleryFill = new THREE.AmbientLight("#e7d8bd", .24);
     this.root.add(hemi, galleryFill);
@@ -1260,67 +1259,17 @@ export class NaturalHistoryMuseumWorld {
       const hero = this.root.getObjectByName(heroName);
       if (hero) setShadows(hero, quality > .62);
     }
-    this.registerStreamedSections();
   }
 
-  private registerStreamedSections() {
-    const register = (object: THREE.Object3D | null | undefined) => {
-      if (!object || this.streamedSections.some(section => section.object === object)) return;
-      const bounds = new THREE.Box3().setFromObject(object);
-      if (bounds.isEmpty()) return;
-      this.streamedSections.push({ object, centerZ: (bounds.min.z + bounds.max.z) * .5, halfDepth: (bounds.max.z - bounds.min.z) * .5 });
-    };
-    // Architecture, floor, walls, portals, and the ceiling remain resident so
-    // the museum can never reveal an empty shell. Dense fixtures and exhibit
-    // islands are streamed by hall, keeping only nearby detail in the render
-    // list while preserving the full authored level in memory.
-    for (const parentName of [
-      "amnh-authored-gallery-fixtures-and-display-cases",
-      "amnh-official-permanent-hall-dense-exhibit-program",
-    ]) {
-      const parent = this.root.getObjectByName(parentName);
-      parent?.children.forEach(register);
-    }
-    for (const sectionName of [
-      "theodore-roosevelt-rotunda-barosaurus-allosaurus-display",
-      "milstein-hall-blue-whale-life-size-model",
-      "milstein-ocean-life-coral-reef-and-deep-ocean-exhibits",
-      "akeley-hall-african-elephant-group",
-      "akeley-african-mammals-water-hole-habitat-dioramas",
-      "gottesman-hall-of-planet-earth-exhibits",
-      "fossil-mammal-halls-expanded-sloths-through-time-gallery",
-      "fossil-mammal-halls-megatherium-americanum-finale",
-    ]) register(this.root.getObjectByName(sectionName));
-    this.updateStreaming(this.spawn.z, true);
-  }
-
-  private ensureGuestsNear(playerZ: number) {
-    const count = this.quality < .58 ? 8 : this.quality < .82 ? 12 : MUSEUM_GUEST_SPAWNS.length;
-    for (let index = 0; index < count; index++) {
-      if (this.createdGuestIndexes.has(index)) continue;
+  private createResidentGuests() {
+    const count = this.quality < .58 ? 4 : this.quality < .82 ? 6 : MUSEUM_RESIDENT_GUEST_INDEXES.length;
+    MUSEUM_RESIDENT_GUEST_INDEXES.slice(0, count).forEach((index, cohortIndex) => {
       const [x, z] = MUSEUM_GUEST_SPAWNS[index];
-      if (Math.abs(z - playerZ) > 96) continue;
-      const result = createPremiumHuman({ role: index === count - 1 ? "attendant" : "visitor", quality: this.quality, variant: 61 + index, faceVariant: 9 + index, coat: ["#4d6d78", "#8b5b42", "#6a5b82", "#65744e"][index % 4], trousers: ["#30363c", "#403c38", "#292d35"][index % 3], skin: ["#b57959", "#77503e", "#d1a17d", "#906047"][index % 4], outfit: index % 3 === 1 ? "knit-chinos" : "cotton-denim", accessory: index % 4 === 0 ? "camera" : index % 4 === 1 ? "tote" : "backpack", pose: index % 4 === 0 ? "photographing" : "neutral" });
-      result.root.name = index === count - 1 ? "fossil-mammal-hall-docent" : "amnh-wandering-museum-visitor-" + (index + 1); result.root.position.set(x, 0, z); this.root.add(result.root); this.ownedTextures.push(...result.ownedTextures);
-      this.guests.push(createAmbientHumanAgent(result.root, { axis: Math.abs(x) > 18 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(index % 2 ? 1 : -1, 0, .3), travel: index === count - 1 ? .4 : 2.5 + index % 4, speed: .7 + index % 3 * .06, pauseSeconds: 2.6 + index % 3, phase: index * 1.9 }));
-      this.createdGuestIndexes.add(index);
-    }
-  }
-
-  private updateStreaming(playerZ: number, force = false) {
-    this.ensureGuestsNear(playerZ);
-    if (!force && Math.abs(playerZ - this.streamedFromZ) < 7.5) return;
-    this.streamedFromZ = playerZ;
-    for (const section of this.streamedSections) {
-      // A generous two-gallery horizon avoids visible pop-in even at full
-      // scooter pace while dropping the many cases behind solid cross halls.
-      section.object.visible = Math.abs(section.centerZ - playerZ) <= 86 + section.halfDepth;
-    }
-    for (const object of this.root.children) {
-      if (!(object instanceof THREE.SpotLight) || !object.name.startsWith("amnh-gallery-exhibit-spot-")) continue;
-      object.visible = Math.abs(object.target.position.z - playerZ) <= 92;
-      object.target.visible = object.visible;
-    }
+      const docent = cohortIndex === count - 1;
+      const result = createPremiumHuman({ role: docent ? "attendant" : "visitor", quality: this.quality, variant: 61 + index, faceVariant: 9 + index, coat: ["#4d6d78", "#8b5b42", "#6a5b82", "#65744e"][index % 4], trousers: ["#30363c", "#403c38", "#292d35"][index % 3], skin: ["#b57959", "#77503e", "#d1a17d", "#906047"][index % 4], outfit: index % 3 === 1 ? "knit-chinos" : "cotton-denim", accessory: index % 4 === 0 ? "camera" : index % 4 === 1 ? "tote" : "backpack", pose: index % 4 === 0 ? "photographing" : "neutral" });
+      result.root.name = docent ? "fossil-mammal-hall-docent" : "amnh-wandering-museum-visitor-" + (index + 1); result.root.position.set(x, 0, z); this.root.add(result.root); this.ownedTextures.push(...result.ownedTextures);
+      this.guests.push(createAmbientHumanAgent(result.root, { axis: Math.abs(x) > 18 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(index % 2 ? 1 : -1, 0, .3), travel: docent ? .4 : 2.5 + index % 4, speed: .7 + index % 3 * .06, pauseSeconds: 2.6 + index % 3, phase: index * 1.9 }));
+    });
   }
 
   get objectiveTarget() { return this.megatheriumTarget.clone(); }
@@ -1384,7 +1333,9 @@ export class NaturalHistoryMuseumWorld {
 
   update(elapsed: number, delta: number, player?: THREE.Vector3) {
     if (this.disposed) return;
-    if (player) this.updateStreaming(player.z);
+    // Static gallery content remains resident after the offscreen compile and
+    // uses Three's frustum culling. Runtime visibility streaming caused cold
+    // geometry and texture uploads every few metres, presenting as freezes.
     this.guests.forEach(agent => {
       const nearby = !player || Math.abs(agent.root.position.z - player.z) < 76;
       agent.root.visible = nearby;

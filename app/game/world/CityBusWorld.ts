@@ -167,9 +167,16 @@ export const CITY_BUS_LOCAL_CLOSURE_POINTS = UWS_LOCAL_ACCESS_CENTERS.flatMap(ce
 ]);
 const UWS_PLAYABILITY_BOUNDS = { minimumX: -370, maximumX: -115, minimumZ: -2725, maximumZ: -2575 } as const;
 const insideGuidedUwsDistrict = (x: number, z: number) => x >= UWS_PLAYABILITY_BOUNDS.minimumX && x <= UWS_PLAYABILITY_BOUNDS.maximumX && z >= UWS_PLAYABILITY_BOUNDS.minimumZ && z <= UWS_PLAYABILITY_BOUNDS.maximumZ;
+const insideAuthoredExitTransition = (x: number, z: number) => Math.hypot(x - HIGHWAY_EXIT_JUNCTION[0], z - HIGHWAY_EXIT_JUNCTION[1]) < 185;
+const isSouthboundHighwayContinuation = (road: (typeof NYC_OSM_ROADS)[number]) => /Henry Hudson Parkway|West Side Highway/.test(road.name) && road.oneWay && road.end[1] < road.start[1] && road.end[1] < HIGHWAY_EXIT_JUNCTION[1];
 const VISIBLE_OSM_ROADS = NYC_OSM_ROADS.filter(road => {
   const midpointX = (road.start[0] + road.end[0]) * .5, midpointZ = (road.start[1] + road.end[1]) * .5;
-  return !insideGuidedUwsDistrict(midpointX, midpointZ) && !insideGuidedUwsDistrict(road.start[0], road.start[1]) && !insideGuidedUwsDistrict(road.end[0], road.end[1]);
+  const overlapsGuidedDistrict = insideGuidedUwsDistrict(midpointX, midpointZ) || insideGuidedUwsDistrict(road.start[0], road.start[1]) || insideGuidedUwsDistrict(road.end[0], road.end[1]);
+  const overlapsExitTransition = insideAuthoredExitTransition(midpointX, midpointZ) || insideAuthoredExitTransition(road.start[0], road.start[1]) || insideAuthoredExitTransition(road.end[0], road.end[1]);
+  // Near the exit, render only the real southbound highway continuation. Raw
+  // ramps, service roads, Riverside Drive and surface-street fragments used to
+  // overlap into a vast striped asphalt field that looked like a parking lot.
+  return !overlapsGuidedDistrict && (!overlapsExitTransition || isSouthboundHighwayContinuation(road));
 });
 const MANHATTAN_PRIMARY_LENGTHS = MANHATTAN_PRIMARY_POINTS.slice(1).map((point, index) => Math.hypot(point[0] - MANHATTAN_PRIMARY_POINTS[index][0], point[1] - MANHATTAN_PRIMARY_POINTS[index][1]));
 const MANHATTAN_PRIMARY_CUMULATIVE = [0];
@@ -410,15 +417,22 @@ function segmentIntersectsExpandedBuilding(road: DriveRoad, building: (typeof NY
   return true;
 }
 
-const VISIBLE_OSM_BUILDINGS = NYC_OSM_BUILDINGS.filter(building => !DRIVE_ROADS.some(road => {
-  const exitRamp = road.primaryFrom !== undefined && road.primaryTo !== undefined && road.primaryTo > HIGHWAY_EXIT_START && road.primaryFrom < CROSSTOWN_START;
-  const recommendedRoute = road.primaryFrom !== undefined;
-  // Clear the full driveable envelope on the authored route, not merely its
-  // centerline. This prevents mapped footprints from clipping into the ramp or
-  // the Manhattan grid while retaining dense OSM streetwalls at the sidewalks.
-  const clearance = exitRamp ? road.halfWidth + 1.4 : recommendedRoute ? road.halfWidth + 1.05 : Math.min(2.6, road.halfWidth * .28);
-  return segmentIntersectsExpandedBuilding(road, building, clearance);
-}));
+const VISIBLE_OSM_BUILDINGS = NYC_OSM_BUILDINGS.filter(building => {
+  // Degenerate one-metre OSM footprints became implausible free-standing
+  // skyline blades at the exit. Keep real narrow row houses, but reject these
+  // tall slivers before instancing or collision broad-phase work.
+  const minimumFootprint = Math.min(building.width, building.depth), maximumFootprint = Math.max(building.width, building.depth);
+  if (building.height > 8 && (minimumFootprint < 1.5 || (building.height > minimumFootprint * 9 && maximumFootprint < 9))) return false;
+  return !DRIVE_ROADS.some(road => {
+    const exitRamp = road.primaryFrom !== undefined && road.primaryTo !== undefined && road.primaryTo > HIGHWAY_EXIT_START && road.primaryFrom < CROSSTOWN_START;
+    const recommendedRoute = road.primaryFrom !== undefined;
+    // Clear the full driveable envelope on the authored route, not merely its
+    // centerline. This prevents mapped footprints from clipping into the ramp or
+    // the Manhattan grid while retaining dense OSM streetwalls at the sidewalks.
+    const clearance = exitRamp ? road.halfWidth + 1.4 : recommendedRoute ? road.halfWidth + 1.05 : Math.min(2.6, road.halfWidth * .28);
+    return segmentIntersectsExpandedBuilding(road, building, clearance);
+  });
+});
 
 const UWS_TRAFFIC_LOOPS = [
   [new THREE.Vector3(-217.844, .4, -2577.899), new THREE.Vector3(-169.934, .4, -2529.773), new THREE.Vector3(-186.126, .4, -2476.918), new THREE.Vector3(-234.265, .4, -2525.14)],
@@ -658,17 +672,20 @@ function makeTrafficCar(index: number, quality: number) {
   const chassis = new THREE.Mesh(new RoundedBoxGeometry(1.76, .48, 3.82, 6, .14), paint); chassis.position.y = .58; root.add(chassis);
   const hood = new THREE.Mesh(new RoundedBoxGeometry(1.66, .34, 1.38, 5, .12), paint); hood.position.set(0, .84, -1.18); root.add(hood);
   const trunk = new THREE.Mesh(new RoundedBoxGeometry(1.68, .4, 1.02, 5, .12), paint); trunk.position.set(0, .87, 1.43); root.add(trunk);
-  const cabin = new THREE.Mesh(new RoundedBoxGeometry(1.49, .72, 1.88, 6, .16), glass); cabin.position.set(0, 1.18, -.1); root.add(cabin);
-  const roof = new THREE.Mesh(new RoundedBoxGeometry(1.38, .11, 1.35, 4, .05), paint); roof.position.set(0, 1.55, -.08); root.add(roof);
-  // Painted pillars and window rails prevent the transparent cabin from
-  // reading as a single aquarium block.
+  // Use an opaque painted greenhouse with inset individual glazing. The old
+  // transparent cabin needed external rails that projected beyond the body
+  // and read as floating side bars from the shuttle's low driving camera.
+  const cabin = new THREE.Mesh(new RoundedBoxGeometry(1.49, .72, 1.88, 6, .16), paint); cabin.position.set(0, 1.18, -.1); root.add(cabin);
+  const roof = new THREE.Mesh(new RoundedBoxGeometry(1.43, .12, 1.55, 4, .05), paint); roof.position.set(0, 1.55, -.08); root.add(roof);
   for (const side of [-1, 1]) {
-    const rail = new THREE.Mesh(new RoundedBoxGeometry(.055, .13, 1.82, 3, .02), paint); rail.position.set(side * .755, 1.16, -.08); root.add(rail);
-    for (const z of [-.73, .58]) {
-      const pillar = new THREE.Mesh(new RoundedBoxGeometry(.065, .68, .11, 3, .02), paint); pillar.position.set(side * .755, 1.18, z); root.add(pillar);
+    for (const z of [-.52, .38]) {
+      const sideWindow = new THREE.Mesh(new RoundedBoxGeometry(.035, .43, .68, 4, .055), glass);
+      sideWindow.name = "traffic-car-inset-side-window"; sideWindow.position.set(side * .754, 1.25, z); root.add(sideWindow);
     }
-    const mirror = new THREE.Mesh(new RoundedBoxGeometry(.18, .11, .28, 4, .04), paint); mirror.position.set(side * .95, 1.08, -.72); root.add(mirror);
+    const mirror = new THREE.Mesh(new RoundedBoxGeometry(.16, .1, .2, 4, .035), paint); mirror.position.set(side * .86, 1.1, -.78); root.add(mirror);
   }
+  const windshield = new THREE.Mesh(new RoundedBoxGeometry(1.23, .43, .035, 4, .05), glass); windshield.name = "traffic-car-inset-windshield"; windshield.position.set(0, 1.24, -1.045); root.add(windshield);
+  const rearGlass = new THREE.Mesh(new RoundedBoxGeometry(1.18, .4, .035, 4, .05), glass); rearGlass.name = "traffic-car-inset-rear-window"; rearGlass.position.set(0, 1.24, .846); root.add(rearGlass);
   const grille = new THREE.Mesh(new RoundedBoxGeometry(1.02, .18, .055, 3, .018), chrome); grille.position.set(0, .62, -1.9); root.add(grille);
   const rearBumper = new THREE.Mesh(new RoundedBoxGeometry(1.45, .13, .08, 3, .025), chrome); rearBumper.position.set(0, .47, 1.96); root.add(rearBumper);
   const licensePlate = new THREE.Mesh(new RoundedBoxGeometry(.42, .18, .035, 3, .012), new THREE.MeshStandardMaterial({ color: "#e7be47", roughness: .48 })); licensePlate.position.set(0, .69, 1.945); root.add(licensePlate);
@@ -835,15 +852,26 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
       edgeLine.position.copy(road.position).addScaledVector(frame.right, side * (roadWidth * .5 - .58)); edgeLine.position.y += .125; edgeLine.rotation.y = frame.yaw; root.add(edgeLine);
     }
   }
-  // A single asphalt apron bridges the authored highway, OSM motorway link,
-  // and W 79th ramp. It removes the last curb seam without erecting a hidden
-  // collision proxy across any of the three driveable branches.
-  const exitApron = new THREE.Mesh(new THREE.CircleGeometry(19, 48), asphalt);
-  exitApron.name = "seamless-driveable-west-79th-exit-merge-apron";
+  // Keep the merge patch no wider than the overlapping carriageways. The old
+  // 38-metre disc joined dozens of imported markings into an apparent parking
+  // lot before the actual ramp.
+  const exitApron = new THREE.Mesh(new THREE.CircleGeometry(7.2, 32), asphalt);
+  exitApron.name = "compact-seamless-west-79th-exit-road-joint";
   exitApron.rotation.x = -Math.PI / 2;
   exitApron.position.set(HIGHWAY_EXIT_JUNCTION[0], .415, HIGHWAY_EXIT_JUNCTION[1]);
   exitApron.receiveShadow = true;
   root.add(exitApron);
+  const delineatorMaterial = new THREE.MeshStandardMaterial({ color: "#f2eee0", roughness: .7 });
+  const reflectorMaterial = new THREE.MeshStandardMaterial({ color: "#f4be32", emissive: "#9b5b08", emissiveIntensity: .72, roughness: .32 });
+  for (let index = 0; index < 6; index++) {
+    const frame = routeFrame(HIGHWAY_EXIT_START + 14 + index * 13);
+    for (const side of [-1, 1]) {
+      const post = new THREE.Mesh(new RoundedBoxGeometry(.12, .72, .12, 3, .025), delineatorMaterial);
+      post.name = "west-79-exit-ramp-reflective-channelizer"; post.position.copy(frame.center).addScaledVector(frame.right, side * 4.75); post.position.y = .76; root.add(post);
+      const reflector = new THREE.Mesh(new RoundedBoxGeometry(.14, .12, .035, 3, .012), reflectorMaterial);
+      reflector.position.copy(post.position).add(new THREE.Vector3(0, .15, 0)).addScaledVector(frame.tangent, -.075); reflector.rotation.y = frame.yaw; root.add(reflector);
+    }
+  }
   // Continuous paved intersection tables bridge the recommended grid and the
   // surrounding OSM streets. They hide rectangular segment seams while still
   // leaving every wrong-turn branch open to the navigation network.
@@ -1408,7 +1436,11 @@ export class CityBusWorld {
   get integrity() { return THREE.MathUtils.clamp(1 - this.damage / SHUTTLE_MAX_DAMAGE, 0, 1); }
   get damagePercent() { return Math.round((1 - this.integrity) * 100); }
   get disabled() { return this.damage >= SHUTTLE_MAX_DAMAGE; }
-  get remainingMeters() { return Math.max(0, this.guidance.distance); }
+  get remainingMeters() {
+    // A disconnected recovery graph must never leak Infinity into the HUD.
+    // Primary progress is an always-finite fallback until the next route pass.
+    return Number.isFinite(this.guidance.distance) ? Math.max(0, this.guidance.distance) : Math.max(0, CITY_BUS_ROUTE_LENGTH - this.progress);
+  }
   get routeCompletion() { return this.parkingReached ? 1 : this.completionHighWater; }
   get minimapSnapshot(): ShuttleMinimapSnapshot {
     return {
@@ -1443,7 +1475,7 @@ export class CityBusWorld {
     return THREE.MathUtils.radToDeg(Math.atan2(direction.dot(right), direction.dot(forward)));
   }
   get navigationInstruction() {
-    const remaining = this.guidance.distance;
+    const remaining = this.remainingMeters;
     if (remaining <= 45) return `BRAKE FOR MARKED MUSEUM SHUTTLE BAY · ${Math.max(0, Math.round(remaining))} M`;
     if (this.guidance.current.distance > this.guidance.current.road.halfWidth + 1.5) return `RETURN TO ${displayRoadName(this.guidance.current.road.name).toUpperCase()} · ${Math.round(this.guidance.current.distance)} M OFF ROAD`;
     const forward = new THREE.Vector3(-Math.sin(this.busHeading), 0, -Math.cos(this.busHeading));
@@ -1455,7 +1487,8 @@ export class CityBusWorld {
     const rerouting = this.onRecommendedRoute ? "" : "REROUTING · ";
     if (this.onRecommendedRoute) {
       if (this.progress >= HIGHWAY_EXIT_START - 170 && this.progress < HIGHWAY_EXIT_START) return `EXIT HERE FOR AMERICAN MUSEUM OF NATURAL HISTORY · KEEP LEFT`;
-      if (this.progress < CROSSTOWN_START) return `FOLLOW THE CURVED WEST 79TH STREET EXIT · STAY IN LANE`;
+      if (this.progress >= HIGHWAY_EXIT_START && this.progress < CROSSTOWN_START) return `FOLLOW THE CURVED WEST 79TH STREET EXIT · STAY IN LANE`;
+      if (this.progress < HIGHWAY_EXIT_START) return `CONTINUE ON ${primaryRoadName(this.progress).toUpperCase()} · WEST 79TH STREET EXIT AHEAD`;
       if (this.progress < CENTRAL_PARK_WEST_TURN_START) {
         const turnDistance = Math.max(0, CENTRAL_PARK_WEST_TURN_START - this.progress);
         if (turnDistance > 120) return `STAY STRAIGHT ON WEST 79TH STREET · CENTRAL PARK WEST LEFT IN ${Math.round(turnDistance)} M`;
