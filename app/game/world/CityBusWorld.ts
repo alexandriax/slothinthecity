@@ -87,32 +87,86 @@ const HIGHWAY_START = 900;
 const HIGHWAY_EXIT_START = 2550;
 const HIGHWAY_OSM_BLEND_START = 2180;
 const HIGHWAY_EXIT_JUNCTION = [-99.762, -2562.723] as const;
-const MANHATTAN_PRIMARY_POINTS = [
+type RoutePoint = readonly [number, number];
+
+function cubicRoutePoints(start: RoutePoint, controlA: RoutePoint, controlB: RoutePoint, end: RoutePoint, segments: number) {
+  const points: RoutePoint[] = [];
+  for (let segment = 0; segment <= segments; segment++) {
+    const t = segment / segments, inverse = 1 - t;
+    points.push([
+      inverse ** 3 * start[0] + 3 * inverse ** 2 * t * controlA[0] + 3 * inverse * t ** 2 * controlB[0] + t ** 3 * end[0],
+      inverse ** 3 * start[1] + 3 * inverse ** 2 * t * controlA[1] + 3 * inverse * t ** 2 * controlB[1] + t ** 3 * end[1],
+    ]);
+  }
+  return points;
+}
+
+function quadraticRoutePoints(start: RoutePoint, control: RoutePoint, end: RoutePoint, segments: number) {
+  const points: RoutePoint[] = [];
+  for (let segment = 0; segment <= segments; segment++) {
+    const t = segment / segments, inverse = 1 - t;
+    points.push([
+      inverse ** 2 * start[0] + 2 * inverse * t * control[0] + t ** 2 * end[0],
+      inverse ** 2 * start[1] + 2 * inverse * t * control[1] + t ** 2 * end[1],
+    ]);
+  }
+  return points;
+}
+
+const addRouteVector = (point: RoutePoint, direction: RoutePoint, distance: number): RoutePoint => [point[0] + direction[0] * distance, point[1] + direction[1] * distance];
+// The local Manhattan grid is intentionally authored as an orthogonal basis.
+// West 79th runs east with a slight map rotation; Central Park West is its
+// exact perpendicular. Raw OSM graph nodes remain available for free-roam,
+// but no longer dictate the recommended line's sharp, building-cutting zigzag.
+const MANHATTAN_STREET_EAST = [-.95394, -.3] as const;
+const MANHATTAN_AVENUE_NORTH = [-.3, .95394] as const;
+const WEST_79_MERGE = [-148, -2621] as const;
+const CENTRAL_PARK_WEST_INTERSECTION = addRouteVector(WEST_79_MERGE, MANHATTAN_STREET_EAST, 178);
+const WEST_79_TURN_IN = addRouteVector(CENTRAL_PARK_WEST_INTERSECTION, MANHATTAN_STREET_EAST, -12);
+const CENTRAL_PARK_WEST_TURN_OUT = addRouteVector(CENTRAL_PARK_WEST_INTERSECTION, MANHATTAN_AVENUE_NORTH, 12);
+// Leave the southbound parkway with forward momentum. The start derivative is
+// due south, matching the highway, and the end derivative is parallel to West
+// 79th, so neither the shuttle nor traffic snaps through an artificial elbow.
+const HIGHWAY_EXIT_RAMP_POINTS = cubicRoutePoints(
   HIGHWAY_EXIT_JUNCTION,
-  [-105.093, -2550.776],
-  [-116.796, -2526.395],
-  [-129.862, -2509.491],
-  [-141.683, -2501.452], // OSM motorway link meets West 79th Street
-  [-152.641, -2512.553],
-  [-191.655, -2551.638],
-  [-217.844, -2577.899], // Amsterdam Avenue at West 79th Street
-  [-225.68, -2552.852],
-  [-234.265, -2525.14], // Amsterdam Avenue at West 81st Street
-  [-269.247, -2560.206],
-  [-291.22, -2584.444],
-  [-329.196, -2622.539], // Central Park West / Museum campus
+  [-99.762, -2589],
+  addRouteVector(WEST_79_MERGE, MANHATTAN_STREET_EAST, -28),
+  WEST_79_MERGE,
+  12,
+);
+const WEST_79_GRID_POINTS = [
+  addRouteVector(WEST_79_MERGE, MANHATTAN_STREET_EAST, 44.5),
+  addRouteVector(WEST_79_MERGE, MANHATTAN_STREET_EAST, 89),
+  addRouteVector(WEST_79_MERGE, MANHATTAN_STREET_EAST, 133.5),
+  WEST_79_TURN_IN,
 ] as const;
+const CENTRAL_PARK_WEST_TURN_POINTS = quadraticRoutePoints(
+  WEST_79_TURN_IN,
+  CENTRAL_PARK_WEST_INTERSECTION,
+  CENTRAL_PARK_WEST_TURN_OUT,
+  7,
+);
+const CENTRAL_PARK_WEST_POINTS = [
+  addRouteVector(CENTRAL_PARK_WEST_INTERSECTION, MANHATTAN_AVENUE_NORTH, 34),
+  addRouteVector(CENTRAL_PARK_WEST_INTERSECTION, MANHATTAN_AVENUE_NORTH, 58),
+] as const;
+const MANHATTAN_PRIMARY_POINTS: readonly RoutePoint[] = [
+  ...HIGHWAY_EXIT_RAMP_POINTS,
+  ...WEST_79_GRID_POINTS,
+  ...CENTRAL_PARK_WEST_TURN_POINTS.slice(1),
+  ...CENTRAL_PARK_WEST_POINTS,
+];
+export const CITY_BUS_MANHATTAN_MINIMAP_POINTS = MANHATTAN_PRIMARY_POINTS;
 const MANHATTAN_PRIMARY_LENGTHS = MANHATTAN_PRIMARY_POINTS.slice(1).map((point, index) => Math.hypot(point[0] - MANHATTAN_PRIMARY_POINTS[index][0], point[1] - MANHATTAN_PRIMARY_POINTS[index][1]));
 const MANHATTAN_PRIMARY_CUMULATIVE = [0];
 for (const length of MANHATTAN_PRIMARY_LENGTHS) MANHATTAN_PRIMARY_CUMULATIVE.push(MANHATTAN_PRIMARY_CUMULATIVE.at(-1)! + length);
 const MANHATTAN_PRIMARY_LENGTH = MANHATTAN_PRIMARY_CUMULATIVE.at(-1)!;
-const CROSSTOWN_START = HIGHWAY_EXIT_START + MANHATTAN_PRIMARY_CUMULATIVE[4];
-const AMSTERDAM_TURN_START = HIGHWAY_EXIT_START + MANHATTAN_PRIMARY_CUMULATIVE[7];
-const WEST_81_START = HIGHWAY_EXIT_START + MANHATTAN_PRIMARY_CUMULATIVE[9];
+const CROSSTOWN_START = HIGHWAY_EXIT_START + MANHATTAN_PRIMARY_CUMULATIVE[HIGHWAY_EXIT_RAMP_POINTS.length - 1];
+const CENTRAL_PARK_WEST_TURN_START = HIGHWAY_EXIT_START + MANHATTAN_PRIMARY_CUMULATIVE[HIGHWAY_EXIT_RAMP_POINTS.length + WEST_79_GRID_POINTS.length - 1];
 const CENTRAL_PARK_WEST_START = HIGHWAY_EXIT_START + MANHATTAN_PRIMARY_LENGTH;
 export const CITY_BUS_ROUTE_LENGTH = CENTRAL_PARK_WEST_START;
 export const CITY_BUS_HIGHWAY_REVIEW_PROGRESS = 1450;
-export const CITY_BUS_EXIT_REVIEW_PROGRESS = HIGHWAY_EXIT_START - 220;
+export const CITY_BUS_EXIT_REVIEW_PROGRESS = HIGHWAY_EXIT_START - 18;
 export const CITY_BUS_CITY_REVIEW_PROGRESS = CROSSTOWN_START + 62;
 const LANE_WIDTH = 3.35;
 const TRAFFIC_LANES = [-1.5, -.5, .5, 1.5] as const;
@@ -131,7 +185,8 @@ const SHUTTLE_MAX_DAMAGE = 100;
 const SHUTTLE_COLLISION_RADIUS = 1.08;
 const SHUTTLE_COLLISION_OFFSETS = [-2.75, 0, 2.75] as const;
 const COLLISION_BUCKET_SIZE = 34;
-const SIGNAL_STOPS = [150, 335, 565, CROSSTOWN_START + 42, AMSTERDAM_TURN_START - 18, WEST_81_START + 38] as const;
+const SIGNAL_STOPS = [150, 335, 565, CROSSTOWN_START + 44.5, CROSSTOWN_START + 89, CROSSTOWN_START + 133.5, CENTRAL_PARK_WEST_TURN_START + 36] as const;
+const MANHATTAN_GRID_INTERSECTIONS = [CROSSTOWN_START + 44.5, CROSSTOWN_START + 89, CROSSTOWN_START + 133.5, CENTRAL_PARK_WEST_TURN_START] as const;
 const SIGNAL_COLORS: Record<TrafficSignalAspect, string> = { RED: "#ff3b2f", YELLOW: "#ffd02f", GREEN: "#37e778" };
 const ROUTE_LEGS = [
   { from: 0, to: 100, name: "Jungleworld Road", detail: "Bronx Zoo shuttle gate" },
@@ -142,9 +197,8 @@ const ROUTE_LEGS = [
   { from: 560, to: HIGHWAY_START, name: "Cross Bronx Expressway", detail: "westbound toward the Henry Hudson" },
   { from: HIGHWAY_START, to: HIGHWAY_EXIT_START, name: "Henry Hudson Parkway", detail: "NY 9A south along the Hudson River" },
   { from: HIGHWAY_EXIT_START, to: CROSSTOWN_START, name: "West 79th Street Exit", detail: "exit for the museum" },
-  { from: CROSSTOWN_START, to: AMSTERDAM_TURN_START, name: "West 79th Street", detail: "east to Amsterdam Avenue" },
-  { from: AMSTERDAM_TURN_START, to: WEST_81_START, name: "Amsterdam Avenue", detail: "turn north to West 81st Street" },
-  { from: WEST_81_START, to: CITY_BUS_ROUTE_LENGTH, name: "West 81st Street", detail: "museum campus at Central Park West" },
+  { from: CROSSTOWN_START, to: CENTRAL_PARK_WEST_TURN_START, name: "West 79th Street", detail: "straight east through the Manhattan grid" },
+  { from: CENTRAL_PARK_WEST_TURN_START, to: CITY_BUS_ROUTE_LENGTH, name: "Central Park West", detail: "north to the museum shuttle bay" },
 ] as const;
 
 type CollisionContact = { collider: StaticCollider; normal: THREE.Vector3; penetration: number };
@@ -273,11 +327,12 @@ function buildDriveRoads() {
   const ordered = [...anchors].sort((a, b) => a - b), roads: DriveRoad[] = [];
   for (let index = 0; index < ordered.length - 1; index++) {
     const from = ordered[index], to = ordered[index + 1], middle = (from + to) * .5;
+    const exitRamp = middle >= HIGHWAY_EXIT_START && middle < CROSSTOWN_START;
     roads.push({
       id: `recommended-route-${index + 1}`,
       name: primaryRoadName(middle),
       start: routeCenter(from), end: routeCenter(to),
-      halfWidth: middle >= CROSSTOWN_START ? 7.9 : 10.75,
+      halfWidth: exitRamp ? 5.1 : middle >= CROSSTOWN_START ? 7.9 : 10.75,
       speedLimit: middle >= 420 && middle < HIGHWAY_EXIT_START ? HIGHWAY_TOP_SPEED : STREET_TOP_SPEED,
       primaryFrom: from, primaryTo: to,
     });
@@ -328,10 +383,11 @@ function segmentIntersectsExpandedBuilding(road: DriveRoad, building: (typeof NY
 
 const VISIBLE_OSM_BUILDINGS = NYC_OSM_BUILDINGS.filter(building => !DRIVE_ROADS.some(road => {
   const exitRamp = road.primaryFrom !== undefined && road.primaryTo !== undefined && road.primaryTo > HIGHWAY_EXIT_START && road.primaryFrom < CROSSTOWN_START;
-  // Preserve full shoulders and sight lines on the tight motorway link. Across
-  // the wider grid only reject massing that crosses the shuttle centerline,
-  // retaining the dense streetwall right up to real sidewalks.
-  const clearance = exitRamp ? road.halfWidth + 1.4 : Math.min(2.6, road.halfWidth * .28);
+  const recommendedRoute = road.primaryFrom !== undefined;
+  // Clear the full driveable envelope on the authored route, not merely its
+  // centerline. This prevents mapped footprints from clipping into the ramp or
+  // the Manhattan grid while retaining dense OSM streetwalls at the sidewalks.
+  const clearance = exitRamp ? road.halfWidth + 1.4 : recommendedRoute ? road.halfWidth + 1.05 : Math.min(2.6, road.halfWidth * .28);
   return segmentIntersectsExpandedBuilding(road, building, clearance);
 }));
 
@@ -722,20 +778,26 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
   const upperWestSideGround = new THREE.Mesh(new RoundedBoxGeometry(670, .28, 1240, 3, .04), cityGround);
   upperWestSideGround.name = "finite-no-void-openstreetmap-upper-west-side-district-ground-plane";
   upperWestSideGround.position.set(-225, -.27, -2605); root.add(upperWestSideGround);
-  for (let progress = 0; progress < CITY_BUS_ROUTE_LENGTH; progress += 18) {
-    const next = Math.min(CITY_BUS_ROUTE_LENGTH, progress + 18), middle = (progress + next) / 2, a = routeCenter(progress), b = routeCenter(next), frame = routeFrame(middle), length = a.distanceTo(b);
-    if (middle >= CROSSTOWN_START) continue; // OSM surfaces take over at West 79th Street.
-    const upperWestSide = middle >= HIGHWAY_EXIT_START, roadWidth = upperWestSide ? 16.2 : 21.5, sidewalkOffset = roadWidth * .5 + 2.55;
+  const surfaceAnchors = new Set<number>();
+  for (let progress = 0; progress <= CITY_BUS_ROUTE_LENGTH; progress += 18) surfaceAnchors.add(Math.min(progress, CITY_BUS_ROUTE_LENGTH));
+  for (const distance of MANHATTAN_PRIMARY_CUMULATIVE) surfaceAnchors.add(HIGHWAY_EXIT_START + distance);
+  const orderedSurfaceAnchors = [...surfaceAnchors].sort((a, b) => a - b);
+  for (let segment = 0; segment < orderedSurfaceAnchors.length - 1; segment++) {
+    const progress = orderedSurfaceAnchors[segment], next = orderedSurfaceAnchors[segment + 1], middle = (progress + next) / 2, a = routeCenter(progress), b = routeCenter(next), frame = routeFrame(middle), length = a.distanceTo(b);
+    const exitRamp = middle >= HIGHWAY_EXIT_START && middle < CROSSTOWN_START;
+    const upperWestSide = middle >= CROSSTOWN_START, roadWidth = exitRamp ? 10.2 : upperWestSide ? 16.2 : 21.5, sidewalkOffset = roadWidth * .5 + 2.55;
     const curbFreeExitMerge = middle >= HIGHWAY_EXIT_START - 170 && middle < CROSSTOWN_START;
-    const road = new THREE.Mesh(new RoundedBoxGeometry(roadWidth, .18, length + .8, 3, .04), asphalt); road.name = upperWestSide ? "upper-west-side-narrower-city-street-segment" : "compressed-nyc-road-segment"; road.position.copy(a).add(b).multiplyScalar(.5); road.position.y -= .08; road.rotation.y = frame.yaw; root.add(road);
+    const curbFreeIntersection = MANHATTAN_GRID_INTERSECTIONS.some(intersection => Math.abs(middle - intersection) < 13.5);
+    const road = new THREE.Mesh(new RoundedBoxGeometry(roadWidth, .18, length + .8, 3, .04), asphalt); road.name = exitRamp ? "smooth-two-lane-west-79th-off-ramp-segment" : upperWestSide ? "upper-west-side-narrower-city-street-segment" : "compressed-nyc-road-segment"; road.position.copy(a).add(b).multiplyScalar(.5); road.position.y -= .08; road.rotation.y = frame.yaw; root.add(road);
     // The OSM motorway-link surface already defines the ramp shoulders. Short
     // rectangular sidewalk/curb pieces cannot join cleanly on this compound
     // curve and previously formed diagonal concrete teeth across the exit.
-    for (const side of curbFreeExitMerge ? [] : [-1, 1]) {
+    for (const side of curbFreeExitMerge || curbFreeIntersection ? [] : [-1, 1]) {
       const walk = new THREE.Mesh(new RoundedBoxGeometry(5.2, .28, length + .6, 3, .05), concrete); walk.position.copy(road.position).addScaledVector(frame.right, side * sidewalkOffset); walk.position.y += .07; walk.rotation.y = frame.yaw; root.add(walk);
       const barrier = new THREE.Mesh(new RoundedBoxGeometry(.28, .72, length + .25, 3, .05), concrete); barrier.position.copy(road.position).addScaledVector(frame.right, side * (roadWidth * .5 + .2)); barrier.position.y += .35; barrier.rotation.y = frame.yaw; root.add(barrier);
     }
-    for (const offset of [-LANE_WIDTH * 1.5, -LANE_WIDTH * .5, LANE_WIDTH * .5, LANE_WIDTH * 1.5]) {
+    const laneDividers = exitRamp ? [0] : [-LANE_WIDTH, 0, LANE_WIDTH];
+    for (const offset of laneDividers) {
       const stripe = new THREE.Mesh(new RoundedBoxGeometry(.09, .025, length * .62, 2, .01), lane); stripe.position.copy(road.position).addScaledVector(frame.right, offset); stripe.position.y += .12; stripe.rotation.y = frame.yaw; root.add(stripe);
     }
     for (const side of [-1, 1]) {
@@ -753,6 +815,16 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
   exitApron.position.set(HIGHWAY_EXIT_JUNCTION[0], .415, HIGHWAY_EXIT_JUNCTION[1]);
   exitApron.receiveShadow = true;
   root.add(exitApron);
+  // Continuous paved intersection tables bridge the recommended grid and the
+  // surrounding OSM streets. They hide rectangular segment seams while still
+  // leaving every wrong-turn branch open to the navigation network.
+  for (const progress of MANHATTAN_GRID_INTERSECTIONS) {
+    const junction = new THREE.Mesh(new THREE.CircleGeometry(13.2, 40), asphalt);
+    junction.name = "manhattan-grid-continuous-driveable-intersection";
+    junction.rotation.x = -Math.PI / 2;
+    junction.position.copy(routeCenter(progress)); junction.position.y = .416;
+    junction.receiveShadow = true; root.add(junction);
+  }
   // The trip now begins on actual Bronx surface streets: each controlled
   // intersection has a full cross street, curb returns and lane markings
   // before the expressway ramp. No traffic signals are authored on the river
@@ -1006,9 +1078,9 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
     boat.position.set(45 + index % 3 * 23, .02, -(HIGHWAY_START + 70 + index * 92)); boat.rotation.y = index % 2 ? Math.PI : 0; root.add(boat);
   }
 
-  // Zebra-striped crossings make the two actual ninety-degree street turns
-  // legible at speed and visually separate the highway, crosstown and avenue.
-  for (const progress of [CROSSTOWN_START + 35, AMSTERDAM_TURN_START - 24, AMSTERDAM_TURN_START + 22, WEST_81_START + 38]) {
+  // Zebra-striped crossings make the orthogonal grid intersections legible at
+  // speed and visually separate the ramp, crosstown street and avenue.
+  for (const progress of MANHATTAN_GRID_INTERSECTIONS) {
     const frame = routeFrame(progress);
     for (let stripeIndex = -5; stripeIndex <= 5; stripeIndex++) {
       const stripe = new THREE.Mesh(new RoundedBoxGeometry(1.12, .025, 4.3, 2, .01), lane);

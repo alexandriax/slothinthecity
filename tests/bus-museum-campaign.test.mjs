@@ -46,9 +46,9 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
     readSource("../app/globals.css"),
   ]);
 
-  for (const road of ["Jungleworld Road", "Boston Road", "East Tremont Avenue", "East 177th Street", "Sheridan Boulevard", "Cross Bronx Expressway", "Henry Hudson Parkway", "West 79th Street", "Amsterdam Avenue", "West 81st Street", "Central Park West"]) assert.match(bus, new RegExp(road));
+  for (const road of ["Jungleworld Road", "Boston Road", "East Tremont Avenue", "East 177th Street", "Sheridan Boulevard", "Cross Bronx Expressway", "Henry Hudson Parkway", "West 79th Street", "Central Park West"]) assert.match(bus, new RegExp(road));
   assert.match(bus, /new-york-stop-and-go-traffic-vehicle-/);
-  assert.match(bus, /const SIGNAL_STOPS = \[150, 335, 565, CROSSTOWN_START \+ 42/);
+  assert.match(bus, /const SIGNAL_STOPS = \[150, 335, 565, CROSSTOWN_START \+ 44\.5/);
   assert.match(bus, /nearestGap < 28/);
   assert.doesNotMatch(bus, /RED LIGHT · HOLD POSITION|upcomingSignalAspect|upcomingSignalDistance/);
   assert.match(bus, /input\.accelerate/);
@@ -91,7 +91,11 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
   assert.match(bus, /missed-w79-highway/);
   assert.match(bus, /const HIGHWAY_EXIT_JUNCTION = \[-99\.762, -2562\.723\]/);
   assert.match(bus, /HIGHWAY_OSM_BLEND_START/);
-  assert.match(bus, /\[-141\.683, -2501\.452\].*OSM motorway link meets West 79th Street/);
+  assert.match(bus, /const HIGHWAY_EXIT_RAMP_POINTS = cubicRoutePoints/);
+  assert.match(bus, /\[-99\.762, -2589\]/);
+  assert.match(bus, /const MANHATTAN_STREET_EAST = \[-\.95394, -\.3\]/);
+  assert.match(bus, /const MANHATTAN_AVENUE_NORTH = \[-\.3, \.95394\]/);
+  assert.match(bus, /const CENTRAL_PARK_WEST_TURN_POINTS = quadraticRoutePoints/);
   assert.match(bus, /missed-w79-highway-osm-connector/);
   assert.match(bus, /road\.end\[1\] < road\.start\[1\]/);
   assert.match(bus, /west-side-highway-osm-continuation-hudson-safety-barrier/);
@@ -104,14 +108,17 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
   assert.match(bus, /this\.collisionCooldowns\.get\("road-envelope"\)/);
   assert.doesNotMatch(bus, /routeFollowingStaticColliders|filterCollidersOutsidePrimaryLanes/);
   assert.doesNotMatch(bus, /collisionIndex\.add\(\{ id: `(?:osm-building|route-building|bronx-streetwall|highway-osm)/);
-  assert.match(bus, /CITY_BUS_EXIT_REVIEW_PROGRESS = HIGHWAY_EXIT_START - 220/);
+  assert.match(bus, /CITY_BUS_EXIT_REVIEW_PROGRESS = HIGHWAY_EXIT_START - 18/);
   assert.match(bus, /segmentIntersectsExpandedBuilding/);
   assert.match(bus, /const VISIBLE_OSM_BUILDINGS = NYC_OSM_BUILDINGS\.filter/);
-  assert.match(bus, /exitRamp \? road\.halfWidth \+ 1\.4/);
+  assert.match(bus, /exitRamp \? road\.halfWidth \+ 1\.4 : recommendedRoute \? road\.halfWidth \+ 1\.05/);
   assert.match(bus, /progress >= HIGHWAY_EXIT_START - 170/);
-  assert.match(bus, /for \(const side of curbFreeExitMerge \? \[\] : \[-1, 1\]\)/);
+  assert.match(bus, /for \(const side of curbFreeExitMerge \|\| curbFreeIntersection \? \[\] : \[-1, 1\]\)/);
   assert.match(bus, /seamless-driveable-west-79th-exit-merge-apron/);
-  assert.match(bus, /Amsterdam Avenue/);
+  assert.match(bus, /manhattan-grid-continuous-driveable-intersection/);
+  assert.match(bus, /smooth-two-lane-west-79th-off-ramp-segment/);
+  assert.match(bus, /const laneDividers = exitRamp \? \[0\] : \[-LANE_WIDTH, 0, LANE_WIDTH\]/);
+  assert.match(bus, /for \(const distance of MANHATTAN_PRIMARY_CUMULATIVE\) surfaceAnchors\.add/);
   assert.match(bus, /OPEN-WORLD REROUTE ACTIVE/);
   assert.match(bus, /upper-west-side-open-world-loop-traffic-/);
   assert.doesNotMatch(bus, /desiredLateral/);
@@ -157,6 +164,7 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
   assert.match(minimap, /NYC_OSM_ROADS/);
   assert.match(minimap, /NYC_OSM_BOUNDARY_CLOSURES/);
   assert.match(minimap, /NYC_OSM_SNAPSHOT\.attributionUrl/);
+  assert.match(minimap, /CITY_BUS_MANHATTAN_MINIMAP_POINTS/);
   assert.match(minimap, /const mapX = \(x: number\) => 238 -/);
   assert.match(minimap, /const headingDegrees = 180 - snapshot\.heading/);
   assert.match(minimap, /className="minimap-river" x="0"/);
@@ -186,6 +194,11 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
   assert.match(game, /Rear impact absorbed · traffic pushed the shuttle forward · no integrity lost/);
   assert.match(bus, /collider\.kind === "barrier" \? 1\.5 : 3/);
   assert.match(bus, /collider\.kind === "barrier" \? 4\.5 : 9/);
+  assert.match(game, /function scheduleMuseumPreload/);
+  assert.match(game, /new NaturalHistoryMuseumWorld\(museumPreloadScene/);
+  assert.match(game, /renderer\.compile\(museumPreloadScene, preloadCamera\)/);
+  assert.match(game, /Math\.min\(next\.pixelRatio, 1\.25\)/);
+  assert.match(game, /composer && !museumRendering\(\)/);
 });
 
 test("the canonical first-person fur sampler becomes ready in every scene", async () => {
@@ -334,6 +347,13 @@ test("AMNH is a full exploration level with permanent halls, crowds, and Megathe
   assert.match(museum, /green-river-formation-leaf-shale/);
   assert.match(museum, /african-elephant-continuously-curved-muscular-trunk/);
   assert.match(museum, /african-elephant-anatomical-fan-ear/);
+  assert.match(museum, /registerStreamedSections/);
+  assert.match(museum, /this\.ensureGuestsNear\(this\.spawn\.z\)/);
+  assert.match(museum, /Math\.abs\(z - playerZ\) > 96/);
+  assert.match(museum, /this\.ensureGuestsNear\(playerZ\)/);
+  assert.match(museum, /section\.object\.visible = Math\.abs\(section\.centerZ - playerZ\) <= 86/);
+  assert.match(museum, /const nearby = !player \|\| Math\.abs\(agent\.root\.position\.z - player\.z\) < 76/);
+  assert.match(game, /museumWorld\.update\(gameTime, delta, player\)/);
   assert.match(game, /transitStage === "MUSEUM" && museumWorld/);
   assert.match(game, /museumCompletionArmed && museumWorld\.megatheriumNearby\(player\) && rescuedParty\.allWithin\(target, 9\.5\)/);
 });

@@ -1,4 +1,4 @@
-import type { ShuttleMinimapSnapshot } from "./world/CityBusWorld";
+import { CITY_BUS_MANHATTAN_MINIMAP_POINTS, type ShuttleMinimapSnapshot } from "./world/CityBusWorld";
 import { NYC_OSM_BOUNDARY_CLOSURES, NYC_OSM_ROADS, NYC_OSM_SNAPSHOT } from "./world/nycShuttleOsmData";
 
 type ShuttleMinimapProps = { snapshot: ShuttleMinimapSnapshot | null };
@@ -11,12 +11,11 @@ const mapX = (x: number) => 238 - (x - MAP_MIN_X) / (MAP_MAX_X - MAP_MIN_X) * 22
 const mapY = (z: number) => 198 - (z - MAP_MIN_Z) / (MAP_MAX_Z - MAP_MIN_Z) * 184;
 const overviewX = (x: number) => 50 + (40 - x) / 400 * 170;
 const overviewY = (z: number) => 15 + -z / 2700 * 175;
-const overviewPath = (points: readonly [number, number][]) => points
+const overviewPath = (points: readonly (readonly [number, number])[]) => points
   .map(([x, z], index) => `${index ? "L" : "M"}${overviewX(x).toFixed(1)} ${overviewY(z).toFixed(1)}`)
   .join("");
 const OVERVIEW_ROUTE_PATH = overviewPath([
-  [0, 0], [0, -900], [0, -2180], [-100, -2563], [-142, -2501],
-  [-218, -2578], [-234, -2525], [-329, -2623],
+  [0, 0], [0, -900], [0, -2180], ...CITY_BUS_MANHATTAN_MINIMAP_POINTS,
 ]);
 const roadPath = (predicate: (road: (typeof NYC_OSM_ROADS)[number]) => boolean) => NYC_OSM_ROADS
   .filter(predicate)
@@ -24,13 +23,9 @@ const roadPath = (predicate: (road: (typeof NYC_OSM_ROADS)[number]) => boolean) 
   .join("");
 const LOCAL_STREET_PATH = roadPath(road => !/motorway|trunk|primary|secondary/.test(road.roadClass));
 const MAJOR_STREET_PATH = roadPath(road => /motorway|trunk|primary|secondary/.test(road.roadClass));
-const ROUTE_STREET_PATH = roadPath(road => {
-  const x = (road.start[0] + road.end[0]) * .5, z = (road.start[1] + road.end[1]) * .5;
-  if (road.name === "West 79th Street") return x >= -225 && x <= -108 && z >= -2640 && z <= -2468;
-  if (road.name === "Amsterdam Avenue") return z >= -2584 && z <= -2518;
-  if (road.name === "West 81st Street") return x >= -336 && x <= -228 && z >= -2632 && z <= -2515;
-  return road.name === "Central Park West" && z >= -2644 && z <= -2608;
-});
+const ROUTE_STREET_PATH = CITY_BUS_MANHATTAN_MINIMAP_POINTS
+  .map(([x, z], index) => `${index ? "L" : "M"}${mapX(x).toFixed(1)} ${mapY(z).toFixed(1)}`)
+  .join("");
 
 export function ShuttleMinimap({ snapshot }: ShuttleMinimapProps) {
   if (!snapshot) return null;

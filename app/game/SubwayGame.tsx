@@ -66,6 +66,7 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
     let transitStage: TransitStage = "FIFTH_AV", currentStation: SubwayStationId = "FIFTH_AV", travelDirection: SubwayTravelDirection = "OUTBOUND", stationClock = 0, gameTime = 0, actionRequested = false, trickRequested = false, shiftUpRequested = false, shiftDownRequested = false;
     let skateboarding = false, scooterRiding = false;
     let boarded: BoardingOption | null = null, interiorWorld: TrainInteriorWorld | null = null, zooWorld: BronxZooWorld | null = null, cityBusWorld: CityBusWorld | null = null, museumWorld: NaturalHistoryMuseumWorld | null = null, parkReturnWorld: CentralParkReturnWorld | null = null;
+    let museumPreloadScene: THREE.Scene | null = null, museumPreloadHandle: number | null = null, museumPreloadStarted = false;
     let lastHud = 0, lastFootstep = 0, yaw = 0, pitch = -.04, dragging = false, lastTouchX = 0, lastTouchY = 0, transitionTimer: number | null = null, busFailureAt: number | null = null;
     let previousTrainPhase = "AWAY", previousDoorsOpen = false, previousStreetMix = 1, previousBusRouteStatus = "";
     let museumCompletionArmed = true;
@@ -82,7 +83,11 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
       composer.addPass(gtao);
       composer.addPass(new OutputPass());
     }
-    const renderFrame = () => { if (composer) composer.render(); else renderer.render(scene, camera); };
+    const museumRendering = () => transitStage === "MUSEUM" || transitStage === "COMPLETE" && Boolean(museumWorld);
+    // Museum materials retain authored lighting and shadow maps without the
+    // full-screen GTAO pass. On high-DPI displays that pass was the dominant
+    // frame cost and made walking and scooter travel visibly choppy.
+    const renderFrame = () => { if (composer && !museumRendering()) composer.render(); else renderer.render(scene, camera); };
     const textures = loadGameTextures(renderer, () => undefined), subwayDetail = worldQuality(quality.getSnapshot().activeLevel);
     const createStationWorld = (initialStation: SubwayStationId = "FIFTH_AV", direction: SubwayTravelDirection = travelDirection) => new SubwayWorld(scene, textures, { quality: subwayDetail, initialStation, travelDirection: direction });
     let stationWorld: SubwayWorld | null = createStationWorld();
@@ -114,12 +119,46 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
     const pointerLockChanged = () => { const captured = document.pointerLockElement === renderer.domElement; setMouseCaptured(captured); if (!captured) release(); };
     const requestDebugLook = () => requestLock(renderer.domElement);
     const visibilityChange = () => { if (document.hidden) release(); };
-    const applyBudget = () => { const next = quality.getRenderBudget(); renderer.setPixelRatio(next.pixelRatio); renderer.shadowMap.enabled = next.shadows; renderer.shadowMap.type = THREE.PCFShadowMap; if (composer) { composer.setPixelRatio(next.pixelRatio); composer.setSize(innerWidth, innerHeight); } };
+    const applyBudget = () => {
+      const next = quality.getRenderBudget();
+      const pixelRatio = museumRendering() ? Math.min(next.pixelRatio, 1.25) : next.pixelRatio;
+      renderer.setPixelRatio(pixelRatio); renderer.shadowMap.enabled = next.shadows; renderer.shadowMap.type = THREE.PCFShadowMap;
+      if (composer) { composer.setPixelRatio(pixelRatio); composer.setSize(innerWidth, innerHeight); }
+    };
     const unsubscribeQuality = quality.subscribe(applyBudget);
     const resize = () => { quality.refreshDeviceProfile(); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); applyBudget(); renderer.setSize(innerWidth, innerHeight); composer?.setSize(innerWidth, innerHeight); layoutSloth(); };
     renderer.domElement.addEventListener("pointerdown", pointerDown); renderer.domElement.addEventListener("pointermove", pointerMove); renderer.domElement.addEventListener("pointerup", pointerUp); renderer.domElement.addEventListener("pointercancel", pointerUp); document.addEventListener("mousemove", mouseMove); document.addEventListener("keydown", keyDown); document.addEventListener("keyup", keyUp); document.addEventListener("sloth-look", touchLook); document.addEventListener(DEBUG_LOOK_REQUEST_EVENT, requestDebugLook); document.addEventListener("pointerlockchange", pointerLockChanged); document.addEventListener("visibilitychange", visibilityChange); window.addEventListener("blur", release); window.addEventListener("resize", resize);
 
     function disposeInterior() { interiorWorld?.dispose(); interiorWorld = null; }
+    function cancelMuseumPreload() {
+      if (museumPreloadHandle === null) return;
+      if (typeof window.cancelIdleCallback === "function") window.cancelIdleCallback(museumPreloadHandle);
+      else window.clearTimeout(museumPreloadHandle);
+      museumPreloadHandle = null;
+    }
+    function scheduleMuseumPreload() {
+      if (museumWorld || museumPreloadStarted || museumPreloadHandle !== null || transitStage !== "BUS_DRIVE") return;
+      const prepare = () => {
+        museumPreloadHandle = null;
+        if (museumWorld || transitStage !== "BUS_DRIVE") return;
+        museumPreloadStarted = true;
+        // Build into an off-screen scene so the city renderer never traverses
+        // museum draw calls. Compile from the real entrance camera to upload
+        // nearby geometry and shaders before the bus door interaction.
+        museumPreloadScene = new THREE.Scene();
+        museumWorld = new NaturalHistoryMuseumWorld(museumPreloadScene, textures, quality.getSnapshot().profile.foliageDensity);
+        const preloadCamera = new THREE.PerspectiveCamera(67, innerWidth / innerHeight, .07, museumWorld.environmentSettings.cameraFar);
+        preloadCamera.position.copy(museumWorld.spawn); preloadCamera.rotation.order = "YXZ"; preloadCamera.rotation.y = museumWorld.spawnYaw;
+        // `compile()` is deliberately used instead of `compileAsync()`: the
+        // latter waits on every texture's async readiness contract and throws
+        // for Three materials whose maps are intentionally populated in place.
+        // This idle callback still moves shader creation off the arrival click.
+        renderer.compile(museumPreloadScene, preloadCamera);
+      };
+      museumPreloadHandle = typeof window.requestIdleCallback === "function"
+        ? window.requestIdleCallback(prepare, { timeout: 2400 })
+        : window.setTimeout(prepare, 32);
+    }
     function checkpoint(station: SubwayStationId, message: string, waitForNextTrain = false, preserveAnnouncements = false, resumeAtPlatform = false) {
       disposeInterior(); if (stationWorld) subwayProgress = stationWorld.progressState; stationWorld ??= createStationWorld(station, travelDirection); currentStation = station; stationWorld.setStation(station, travelDirection).restoreProgressState(subwayProgress); player.copy(stationWorld.checkpointSpawn(resumeAtPlatform)); velocity.set(0, 0, 0); yaw = 0; pitch = -.04; stationClock = waitForNextTrain ? 18 : 0; boarded = null; stationWorld.update(stationClock); previousTrainPhase = stationWorld.trainPhase; previousDoorsOpen = stationWorld.doorsOpen; previousStreetMix = stationWorld.streetEnvironmentMix(player);
       const nextStage: TransitStage = travelDirection === "RETURN"
@@ -214,6 +253,7 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
       scene.background = new THREE.Color("#91a6aa"); scene.fog = new THREE.FogExp2("#8d9c9e", .0032); renderer.toneMappingExposure = 1.28; camera.far = 540; camera.updateProjectionMatrix();
       player.copy(cityBusWorld.cameraPosition); velocity.set(0, 0, 0); yaw = 0; pitch = -.04; keys.clear(); rescuedParty.root.visible = false; sloth.root.visible = true;
       setTransitStage("BUS_DRIVE"); setReturnLeg("MUSEUM_SHUTTLE"); reflectRescueState("BUS_DRIVE"); setVehicleSpeed(0);
+      renderer.shadowMap.autoUpdate = true; applyBudget();
       audio.cancelTransitAnnouncements(); audio.setScene("moving-train", { transitionSeconds: 1.2, intensity: .8 }); audio.setCartMotor(true, 0);
       showTransition("Museum shuttle · Bronx to Manhattan"); showToast("All four sloths are aboard for a continuous free-driving trip. Shift between four speed bands with R / F, then dodge traffic through the connected city route. W accelerates, S brakes or reverses, A / D steer, and Space is the handbrake.", 9200);
       setHud({ bearing: 0, distance: cityBusWorld.remainingMeters, motion: "DRIVING", objective: cityBusWorld.navigationInstruction, objectiveShort: "DRIVE TO AMNH", prompt: "", promptKey: "", progress: cityBusWorld.routeCompletion, station: `${cityBusWorld.currentRoad.toUpperCase()} · MUSEUM SHUTTLE`, status: cityBusWorld.routeStatus === "AUTHORED ROUTE · FREE STEERING" ? "ALL FOUR FRIENDS ABOARD" : cityBusWorld.routeStatus, value: `${Math.round(cityBusWorld.remainingMeters)}M`, waypoint: cityBusWorld.navigationInstruction, wayfinding: true });
@@ -221,13 +261,16 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
     }
     function enterMuseum(review: "entry" | "rotunda" | "collections" | "african" | "megatherium" = "entry") {
       if (transitStage === "COMPLETE") return null;
+      cancelMuseumPreload();
       if (cityBusWorld) { cityBusWorld.dispose(); cityBusWorld = null; }
       setBusMap(null);
       if (stationWorld) { subwayProgress = stationWorld.progressState; stationWorld.dispose(); stationWorld = null; }
       if (zooWorld) { zooWorld.dispose(); zooWorld = null; }
       disposeInterior(); audio.setCartMotor(false); setVehicleSpeed(0); sloth.setVehiclePose("none");
       skateboarding = false; scooterRiding = false; rescuedParty.setScooterMode(false); setMobilityMode(null);
-      museumWorld?.dispose(); museumWorld = new NaturalHistoryMuseumWorld(scene, textures, quality.getSnapshot().profile.foliageDensity);
+      if (!museumWorld) museumWorld = new NaturalHistoryMuseumWorld(scene, textures, quality.getSnapshot().profile.foliageDensity);
+      else scene.add(museumWorld.root);
+      museumPreloadScene = null; museumWorld.root.visible = true;
       const presentation = museumWorld.environmentSettings;
       scene.background = new THREE.Color(presentation.background); scene.fog = new THREE.FogExp2(presentation.fog, presentation.fogDensity); renderer.toneMappingExposure = presentation.toneMappingExposure; camera.fov = 67; camera.far = presentation.cameraFar; camera.updateProjectionMatrix();
       player.copy(museumWorld.spawn);
@@ -238,6 +281,7 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
       museumCompletionArmed = review !== "megatherium";
       velocity.set(0, 0, 0); yaw = review === "megatherium" ? .52 : review === "african" ? -2.3 : museumWorld.spawnYaw; pitch = review === "megatherium" ? .18 : review === "african" ? .08 : -.04; rescuedParty.root.visible = true; rescuedParty.reset(player, museumWorld.floorHeight()); sloth.root.visible = true;
       setTransitStage("MUSEUM"); setReturnLeg("NATURAL_HISTORY_MUSEUM"); reflectRescueState("MUSEUM"); audio.setScene("finale", { transitionSeconds: 1.5, intensity: .82 });
+      applyBudget(); renderer.shadowMap.autoUpdate = false; renderer.shadowMap.needsUpdate = true;
       showTransition(review === "megatherium" ? "Fossil Mammal Halls · Floor 4" : "American Museum of Natural History");
       showToast("Bring every friend through the museum and find Megatherium americanum, the giant ground sloth, in the Fossil Mammal Halls.", 7200);
       const distance = Math.hypot(museumWorld.megatheriumTarget.x - player.x, museumWorld.megatheriumTarget.z - player.z);
@@ -509,6 +553,7 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
           else if (previousBusRouteStatus !== "") showToast("Recommended route reacquired — you can stay on it or keep exploring the street network.", 3600);
           previousBusRouteStatus = liveRouteStatus;
         }
+        if (cityBusWorld.remainingMeters < 720) scheduleMuseumPreload();
         const parked = cityBusWorld.parkingReached, disabled = cityBusWorld.disabled, prompt = parked ? "OPEN THE BUS DOOR · ENTER THE NATURAL HISTORY MUSEUM" : "";
         if (actionRequested && parked) { actionRequested = false; enterMuseum(); renderFrame(); return; }
         actionRequested = false; camera.position.copy(player); camera.rotation.set(THREE.MathUtils.clamp(pitch, -.7, .62), cityBusWorld.headingYaw + yaw, -cityBusWorld.steeringAmount * THREE.MathUtils.clamp(speed / 72, 0, 1) * .07);
@@ -521,7 +566,7 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
       } else if (transitStage === "MUSEUM" && museumWorld) {
         const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)), right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)), wish = new THREE.Vector3();
         if (keys.has("KeyW") || keys.has("ArrowUp")) wish.add(forward); if (keys.has("KeyS") || keys.has("ArrowDown")) wish.sub(forward); if (keys.has("KeyD") || keys.has("ArrowRight")) wish.add(right); if (keys.has("KeyA") || keys.has("ArrowLeft")) wish.sub(right);
-        const moving = wish.lengthSq() > 0, scooterBrake = scooterRiding && keys.has("Space"), travelSpeed = scooterRiding ? scooterBrake ? 0 : 8.6 : 2.55; if (moving) wish.normalize(); velocity.lerp(wish.multiplyScalar(travelSpeed), 1 - Math.exp(-delta * (moving && !scooterBrake ? scooterRiding ? 6.4 : 9 : scooterBrake ? 14 : 6))); player.addScaledVector(velocity, delta); museumWorld.resolvePlayer(player, velocity); museumWorld.update(gameTime, delta);
+        const moving = wish.lengthSq() > 0, scooterBrake = scooterRiding && keys.has("Space"), travelSpeed = scooterRiding ? scooterBrake ? 0 : 8.6 : 2.55; if (moving) wish.normalize(); velocity.lerp(wish.multiplyScalar(travelSpeed), 1 - Math.exp(-delta * (moving && !scooterBrake ? scooterRiding ? 6.4 : 9 : scooterBrake ? 14 : 6))); player.addScaledVector(velocity, delta); museumWorld.resolvePlayer(player, velocity); museumWorld.update(gameTime, delta, player);
         const movementYaw = velocity.lengthSq() > .02 ? Math.atan2(-velocity.x, -velocity.z) : yaw, scooterNear = museumWorld.scooterDockNearby(player);
         if (actionRequested && scooterRiding) {
           scooterRiding = false; museumWorld.setScooterConvoyActive(false, player, movementYaw); rescuedParty.setScooterMode(false); setMobilityMode(null); sloth.setVehiclePose("none"); velocity.multiplyScalar(.3); showToast("The scooter group is parked. Walk back up and press E to ride again.", 3000);
@@ -552,12 +597,12 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
         if (parkReturnWorld.sanctuaryNearby(player) && rescuedParty.allWithin(target, 9.5)) { completeHomeMission(); renderFrame(); return; }
         camera.position.copy(player); camera.rotation.set(pitch, yaw, 0); sloth.animate(gameTime, velocity.length(), false); actionRequested = false;
         if (gameTime - lastHud > .12) { lastHud = gameTime; const friendsReady = rescuedParty.allWithin(target, 9.5); setHud({ bearing, distance, motion: moving ? "WALKING" : "HOMEWARD", objective: "Bring all four rescued sloths to the Home Grove", objectiveShort: "HOME GROVE", prompt: friendsReady ? "FRIENDS GATHERING BENEATH THE TREES" : "", promptKey: "", station: "CENTRAL PARK · HOME GROVE", status: friendsReady ? "ALL FRIENDS HOME" : "FOUR FRIENDS FOLLOWING", value: `${Math.round(distance)}M`, waypoint: "Home Grove sanctuary", wayfinding: true }); }
-      } else if (transitStage === "COMPLETE" && museumWorld) { museumWorld.update(gameTime, delta); rescuedParty.update(gameTime, delta, museumWorld.megatheriumTarget, (x, z) => museumWorld?.floorHeight(x, z) ?? 0, "grove"); }
+      } else if (transitStage === "COMPLETE" && museumWorld) { museumWorld.update(gameTime, delta, museumWorld.megatheriumTarget); rescuedParty.update(gameTime, delta, museumWorld.megatheriumTarget, (x, z) => museumWorld?.floorHeight(x, z) ?? 0, "grove"); }
       else if (transitStage === "COMPLETE" && parkReturnWorld) { parkReturnWorld.update(gameTime); rescuedParty.update(gameTime, delta, parkReturnWorld.sanctuaryTarget, (x, z) => parkReturnWorld?.floorHeight(x, z) ?? 0, "grove"); }
       renderFrame();
     }
     frame();
-    return () => { cancelAnimationFrame(raf); audio.cancelTransitAnnouncements(); audio.setCartMotor(false); if (transitionTimer !== null) clearTimeout(transitionTimer); renderer.domElement.removeEventListener("pointerdown", pointerDown); renderer.domElement.removeEventListener("pointermove", pointerMove); renderer.domElement.removeEventListener("pointerup", pointerUp); renderer.domElement.removeEventListener("pointercancel", pointerUp); document.removeEventListener("mousemove", mouseMove); document.removeEventListener("keydown", keyDown); document.removeEventListener("keyup", keyUp); document.removeEventListener("sloth-look", touchLook); document.removeEventListener(DEBUG_LOOK_REQUEST_EVENT, requestDebugLook); document.removeEventListener("pointerlockchange", pointerLockChanged); document.removeEventListener("visibilitychange", visibilityChange); window.removeEventListener("blur", release); window.removeEventListener("resize", resize); unsubscribeQuality(); timer.dispose(); disposeInterior(); stationWorld?.dispose(); zooWorld?.dispose(); cityBusWorld?.dispose(); museumWorld?.dispose(); parkReturnWorld?.dispose(); rescuedParty.dispose(); composer?.dispose(); renderer.dispose(); if (host.contains(renderer.domElement)) host.removeChild(renderer.domElement); };
+    return () => { cancelAnimationFrame(raf); cancelMuseumPreload(); audio.cancelTransitAnnouncements(); audio.setCartMotor(false); if (transitionTimer !== null) clearTimeout(transitionTimer); renderer.domElement.removeEventListener("pointerdown", pointerDown); renderer.domElement.removeEventListener("pointermove", pointerMove); renderer.domElement.removeEventListener("pointerup", pointerUp); renderer.domElement.removeEventListener("pointercancel", pointerUp); document.removeEventListener("mousemove", mouseMove); document.removeEventListener("keydown", keyDown); document.removeEventListener("keyup", keyUp); document.removeEventListener("sloth-look", touchLook); document.removeEventListener(DEBUG_LOOK_REQUEST_EVENT, requestDebugLook); document.removeEventListener("pointerlockchange", pointerLockChanged); document.removeEventListener("visibilitychange", visibilityChange); window.removeEventListener("blur", release); window.removeEventListener("resize", resize); unsubscribeQuality(); timer.dispose(); disposeInterior(); stationWorld?.dispose(); zooWorld?.dispose(); cityBusWorld?.dispose(); museumWorld?.dispose(); parkReturnWorld?.dispose(); rescuedParty.dispose(); composer?.dispose(); renderer.dispose(); if (host.contains(renderer.domElement)) host.removeChild(renderer.domElement); };
   }, [audio, quality, showToast]);
 
   useEffect(() => { const frame = requestAnimationFrame(() => setTouchCapable(hasTouchInput())); return () => cancelAnimationFrame(frame); }, []);
