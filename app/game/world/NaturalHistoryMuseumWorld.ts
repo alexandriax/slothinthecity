@@ -181,6 +181,34 @@ function addExhibitSign(root: THREE.Group, ownedTextures: THREE.Texture[], title
   sign.name = title.toLowerCase().replace(/[^a-z0-9]+/g, "-") + "-museum-label"; sign.position.set(x, y, z); sign.rotation.y = yaw; root.add(sign);
 }
 
+function addGroundedMegatheriumSign(root: THREE.Group, ownedTextures: THREE.Texture[], brass: THREE.Material) {
+  const texture = exhibitTexture("MEGATHERIUM AMERICANUM", "GIANT GROUND SLOTH · FOSSIL MAMMAL HALLS · FLOOR 4");
+  ownedTextures.push(texture);
+  const sign = new THREE.Group();
+  sign.name = "megatherium-americanum-grounded-exhibit-sign";
+  sign.position.set(-6.2, 0, -210.5);
+  sign.rotation.y = 0;
+  const frame = new THREE.Mesh(new RoundedBoxGeometry(7.55, 2.95, .24, 5, .06), brass);
+  frame.name = "megatherium-exhibit-sign-brass-frame";
+  frame.position.y = 2.12;
+  sign.add(frame);
+  const face = new THREE.Mesh(new RoundedBoxGeometry(7.22, 2.62, .07, 4, .025), new THREE.MeshBasicMaterial({ map: texture, toneMapped: false }));
+  face.name = "megatherium-americanum-museum-label";
+  face.position.set(0, 2.12, .145);
+  sign.add(face);
+  for (const x of [-2.55, 2.55]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(.075, .11, 1.45, 12), brass);
+    post.name = "megatherium-exhibit-sign-grounded-support-post";
+    post.position.set(x, .725, 0);
+    sign.add(post);
+    const foot = new THREE.Mesh(new THREE.CylinderGeometry(.3, .36, .1, 16), brass);
+    foot.name = "megatherium-exhibit-sign-floor-foot";
+    foot.position.set(x, .05, 0);
+    sign.add(foot);
+  }
+  root.add(sign);
+}
+
 function addArchitecture(root: THREE.Group, textures: GameTextures, ownedTextures: THREE.Texture[], quality: number, boxes: BoxObstacle[]) {
   const limestone = new THREE.MeshStandardMaterial({ color: "#c6bda8", map: textures.stone, roughness: .83 });
   const redStone = new THREE.MeshStandardMaterial({ color: "#7a4b40", map: textures.stone, roughness: .86 });
@@ -1124,7 +1152,10 @@ function addMegatherium(root: THREE.Group, ownedTextures: THREE.Texture[], bone:
 
   mergeMuseumFossils(skeleton, bone, "megatherium-original-merged-anatomical-fossil-mesh");
   skeleton.position.set(0, .68, -199);
-  skeleton.rotation.y = -.34;
+  // Turn the complete articulated mount a true quarter-turn so visitors see
+  // the animal broadside from the main gallery approach. Keeping the rotation
+  // on the specimen root preserves every anatomical landmark and steel mount.
+  skeleton.rotation.y = -.34 + Math.PI / 2;
   gallery.add(skeleton);
 
   for (const side of [-1, 1]) {
@@ -1132,7 +1163,7 @@ function addMegatherium(root: THREE.Group, ownedTextures: THREE.Texture[], bone:
     rail.name = "megatherium-gallery-brass-visitor-rail"; rail.position.set(side * 10.4, 1.02, -198); rail.rotation.x = Math.PI / 2; gallery.add(rail);
   }
   root.add(gallery); circles.push({ x: 0, z: -198, radius: 11.5 });
-  addExhibitSign(root, ownedTextures, "MEGATHERIUM AMERICANUM", "GIANT GROUND SLOTH · FOSSIL MAMMAL HALLS · FLOOR 4", 0, 3.4, -210.5, Math.PI, 1.25);
+  addGroundedMegatheriumSign(root, ownedTextures, brass);
 }
 
 function resolveBox(player: THREE.Vector3, velocity: THREE.Vector3, box: BoxObstacle) {
@@ -1149,6 +1180,7 @@ const MUSEUM_GUEST_SPAWNS = [
   [-26, -143], [26, -143], [-10, -171], [10, -174], [-5, -214], [7, -216],
   [-18, -194], [18, -202], [-12, -208], [13, -190], [-30, -116], [31, -117],
 ] as const;
+const MEGATHERIUM_VIEWING_HALF_SPAN = 9.5;
 // Build one deliberately distributed cohort during the existing offscreen
 // museum prewarm. Creating new premium rigs as the player crossed each hall
 // caused the repeatable multi-second hitches reported on the museum approach.
@@ -1158,7 +1190,16 @@ export class NaturalHistoryMuseumWorld {
   readonly root = new THREE.Group();
   readonly spawn = new THREE.Vector3(-18, 1.48, 52);
   readonly spawnYaw = .12;
-  readonly megatheriumTarget = new THREE.Vector3(0, 1.48, -186);
+  // Four equally valid viewing zones surround the mount. The former single
+  // north-side target made side and rear approaches look correct but fail the
+  // mission gate, particularly with the wider five-scooter convoy.
+  readonly megatheriumViewingTargets = [
+    new THREE.Vector3(0, 1.48, -184.5),
+    new THREE.Vector3(14.5, 1.48, -198),
+    new THREE.Vector3(0, 1.48, -211.5),
+    new THREE.Vector3(-14.5, 1.48, -198),
+  ] as const;
+  readonly megatheriumTarget = this.megatheriumViewingTargets[0];
   readonly cameraPosition = new THREE.Vector3(0, 7.2, -176);
   readonly cameraTarget = new THREE.Vector3(0, 5.2, -198);
   readonly scooterDockTarget = new THREE.Vector3(-18, 1.48, 47.5);
@@ -1168,6 +1209,7 @@ export class NaturalHistoryMuseumWorld {
   private readonly guests: AmbientHumanAgent[] = [];
   private readonly ownedTextures: THREE.Texture[] = [];
   private readonly scooters: PersonalMobilityVehicle[] = [];
+  private readonly megatheriumProximityTarget = new THREE.Vector3();
   private readonly scooterPrevious = new THREE.Vector3();
   private scooterConvoyActive = false;
   private scooterHeading = 0;
@@ -1285,7 +1327,22 @@ export class NaturalHistoryMuseumWorld {
     if (z >= 10.4 && z < 20.1) return THREE.MathUtils.clamp((z - 10.4) / 9.7, 0, 1) * 1.19;
     return 0;
   }
-  megatheriumNearby(player: THREE.Vector3, distance = 8.5) { return Math.hypot(player.x - this.megatheriumTarget.x, player.z - this.megatheriumTarget.z) <= distance; }
+  nearestMegatheriumViewingTarget(player: THREE.Vector3, target = new THREE.Vector3()) {
+    let nearestX = 0, nearestZ = 0, nearestDistance = Infinity;
+    for (let index = 0; index < this.megatheriumViewingTargets.length; index++) {
+      const anchor = this.megatheriumViewingTargets[index];
+      const northOrSouth = index === 0 || index === 2;
+      const candidateX = northOrSouth ? THREE.MathUtils.clamp(player.x, -MEGATHERIUM_VIEWING_HALF_SPAN, MEGATHERIUM_VIEWING_HALF_SPAN) : anchor.x;
+      const candidateZ = northOrSouth ? anchor.z : THREE.MathUtils.clamp(player.z, -198 - MEGATHERIUM_VIEWING_HALF_SPAN, -198 + MEGATHERIUM_VIEWING_HALF_SPAN);
+      const candidateDistance = Math.hypot(player.x - candidateX, player.z - candidateZ);
+      if (candidateDistance < nearestDistance) { nearestX = candidateX; nearestZ = candidateZ; nearestDistance = candidateDistance; }
+    }
+    return target.set(nearestX, 1.48, nearestZ);
+  }
+  megatheriumNearby(player: THREE.Vector3, distance = 8.5) {
+    const nearest = this.nearestMegatheriumViewingTarget(player, this.megatheriumProximityTarget);
+    return Math.hypot(player.x - nearest.x, player.z - nearest.z) <= distance;
+  }
   scooterDockNearby(player: THREE.Vector3, distance = 5.2) {
     return !this.scooterConvoyActive && this.scooters.some(scooter => scooter.root.visible && Math.hypot(player.x - scooter.root.position.x, player.z - scooter.root.position.z) <= distance);
   }

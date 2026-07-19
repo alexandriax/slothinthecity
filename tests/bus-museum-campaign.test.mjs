@@ -371,5 +371,6 @@ test("AMNH is a full exploration level with permanent halls, crowds, and Megathe
   assert.match(museum, /const nearby = !player \|\| Math\.abs\(agent\.root\.position\.z - player\.z\) < 76/);
   assert.match(game, /museumWorld\.update\(gameTime, delta, player\)/);
   assert.match(game, /transitStage === "MUSEUM" && museumWorld/);
-  assert.match(game, /museumCompletionArmed && museumWorld\.megatheriumNearby\(player\) && rescuedParty\.allWithin\(target, 9\.5\)/);
+  assert.match(game, /function museumMissionReady\(\)/);
+  assert.match(game, /rescuedParty\.allWithin\(museumGatheringTarget, scooterRiding \? 11\.5 : 9\.5\)/);
 });

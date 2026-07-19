@@ -96,6 +96,7 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
     const sloth = createSlothRig(textures.fur); const layoutSloth = () => layoutCanonicalSlothViewmodel(sloth, innerWidth); layoutSloth(); camera.add(sloth.root); scene.add(camera);
     const busGripWorld: SlothVehicleGripTargets = { left: new THREE.Vector3(), right: new THREE.Vector3() };
     const busGripCamera: SlothVehicleGripTargets = { left: new THREE.Vector3(), right: new THREE.Vector3() };
+    const museumGatheringTarget = new THREE.Vector3();
     const rescuedParty = new SlothFollowerParty(scene, textures, quality.getSnapshot().profile.foliageDensity);
     const timer = new THREE.Timer(); timer.connect(document); audio.setScene("subway-station", { transitionSeconds: 1.4, intensity: .58 });
     const showTransition = (message: string) => { setTransition(message); if (transitionTimer !== null) clearTimeout(transitionTimer); transitionTimer = window.setTimeout(() => { setTransition(""); transitionTimer = null; }, 880); };
@@ -284,12 +285,18 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
       applyBudget(); renderer.shadowMap.autoUpdate = false; renderer.shadowMap.needsUpdate = true;
       showTransition(review === "megatherium" ? "Fossil Mammal Halls · Floor 4" : "American Museum of Natural History");
       showToast("Bring every friend through the museum and find Megatherium americanum, the giant ground sloth, in the Fossil Mammal Halls.", 7200);
-      const distance = Math.hypot(museumWorld.megatheriumTarget.x - player.x, museumWorld.megatheriumTarget.z - player.z);
+      museumWorld.nearestMegatheriumViewingTarget(player, museumGatheringTarget);
+      const distance = Math.hypot(museumGatheringTarget.x - player.x, museumGatheringTarget.z - player.z);
       setHud({ bearing: 0, distance, motion: "MUSEUM EXPLORATION", objective: museumWorld.objectiveLabel, objectiveShort: "MEGATHERIUM", prompt: "", promptKey: "", station: "AMNH · THEODORE ROOSEVELT ROTUNDA", status: "FOUR FRIENDS FOLLOWING", value: `${Math.round(distance)}M`, waypoint: "Megatherium · Fossil Mammal Halls", wayfinding: true });
       return museumWorld;
     }
+    function museumMissionReady() {
+      if (!museumCompletionArmed || !museumWorld || transitStage !== "MUSEUM" || !museumWorld.megatheriumNearby(player)) return false;
+      museumWorld.nearestMegatheriumViewingTarget(player, museumGatheringTarget);
+      return rescuedParty.allWithin(museumGatheringTarget, scooterRiding ? 11.5 : 9.5);
+    }
     function completeMission() {
-      if (!museumCompletionArmed || !museumWorld || transitStage !== "MUSEUM" || !museumWorld.megatheriumNearby(player) || !rescuedParty.allWithin(museumWorld.megatheriumTarget, 9.5)) return;
+      if (!museumMissionReady() || !museumWorld) return;
       setTransitStage("COMPLETE");
       scooterRiding = false; museumWorld.setScooterConvoyActive(false, player, yaw); rescuedParty.setScooterMode(false); setMobilityMode(null);
       setZooPhase("COMPLETE"); velocity.set(0, 0, 0); rescuedParty.stageFinale(museumWorld.megatheriumTarget, (x, z) => museumWorld?.floorHeight(x, z) ?? 0); camera.position.copy(museumWorld.cameraPosition); camera.lookAt(museumWorld.cameraTarget); sloth.root.visible = false; audio.setScene("finale", { transitionSeconds: .8, intensity: .98 }); audio.playQuestComplete(); showTransition("Megatherium · Friends reunited with history"); if (document.pointerLockElement) { try { document.exitPointerLock(); } catch {} }
@@ -578,8 +585,8 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
         if (scooterRiding) player.y += .22;
         rescuedParty.update(gameTime, delta, player, (x, z) => museumWorld?.floorHeight(x, z) ?? 0, scooterRiding ? "scooter" : "open");
         if (!scooterRiding && moving && gameTime - lastFootstep > .5) { lastFootstep = gameTime; audio.playFootstep("stone", Math.min(1, velocity.length() / 2.55)); }
-        const target = museumWorld.megatheriumTarget, targetX = target.x - player.x, targetZ = target.z - player.z, distance = Math.hypot(targetX, targetZ), ahead = targetX * -Math.sin(yaw) + targetZ * -Math.cos(yaw), side = targetX * Math.cos(yaw) - targetZ * Math.sin(yaw), bearing = THREE.MathUtils.radToDeg(Math.atan2(side, ahead));
-        if (museumCompletionArmed && museumWorld.megatheriumNearby(player) && rescuedParty.allWithin(target, 9.5)) { completeMission(); renderFrame(); return; }
+        const target = museumWorld.nearestMegatheriumViewingTarget(player, museumGatheringTarget), targetX = target.x - player.x, targetZ = target.z - player.z, distance = Math.hypot(targetX, targetZ), ahead = targetX * -Math.sin(yaw) + targetZ * -Math.cos(yaw), side = targetX * Math.cos(yaw) - targetZ * Math.sin(yaw), bearing = THREE.MathUtils.radToDeg(Math.atan2(side, ahead));
+        if (museumMissionReady()) { completeMission(); renderFrame(); return; }
         camera.position.copy(player); camera.rotation.set(pitch, yaw, 0);
         if (scooterRiding) {
           museumWorld.getScooterGripPositions(busGripWorld); camera.updateMatrixWorld(true);
@@ -587,7 +594,7 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
           sloth.setVehiclePose("cart", 0, 0, 0, busGripCamera);
         }
         sloth.animate(gameTime, velocity.length(), false);
-        if (gameTime - lastHud > .12) { lastHud = gameTime; const gathering = museumWorld.megatheriumNearby(player, 13), prompt = scooterRiding ? "STEP OFF ELECTRIC SCOOTER GROUP" : scooterNear ? "RIDE ELECTRIC SCOOTERS · ALL FIVE SLOTHS" : gathering ? "GATHER ALL FOUR FRIENDS AT THE EXHIBIT" : ""; setVehicleSpeed(scooterRiding ? velocity.length() : 0); setHud({ bearing, distance, motion: scooterRiding ? moving ? "SCOOTER CONVOY" : "ON SCOOTER" : moving ? "WALKING" : "MUSEUM EXPLORATION", objective: "Find Megatherium and bring all four sloths to the giant ground sloth", objectiveShort: "MEGATHERIUM", prompt, promptKey: prompt && !gathering || scooterRiding || scooterNear ? "E" : "", station: player.z > 20 ? "AMNH · CENTRAL PARK WEST ENTRANCE" : player.z > -35 ? "AMNH · THEODORE ROOSEVELT ROTUNDA" : player.z > -155 ? "AMNH · PERMANENT EXHIBITION HALLS" : "AMNH · FOSSIL MAMMAL HALLS · FLOOR 4", status: scooterRiding ? "FIVE-SLOTH ELECTRIC SCOOTER CONVOY" : gathering ? "MEGATHERIUM FOUND · FRIENDS GATHERING" : "FOUR FRIENDS FOLLOWING", value: `${Math.round(distance)}M`, waypoint: "Megatherium · Giant Ground Sloth", wayfinding: true }); }
+        if (gameTime - lastHud > .12) { lastHud = gameTime; const gathering = museumWorld.megatheriumNearby(player, 13), prompt = gathering ? "GATHER ALL FOUR FRIENDS AT THE EXHIBIT" : scooterRiding ? "STEP OFF ELECTRIC SCOOTER GROUP" : scooterNear ? "RIDE ELECTRIC SCOOTERS · ALL FIVE SLOTHS" : ""; setVehicleSpeed(scooterRiding ? velocity.length() : 0); setHud({ bearing, distance, motion: scooterRiding ? moving ? "SCOOTER CONVOY" : "ON SCOOTER" : moving ? "WALKING" : "MUSEUM EXPLORATION", objective: "Find Megatherium and bring all four sloths to the giant ground sloth", objectiveShort: "MEGATHERIUM", prompt, promptKey: gathering ? "" : scooterRiding || scooterNear ? "E" : "", station: player.z > 20 ? "AMNH · CENTRAL PARK WEST ENTRANCE" : player.z > -35 ? "AMNH · THEODORE ROOSEVELT ROTUNDA" : player.z > -155 ? "AMNH · PERMANENT EXHIBITION HALLS" : "AMNH · FOSSIL MAMMAL HALLS · FLOOR 4", status: scooterRiding ? "FIVE-SLOTH ELECTRIC SCOOTER CONVOY" : gathering ? "MEGATHERIUM FOUND · FRIENDS GATHERING" : "FOUR FRIENDS FOLLOWING", value: `${Math.round(distance)}M`, waypoint: "Megatherium · Giant Ground Sloth", wayfinding: true }); }
       } else if (transitStage === "CENTRAL_PARK" && parkReturnWorld) {
         const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)), right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)), wish = new THREE.Vector3();
         if (keys.has("KeyW") || keys.has("ArrowUp")) wish.add(forward); if (keys.has("KeyS") || keys.has("ArrowDown")) wish.sub(forward); if (keys.has("KeyD") || keys.has("ArrowRight")) wish.add(right); if (keys.has("KeyA") || keys.has("ArrowLeft")) wish.sub(right);
