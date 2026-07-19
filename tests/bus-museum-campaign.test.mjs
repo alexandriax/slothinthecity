@@ -37,12 +37,13 @@ test("zoo circulation uses habitat overlooks and routes around the sea-lion pool
 });
 
 test("museum shuttle is drivable through signed NYC traffic rather than a cutscene", async () => {
-  const [bus, network, game, osm, minimap] = await Promise.all([
+  const [bus, network, game, osm, minimap, styles] = await Promise.all([
     readSource("../app/game/world/CityBusWorld.ts"),
     readSource("../app/game/world/CityRoadNetwork.ts"),
     readSource("../app/game/SubwayGame.tsx"),
     readSource("../app/game/world/nycShuttleOsmData.ts"),
     readSource("../app/game/ShuttleMinimap.tsx"),
+    readSource("../app/globals.css"),
   ]);
 
   for (const road of ["Jungleworld Road", "Boston Road", "East Tremont Avenue", "East 177th Street", "Sheridan Boulevard", "Cross Bronx Expressway", "Henry Hudson Parkway", "West 79th Street", "Amsterdam Avenue", "West 81st Street", "Central Park West"]) assert.match(bus, new RegExp(road));
@@ -98,16 +99,18 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
   assert.match(bus, /closure\.road !== "West Side Highway"/);
   assert.match(bus, /west-side-highway-following-streetwall-podium-section/);
   assert.match(bus, /const highwayStreetwallEnd = HIGHWAY_EXIT_START - 138/);
-  assert.match(bus, /const HIGHWAY_COLLIDER_STEP = 4/);
-  assert.match(bus, /routeFollowingStaticColliders/);
-  assert.match(bus, /filterCollidersOutsidePrimaryLanes/);
-  assert.match(bus, /SHUTTLE_COLLISION_RADIUS \+ \.22/);
+  assert.match(bus, /private resolveRoadBoundaryCollision/);
+  assert.match(bus, /const allowedDistance = road\.road\.halfWidth \+ 5\.5/);
+  assert.match(bus, /this\.collisionCooldowns\.get\("road-envelope"\)/);
+  assert.doesNotMatch(bus, /routeFollowingStaticColliders|filterCollidersOutsidePrimaryLanes/);
+  assert.doesNotMatch(bus, /collisionIndex\.add\(\{ id: `(?:osm-building|route-building|bronx-streetwall|highway-osm)/);
   assert.match(bus, /CITY_BUS_EXIT_REVIEW_PROGRESS = HIGHWAY_EXIT_START - 220/);
   assert.match(bus, /segmentIntersectsExpandedBuilding/);
   assert.match(bus, /const VISIBLE_OSM_BUILDINGS = NYC_OSM_BUILDINGS\.filter/);
   assert.match(bus, /exitRamp \? road\.halfWidth \+ 1\.4/);
   assert.match(bus, /progress >= HIGHWAY_EXIT_START - 170/);
-  assert.match(bus, /for \(const side of mappedExitRamp \? \[\] : \[-1, 1\]\)/);
+  assert.match(bus, /for \(const side of curbFreeExitMerge \? \[\] : \[-1, 1\]\)/);
+  assert.match(bus, /seamless-driveable-west-79th-exit-merge-apron/);
   assert.match(bus, /Amsterdam Avenue/);
   assert.match(bus, /OPEN-WORLD REROUTE ACTIVE/);
   assert.match(bus, /upper-west-side-open-world-loop-traffic-/);
@@ -115,6 +118,7 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
   assert.match(network, /class CityRoadNetwork/);
   assert.match(network, /shortest-path guidance/);
   assert.match(network, /route\(position: THREE\.Vector3, destination: THREE\.Vector3, heading\?: THREE\.Vector3\)/);
+  assert.match(network, /end\.edges\.push\(\{ to: startId, length, road \}\)/);
   assert.match(bus, /openstreetmap-authored-upper-west-side-driveable-road-surfaces/);
   assert.match(game, /Wrong turn — navigation recalculated through the connected street grid/);
   assert.match(bus, /CITY_BUS_ROUTE_LENGTH = CENTRAL_PARK_WEST_START/);
@@ -137,9 +141,8 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
   assert.match(bus, /west-side-highway-continuous-manhattan-streetwall-podium/);
   assert.match(bus, /dense-west-side-highway-riverfront-building/);
   assert.match(bus, /west-side-highway-roadway-light-not-traffic-signal/);
-  assert.match(bus, /rescue-bus-roofline-sealed-panoramic-windshield/);
-  assert.match(bus, /museum-shuttle-unclipped-destination-sign-frame/);
-  assert.match(bus, /museum-shuttle-full-width-visible-destination-sign/);
+  assert.match(bus, /rescue-bus-full-cab-windscreen-glare/);
+  assert.doesNotMatch(bus, /museum-shuttle-unclipped-destination-sign-frame|museum-shuttle-full-width-visible-destination-sign/);
   assert.match(bus, /get routeCompletion\(\)/);
   assert.match(bus, /completionHighWater = Math\.max/);
   assert.doesNotMatch(bus, /UWS_AVENUES|UWS_CROSS_STREETS/);
@@ -154,6 +157,12 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
   assert.match(minimap, /NYC_OSM_ROADS/);
   assert.match(minimap, /NYC_OSM_BOUNDARY_CLOSURES/);
   assert.match(minimap, /NYC_OSM_SNAPSHOT\.attributionUrl/);
+  assert.match(minimap, /const mapX = \(x: number\) => 238 -/);
+  assert.match(minimap, /const headingDegrees = 180 - snapshot\.heading/);
+  assert.match(minimap, /className="minimap-river" x="0"/);
+  assert.doesNotMatch(minimap, /minimap-player-dot/);
+  assert.match(styles, /\.game-shell\[data-level="city-bus"\] \.mission \{ display:none; \}/);
+  assert.match(styles, /\[data-shuttle-transmission="true"\].*right:max\(16px.*width:230px.*height:52px/s);
   assert.match(game, /cityBusWorld\.minimapSnapshot/);
   assert.match(game, /<ShuttleMinimap snapshot=\{busMap\}/);
   assert.match(game, /progress: parked \? 1 : cityBusWorld\.routeCompletion/);

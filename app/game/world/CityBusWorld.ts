@@ -116,7 +116,6 @@ export const CITY_BUS_EXIT_REVIEW_PROGRESS = HIGHWAY_EXIT_START - 220;
 export const CITY_BUS_CITY_REVIEW_PROGRESS = CROSSTOWN_START + 62;
 const LANE_WIDTH = 3.35;
 const TRAFFIC_LANES = [-1.5, -.5, .5, 1.5] as const;
-const HIGHWAY_COLLIDER_STEP = 4;
 // Arcade pace is intentional: the sloth is slow on foot, but the vehicles are
 // exhilarating. These caps are roughly 2–2.5× the previous values; traffic
 // proximity remains readable, but only player brake/handbrake input takes pace.
@@ -189,57 +188,6 @@ function circleObbContact(center: THREE.Vector3, radius: number, collider: Stati
   normalX /= distance; normalZ /= distance;
   const worldCosine = Math.cos(collider.yaw), worldSine = Math.sin(collider.yaw);
   return { collider, penetration, normal: new THREE.Vector3(normalX * worldCosine - normalZ * worldSine, 0, normalX * worldSine + normalZ * worldCosine) };
-}
-
-type RouteColliderCandidate = { collider: StaticCollider; progress: number };
-
-function filterCollidersOutsidePrimaryLanes(candidates: RouteColliderCandidate[]) {
-  // Scenery collision is authored from short route-following pieces, then
-  // rejected if any piece reaches the complete four-lane shuttle envelope.
-  // This is a production safety gate for curved roads: a visible shoulder may
-  // look correct while the chord of a long rectangular hitbox crosses a lane.
-  return candidates.filter(({ collider, progress }) => {
-    for (let sample = progress - HIGHWAY_COLLIDER_STEP * 2; sample <= progress + HIGHWAY_COLLIDER_STEP * 2; sample += 1) {
-      for (const lane of TRAFFIC_LANES) {
-        const laneFrame = routeFrame(sample);
-        for (const shuttleOffset of SHUTTLE_COLLISION_OFFSETS) {
-          const center = routeCenter(sample + shuttleOffset).addScaledVector(laneFrame.right, lane * LANE_WIDTH);
-          if (circleObbContact(center, SHUTTLE_COLLISION_RADIUS + .22, collider)) return false;
-        }
-      }
-    }
-    return true;
-  }).map(candidate => candidate.collider);
-}
-
-function routeFollowingStaticColliders(options: {
-  from: number;
-  to: number;
-  offset: number;
-  halfX: number;
-  kind: StaticCollider["kind"];
-  label: string;
-  idPrefix: string;
-}) {
-  const candidates: RouteColliderCandidate[] = [];
-  for (let progress = options.from, index = 0; progress < options.to; progress += HIGHWAY_COLLIDER_STEP, index++) {
-    const next = Math.min(options.to, progress + HIGHWAY_COLLIDER_STEP), middle = (progress + next) * .5;
-    const a = routeCenter(progress), b = routeCenter(next), frame = routeFrame(middle), center = a.clone().add(b).multiplyScalar(.5).addScaledVector(frame.right, options.offset);
-    candidates.push({
-      progress: middle,
-      collider: {
-        id: `${options.idPrefix}-${index + 1}`,
-        kind: options.kind,
-        label: options.label,
-        x: center.x,
-        z: center.z,
-        halfX: options.halfX,
-        halfZ: Math.max(.35, a.distanceTo(b) * .5),
-        yaw: frame.yaw,
-      },
-    });
-  }
-  return filterCollidersOutsidePrimaryLanes(candidates);
 }
 
 function signalAspectAt(elapsed: number, stop: number): TrafficSignalAspect {
@@ -546,20 +494,13 @@ function makeBus(quality: number, textures: GameTextures, passengerTextures: THR
   const rubber = new THREE.MeshStandardMaterial({ color: "#101112", roughness: .92 });
   const body = new THREE.Mesh(new RoundedBoxGeometry(3.05, 2.05, 7.8, 8, .22), yellow); body.position.y = 1.65; body.name = "rescue-bus-continuous-coach-body"; root.add(body);
   const lower = new THREE.Mesh(new RoundedBoxGeometry(3.14, .68, 7.9, 6, .16), dark); lower.position.y = .72; root.add(lower);
-  const roof = new THREE.Mesh(new RoundedBoxGeometry(3.08, .24, 7.55, 7, .12), yellow); roof.position.y = 2.82; root.add(roof);
-  const windshield = new THREE.Mesh(new RoundedBoxGeometry(2.72, 1.48, .07, 5, .04), glass); windshield.position.set(0, 2.01, -3.92); windshield.rotation.x = -.035; windshield.name = "rescue-bus-roofline-sealed-panoramic-windshield"; root.add(windshield);
+  // The glass extends beyond the camera frustum: the player sees an unbroken
+  // windscreen grade, never a floating panel edge or a fake roof header.
+  const windshield = new THREE.Mesh(new THREE.PlaneGeometry(8, 5), glass); windshield.position.set(0, 2.18, -3.92); windshield.rotation.x = -.035; windshield.name = "rescue-bus-full-cab-windscreen-glare"; root.add(windshield);
   for (const side of [-1, 1]) for (let row = 0; row < 4; row++) {
     const window = new THREE.Mesh(new RoundedBoxGeometry(.07, 1.08, 1.35, 4, .035), glass);
     window.position.set(side * 1.55, 2.05, -2.35 + row * 1.55); root.add(window);
   }
-  const destinationTexture = signTexture("MUSEUM SHUTTLE", "BRONX ZOO  →  AMNH");
-  passengerTextures.push(destinationTexture);
-  const destinationFrame = new THREE.Mesh(new RoundedBoxGeometry(1.78, .36, .055, 5, .03), dark);
-  destinationFrame.name = "museum-shuttle-unclipped-destination-sign-frame"; destinationFrame.position.set(0, 2.49, -3.91); root.add(destinationFrame);
-  const destination = new THREE.Mesh(new RoundedBoxGeometry(1.62, .255, .045, 4, .018), new THREE.MeshBasicMaterial({ map: destinationTexture, toneMapped: false }));
-  // Keep the entire route box below the roof seam, inside a legible black
-  // header, so the driver's view never crops either line of destination copy.
-  destination.name = "museum-shuttle-full-width-visible-destination-sign"; destination.position.set(0, 2.49, -3.875); root.add(destination);
   const wheelGeometry = new THREE.CylinderGeometry(.49, .49, .32, quality > .75 ? 28 : 18);
   for (const side of [-1, 1]) for (const z of [-2.5, 2.45]) {
     const wheel = new THREE.Mesh(wheelGeometry, rubber); wheel.rotation.z = Math.PI / 2; wheel.position.set(side * 1.58, .55, z); wheel.name = "rescue-bus-road-wheel"; root.add(wheel);
@@ -676,7 +617,8 @@ function addOsmRoadSurfaces(root: THREE.Group, asphalt: THREE.Material, concrete
     if (length < .01) return;
     tangent.multiplyScalar(1 / length); const right = new THREE.Vector3(-tangent.z, 0, tangent.x), yaw = Math.atan2(-tangent.x, -tangent.z), center = start.add(end).multiplyScalar(.5);
     dummy.position.set(center.x, .31, center.z); dummy.rotation.set(0, yaw, 0); dummy.scale.set(road.halfWidth * 2, 1, length + .7); dummy.updateMatrix(); roads.setMatrixAt(index, dummy.matrix);
-    if (length >= 8 && /motorway|trunk/.test(road.roadClass) && !/motorway_link/.test(road.roadClass)) for (const side of [-1, 1]) {
+    const openExitMerge = Math.hypot(center.x - HIGHWAY_EXIT_JUNCTION[0], center.z - HIGHWAY_EXIT_JUNCTION[1]) < 92;
+    if (length >= 8 && /motorway|trunk/.test(road.roadClass) && !/motorway_link/.test(road.roadClass) && !openExitMerge) for (const side of [-1, 1]) {
       dummy.position.set(center.x + right.x * side * (road.halfWidth + .72), .39, center.z + right.z * side * (road.halfWidth + .72)); dummy.rotation.set(0, yaw, 0); dummy.scale.set(1.18, 1, Math.max(2, length - 3.5)); dummy.updateMatrix(); sidewalks.setMatrixAt(sidewalkIndex++, dummy.matrix);
     }
     if (length >= 12 && /motorway|trunk|primary|secondary|tertiary/.test(road.roadClass)) for (const side of [-1, 1]) {
@@ -715,7 +657,6 @@ function addOsmBuildingsAndClosures(
       dummy.position.set(building.x, building.height + .16, building.z); dummy.scale.set(building.width + .34, .34, building.depth + .34); dummy.updateMatrix(); cornices.setMatrixAt(index, dummy.matrix);
       dummy.position.set(building.x, 1.35, building.z); dummy.scale.set(building.width * .97, 2.7, building.depth * .97); dummy.updateMatrix(); bases.setMatrixAt(index, dummy.matrix);
       dummy.position.set(building.x, .2, building.z); dummy.scale.set(building.width + 3.1, 1, building.depth + 3.1); dummy.updateMatrix(); sidewalkPads.setMatrixAt(index, dummy.matrix);
-      collisionIndex.add({ id: `osm-building-${building.id}`, kind: "building", label: building.name || "Upper West Side building", x: building.x, z: building.z, halfX: Math.max(.7, building.width * .46), halfZ: Math.max(.7, building.depth * .46), yaw: building.yaw });
     });
     mesh.instanceMatrix.needsUpdate = cornices.instanceMatrix.needsUpdate = bases.instanceMatrix.needsUpdate = sidewalkPads.instanceMatrix.needsUpdate = true;
     root.add(sidewalkPads, mesh, bases, cornices); return mesh;
@@ -785,12 +726,12 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
     const next = Math.min(CITY_BUS_ROUTE_LENGTH, progress + 18), middle = (progress + next) / 2, a = routeCenter(progress), b = routeCenter(next), frame = routeFrame(middle), length = a.distanceTo(b);
     if (middle >= CROSSTOWN_START) continue; // OSM surfaces take over at West 79th Street.
     const upperWestSide = middle >= HIGHWAY_EXIT_START, roadWidth = upperWestSide ? 16.2 : 21.5, sidewalkOffset = roadWidth * .5 + 2.55;
-    const mappedExitRamp = middle >= HIGHWAY_EXIT_START;
+    const curbFreeExitMerge = middle >= HIGHWAY_EXIT_START - 170 && middle < CROSSTOWN_START;
     const road = new THREE.Mesh(new RoundedBoxGeometry(roadWidth, .18, length + .8, 3, .04), asphalt); road.name = upperWestSide ? "upper-west-side-narrower-city-street-segment" : "compressed-nyc-road-segment"; road.position.copy(a).add(b).multiplyScalar(.5); road.position.y -= .08; road.rotation.y = frame.yaw; root.add(road);
     // The OSM motorway-link surface already defines the ramp shoulders. Short
     // rectangular sidewalk/curb pieces cannot join cleanly on this compound
     // curve and previously formed diagonal concrete teeth across the exit.
-    for (const side of mappedExitRamp ? [] : [-1, 1]) {
+    for (const side of curbFreeExitMerge ? [] : [-1, 1]) {
       const walk = new THREE.Mesh(new RoundedBoxGeometry(5.2, .28, length + .6, 3, .05), concrete); walk.position.copy(road.position).addScaledVector(frame.right, side * sidewalkOffset); walk.position.y += .07; walk.rotation.y = frame.yaw; root.add(walk);
       const barrier = new THREE.Mesh(new RoundedBoxGeometry(.28, .72, length + .25, 3, .05), concrete); barrier.position.copy(road.position).addScaledVector(frame.right, side * (roadWidth * .5 + .2)); barrier.position.y += .35; barrier.rotation.y = frame.yaw; root.add(barrier);
     }
@@ -803,6 +744,15 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
       edgeLine.position.copy(road.position).addScaledVector(frame.right, side * (roadWidth * .5 - .58)); edgeLine.position.y += .125; edgeLine.rotation.y = frame.yaw; root.add(edgeLine);
     }
   }
+  // A single asphalt apron bridges the authored highway, OSM motorway link,
+  // and W 79th ramp. It removes the last curb seam without erecting a hidden
+  // collision proxy across any of the three driveable branches.
+  const exitApron = new THREE.Mesh(new THREE.CircleGeometry(19, 48), asphalt);
+  exitApron.name = "seamless-driveable-west-79th-exit-merge-apron";
+  exitApron.rotation.x = -Math.PI / 2;
+  exitApron.position.set(HIGHWAY_EXIT_JUNCTION[0], .415, HIGHWAY_EXIT_JUNCTION[1]);
+  exitApron.receiveShadow = true;
+  root.add(exitApron);
   // The trip now begins on actual Bronx surface streets: each controlled
   // intersection has a full cross street, curb returns and lane markings
   // before the expressway ramp. No traffic signals are authored on the river
@@ -888,7 +838,6 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
       const building = new THREE.Mesh(new RoundedBoxGeometry(width, height, depth, 3, .12), buildingMaterials[(index + 1) % buildingMaterials.length]);
       building.name = "bronx-continuous-streetwall-infill";
       building.position.copy(frame.center).addScaledVector(frame.right, side * (16.35 + width * .5)); building.position.y = height * .5 - .04; building.rotation.y = frame.yaw; root.add(building);
-      collisionIndex.add({ id: `bronx-streetwall-infill-${index}`, kind: "building", label: "Bronx neighborhood building", x: building.position.x, z: building.position.z, halfX: width * .46, halfZ: depth * .46, yaw: frame.yaw });
       const base = new THREE.Mesh(new RoundedBoxGeometry(width + .08, 2.65, depth + .18, 3, .055), baseMaterials[index % baseMaterials.length]);
       base.name = "bronx-articulated-ground-floor-streetwall"; base.position.copy(building.position); base.position.y = 1.32; base.rotation.y = frame.yaw; root.add(base);
       const cornice = new THREE.Mesh(new RoundedBoxGeometry(width + .42, .34, depth + .42, 3, .04), corniceMaterials[index % corniceMaterials.length]);
@@ -917,7 +866,6 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
     building.name = urban ? "west-side-manhattan-streetwall" : "bronx-neighborhood-building";
     const cityStreet = progress >= CROSSTOWN_START, setback = cityStreet ? 12.3 : 17;
     building.position.copy(frame.center).addScaledVector(frame.right, side * (setback + depth * .5 + index % 3 * (cityStreet ? .8 : 2.5))); building.position.y += height * .5 - .05; building.rotation.y = frame.yaw; root.add(building);
-    collisionIndex.add({ id: `route-building-${index}`, kind: "building", label: urban ? "Manhattan streetwall" : "Bronx building", x: building.position.x, z: building.position.z, halfX: width * .46, halfZ: depth * .46, yaw: frame.yaw });
     if (urban || index % 3 === 0) {
       const cornice = new THREE.Mesh(new RoundedBoxGeometry(width + .45, .34, depth + .45, 3, .045), corniceMaterials[index % 2]);
       cornice.name = "new-york-masonry-cornice"; cornice.position.copy(building.position); cornice.position.y += height * .5 + .12; cornice.rotation.y = frame.yaw; root.add(cornice);
@@ -960,7 +908,6 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
     progress = next;
   }
   root.add(podiumGroup);
-  routeFollowingStaticColliders({ from: HIGHWAY_START, to: highwayStreetwallEnd, offset: -15.9, halfX: 4.75, kind: "building", label: "West Side Manhattan streetwall", idPrefix: "highway-manhattan-streetwall" }).forEach(collider => collisionIndex.add(collider));
   // Varied setbacks, roof plant and water towers carry the left-side building
   // canyon into the OSM district without placing massing in the exit corridor.
   const highwayBlockCount = Math.ceil((highwayStreetwallEnd - HIGHWAY_START) / 24);
@@ -1024,7 +971,6 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
   for (const road of NYC_OSM_ROADS.filter(road => /Henry Hudson Parkway|West Side Highway/.test(road.name) && road.oneWay && road.end[1] < road.start[1] && road.end[1] < HIGHWAY_EXIT_JUNCTION[1])) {
     highwayEdgeSegments.push({ start: new THREE.Vector3(road.start[0], .4, road.start[1]), end: new THREE.Vector3(road.end[0], .4, road.end[1]), halfWidth: road.halfWidth, source: "osm" });
   }
-  routeFollowingStaticColliders({ from: HIGHWAY_START, to: HIGHWAY_EXIT_START, offset: 11.17, halfX: .4, kind: "barrier", label: "Hudson River safety barrier", idPrefix: "highway-hudson-safety-barrier" }).forEach(collider => collisionIndex.add(collider));
   highwayEdgeSegments.forEach((segment, index) => {
     const tangent = segment.end.clone().sub(segment.start).setY(0), length = tangent.length();
     if (length < .05) return;
@@ -1033,7 +979,6 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
     const barrier = new THREE.Mesh(new RoundedBoxGeometry(.52, .72, length + .5, 3, .09), concrete);
     barrier.name = segment.source === "osm" ? "west-side-highway-osm-continuation-hudson-safety-barrier" : "west-side-highway-hudson-safety-barrier";
     barrier.position.copy(center).addScaledVector(right, segment.halfWidth + .42); barrier.position.y = .34; barrier.rotation.y = yaw; root.add(barrier);
-    if (segment.source === "osm") collisionIndex.add({ id: `highway-osm-continuation-safety-barrier-${index}`, kind: "barrier", label: "Hudson River safety barrier", x: barrier.position.x, z: barrier.position.z, halfX: .4, halfZ: length * .5, yaw });
     const greenway = new THREE.Mesh(new RoundedBoxGeometry(8.6, .3, length + .6, 3, .05), concrete);
     greenway.name = segment.source === "osm" ? "hudson-river-greenway-mapped-highway-continuation" : "hudson-river-greenway-and-seawall";
     greenway.position.copy(center).addScaledVector(right, segment.halfWidth + 5.05); greenway.position.y = .12; greenway.rotation.y = yaw; root.add(greenway);
@@ -1435,6 +1380,7 @@ export class CityBusWorld {
     for (let step = 0; step < movementSteps; step++) {
       driveForward = new THREE.Vector3(-Math.sin(this.busHeading), 0, -Math.cos(this.busHeading));
       this.busPosition.addScaledVector(driveForward, movement / movementSteps);
+      this.resolveRoadBoundaryCollision(elapsed);
       this.resolveStaticCollisions(elapsed);
       this.resolveTrafficCollisions(elapsed);
     }
@@ -1528,6 +1474,30 @@ export class CityBusWorld {
     this.bus.damageStages[1].visible = this.damage >= 48;
     this.bus.damageStages[2].visible = this.damage >= 76;
     this.lastImpact = { kind, severity, damage: appliedDamage, integrity: this.integrity, label, disabled: this.disabled, protected: false };
+  }
+
+  private resolveRoadBoundaryCollision(elapsed: number) {
+    // Buildings and long highway walls are visual scenery, not independent
+    // rectangular hitboxes. The road union is the authoritative collision
+    // envelope, so every rendered street remains clear—even after a missed
+    // turn—while leaving the pavement still produces a visible edge bounce.
+    const heading = new THREE.Vector3(-Math.sin(this.busHeading), 0, -Math.cos(this.busHeading));
+    const road = this.roadNetwork.nearest(this.busPosition, heading);
+    // The extra apron covers curb returns and the triangular paved gore where
+    // multiple mapped centerlines meet. A player must leave the whole visible
+    // roadway before this boundary can fire.
+    const allowedDistance = road.road.halfWidth + 5.5;
+    if (road.distance <= allowedDistance) return;
+    const normal = road.point.clone().sub(this.busPosition).setY(0);
+    if (normal.lengthSq() < .0001) return;
+    normal.normalize();
+    this.busPosition.addScaledVector(normal, road.distance - allowedDistance + .025);
+    const cooldown = this.collisionCooldowns.get("road-envelope") ?? -Infinity;
+    if (elapsed < cooldown) return;
+    this.collisionCooldowns.set("road-envelope", elapsed + .7);
+    const severity = THREE.MathUtils.clamp(Math.abs(this.speed) / 48, .12, 1);
+    this.applyBounce(normal, severity);
+    if (elapsed >= this.collisionArmedAt!) this.recordImpact("building", `${displayRoadName(road.road.name)} street edge`, severity, 1.25 + severity * 4.5);
   }
 
   private resolveStaticCollisions(elapsed: number) {
