@@ -85,11 +85,14 @@ type BuiltBus = {
 
 const HIGHWAY_START = 900;
 const HIGHWAY_EXIT_START = 2550;
+const HIGHWAY_OSM_BLEND_START = 2180;
+const HIGHWAY_EXIT_JUNCTION = [-99.762, -2562.723] as const;
 const MANHATTAN_PRIMARY_POINTS = [
-  [0, -HIGHWAY_EXIT_START],
-  [-35, -2520],
-  [-75, -2490],
-  [-120.643, -2479.735], // West 79th Street exit surface road
+  HIGHWAY_EXIT_JUNCTION,
+  [-105.093, -2550.776],
+  [-116.796, -2526.395],
+  [-129.862, -2509.491],
+  [-141.683, -2501.452], // OSM motorway link meets West 79th Street
   [-152.641, -2512.553],
   [-191.655, -2551.638],
   [-217.844, -2577.899], // Amsterdam Avenue at West 79th Street
@@ -103,13 +106,13 @@ const MANHATTAN_PRIMARY_LENGTHS = MANHATTAN_PRIMARY_POINTS.slice(1).map((point, 
 const MANHATTAN_PRIMARY_CUMULATIVE = [0];
 for (const length of MANHATTAN_PRIMARY_LENGTHS) MANHATTAN_PRIMARY_CUMULATIVE.push(MANHATTAN_PRIMARY_CUMULATIVE.at(-1)! + length);
 const MANHATTAN_PRIMARY_LENGTH = MANHATTAN_PRIMARY_CUMULATIVE.at(-1)!;
-const CROSSTOWN_START = HIGHWAY_EXIT_START + MANHATTAN_PRIMARY_CUMULATIVE[3];
-const AMSTERDAM_TURN_START = HIGHWAY_EXIT_START + MANHATTAN_PRIMARY_CUMULATIVE[6];
-const WEST_81_START = HIGHWAY_EXIT_START + MANHATTAN_PRIMARY_CUMULATIVE[8];
+const CROSSTOWN_START = HIGHWAY_EXIT_START + MANHATTAN_PRIMARY_CUMULATIVE[4];
+const AMSTERDAM_TURN_START = HIGHWAY_EXIT_START + MANHATTAN_PRIMARY_CUMULATIVE[7];
+const WEST_81_START = HIGHWAY_EXIT_START + MANHATTAN_PRIMARY_CUMULATIVE[9];
 const CENTRAL_PARK_WEST_START = HIGHWAY_EXIT_START + MANHATTAN_PRIMARY_LENGTH;
 export const CITY_BUS_ROUTE_LENGTH = CENTRAL_PARK_WEST_START;
 export const CITY_BUS_HIGHWAY_REVIEW_PROGRESS = 1450;
-export const CITY_BUS_EXIT_REVIEW_PROGRESS = HIGHWAY_EXIT_START - 150;
+export const CITY_BUS_EXIT_REVIEW_PROGRESS = HIGHWAY_EXIT_START + 32;
 export const CITY_BUS_CITY_REVIEW_PROGRESS = CROSSTOWN_START + 62;
 const LANE_WIDTH = 3.35;
 const TRAFFIC_LANES = [-1.5, -.5, .5, 1.5] as const;
@@ -217,7 +220,19 @@ function routeCenter(progress: number) {
     const taper = Math.sin(Math.PI * p / HIGHWAY_START);
     return new THREE.Vector3(Math.sin(p / 112) * 15 * taper, Math.sin(p / 145) * 1.15 * taper, -p);
   }
-  if (p < HIGHWAY_EXIT_START) return new THREE.Vector3(0, .4, -p);
+  if (p < HIGHWAY_OSM_BLEND_START) return new THREE.Vector3(0, .4, -p);
+  if (p < HIGHWAY_EXIT_START) {
+    // Ease the authored long-distance highway onto the checked-in OSM
+    // carriageway. The old route stayed at x=0 and then cut diagonally through
+    // a Manhattan building podium to reach an unrelated W 79th Street node.
+    const t = (p - HIGHWAY_OSM_BLEND_START) / (HIGHWAY_EXIT_START - HIGHWAY_OSM_BLEND_START);
+    const eased = THREE.MathUtils.smootherstep(t, 0, 1);
+    return new THREE.Vector3(
+      HIGHWAY_EXIT_JUNCTION[0] * eased,
+      .4,
+      THREE.MathUtils.lerp(-HIGHWAY_OSM_BLEND_START, HIGHWAY_EXIT_JUNCTION[1], t),
+    );
+  }
   let cursor = p - HIGHWAY_EXIT_START;
   for (let index = 0; index < MANHATTAN_PRIMARY_LENGTHS.length; index++) {
     const length = MANHATTAN_PRIMARY_LENGTHS[index];
@@ -267,7 +282,10 @@ function buildDriveRoads() {
       primaryFrom: from, primaryTo: to,
     });
   }
-  roads.push({ id: "missed-w79-highway", name: "Henry Hudson Parkway · Southbound", start: new THREE.Vector3(0, .4, -HIGHWAY_EXIT_START), end: new THREE.Vector3(0, .4, -2985), halfWidth: 10.75, speedLimit: HIGHWAY_TOP_SPEED });
+  // A short, exact connector joins the recommended route vertex to the OSM
+  // southbound carriageway. From there the full mapped West Side Highway—not
+  // a detached straight strip—owns navigation, rendering and collisions.
+  roads.push({ id: "missed-w79-highway-osm-connector", name: "Henry Hudson Parkway · Southbound", start: new THREE.Vector3(HIGHWAY_EXIT_JUNCTION[0], .4, HIGHWAY_EXIT_JUNCTION[1]), end: new THREE.Vector3(-97.756, .4, -2560.579), halfWidth: 10.8, speedLimit: HIGHWAY_TOP_SPEED });
   for (const road of NYC_OSM_ROADS) roads.push({
     id: road.id,
     name: road.name,
@@ -282,11 +300,57 @@ function buildDriveRoads() {
 const DRIVE_ROADS = buildDriveRoads();
 const PRIMARY_DRIVE_ROADS = DRIVE_ROADS.filter(road => road.primaryFrom !== undefined);
 
+function segmentIntersectsExpandedBuilding(road: DriveRoad, building: (typeof NYC_OSM_BUILDINGS)[number], clearance: number) {
+  const cosine = Math.cos(-building.yaw), sine = Math.sin(-building.yaw);
+  const local = (point: THREE.Vector3) => {
+    const dx = point.x - building.x, dz = point.z - building.z;
+    return { x: dx * cosine - dz * sine, z: dx * sine + dz * cosine };
+  };
+  const start = local(road.start), end = local(road.end), halfX = building.width * .46 + clearance, halfZ = building.depth * .46 + clearance;
+  // Fast broad phase keeps the thousands of checked-in footprints cheap.
+  const roadCenterX = (road.start.x + road.end.x) * .5, roadCenterZ = (road.start.z + road.end.z) * .5;
+  if (Math.hypot(building.x - roadCenterX, building.z - roadCenterZ) > road.start.distanceTo(road.end) * .5 + Math.hypot(halfX, halfZ)) return false;
+  let minimumT = 0, maximumT = 1;
+  for (const [origin, delta, minimum, maximum] of [
+    [start.x, end.x - start.x, -halfX, halfX],
+    [start.z, end.z - start.z, -halfZ, halfZ],
+  ] as const) {
+    if (Math.abs(delta) < .00001) {
+      if (origin < minimum || origin > maximum) return false;
+      continue;
+    }
+    const first = (minimum - origin) / delta, second = (maximum - origin) / delta;
+    minimumT = Math.max(minimumT, Math.min(first, second)); maximumT = Math.min(maximumT, Math.max(first, second));
+    if (minimumT > maximumT) return false;
+  }
+  return true;
+}
+
+const VISIBLE_OSM_BUILDINGS = NYC_OSM_BUILDINGS.filter(building => !DRIVE_ROADS.some(road => {
+  const exitRamp = road.primaryFrom !== undefined && road.primaryTo !== undefined && road.primaryTo > HIGHWAY_EXIT_START && road.primaryFrom < CROSSTOWN_START;
+  // Preserve full shoulders and sight lines on the tight motorway link. Across
+  // the wider grid only reject massing that crosses the shuttle centerline,
+  // retaining the dense streetwall right up to real sidewalks.
+  const clearance = exitRamp ? road.halfWidth + 1.4 : Math.min(2.6, road.halfWidth * .28);
+  return segmentIntersectsExpandedBuilding(road, building, clearance);
+}));
+
 const UWS_TRAFFIC_LOOPS = [
   [new THREE.Vector3(-217.844, .4, -2577.899), new THREE.Vector3(-169.934, .4, -2529.773), new THREE.Vector3(-186.126, .4, -2476.918), new THREE.Vector3(-234.265, .4, -2525.14)],
   [new THREE.Vector3(-201.891, .4, -2630.402), new THREE.Vector3(-153.849, .4, -2582.195), new THREE.Vector3(-169.934, .4, -2529.773), new THREE.Vector3(-217.844, .4, -2577.899)],
   [new THREE.Vector3(-162.511, .4, -2760.31), new THREE.Vector3(-155.056, .4, -2752.868), new THREE.Vector3(-177.461, .4, -2606.012), new THREE.Vector3(-201.891, .4, -2630.402)],
   [new THREE.Vector3(-234.265, .4, -2525.14), new THREE.Vector3(-208.088, .4, -2499.015), new THREE.Vector3(-249.817, .4, -2372.077), new THREE.Vector3(-273.769, .4, -2396.222)],
+  // Both mapped carriageways keep moving after the W 79th Street split. A
+  // missed exit therefore remains a living highway with same-direction cars
+  // rather than an empty navigation-only spur.
+  [
+    new THREE.Vector3(-97.756, .4, -2560.579), new THREE.Vector3(-76.829, .4, -2628.478),
+    new THREE.Vector3(-61.107, .4, -2668.028), new THREE.Vector3(-47.809, .4, -2706.793),
+    new THREE.Vector3(12.969, .4, -2904.733), new THREE.Vector3(32.18, .4, -2969.145),
+    new THREE.Vector3(15.371, .4, -2922.286), new THREE.Vector3(9.435, .4, -2901.923),
+    new THREE.Vector3(-48.571, .4, -2712.752), new THREE.Vector3(-76.178, .4, -2639.01),
+    new THREE.Vector3(-99.762, .4, -2562.723),
+  ],
 ] as const;
 
 function closedPathFrame(points: readonly THREE.Vector3[], distance: number) {
@@ -586,7 +650,7 @@ function addOsmBuildingsAndClosures(
     // The detailed arrival campus replaces the raw OSM massing immediately
     // around AMNH. Retain the surrounding real footprints so every approach
     // still reads as a continuous city block.
-    const buildings = NYC_OSM_BUILDINGS.filter(building => building.variant === variant && Math.hypot(building.x - AMNH_END_FRAME.center.x, building.z - AMNH_END_FRAME.center.z) > 52);
+    const buildings = VISIBLE_OSM_BUILDINGS.filter(building => building.variant === variant && Math.hypot(building.x - AMNH_END_FRAME.center.x, building.z - AMNH_END_FRAME.center.z) > 52);
     const mesh = new THREE.InstancedMesh(buildingGeometry, material, buildings.length); mesh.name = `openstreetmap-real-building-footprint-variant-${variant + 1}`; mesh.receiveShadow = true; mesh.castShadow = quality > .84;
     const cornices = new THREE.InstancedMesh(corniceGeometry, corniceMaterials[variant % corniceMaterials.length], buildings.length); cornices.name = "openstreetmap-building-roofline-and-cornice"; cornices.receiveShadow = true;
     const bases = new THREE.InstancedMesh(baseGeometry, baseMaterials[variant % baseMaterials.length], buildings.length); bases.name = "openstreetmap-building-articulated-ground-floor-base"; bases.receiveShadow = true;
@@ -604,10 +668,10 @@ function addOsmBuildingsAndClosures(
   });
   void variants;
 
-  const roofCount = Math.floor(NYC_OSM_BUILDINGS.length / 7), roof = new THREE.InstancedMesh(new THREE.CylinderGeometry(.75, .9, 1.5, 12), new THREE.MeshStandardMaterial({ color: "#4d3d31", roughness: .94 }), roofCount);
+  const roofCount = Math.floor(VISIBLE_OSM_BUILDINGS.length / 7), roof = new THREE.InstancedMesh(new THREE.CylinderGeometry(.75, .9, 1.5, 12), new THREE.MeshStandardMaterial({ color: "#4d3d31", roughness: .94 }), roofCount);
   roof.name = "openstreetmap-building-rooftop-water-tanks-and-mechanical-detail";
   const roofDummy = new THREE.Object3D(); let roofIndex = 0;
-  for (const building of NYC_OSM_BUILDINGS) {
+  for (const building of VISIBLE_OSM_BUILDINGS) {
     if (building.id % 7 !== 0 || roofIndex >= roofCount || Math.hypot(building.x - AMNH_END_FRAME.center.x, building.z - AMNH_END_FRAME.center.z) <= 52) continue;
     roofDummy.position.set(building.x, building.height + .82, building.z); roofDummy.rotation.set(0, building.yaw, 0); roofDummy.scale.set(1, 1, 1); roofDummy.updateMatrix(); roof.setMatrixAt(roofIndex++, roofDummy.matrix);
   }
@@ -616,7 +680,11 @@ function addOsmBuildingsAndClosures(
   const blue = new THREE.MeshPhysicalMaterial({ color: "#176aa3", roughness: .42, clearcoat: .4 }), rubber = new THREE.MeshStandardMaterial({ color: "#171b1c", roughness: .95 }), amber = new THREE.MeshStandardMaterial({ color: "#ffb629", emissive: "#9a4c06", emissiveIntensity: .55, roughness: .4 });
   const closureTexture = streetBladeTexture("OPEN STREET · LOCAL ACCESS"); ownedTextures.push(closureTexture);
   const signMaterial = new THREE.MeshBasicMaterial({ map: closureTexture, toneMapped: false });
-  NYC_OSM_BOUNDARY_CLOSURES.forEach((closure, closureIndex) => {
+  // West Side Highway is the intentional recovery corridor after a missed
+  // W 79th exit, so its two snapshot-edge records must not become physical
+  // walls across live motorway lanes. Other edge streets retain visible DOT
+  // closures and the larger building-context buffer behind them.
+  NYC_OSM_BOUNDARY_CLOSURES.filter(closure => closure.road !== "West Side Highway").forEach((closure, closureIndex) => {
     const group = new THREE.Group(); group.name = `nyc-blue-open-streets-performance-boundary-${closureIndex + 1}`; group.position.set(closure.x, .35, closure.z); group.rotation.y = closure.heading;
     for (let segment = -2; segment <= 2; segment++) {
       const barrier = new THREE.Mesh(new RoundedBoxGeometry(2.9, .72, .55, 4, .08), blue); barrier.name = "nyc-dot-blue-water-filled-street-closure-barrier"; barrier.position.x = segment * 2.75; group.add(barrier);
@@ -663,9 +731,12 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
     const next = Math.min(CITY_BUS_ROUTE_LENGTH, progress + 18), middle = (progress + next) / 2, a = routeCenter(progress), b = routeCenter(next), frame = routeFrame(middle), length = a.distanceTo(b);
     if (middle >= CROSSTOWN_START) continue; // OSM surfaces take over at West 79th Street.
     const upperWestSide = middle >= HIGHWAY_EXIT_START, roadWidth = upperWestSide ? 16.2 : 21.5, sidewalkOffset = roadWidth * .5 + 2.55;
-    const openGridJunction = false;
+    const mappedExitRamp = middle >= HIGHWAY_EXIT_START;
     const road = new THREE.Mesh(new RoundedBoxGeometry(roadWidth, .18, length + .8, 3, .04), asphalt); road.name = upperWestSide ? "upper-west-side-narrower-city-street-segment" : "compressed-nyc-road-segment"; road.position.copy(a).add(b).multiplyScalar(.5); road.position.y -= .08; road.rotation.y = frame.yaw; root.add(road);
-    for (const side of openGridJunction ? [] : [-1, 1]) {
+    // The OSM motorway-link surface already defines the ramp shoulders. Short
+    // rectangular sidewalk/curb pieces cannot join cleanly on this compound
+    // curve and previously formed diagonal concrete teeth across the exit.
+    for (const side of mappedExitRamp ? [] : [-1, 1]) {
       const walk = new THREE.Mesh(new RoundedBoxGeometry(5.2, .28, length + .6, 3, .05), concrete); walk.position.copy(road.position).addScaledVector(frame.right, side * sidewalkOffset); walk.position.y += .07; walk.rotation.y = frame.yaw; root.add(walk);
       const barrier = new THREE.Mesh(new RoundedBoxGeometry(.28, .72, length + .25, 3, .05), concrete); barrier.position.copy(road.position).addScaledVector(frame.right, side * (roadWidth * .5 + .2)); barrier.position.y += .35; barrier.rotation.y = frame.yaw; root.add(barrier);
     }
@@ -749,7 +820,10 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
   for (let index = 0; index < buildingCount; index++) {
     const progress = 18 + index / Math.max(1, buildingCount - 1) * (CITY_BUS_ROUTE_LENGTH - 36), frame = routeFrame(progress), side = index % 2 ? 1 : -1, groundY = frame.center.y;
     const onRiverHighway = progress >= HIGHWAY_START && progress < HIGHWAY_EXIT_START;
-    if (progress >= CROSSTOWN_START) continue; // Real OSM footprints own Manhattan local streets.
+    // The OSM motorway link curls back beside the last portion of the long
+    // authored approach. Ending procedural massing before that overlap keeps
+    // an approach-side tower from sitting across the later ramp segment.
+    if (progress >= HIGHWAY_EXIT_START - 170) continue;
     // Southbound, the Hudson is on the driver's right and the Manhattan
     // street wall is on the left. Central Park replaces the left street wall
     // after the second turn, while the museum blocks remain on the right.
@@ -787,24 +861,34 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
       const tank = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.35, 2.1, 14), new THREE.MeshStandardMaterial({ color: "#4e3c2d", roughness: .93 })); tank.position.copy(building.position); tank.position.y += height * .5 + 1.15; root.add(tank);
     }
   }
-  // A continuous two-depth street wall replaces the isolated boxes and white
-  // gaps on the driver's left along the West Side Highway. The foreground
-  // podiums, varied setbacks, roof plant and water towers are deliberately
-  // contiguous at speed; the second row carries the skyline into the haze.
-  const highwayPodium = new THREE.Mesh(new RoundedBoxGeometry(9.5, 5.2, HIGHWAY_EXIT_START - HIGHWAY_START + 42, 4, .08), baseMaterials[1]);
-  highwayPodium.name = "west-side-highway-continuous-manhattan-streetwall-podium"; highwayPodium.position.set(-15.9, 2.5, -(HIGHWAY_START + HIGHWAY_EXIT_START) * .5); root.add(highwayPodium);
-  collisionIndex.add({ id: "highway-manhattan-streetwall", kind: "building", label: "West Side Manhattan streetwall", x: highwayPodium.position.x, z: highwayPodium.position.z, halfX: 4.75, halfZ: (HIGHWAY_EXIT_START - HIGHWAY_START + 42) * .5, yaw: 0 });
-  const highwayBlockCount = Math.ceil((HIGHWAY_EXIT_START - HIGHWAY_START) / 24);
+  // Follow the curving carriageway with short contiguous podium sections and
+  // deliberately stop them before the exit gore. The former single 1.7 km
+  // OBB stayed straight while the road blended into OSM and physically sealed
+  // the signed W 79th Street ramp.
+  const highwayStreetwallEnd = HIGHWAY_EXIT_START - 138;
+  const podiumGroup = new THREE.Group(); podiumGroup.name = "west-side-highway-continuous-manhattan-streetwall-podium";
+  let podiumIndex = 0;
+  for (let progress = HIGHWAY_START; progress < highwayStreetwallEnd; progress += 22) {
+    const next = Math.min(highwayStreetwallEnd, progress + 22), a = routeCenter(progress), b = routeCenter(next), frame = routeFrame((progress + next) * .5), length = a.distanceTo(b);
+    const podium = new THREE.Mesh(new RoundedBoxGeometry(9.5, 5.2, length + .8, 4, .08), baseMaterials[1]);
+    podium.name = "west-side-highway-following-streetwall-podium-section";
+    podium.position.copy(a).add(b).multiplyScalar(.5).addScaledVector(frame.right, -15.9); podium.position.y = 2.5; podium.rotation.y = frame.yaw; podiumGroup.add(podium);
+    collisionIndex.add({ id: `highway-manhattan-streetwall-${++podiumIndex}`, kind: "building", label: "West Side Manhattan streetwall", x: podium.position.x, z: podium.position.z, halfX: 4.75, halfZ: length * .5, yaw: frame.yaw });
+  }
+  root.add(podiumGroup);
+  // Varied setbacks, roof plant and water towers carry the left-side building
+  // canyon into the OSM district without placing massing in the exit corridor.
+  const highwayBlockCount = Math.ceil((highwayStreetwallEnd - HIGHWAY_START) / 24);
   for (let index = 0; index < highwayBlockCount; index++) {
-    const z = -HIGHWAY_START - 12 - index * 24, foregroundHeight = 24 + index % 8 * 5.4;
+    const progress = Math.min(highwayStreetwallEnd - 2, HIGHWAY_START + 12 + index * 24), frame = routeFrame(progress), foregroundHeight = 24 + index % 8 * 5.4;
     const foreground = new THREE.Mesh(new RoundedBoxGeometry(18 + index % 3 * 3.2, foregroundHeight, 25.2, 4, .16), buildingMaterials[(index + 2) % buildingMaterials.length]);
-    foreground.name = "dense-west-side-highway-riverfront-building"; foreground.position.set(-25.2 - index % 3 * 1.8, foregroundHeight * .5, z); root.add(foreground);
+    foreground.name = "dense-west-side-highway-riverfront-building"; foreground.position.copy(frame.center).addScaledVector(frame.right, -25.2 - index % 3 * 1.8); foreground.position.y = foregroundHeight * .5; foreground.rotation.y = frame.yaw; root.add(foreground);
     const cornice = new THREE.Mesh(new RoundedBoxGeometry(18.5 + index % 3 * 3.2, .42, 25.6, 3, .045), corniceMaterials[index % corniceMaterials.length]);
-    cornice.position.copy(foreground.position); cornice.position.y += foregroundHeight * .5 + .12; root.add(cornice);
+    cornice.position.copy(foreground.position); cornice.position.y += foregroundHeight * .5 + .12; cornice.rotation.y = frame.yaw; root.add(cornice);
     if (index % 2 === 0) {
       const towerHeight = 35 + index % 6 * 8.5;
       const tower = new THREE.Mesh(new RoundedBoxGeometry(23 + index % 4 * 3, towerHeight, 27, 4, .18), buildingMaterials[(index + 4) % buildingMaterials.length]);
-      tower.name = "west-side-highway-layered-background-skyline-tower"; tower.position.set(-58 - index % 4 * 8, towerHeight * .5, z - 5); root.add(tower);
+      tower.name = "west-side-highway-layered-background-skyline-tower"; tower.position.copy(frame.center).addScaledVector(frame.right, -58 - index % 4 * 8).addScaledVector(frame.tangent, 5); tower.position.y = towerHeight * .5; tower.rotation.y = frame.yaw; root.add(tower);
       if (index % 6 === 0) {
         const tank = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.65, 2.4, 14), new THREE.MeshStandardMaterial({ color: "#4b392b", roughness: .94 }));
         tank.name = "west-side-highway-rooftop-water-tank"; tank.position.set(tower.position.x, towerHeight + 1.3, tower.position.z); root.add(tank);
@@ -813,11 +897,11 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
   }
   const highwayLampMaterial = new THREE.MeshStandardMaterial({ color: "#26302f", metalness: .68, roughness: .36 });
   const highwayLampGlow = new THREE.MeshStandardMaterial({ color: "#f7e6b0", emissive: "#ffd279", emissiveIntensity: 1.7, roughness: .22 });
-  for (let index = 0; index < 34; index++) {
-    const z = -HIGHWAY_START - 26 - index * 48;
-    for (const x of [-10.9, 14.8]) {
-      const pole = new THREE.Mesh(new THREE.CylinderGeometry(.055, .09, 6.4, 9), highwayLampMaterial); pole.name = "west-side-highway-roadway-light-not-traffic-signal"; pole.position.set(x, 3.2, z); root.add(pole);
-      const lamp = new THREE.Mesh(new THREE.SphereGeometry(.16, 12, 8), highwayLampGlow); lamp.position.set(x, 6.42, z); root.add(lamp);
+  for (let progress = HIGHWAY_START + 26; progress < HIGHWAY_EXIT_START; progress += 48) {
+    const frame = routeFrame(progress);
+    for (const offset of [-10.9, 14.8]) {
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(.055, .09, 6.4, 9), highwayLampMaterial); pole.name = "west-side-highway-roadway-light-not-traffic-signal"; pole.position.copy(frame.center).addScaledVector(frame.right, offset); pole.position.y = 3.2; root.add(pole);
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(.16, 12, 8), highwayLampGlow); lamp.position.copy(pole.position); lamp.position.y = 6.42; root.add(lamp);
     }
   }
   addOsmBuildingsAndClosures(root, quality, textures, ownedTextures, buildingMaterials, corniceMaterials, baseMaterials, collisionIndex);
@@ -841,15 +925,38 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
   exitSign.name = "exit-here-for-american-museum-of-natural-history-sign"; exitSign.position.set(-2.1, 5.05, -.2); exitGantry.add(exitSign);
   exitGantry.position.copy(exitFrame.center); exitGantry.rotation.y = exitFrame.yaw; root.add(exitGantry);
 
-  const river = new THREE.Mesh(new THREE.PlaneGeometry(172, HIGHWAY_EXIT_START - HIGHWAY_START + 180), new THREE.MeshPhysicalMaterial({ color: "#446d79", normalMap: textures.waterNormal, normalScale: new THREE.Vector2(.32, .32), roughness: .2, metalness: .04, clearcoat: .72 }));
-  river.name = "hudson-river-right-side-of-southbound-west-side-highway"; river.rotation.x = -Math.PI / 2; river.position.set(92, .05, -(HIGHWAY_START + HIGHWAY_EXIT_START) * .5); root.add(river);
-  const waterfront = new THREE.Mesh(new RoundedBoxGeometry(9, .3, HIGHWAY_EXIT_START - HIGHWAY_START + 120, 3, .05), concrete);
-  waterfront.name = "hudson-river-greenway-and-seawall"; waterfront.position.set(17.4, .12, -(HIGHWAY_START + HIGHWAY_EXIT_START) * .5); root.add(waterfront);
-  const highwayBarrier = new THREE.Mesh(new RoundedBoxGeometry(.52, .72, HIGHWAY_EXIT_START - HIGHWAY_START + 54, 3, .09), concrete);
-  highwayBarrier.name = "west-side-highway-hudson-safety-barrier"; highwayBarrier.position.set(11.15, .34, -(HIGHWAY_START + HIGHWAY_EXIT_START) * .5); root.add(highwayBarrier);
-  collisionIndex.add({ id: "highway-hudson-safety-barrier", kind: "barrier", label: "Hudson River safety barrier", x: highwayBarrier.position.x, z: highwayBarrier.position.z, halfX: .4, halfZ: (HIGHWAY_EXIT_START - HIGHWAY_START + 54) * .5, yaw: 0 });
-  const greenwayStripe = new THREE.Mesh(new RoundedBoxGeometry(.12, .035, HIGHWAY_EXIT_START - HIGHWAY_START + 110, 2, .012), new THREE.MeshStandardMaterial({ color: "#d6c85f", roughness: .72 }));
-  greenwayStripe.name = "hudson-river-greenway-center-stripe"; greenwayStripe.position.set(17.4, .3, -(HIGHWAY_START + HIGHWAY_EXIT_START) * .5); root.add(greenwayStripe);
+  const river = new THREE.Mesh(new THREE.PlaneGeometry(320, 2380), new THREE.MeshPhysicalMaterial({ color: "#446d79", normalMap: textures.waterNormal, normalScale: new THREE.Vector2(.32, .32), roughness: .2, metalness: .04, clearcoat: .72 }));
+  river.name = "hudson-river-right-side-of-southbound-west-side-highway"; river.rotation.x = -Math.PI / 2; river.position.set(104, .05, -1960); root.add(river);
+  const greenwayStripeMaterial = new THREE.MeshStandardMaterial({ color: "#d6c85f", roughness: .72 });
+  const highwayEdgeSegments: Array<{ start: THREE.Vector3; end: THREE.Vector3; halfWidth: number; source: "authored" | "osm" }> = [];
+  for (let progress = HIGHWAY_START; progress < HIGHWAY_EXIT_START; progress += 30) {
+    const next = Math.min(HIGHWAY_EXIT_START, progress + 30);
+    highwayEdgeSegments.push({ start: routeCenter(progress), end: routeCenter(next), halfWidth: 10.75, source: "authored" });
+  }
+  // Continue the same river edge along the real southbound OSM carriageway.
+  // This is the path the shuttle occupies after deliberately skipping W 79th.
+  for (const road of NYC_OSM_ROADS.filter(road => /Henry Hudson Parkway|West Side Highway/.test(road.name) && road.oneWay && road.end[1] < road.start[1] && road.end[1] < HIGHWAY_EXIT_JUNCTION[1])) {
+    highwayEdgeSegments.push({ start: new THREE.Vector3(road.start[0], .4, road.start[1]), end: new THREE.Vector3(road.end[0], .4, road.end[1]), halfWidth: road.halfWidth, source: "osm" });
+  }
+  highwayEdgeSegments.forEach((segment, index) => {
+    const tangent = segment.end.clone().sub(segment.start).setY(0), length = tangent.length();
+    if (length < .05) return;
+    tangent.multiplyScalar(1 / length);
+    const right = new THREE.Vector3(-tangent.z, 0, tangent.x), yaw = Math.atan2(-tangent.x, -tangent.z), center = segment.start.clone().add(segment.end).multiplyScalar(.5);
+    const barrier = new THREE.Mesh(new RoundedBoxGeometry(.52, .72, length + .5, 3, .09), concrete);
+    barrier.name = segment.source === "osm" ? "west-side-highway-osm-continuation-hudson-safety-barrier" : "west-side-highway-hudson-safety-barrier";
+    barrier.position.copy(center).addScaledVector(right, segment.halfWidth + .42); barrier.position.y = .34; barrier.rotation.y = yaw; root.add(barrier);
+    collisionIndex.add({ id: `highway-hudson-safety-barrier-${index}`, kind: "barrier", label: "Hudson River safety barrier", x: barrier.position.x, z: barrier.position.z, halfX: .4, halfZ: length * .5, yaw });
+    const greenway = new THREE.Mesh(new RoundedBoxGeometry(8.6, .3, length + .6, 3, .05), concrete);
+    greenway.name = segment.source === "osm" ? "hudson-river-greenway-mapped-highway-continuation" : "hudson-river-greenway-and-seawall";
+    greenway.position.copy(center).addScaledVector(right, segment.halfWidth + 5.05); greenway.position.y = .12; greenway.rotation.y = yaw; root.add(greenway);
+    const stripe = new THREE.Mesh(new RoundedBoxGeometry(.12, .035, length + .25, 2, .012), greenwayStripeMaterial);
+    stripe.name = "hudson-river-greenway-center-stripe"; stripe.position.copy(greenway.position); stripe.position.y = .3; stripe.rotation.y = yaw; root.add(stripe);
+    if (segment.source === "osm" && index % 3 === 0) {
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(.055, .09, 6.4, 9), highwayLampMaterial); pole.name = "west-side-highway-continuation-roadway-light"; pole.position.copy(center).addScaledVector(right, segment.halfWidth + .9); pole.position.y = 3.2; root.add(pole);
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(.16, 12, 8), highwayLampGlow); lamp.position.copy(pole.position); lamp.position.y = 6.42; root.add(lamp);
+    }
+  });
   const boatMaterials = ["#ece7d8", "#b74b39", "#315c70"].map(color => new THREE.MeshPhysicalMaterial({ color, roughness: .52, clearcoat: .3 }));
   for (let index = 0; index < 7; index++) {
     const boat = new THREE.Group(); boat.name = `hudson-river-detailed-commuter-and-sail-boat-${index + 1}`;
@@ -1053,7 +1160,7 @@ export class CityBusWorld {
     const spawnFrame = routeFrame(this.progress);
     this.busPosition.copy(spawnFrame.center).addScaledVector(spawnFrame.right, -LANE_WIDTH * .5);
     this.busHeading = spawnFrame.yaw;
-    if (reviewSpawn === "missed-exit") { this.busPosition.set(-1.7, .4, -2635); this.busHeading = 0; this.progress = HIGHWAY_EXIT_START; }
+    if (reviewSpawn === "missed-exit") { this.busPosition.set(-76.829, .4, -2628.478); this.busHeading = -.29; this.progress = HIGHWAY_EXIT_START; }
     if (reviewSpawn === "uws-reroute") { this.busPosition.set(-169.934, .4, -2529.773); this.busHeading = -2.36; this.progress = CROSSTOWN_START + 80; }
     if (reviewSpawn === "traffic-impact" || reviewSpawn === "failure-impact") { this.progress = CITY_BUS_HIGHWAY_REVIEW_PROGRESS; this.busPosition.copy(routeFrame(this.progress).center); this.busHeading = routeFrame(this.progress).yaw; this.speed = 36; }
     if (reviewSpawn === "rear-impact") { this.progress = CITY_BUS_HIGHWAY_REVIEW_PROGRESS; this.busPosition.copy(routeFrame(this.progress).center); this.busHeading = routeFrame(this.progress).yaw; this.speed = 12; }

@@ -27,6 +27,7 @@ const DEBUG_DESTINATIONS: Array<{ scene: DebugSceneName; label: string; detail: 
   { scene: "bus-bronx", label: "Bronx streets", detail: "Zoo gate to highway ramp" },
   { scene: "bus", label: "Museum shuttle", detail: "West Side Highway drive" },
   { scene: "bus-exit", label: "AMNH exit", detail: "W 79 St highway turn" },
+  { scene: "bus-highway-continuation", label: "Missed exit", detail: "Mapped highway continues south" },
   { scene: "bus-city", label: "Upper West Side", detail: "Crosstown to Central Park West" },
   { scene: "bus-reroute", label: "Bus reroute", detail: "Wrong turn · recover through the street grid" },
   { scene: "bus-collision", label: "Traffic impact", detail: "Solid cars · shuttle damage" },

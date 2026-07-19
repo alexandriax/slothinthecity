@@ -384,25 +384,28 @@ export function createSlothRig(furTexture: THREE.Texture): SlothRig {
   viewmodelFur.colorSpace = furTexture.colorSpace;
   viewmodelFur.wrapS = THREE.RepeatWrapping;
   viewmodelFur.wrapT = THREE.ClampToEdgeWrapping;
-  viewmodelFur.repeat.set(1.1, .92);
-  viewmodelFur.offset.set(.03, .04);
+  // Use a close crop of the authored 2K coat rather than squeezing the full
+  // image around the narrow forelimb. At first-person scale the old 1.1× crop
+  // averaged hundreds of strands into a flat brown band.
+  viewmodelFur.repeat.set(.42, .78);
+  viewmodelFur.offset.set(.18, .08);
   viewmodelFur.anisotropy = furTexture.anisotropy;
   markTextureCloneReadyAfterSource(viewmodelFur, furTexture);
   const fur = new THREE.MeshPhysicalMaterial({
     map: viewmodelFur,
     bumpMap: viewmodelFur,
-    bumpScale: .024,
-    color: "#b9aa96",
+    bumpScale: .038,
+    color: "#c6b49d",
     roughness: .96,
     sheen: .32,
     sheenColor: new THREE.Color("#8d8373"),
     sheenRoughness: .9,
-    // A low, texture-independent brown fill keeps the same authored fur map
-    // readable under the park's sunset, the shuttle cab, and the museum's
-    // neutral gallery lights. Using the dark fur map as its own emissive mask
-    // made the canonical arms collapse into black silhouettes indoors.
-    emissive: new THREE.Color("#4a3325"),
-    emissiveIntensity: .46,
+    // The authored coat also modulates the low-light lift. A flat emissive fill
+    // erased the strand contrast in the shuttle and museum even after the map
+    // decoded, while an unlit material collapsed to silhouette in those rooms.
+    emissive: new THREE.Color("#b28c68"),
+    emissiveMap: viewmodelFur,
+    emissiveIntensity: .5,
   });
   const keratin = new THREE.MeshPhysicalMaterial({
     color: "#fff9e9",

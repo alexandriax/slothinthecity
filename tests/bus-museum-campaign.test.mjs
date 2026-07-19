@@ -88,6 +88,21 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
   assert.match(bus, /movementSteps = Math\.max\(1, Math\.ceil\(Math\.abs\(movement\) \/ \.62\)\)/);
   assert.match(bus, /this\.busPosition\.addScaledVector\(driveForward, movement \/ movementSteps\)/);
   assert.match(bus, /missed-w79-highway/);
+  assert.match(bus, /const HIGHWAY_EXIT_JUNCTION = \[-99\.762, -2562\.723\]/);
+  assert.match(bus, /HIGHWAY_OSM_BLEND_START/);
+  assert.match(bus, /\[-141\.683, -2501\.452\].*OSM motorway link meets West 79th Street/);
+  assert.match(bus, /missed-w79-highway-osm-connector/);
+  assert.match(bus, /road\.end\[1\] < road\.start\[1\]/);
+  assert.match(bus, /west-side-highway-osm-continuation-hudson-safety-barrier/);
+  assert.match(bus, /hudson-river-greenway-mapped-highway-continuation/);
+  assert.match(bus, /closure\.road !== "West Side Highway"/);
+  assert.match(bus, /west-side-highway-following-streetwall-podium-section/);
+  assert.match(bus, /const highwayStreetwallEnd = HIGHWAY_EXIT_START - 138/);
+  assert.match(bus, /segmentIntersectsExpandedBuilding/);
+  assert.match(bus, /const VISIBLE_OSM_BUILDINGS = NYC_OSM_BUILDINGS\.filter/);
+  assert.match(bus, /exitRamp \? road\.halfWidth \+ 1\.4/);
+  assert.match(bus, /progress >= HIGHWAY_EXIT_START - 170/);
+  assert.match(bus, /for \(const side of mappedExitRamp \? \[\] : \[-1, 1\]\)/);
   assert.match(bus, /Amsterdam Avenue/);
   assert.match(bus, /OPEN-WORLD REROUTE ACTIVE/);
   assert.match(bus, /upper-west-side-open-world-loop-traffic-/);
@@ -151,6 +166,24 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
   assert.match(game, /Rear impact absorbed · traffic pushed the shuttle forward · no integrity lost/);
   assert.match(bus, /collider\.kind === "barrier" \? 1\.5 : 3/);
   assert.match(bus, /collider\.kind === "barrier" \? 4\.5 : 9/);
+});
+
+test("the canonical first-person fur sampler becomes ready in every scene", async () => {
+  const [textures, rig, checkpoints, game] = await Promise.all([
+    readSource("../app/game/rendering/textures.ts"),
+    readSource("../app/game/player/SlothRig.ts"),
+    readSource("../app/game/debugCheckpoints.ts"),
+    readSource("../app/game/SubwayGame.tsx"),
+  ]);
+
+  assert.match(textures, /const fur = load\("\/game\/textures\/sloth-fur\.webp", 1\.2, 2\.2, decodedFur =>/);
+  assert.match(textures, /releasePendingTextureClones\(decodedFur\)/);
+  assert.match(rig, /viewmodelFur\.source = furTexture\.source/);
+  assert.match(rig, /markTextureCloneReadyAfterSource\(viewmodelFur, furTexture\)/);
+  assert.match(rig, /viewmodelFur\.repeat\.set\(\.42, \.78\)/);
+  assert.match(rig, /emissiveMap: viewmodelFur/);
+  assert.match(checkpoints, /"bus-highway-continuation": "busmissedexit"/);
+  assert.match(game, /qaInput === "busmissedexit" \? "missed-exit"/);
 });
 
 test("mobile shuttle controls expose both sequential gear shifts", async () => {

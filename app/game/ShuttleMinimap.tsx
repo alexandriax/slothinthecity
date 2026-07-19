@@ -34,7 +34,7 @@ export function ShuttleMinimap({ snapshot }: ShuttleMinimapProps) {
       <path className="minimap-osm-local" d={LOCAL_STREET_PATH}/>
       <path className="minimap-osm-major" d={MAJOR_STREET_PATH}/>
       <path className="minimap-osm-route" d={ROUTE_STREET_PATH}/>
-      {NYC_OSM_BOUNDARY_CLOSURES.map((closure, index) => <g className="minimap-closure" key={`${closure.road}-${index}`} transform={`translate(${mapX(closure.x)} ${mapY(closure.z)}) rotate(${-closure.heading * 180 / Math.PI})`}>
+      {NYC_OSM_BOUNDARY_CLOSURES.filter(closure => closure.road !== "West Side Highway").map((closure, index) => <g className="minimap-closure" key={`${closure.road}-${index}`} transform={`translate(${mapX(closure.x)} ${mapY(closure.z)}) rotate(${-closure.heading * 180 / Math.PI})`}>
         <line x1="-3" y1="0" x2="3" y2="0"/><circle cx="0" cy="0" r="1.25"/>
       </g>)}
       <rect className="minimap-museum" x={mapX(-349)} y={mapY(-2572)} width={mapX(-306) - mapX(-349)} height={mapY(-2662) - mapY(-2572)} rx="2" />

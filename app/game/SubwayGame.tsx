@@ -327,11 +327,11 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
         if (qaInput !== "bronxentry") clearReviewToast();
       }
     }
-    if (["busbronx", "busdrive", "busexit", "buscity", "busreroute", "buscollision", "busrearimpact", "busbuilding", "busfailure", "busarrival", "museumentry", "museumscooters", "museumrotunda", "museumcollections", "museumafrican", "museummegatherium", "museumfinale"].includes(qaInput ?? "") && stationWorld) {
+    if (["busbronx", "busdrive", "busexit", "busmissedexit", "buscity", "busreroute", "buscollision", "busrearimpact", "busbuilding", "busfailure", "busarrival", "museumentry", "museumscooters", "museumrotunda", "museumcollections", "museumafrican", "museummegatherium", "museumfinale"].includes(qaInput ?? "") && stationWorld) {
       rescuedParty.setActive(true, player, player.y - 1.48);
-      if (["busbronx", "busdrive", "busexit", "buscity", "busreroute", "buscollision", "busrearimpact", "busbuilding", "busfailure", "busarrival"].includes(qaInput ?? "")) {
+      if (["busbronx", "busdrive", "busexit", "busmissedexit", "buscity", "busreroute", "buscollision", "busrearimpact", "busbuilding", "busfailure", "busarrival"].includes(qaInput ?? "")) {
         const reviewProgress = qaInput === "busbronx" ? 18 : qaInput === "busarrival" ? CITY_BUS_ROUTE_LENGTH - 12 : qaInput === "busexit" ? CITY_BUS_EXIT_REVIEW_PROGRESS : qaInput === "buscity" ? CITY_BUS_CITY_REVIEW_PROGRESS : CITY_BUS_HIGHWAY_REVIEW_PROGRESS;
-        startBusDrive(reviewProgress, qaInput === "busreroute" ? "uws-reroute" : qaInput === "buscollision" ? "traffic-impact" : qaInput === "busrearimpact" ? "rear-impact" : qaInput === "busbuilding" ? "building-impact" : qaInput === "busfailure" ? "failure-impact" : undefined);
+        startBusDrive(reviewProgress, qaInput === "busmissedexit" ? "missed-exit" : qaInput === "busreroute" ? "uws-reroute" : qaInput === "buscollision" ? "traffic-impact" : qaInput === "busrearimpact" ? "rear-impact" : qaInput === "busbuilding" ? "building-impact" : qaInput === "busfailure" ? "failure-impact" : undefined);
       }
       else {
         const reviewMuseum = enterMuseum(
