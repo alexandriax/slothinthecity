@@ -10,7 +10,6 @@ const DEBUG_DESTINATIONS: Array<{ scene: DebugSceneName; label: string; detail: 
   { scene: "bridge", label: "Bow Bridge", detail: "Lake checkpoint" },
   { scene: "boat", label: "Rowboat", detail: "On The Lake" },
   { scene: "island", label: "Ticket island", detail: "Zoo-ticket quest" },
-  { scene: "zoo", label: "Central Park Zoo", detail: "Attendant encounter" },
   { scene: "subway", label: "Subway entrance", detail: "Street stairwell" },
   { scene: "station", label: "5 Av station", detail: "Fare gate and platform" },
   { scene: "train", label: "N / R train", detail: "First train ride" },

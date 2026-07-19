@@ -17,16 +17,12 @@ test("ambient humans have explicit walk and pause windows with idle during a sto
   assert.match(source, /prepareAuthoredHumanLocomotion\(root\)/);
 });
 
-test("park, station, and zoo worlds advance authored walker state every frame", async () => {
-  const [game, campaign, subway, zoo] = await Promise.all([
-    readSource("../app/game/GameClient.tsx"),
-    readSource("../app/game/world/CampaignLandmarks.ts"),
+test("station and Bronx Zoo worlds advance authored walker state every frame", async () => {
+  const [subway, zoo] = await Promise.all([
     readSource("../app/game/world/SubwayWorld.ts"),
     readSource("../app/game/world/BronxZooWorld.ts"),
   ]);
 
-  assert.match(game, /campaign\.update\(gameTime, delta\)/);
-  assert.match(campaign, /visitorAgents\.forEach\(agent => updateAmbientHumanAgent\(agent, elapsed, delta\)\)/);
   assert.match(zoo, /guestAgents\.forEach\(agent => updateAmbientHumanAgent\(agent, elapsed, delta\)\)/);
   assert.match(subway, /mode: "ALIGHT" \| "AMBIENT" \| "BOARD" \| "WAIT"/);
   assert.match(subway, /const walkSeconds = 2\.7/);

@@ -5,7 +5,6 @@ export const DEBUG_SCENE_CHECKPOINTS = {
   bridge: "bowbridge",
   boat: "rowboat",
   island: "ticketisland",
-  zoo: "zoo",
   subway: "subway",
   station: "subwayplatform",
   train: "trainride",

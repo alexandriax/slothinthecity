@@ -35,15 +35,15 @@ import {
 import { markAuthoredZooAnimalsDisposed } from "./animals/AuthoredZooAnimalAssets";
 import { createSkateboard, rollPersonalMobility, type PersonalMobilityVehicle } from "./PersonalMobility";
 
-export type BronxZooQuestState = "NEED_TICKET" | "ENTER_ZOO" | "FIND_SLOTHS" | "ESCORT_TO_BUS";
+export type BronxZooQuestState = "ENTER_ZOO" | "FIND_SLOTHS" | "ESCORT_TO_BUS";
 
 export type BronxZooEvent = {
-  kind: "TICKET_RECEIVED" | "ENTRY_DENIED" | "SLOTHS_RELEASED";
+  kind: "SKATEBOARD_OFFERED" | "LOCK_PICKING_STARTED" | "SLOTHS_RELEASED";
   message: string;
 };
 
 export type BronxZooInteractionHint = {
-  kind: "TICKET_DONOR" | "ENTRY_GATE" | "SLOTH_HABITAT" | "BUS_BOARDING";
+  kind: "SKATEBOARD_DONOR" | "SLOTH_HABITAT" | "BUS_BOARDING";
   label: string;
   target: THREE.Vector3;
   distance: number;
@@ -757,24 +757,24 @@ export class BronxZooWorld {
   readonly root = new THREE.Group();
   readonly spawn = new THREE.Vector3(0, 2.5, 25.5);
   readonly friendReviewSpawn = new THREE.Vector3(0, 1.48, -124.5);
-  readonly ticketReviewSpawn = new THREE.Vector3(-8.5, 1.48, 7.8);
+  readonly entryReviewSpawn = new THREE.Vector3(-8.5, 1.48, 7.8);
   readonly habitatReviewSpawn = new THREE.Vector3(0, 1.48, -125.8);
   readonly attendantPosition = new THREE.Vector3(3.5, 1.48, -16);
-  readonly ticketDonorPosition = new THREE.Vector3(-8.5, 1.48, 6.2);
+  readonly skateboardDonorPosition = new THREE.Vector3(-8.5, 1.48, 6.2);
   readonly gatePosition = new THREE.Vector3(0, 1.48, -8);
   readonly slothHabitatPosition = new THREE.Vector3(0, 1.48, -128.6);
   // Exterior of the visible open door. Boarding is an explicit interaction;
   // the player never needs to intersect the coach body to trigger it.
   readonly busBoardingPosition = new THREE.Vector3(17.05, 2.5, 22.48);
-  // Deliberately placed on the donor-to-gate desire line so the player sees
-  // the mobility option immediately after receiving the extra ticket.
+  // Deliberately placed on the donor-to-gate desire line so her offer points
+  // to a clearly visible, immediately usable mobility option.
   readonly skateboardPosition = new THREE.Vector3(-4.1, terrainHeight(-4.1, -1.1), -1.1);
   readonly cameraPosition = new THREE.Vector3(0, 4.2, -118);
   readonly cameraTarget = new THREE.Vector3(0, 3.8, -140);
   readonly worldBounds = Object.freeze({ minX: -84, maxX: 84, minZ: -158, maxZ: 39.5 });
   readonly environmentSettings = Object.freeze({ cameraFar: 440, fogDensity: .0045, background: "#9bb5a0" });
   readonly attendant: THREE.Group;
-  readonly ticketDonor: THREE.Group;
+  readonly skateboardDonor: THREE.Group;
   readonly captiveSloths: THREE.Group[] = [];
 
   private ownedTextures: THREE.Texture[] = [];
@@ -784,15 +784,16 @@ export class BronxZooWorld {
   private readonly obstacles: Obstacle[] = [];
   private readonly entryGateLeaves: THREE.Group[] = [];
   private readonly keeperDoorLeaves: THREE.Group[] = [];
+  private readonly keeperPadlock = new THREE.Group();
   private readonly sun = new THREE.DirectionalLight("#ffdda1", 2.6);
   private readonly skateboard: PersonalMobilityVehicle;
   private readonly skateboardPrevious = new THREE.Vector3();
   private skateboardMounted = false;
   private skateboardTrickStarted = -Infinity;
   private skateboardLift = 0;
-  private hasAdmissionTicket = false;
+  private hasAdmissionTicket = true;
   private releasedFriends = false;
-  private state: BronxZooQuestState = "NEED_TICKET";
+  private state: BronxZooQuestState = "ENTER_ZOO";
 
   constructor(scene: THREE.Scene, textures: GameTextures, quality = 1) {
     this.root.name = "bronx-zoo-rescue-level";
@@ -880,13 +881,13 @@ export class BronxZooWorld {
       role: "visitor", quality, variant, faceVariant, coat, trousers, skin, outfit, accessory, pose: accessory === "camera" ? "photographing" : "neutral",
     });
     const donor = makeVisitor(31, 13, "#7f5266", "#363b43", "#a96f52", "cotton-denim", "tote");
-    this.ticketDonor = donor.root;
-    this.ticketDonor.name = "bronx-zoo-extra-ticket-donor";
-    this.ticketDonor.userData.dialogue = "I couldn’t make it today, so please take my extra ticket.";
-    this.ticketDonor.userData.givesExtraTicket = true;
-    this.ticketDonor.position.set(this.ticketDonorPosition.x, 0, this.ticketDonorPosition.z);
-    this.ticketDonor.rotation.y = Math.PI * .72;
-    this.root.add(this.ticketDonor);
+    this.skateboardDonor = donor.root;
+    this.skateboardDonor.name = "bronx-zoo-skateboard-donor";
+    this.skateboardDonor.userData.dialogue = "Oh, you can have my skateboard if you want. It’s over there.";
+    this.skateboardDonor.userData.offersSkateboard = true;
+    this.skateboardDonor.position.set(this.skateboardDonorPosition.x, 0, this.skateboardDonorPosition.z);
+    this.skateboardDonor.rotation.y = Math.PI * .72;
+    this.root.add(this.skateboardDonor);
     this.ownedTextures.push(...donor.ownedTextures);
 
     const attendant = createPremiumHuman({
@@ -935,26 +936,22 @@ export class BronxZooWorld {
   get skateboardRideLift() { return this.skateboardLift; }
 
   get objectiveTarget() {
-    if (this.state === "NEED_TICKET") return this.ticketDonorPosition.clone();
     if (this.state === "ENTER_ZOO") return this.gatePosition.clone();
     if (this.state === "FIND_SLOTHS") return this.slothHabitatPosition.clone();
     return this.busBoardingPosition.clone();
   }
 
   get objectiveLabel() {
-    if (this.state === "NEED_TICKET") return "Find an admission ticket outside the Bronx Zoo";
-    if (this.state === "ENTER_ZOO") return "Use the ticket to enter the Bronx Zoo";
-    if (this.state === "FIND_SLOTHS") return "Find and release your sloth friends";
+    if (this.state === "ENTER_ZOO") return "Enter the Bronx Zoo with your island ticket";
+    if (this.state === "FIND_SLOTHS") return "Find the sloth habitat and pick its keeper lock";
     return "Bring your friends to the zoo shuttle bus";
   }
 
   interactionHint(player: THREE.Vector3): BronxZooInteractionHint | null {
-    const donorDistance = this.distanceXZ(player, this.ticketDonorPosition);
-    if (!this.hasAdmissionTicket && donorDistance <= 2.6) return { kind: "TICKET_DONOR", label: "SPEAK WITH TICKET DONOR · ASK ABOUT EXTRA TICKET", target: this.ticketDonorPosition.clone(), distance: donorDistance };
-    const gateDistance = this.distanceXZ(player, this.gatePosition);
-    if (!this.hasAdmissionTicket && gateDistance <= 3.5) return { kind: "ENTRY_GATE", label: "ADMISSION TICKET REQUIRED", target: this.gatePosition.clone(), distance: gateDistance };
+    const donorDistance = this.distanceXZ(player, this.skateboardDonorPosition);
+    if (donorDistance <= 2.6) return { kind: "SKATEBOARD_DONOR", label: "TALK TO VISITOR ABOUT THE SKATEBOARD", target: this.skateboardDonorPosition.clone(), distance: donorDistance };
     const habitatDistance = this.distanceXZ(player, this.slothHabitatPosition);
-    if (this.hasAdmissionTicket && !this.releasedFriends && habitatDistance <= 3.2) return { kind: "SLOTH_HABITAT", label: "OPEN THE SLOTH KEEPER DOOR", target: this.slothHabitatPosition.clone(), distance: habitatDistance };
+    if (!this.releasedFriends && habitatDistance <= 3.2) return { kind: "SLOTH_HABITAT", label: "PICK THE SIX-PIN SLOTH HABITAT LOCK", target: this.slothHabitatPosition.clone(), distance: habitatDistance };
     const boardingDistance = this.distanceXZ(player, this.busBoardingPosition);
     if (this.releasedFriends && boardingDistance <= 4.2) return { kind: "BUS_BOARDING", label: "BOARD MUSEUM SHUTTLE WITH ALL FOUR FRIENDS", target: this.busBoardingPosition.clone(), distance: boardingDistance };
     return null;
@@ -963,32 +960,27 @@ export class BronxZooWorld {
   interact(player: THREE.Vector3): BronxZooEvent | null {
     const hint = this.interactionHint(player);
     if (!hint) return null;
-    if (hint.kind === "TICKET_DONOR") {
-      this.setTicketCollected(true);
-      return { kind: "TICKET_RECEIVED", message: "“I couldn’t make it today, so please take my extra ticket.” Admission ticket received." };
-    }
-    if (hint.kind === "ENTRY_GATE") return { kind: "ENTRY_DENIED", message: "The entrance scanner flashes red. Find someone outside with an extra ticket." };
+    if (hint.kind === "SKATEBOARD_DONOR") return { kind: "SKATEBOARD_OFFERED", message: "“Oh, you can have my skateboard if you want. It’s over there.”" };
     if (hint.kind === "BUS_BOARDING") return null;
-    this.setFriendsReleased(true);
-    return { kind: "SLOTHS_RELEASED", message: "The keeper door is open. Lead your four friends along the promenade and board the museum shuttle bus." };
+    return { kind: "LOCK_PICKING_STARTED", message: "Keep plug tension between 40% and 60%, then find the six pins in binding order." };
   }
 
-  setTicketCollected(collected: boolean) {
-    this.hasAdmissionTicket = collected;
-    if (!collected) this.state = "NEED_TICKET";
-    else if (!this.releasedFriends && this.state === "NEED_TICKET") this.state = "ENTER_ZOO";
+  completeLockPicking() {
+    this.setFriendsReleased(true);
+    return { kind: "SLOTHS_RELEASED", message: "The six pins set and the keeper lock turns. Lead your four friends along the promenade and board the museum shuttle bus." } as const;
   }
 
   setFriendsReleased(released: boolean) {
     this.releasedFriends = released;
     this.captiveSloths.forEach(sloth => { sloth.visible = !released; });
+    this.keeperPadlock.visible = !released;
     if (released) {
       this.hasAdmissionTicket = true;
       this.state = "ESCORT_TO_BUS";
-    } else this.state = this.hasAdmissionTicket ? "FIND_SLOTHS" : "NEED_TICKET";
+    } else this.state = "FIND_SLOTHS";
   }
 
-  ticketDonorNearby(player: THREE.Vector3, distance = 2.6) { return this.distanceXZ(player, this.ticketDonorPosition) <= distance; }
+  skateboardDonorNearby(player: THREE.Vector3, distance = 2.6) { return this.distanceXZ(player, this.skateboardDonorPosition) <= distance; }
   gateNearby(player: THREE.Vector3, distance = 3.5) { return this.distanceXZ(player, this.gatePosition) <= distance; }
   slothHabitatNearby(player: THREE.Vector3, distance = 3.2) { return this.distanceXZ(player, this.slothHabitatPosition) <= distance; }
   busBoardingReached(player: THREE.Vector3, distance = 2.8) { return this.releasedFriends && this.distanceXZ(player, this.busBoardingPosition) <= distance; }
@@ -1061,7 +1053,7 @@ export class BronxZooWorld {
       leaf.rotation.y += (target - leaf.rotation.y) * (1 - Math.exp(-delta * 4.8));
     });
     idleAuthoredHuman(this.attendant, delta);
-    idleAuthoredHuman(this.ticketDonor, delta);
+    idleAuthoredHuman(this.skateboardDonor, delta);
     this.guestAgents.forEach(agent => updateAmbientHumanAgent(agent, elapsed, delta));
     this.animals.forEach(animal => animal.update(elapsed, delta));
     this.updateCaptiveSlothMotion(elapsed);
@@ -1870,6 +1862,19 @@ export class BronxZooWorld {
       this.keeperDoorLeaves.push(pivot);
       habitat.add(pivot);
     }
+    this.keeperPadlock.name = "sloth-enclosure-six-pin-padlock";
+    this.keeperPadlock.position.set(0, 2.05, -130.34);
+    const lockBody = new THREE.Mesh(new RoundedBoxGeometry(.62, .72, .24, 6, .075), new THREE.MeshStandardMaterial({ color: "#b88635", metalness: .84, roughness: .24 }));
+    lockBody.name = "six-pin-brass-lock-body";
+    const shackle = new THREE.Mesh(new THREE.TorusGeometry(.28, .065, 10, 28, Math.PI), materials.iron);
+    shackle.name = "keeper-lock-steel-shackle";
+    shackle.position.y = .34;
+    const keyway = new THREE.Mesh(new THREE.CylinderGeometry(.075, .075, .028, 18), materials.iron);
+    keyway.name = "keeper-lock-plug-keyway";
+    keyway.rotation.x = Math.PI / 2;
+    keyway.position.set(0, -.08, .135);
+    this.keeperPadlock.add(lockBody, shackle, keyway);
+    habitat.add(this.keeperPadlock);
     const trunkPositions = [-9, -3, 4, 10];
     trunkPositions.forEach((x, index) => {
       const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.36, .58, 8.6, quality > .72 ? 15 : 10), materials.bark);

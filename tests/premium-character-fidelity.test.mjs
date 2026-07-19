@@ -62,30 +62,22 @@ test("zoo sloth friends use continuous anatomical silhouettes", async () => {
   assert.match(game, /qaInput === "finale"[\s\S]{0,320}reviewPark\.sanctuaryTarget/);
 });
 
-test("zoo populations, grounding, and fabric wardrobes stay explicit", async () => {
+test("Bronx Zoo populations, grounding, and fabric wardrobes stay explicit", async () => {
   const [campaign, finale, runtime, showroom] = await Promise.all([
     readFile(new URL("../app/game/world/CampaignLandmarks.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/game/world/BronxZooWorld.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/game/world/characters/AuthoredHumanAssets.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/debug/characters/CharacterShowroom.tsx", import.meta.url), "utf8"),
   ]);
-  const zoo = campaign.slice(campaign.indexOf("function addZoo"), campaign.indexOf("function addSubwayEntrance"));
-  const population = zoo.slice(zoo.indexOf("const visitorData"), zoo.indexOf("] as const;") + 11);
-  assert.equal((population.match(/zone: "inside"/g) ?? []).length, 3);
-  assert.equal((population.match(/zone: "outside"/g) ?? []).length, 1);
-  assert.match(zoo, /groundedLocalY/);
-  assert.match(zoo, /heightAt\(gate\.position\.x \+ x, gate\.position\.z \+ z\)/);
-  assert.match(campaign, /walkingVisitors\.map/);
-  assert.match(zoo, /walkingVisitors\.push\(result\.root\)/);
-  assert.doesNotMatch(campaign, /stationaryVisitors/);
-  assert.doesNotMatch(population, /checking-map/);
-  assert.doesNotMatch(population, /slice\(0, quality/);
+  assert.doesNotMatch(campaign, /createPremiumHuman|function addZoo|central-park-zoo/);
+  assert.match(finale, /guestData\.slice\(0, quality < \.58 \? 4 : quality < \.82 \? 6 : guestData\.length\)/);
+  assert.match(finale, /this\.guestAgents\.push\(createAmbientHumanAgent\(result\.root/);
 
   for (const outfit of ["zoo-uniform", "cotton-denim", "silk-leggings", "knit-chinos"]) {
     assert.match(`${campaign}\n${finale}\n${showroom}`, new RegExp(outfit));
   }
-  assert.match(campaign, /zooNameTag: "Central Park Zoo"/);
   assert.match(finale, /zooNameTag: "Bronx Zoo"/);
+  assert.match(showroom, /zooNameTag: "Bronx Zoo"/);
   assert.match(runtime, /color: options\.coat/);
   assert.match(runtime, /color: options\.trousers/);
   const shirtPrint = runtime.slice(runtime.indexOf("function applyZooUniformShirtPrint"), runtime.indexOf("function disposeInstance"));

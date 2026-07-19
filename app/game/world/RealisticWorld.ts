@@ -11,7 +11,6 @@ import {
   BOW_BRIDGE_YAW,
   SUBWAY_TARGET,
   SUBWAY_STAIR_CUTOUT,
-  ZOO_TARGET,
 } from "./CampaignLandmarks";
 
 export const BUDS = [
@@ -21,6 +20,7 @@ export const BUDS = [
 ];
 export const START = new THREE.Vector3(-43, 0, 54);
 export const GOAL = BOW_BRIDGE_TARGET;
+const SUBWAY_PATH_CLEARING = new THREE.Vector3(282, 0, -327);
 /**
  * The Lake is an authored southern world sector rather than a decorative
  * puddle.  The ellipse alone is 15.23x the area of the previous 33.2 m
@@ -616,7 +616,7 @@ function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number, t
     if (!heroPositionKeys.has(key)) { heroPositionKeys.add(key); heroPositions.push([point[0], point[1]]); }
   }
   const trailSamples = Array.from({ length: 81 }, (_, index) => trailCurve.getPoint(index / 80));
-  const campaignTrailSamples = [BOW_BRIDGE_TARGET, new THREE.Vector3(45, 0, -69), ZOO_TARGET, SUBWAY_TARGET];
+  const campaignTrailSamples = [BOW_BRIDGE_TARGET, new THREE.Vector3(45, 0, -69), SUBWAY_PATH_CLEARING, SUBWAY_TARGET];
   const trunkGeometry = new THREE.CylinderGeometry(.2, 1, 1, 18, 8);
   const branchGeometry = new THREE.CylinderGeometry(.36, 1, 1, 12, 3);
   const barkMaterial = new THREE.MeshStandardMaterial({ map: textures.bark, bumpMap: textures.bark, bumpScale: .11, color: "#afa18e", roughness: .95 });
@@ -657,7 +657,7 @@ function addTrees(scene: THREE.Scene, textures: GameTextures, quality: number, t
       || Math.hypot(x - TICKET_ISLAND_TARGET.x, z - TICKET_ISLAND_TARGET.z) < TICKET_ISLAND_RADIUS + 4 + radius
       || Math.hypot(x - START.x, z - START.z) < 9.5 + radius
       || Math.hypot(x - BOW_BRIDGE_TARGET.x, z - BOW_BRIDGE_TARGET.z) < 10 + radius
-      || (!forced && Math.hypot(x - ZOO_TARGET.x, z - ZOO_TARGET.z) < 15 + radius)
+      || (!forced && Math.hypot(x - SUBWAY_PATH_CLEARING.x, z - SUBWAY_PATH_CLEARING.z) < 7 + radius)
       || (!forced && Math.hypot(x - SUBWAY_TARGET.x, z - SUBWAY_TARGET.z) < 8 + radius)
       || Math.hypot(x - LAKE_SOUTHEAST_CART_TARGET.x, z - LAKE_SOUTHEAST_CART_TARGET.z) < 7 + radius
       || (!forced && trailDistance < 3.15 + radius)
@@ -1129,7 +1129,7 @@ function addLakeDocks(scene: THREE.Scene, textures: GameTextures, quality: numbe
 }
 
 function createTicketIsland(scene: THREE.Scene, textures: GameTextures, quality: number) {
-  const island = new THREE.Group(); island.name = "central-zoo-ticket-island"; island.position.set(TICKET_ISLAND_TARGET.x, THE_LAKE_SURFACE_Y, TICKET_ISLAND_TARGET.z);
+  const island = new THREE.Group(); island.name = "bronx-zoo-ticket-island"; island.position.set(TICKET_ISLAND_TARGET.x, THE_LAKE_SURFACE_Y, TICKET_ISLAND_TARGET.z);
   const stone = new THREE.MeshStandardMaterial({ map: textures.stone, bumpMap: textures.stone, bumpScale: .1, color: "#9b9a83", roughness: .96 });
   const soil = new THREE.MeshStandardMaterial({ map: textures.ground, bumpMap: textures.ground, bumpScale: .12, color: "#b5a789", roughness: .98 });
   const bark = new THREE.MeshStandardMaterial({ map: textures.bark, bumpMap: textures.bark, bumpScale: .08, color: "#b6a58e", roughness: .95 });
@@ -1153,11 +1153,11 @@ function createTicketIsland(scene: THREE.Scene, textures: GameTextures, quality:
 
   const stand = new THREE.Group(); stand.name = "zoo-ticket-interpretive-stand"; stand.position.set(0, 1.35, 0);
   const pedestal = new THREE.Mesh(new RoundedBoxGeometry(1.55, 1.12, .86, 6, .1), stone); pedestal.position.y = .56; pedestal.castShadow = pedestal.receiveShadow = true; stand.add(pedestal);
-  const ticket = new THREE.Group(); ticket.name = "collectible-central-park-zoo-ticket"; ticket.position.set(0, 1.28, -.49); ticket.rotation.x = -.18;
+  const ticket = new THREE.Group(); ticket.name = "collectible-bronx-zoo-ticket"; ticket.position.set(0, 1.28, -.49); ticket.rotation.x = -.18;
   const ticketMaterial = new THREE.MeshStandardMaterial({ color: "#eee1bd", roughness: .58, side: THREE.DoubleSide, emissive: "#5f6d3e", emissiveIntensity: .08 });
   const ticketBacking = new THREE.Mesh(new RoundedBoxGeometry(1.58, .055, .88, 5, .045), stone); ticketBacking.name = "zoo-ticket-brass-edged-backing"; ticketBacking.castShadow = true; ticket.add(ticketBacking);
   const ticketCard = new THREE.Mesh(new THREE.PlaneGeometry(1.46, .77), ticketMaterial); ticketCard.name = "imagegen-zoo-admission-ticket"; ticketCard.rotation.x = -Math.PI / 2; ticketCard.position.y = .031; ticketCard.renderOrder = 3; ticket.add(ticketCard);
-  if (typeof document !== "undefined") new THREE.TextureLoader().load("/game/props/central-park-zoo-island-ticket.webp", (texture) => {
+  if (typeof document !== "undefined") new THREE.TextureLoader().load("/game/props/bronx-zoo-island-ticket.webp", (texture) => {
     texture.colorSpace = THREE.SRGBColorSpace; texture.anisotropy = quality > .72 ? 8 : 4; ticketMaterial.map = texture; ticketMaterial.color.set("#ffffff"); ticketMaterial.needsUpdate = true;
   });
   const glow = new THREE.Mesh(new THREE.TorusGeometry(.94, .035, 10, 56), new THREE.MeshBasicMaterial({ color: "#d9ef8b", transparent: true, opacity: .62, blending: THREE.AdditiveBlending, depthWrite: false }));

@@ -296,14 +296,14 @@ test("shuttle boarding is a visible exterior interaction, never an invisible bod
   assert.doesNotMatch(game, /if \(zooWorld\.busBoardingReached\(player\)/);
 });
 
-test("Central Park Zoo approach and departure paths terminate at the forecourt curb", async () => {
+test("the island-ticket route continues directly from Bow Bridge to the Fifth Avenue subway", async () => {
   const landmarks = await readSource("../app/game/world/CampaignLandmarks.ts");
 
-  assert.match(landmarks, /bow-bridge-to-central-park-zoo-curb-safe-path/);
-  assert.match(landmarks, /central-park-zoo-to-subway-curb-safe-path/);
-  assert.match(landmarks, /new THREE\.Vector3\(274\.8, 0, -327\.35\)/);
-  assert.match(landmarks, /new THREE\.Vector3\(304\.25, 0, -349\.7\)/);
-  assert.doesNotMatch(landmarks, /bow-bridge-to-zoo-and-subway-landscaped-path/);
+  assert.match(landmarks, /bow-bridge-to-fifth-avenue-subway-landscaped-path/);
+  assert.match(landmarks, /new THREE\.Vector3\(282, 0, -327\)/);
+  assert.match(landmarks, /new THREE\.Vector3\(299, 0, -344\)/);
+  assert.match(landmarks, /SUBWAY_TARGET\.clone\(\)/);
+  assert.doesNotMatch(landmarks, /central-park-zoo|function addZoo/);
 });
 
 test("AMNH is a full exploration level with permanent halls, crowds, and Megatherium", async () => {

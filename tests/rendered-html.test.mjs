@@ -97,7 +97,7 @@ test("mobile wayfinding stays bounded and the atmospheric sky follows the camera
   assert.match(world, /sky\.frustumCulled = false/);
 });
 
-test("foraging opens the Bow Bridge, island ticket, zoo, and subway campaign with adaptive wayfinding", async () => {
+test("foraging opens the Bow Bridge, Bronx Zoo island ticket, and direct subway campaign with adaptive wayfinding", async () => {
   const [game, mobileHud, wayfinder, world, landmarks] = await Promise.all([
     readFile(new URL("../app/game/GameClient.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/game/mobile/MobileHud.tsx", import.meta.url), "utf8"),
@@ -106,13 +106,12 @@ test("foraging opens the Bow Bridge, island ticket, zoo, and subway campaign wit
     readFile(new URL("../app/game/world/CampaignLandmarks.ts", import.meta.url), "utf8"),
   ]);
 
-  assert.match(game, /type ParkStage = "FORAGE" \| "BOW_BRIDGE" \| "LAKE_TICKET" \| "ZOO" \| "SUBWAY_ENTRANCE"/);
+  assert.match(game, /type ParkStage = "FORAGE" \| "BOW_BRIDGE" \| "LAKE_TICKET" \| "SUBWAY_ENTRANCE"/);
   assert.match(game, /collected\.current\.size >= 5\) parkStage = "BOW_BRIDGE"/);
   assert.match(game, /parkStage === "BOW_BRIDGE"[\s\S]{0,800}parkStage = "LAKE_TICKET"/);
-  assert.match(game, /actionRequested && ticketNearby[\s\S]{0,300}parkStage = "ZOO"/);
-  assert.match(game, /RECOVER CENTRAL PARK ZOO TICKET/);
+  assert.match(game, /actionRequested && ticketNearby[\s\S]{0,300}parkStage = "SUBWAY_ENTRANCE"/);
+  assert.match(game, /RECOVER BRONX ZOO TICKET/);
   assert.match(game, /data-ticket-collected/);
-  assert.match(game, /Attendant: “There are no sloths here\.”/);
   assert.match(game, /parkStage = "SUBWAY_ENTRANCE"/);
   assert.match(game, /subwayStepsReached[\s\S]{0,300}onEnterSubway\(\)/);
   assert.match(game, /<GoalWayfinder/);
@@ -126,7 +125,8 @@ test("foraging opens the Bow Bridge, island ticket, zoo, and subway campaign wit
   assert.match(landmarks, /bow-bridge-northwest-inlet-span/);
   assert.match(landmarks, /bow-bridge-side-abutment/);
   assert.match(landmarks, /bow-bridge-clear-walkable-approach/);
-  assert.match(landmarks, /central-park-zoo-exterior-campus/);
+  assert.match(landmarks, /bow-bridge-to-fifth-avenue-subway-landscaped-path/);
+  assert.doesNotMatch(landmarks, /function addZoo|central-park-zoo/);
   assert.match(landmarks, /5-av-59-st-full-stair-subway-entrance/);
   assert.match(landmarks, /sidewalkWithStairOpeningGeometry/);
   assert.match(landmarks, /subway-sidewalk-with-true-stairwell-cutout/);
@@ -154,7 +154,7 @@ test("The Lake is at least 15x larger, has a dry ticket island, and supplies fas
   assert.match(world, /THE_LAKE_RADII = new THREE\.Vector2\(150, 112\)/);
   assert.match(world, /THE_LAKE_AREA_SCALE = THE_LAKE_RADII\.x \* THE_LAKE_RADII\.y \/ \(33\.2 \*\* 2\)/);
   assert.match(world, /containsLakeWater\(x: number, z: number, shoreInset = 0\)/);
-  assert.match(world, /central-zoo-ticket-island/);
+  assert.match(world, /bronx-zoo-ticket-island/);
   assert.match(world, /ticket-island-stone-and-timber-landing/);
   assert.match(world, /southeast-lake-zoo-route-pier/);
   assert.match(world, /imagegen-zoo-admission-ticket/);
@@ -173,7 +173,7 @@ test("The Lake is at least 15x larger, has a dry ticket island, and supplies fas
   assert.match(rowboat, /readonly oars: \[ParkRowboatOar, ParkRowboatOar\]/);
   const speed = Number(rowboat.match(/readonly maxForwardSpeed = ([\d.]+)/)?.[1]);
   assert.ok(speed > 2.65, `expected rowboat speed to exceed walking speed, received ${speed}`);
-  await access(new URL("../public/game/props/central-park-zoo-island-ticket.webp", import.meta.url));
+  await access(new URL("../public/game/props/bronx-zoo-island-ticket.webp", import.meta.url));
 });
 
 test("field-services cart has the requested plate and wheel-clear side placards", async () => {
@@ -197,20 +197,15 @@ test("field-services cart has the requested plate and wheel-clear side placards"
   assert.ok(labelBottom > fenderTop, `service label bottom ${labelBottom} must clear fender top ${fenderTop}`);
 });
 
-test("park and Bronx Zoo landmarks use complete campuses and textured articulated characters", async () => {
+test("park transit landmarks and the Bronx Zoo use complete authored scenes and textured articulated characters", async () => {
   const [landmarks, finale, characters] = await Promise.all([
     readFile(new URL("../app/game/world/CampaignLandmarks.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/game/world/BronxZooWorld.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/game/world/PremiumCharacter.ts", import.meta.url), "utf8"),
   ]);
 
-  for (const feature of [
-    "central-park-zoo-exterior-campus",
-    "central-park-zoo-public-forecourt",
-    "central-park-zoo-sea-lion-pool",
-    "central-park-zoo-ticket-kiosk",
-    "5-av-59-st-full-stair-subway-entrance",
-  ]) assert.match(landmarks, new RegExp(feature));
+  for (const feature of ["bow-bridge-to-fifth-avenue-subway-landscaped-path", "5-av-59-st-full-stair-subway-entrance"]) assert.match(landmarks, new RegExp(feature));
+  assert.doesNotMatch(landmarks, /central-park-zoo|function addZoo/);
   assert.match(landmarks, /for \(let step = 0; step < 20; step\+\+\)/);
   assert.match(landmarks, /SUBWAY_ENTRY_TRIGGER/);
   assert.match(characters, /proceduralSurface\("cloth"/);
@@ -323,7 +318,7 @@ test("West Farms streams the Bronx Zoo and completion waits for Megatherium at A
   assert.match(subway, /stationWorld\.dispose\(\); stationWorld = null/);
   assert.match(subway, /player\.copy\(zooWorld\.spawn\)/);
   assert.match(subway, /zooWorld\.interactionHint\(player\)/);
-  assert.match(subway, /event\.kind === "SLOTHS_RELEASED"[\s\S]{0,180}rescuedParty\.setActive\(true/);
+  assert.match(subway, /zooWorld\.completeLockPicking\(\)[\s\S]{0,220}rescuedParty\.setActive\(true/);
   assert.match(subway, /actionRequested && hint\?\.kind === "BUS_BOARDING"[\s\S]{0,220}rescuedParty\.allWithin\(zooWorld\.busBoardingPosition, 9\.5\)[\s\S]{0,100}startBusDrive\(\)/);
   assert.doesNotMatch(subway, /if \(zooWorld\.busBoardingReached\(player\)/);
   assert.match(subway, /function museumMissionReady\(\)[\s\S]{0,260}transitStage !== "MUSEUM"/);
