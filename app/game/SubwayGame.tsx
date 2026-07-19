@@ -522,9 +522,10 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
       } else if (transitStage === "BRONX_ZOO" && zooWorld) {
         if (lockPickingRef.current) {
           velocity.set(0, 0, 0); actionRequested = false; trickRequested = false;
-          zooWorld.update(gameTime, delta, player);
-          camera.position.copy(player); camera.rotation.set(pitch, yaw, 0); sloth.animate(gameTime, 0, false);
-          renderFrame(); return;
+          // The overlay is fully opaque and owns its own lightweight animation.
+          // Preserve the last rendered zoo frame instead of spending the lock
+          // session updating crowds, animals, shadows, and post-processing.
+          return;
         }
         const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)), right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)), wish = new THREE.Vector3();
         if (keys.has("KeyW") || keys.has("ArrowUp")) wish.add(forward); if (keys.has("KeyS") || keys.has("ArrowDown")) wish.sub(forward); if (keys.has("KeyD") || keys.has("ArrowRight")) wish.add(right); if (keys.has("KeyA") || keys.has("ArrowLeft")) wish.sub(right);

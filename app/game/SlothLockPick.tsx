@@ -23,15 +23,19 @@ export function createBindingOrder(random = Math.random) {
 }
 
 export function SlothLockPick({ onCancel, onComplete }: SlothLockPickProps) {
-  const bindingOrder = useRef(createBindingOrder());
+  // One randomized order is created when the overlay mounts and remains fixed
+  // through slack resets and jams for the entire pick session.
+  const [bindingOrder] = useState(() => createBindingOrder());
   const tensionRef = useRef(0);
+  const displayedTensionPercent = useRef(0);
+  const gaugeRef = useRef<HTMLDivElement>(null);
   const pinStatesRef = useRef<PinState[]>(Array.from({ length: LOCK_PIN_COUNT }, () => "searching"));
   const jammedUntil = useRef<number[]>(Array.from({ length: LOCK_PIN_COUNT }, () => 0));
   const completed = useRef(false);
   const completionTimer = useRef<number | null>(null);
   const [tension, setTension] = useState(0);
   const [pinStates, setPinStates] = useState<PinState[]>(() => Array.from({ length: LOCK_PIN_COUNT }, () => "searching"));
-  const [status, setStatus] = useState("Tap tension until the gauge enters the green band, then test a pin.");
+  const [status, setStatus] = useState("Tap tension into the green band, then test pins. A bright green pin is safely set.");
   const [falls, setFalls] = useState(0);
   const [unlocked, setUnlocked] = useState(false);
 
@@ -42,16 +46,19 @@ export function SlothLockPick({ onCancel, onComplete }: SlothLockPickProps) {
 
   const dropSetPins = useCallback((message: string) => {
     const pins = pinStatesRef.current;
-    if (!pins.includes("set")) return;
+    if (!pins.includes("set")) return false;
     publishPins(pins.map(state => state === "set" ? "searching" : state));
     setFalls(count => count + 1);
     setStatus(message);
+    return true;
   }, [publishPins]);
 
   const applyTension = useCallback(() => {
     if (completed.current) return;
     const next = Math.min(100, tensionRef.current + 9);
     tensionRef.current = next;
+    gaugeRef.current?.style.setProperty("--lock-tension", `${next}%`);
+    displayedTensionPercent.current = Math.round(next);
     setTension(next);
     if (next > LOCK_TENSION_MAX) setStatus("Too much torque — the plug is locked up. Let the tension fall before testing another pin.");
     else if (next >= LOCK_TENSION_MIN) setStatus("Tension is in the binding range. Test the pins while keeping it here.");
@@ -62,8 +69,8 @@ export function SlothLockPick({ onCancel, onComplete }: SlothLockPickProps) {
     if (completed.current || pinStatesRef.current[pin] === "set") return;
     const tensionNow = tensionRef.current;
     if (tensionNow < LOCK_TENSION_MIN) {
-      dropSetPins("The plug went slack — every set pin fell. Build tension back into the green band.");
-      if (!pinStatesRef.current.includes("set")) setStatus("Too little tension. Bring the gauge to 40–60% before lifting a pin.");
+      const dropped = dropSetPins("The plug went slack — every set pin fell. Build tension back into the green band.");
+      if (!dropped) setStatus("Too little tension. Bring the gauge to 40–60% before lifting a pin.");
       return;
     }
     if (tensionNow > LOCK_TENSION_MAX) {
@@ -80,7 +87,7 @@ export function SlothLockPick({ onCancel, onComplete }: SlothLockPickProps) {
     }
 
     const setCount = pinStatesRef.current.filter(state => state === "set").length;
-    if (bindingOrder.current[setCount] !== pin) {
+    if (bindingOrder[setCount] !== pin) {
       setStatus(`Pin ${pin + 1} slides freely — another pin is binding first.`);
       return;
     }
@@ -94,9 +101,9 @@ export function SlothLockPick({ onCancel, onComplete }: SlothLockPickProps) {
       setStatus("All six pins are at the shear line — the plug turns!");
       completionTimer.current = window.setTimeout(onComplete, 900);
     } else {
-      setStatus(`Pin ${pin + 1} set at the shear line. ${LOCK_PIN_COUNT - setCount - 1} pins remain.`);
+      setStatus(`Pin ${pin + 1} is green and set at the shear line. Rescan all six pins; ${LOCK_PIN_COUNT - setCount - 1} remain.`);
     }
-  }, [dropSetPins, onComplete, publishPins]);
+  }, [bindingOrder, dropSetPins, onComplete, publishPins]);
 
   useEffect(() => {
     let frame = 0, previous = performance.now();
@@ -107,7 +114,12 @@ export function SlothLockPick({ onCancel, onComplete }: SlothLockPickProps) {
         const prior = tensionRef.current;
         const next = Math.max(0, prior - delta * 12.5);
         tensionRef.current = next;
-        setTension(next);
+        gaugeRef.current?.style.setProperty("--lock-tension", `${next}%`);
+        const rounded = Math.round(next);
+        if (rounded !== displayedTensionPercent.current) {
+          displayedTensionPercent.current = rounded;
+          setTension(next);
+        }
         if (prior >= LOCK_TENSION_MIN && next < LOCK_TENSION_MIN) dropSetPins("Tension slipped below 40% — the set pins dropped. Start the binding order again.");
 
         let changed = false;
@@ -152,16 +164,16 @@ export function SlothLockPick({ onCancel, onComplete }: SlothLockPickProps) {
     <div className="lockpick-workbench">
       <aside className="lockpick-tension-panel">
         <div className="lockpick-section-label"><span>Plug tension</span><strong>{Math.round(tension)}%</strong></div>
-        <div className="lockpick-gauge" aria-label={`Plug tension ${Math.round(tension)} percent`} role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(tension)}>
+        <div ref={gaugeRef} className="lockpick-gauge" aria-label={`Plug tension ${Math.round(tension)} percent`} role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(tension)}>
           <i className="lockpick-safe-band"/><i className="lockpick-threshold low">40</i><i className="lockpick-threshold high">60</i>
-          <div className="lockpick-gauge-fill" style={{ height: `${tension}%` }}/>
-          <span className="lockpick-gauge-needle" style={{ bottom: `calc(${tension}% - 2px)` }}/>
+          <div className="lockpick-gauge-fill"/>
+          <span className="lockpick-gauge-needle"/>
         </div>
         <button className="lockpick-tension-button" type="button" onClick={applyTension} disabled={unlocked}>
           <span className="lockpick-claw tension-claw" aria-hidden="true"><i/><i/><i/></span>
           <strong>Tap tension</strong><small>Space · +9%</small>
         </button>
-        <p>Below 40%, set pins fall. Above 60%, the plug locks and tested pins jam.</p>
+        <p>Below 40%, set pins fall. Above 60%, the plug locks and tested pins jam. Bright green means the pin gap is set at the shear line.</p>
       </aside>
 
       <div className="lockpick-lock" aria-label="Six-pin keeper padlock">
@@ -169,9 +181,10 @@ export function SlothLockPick({ onCancel, onComplete }: SlothLockPickProps) {
         <div className={`lockpick-cylinder ${overTension ? "seized" : ""}`}>
           <div className="lockpick-shear-line"><span>Shear line</span></div>
           <div className="lockpick-pin-row">
-            {pinStates.map((state, index) => <button className={`lockpick-pin ${state}`} type="button" key={index} onClick={() => testPin(index)} disabled={unlocked} aria-label={`Test pin ${index + 1}, ${state}`} data-pin-state={state}>
-              <span className="lockpick-driver"/><span className="lockpick-spring"/><span className="lockpick-key-pin"/>
+            {pinStates.map((state, index) => <button className={`lockpick-pin ${state}`} type="button" key={index} onClick={() => testPin(index)} disabled={unlocked} aria-label={`Test pin ${index + 1}, ${state}`} aria-pressed={state === "set"} data-pin-state={state}>
+              <span className="lockpick-driver"/><span className="lockpick-spring"/><span className="lockpick-pin-gap"/><span className="lockpick-key-pin"/>
               <span className="lockpick-pin-number">{index + 1}</span>
+              <span className="lockpick-pin-state">{state === "set" ? "SET" : state === "jammed" ? "JAM" : "TEST"}</span>
               <span className="lockpick-claw pin-claw" aria-hidden="true"><i/><i/><i/></span>
             </button>)}
           </div>
@@ -180,10 +193,10 @@ export function SlothLockPick({ onCancel, onComplete }: SlothLockPickProps) {
       </div>
 
       <aside className="lockpick-readout">
-        <div className="lockpick-section-label"><span>Pin stack</span><strong>{setCount} / {LOCK_PIN_COUNT}</strong></div>
+        <div className="lockpick-section-label"><span>Set pins</span><strong>{setCount} / {LOCK_PIN_COUNT}</strong></div>
         <ol>{pinStates.map((state, index) => <li className={state} key={index}><span>0{index + 1}</span><i/><strong>{state === "set" ? "SET" : state === "jammed" ? "JAMMED" : "TEST"}</strong></li>)}</ol>
         <div className="lockpick-instructions"><p><kbd>Space</kbd> Tap tension</p><p><kbd>1–6</kbd> Test pins</p></div>
-        <small>Binding order changes every attempt{falls ? ` · ${falls} reset${falls === 1 ? "" : "s"}` : ""}</small>
+        <small>Random order is fixed for this attempt · rescan after every green pin{falls ? ` · ${falls} reset${falls === 1 ? "" : "s"}` : ""}</small>
       </aside>
     </div>
 
