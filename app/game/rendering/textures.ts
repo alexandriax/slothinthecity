@@ -108,7 +108,13 @@ export function loadGameTextures(renderer: THREE.WebGLRenderer, onReady: () => v
   };
   const ground = load("/game/textures/forest-floor.webp", 18);
   const bark = load("/game/textures/elm-bark.webp", 1.3, 5);
-  const fur = load("/game/textures/sloth-fur.webp", 1.2, 2.2);
+  const fur = load("/game/textures/sloth-fur.webp", 1.2, 2.2, decodedFur => {
+    // The first-person rig owns a private sampler so its UVs stay stable in
+    // every scene. SubwayGame creates that sampler before this image usually
+    // finishes decoding; release it here just as we do for authored animal
+    // atlases, otherwise later scenes render only the material's flat tint.
+    releasePendingTextureClones(decodedFur);
+  });
   const zooAnimalAtlas = load("/game/textures/zoo-animal-surface-atlas.webp", 1, 1, atlas => {
     releasePendingTextureClones(atlas);
   });

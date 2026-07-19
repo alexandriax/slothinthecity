@@ -177,6 +177,7 @@ export class PremiumAudioDirector {
   private announcementGeneration = 0;
   private announcementCueTimes = new Map<TransitAnnouncement, number>();
   private lastFootstepAt = -1;
+  private lastVehicleImpactAt = -1;
   private disposed = false;
   private snapshot: AudioDirectorSnapshot = {
     ...DEFAULT_MIX,
@@ -371,6 +372,22 @@ export class PremiumAudioDirector {
     const now = this.context.currentTime;
     [293.66, 246.94, 196, 146.83].forEach((frequency, index) => this.tone(this.sfxBus!, frequency, now + index * 0.145, { type: "triangle", gain: 0.105, attack: 0.015, duration: 0.4, release: 0.32, filter: 1350 }));
     this.noise(this.sfxBus, now + 0.32, { duration: 0.7, gain: 0.045, frequency: 360, q: 0.9, type: "lowpass" });
+    return true;
+  }
+
+  playVehicleImpact(severity = 0.5) {
+    if (!this.context || !this.sfxBus) return false;
+    const now = this.context.currentTime;
+    if (now - this.lastVehicleImpactAt < .12) return false;
+    this.lastVehicleImpactAt = now;
+    const amount = .42 + clamp01(severity) * .58;
+    // Layer a low body-panel thump, short metal scrape, and glassy transient.
+    // The intensity follows collision closing speed without becoming louder
+    // than the master compressor can absorb during a multi-car pile-up.
+    this.noise(this.sfxBus, now, { duration: .34, gain: .19 * amount, frequency: 180, q: .72, type: "lowpass", pan: -.08 });
+    this.noise(this.sfxBus, now + .025, { duration: .28, gain: .115 * amount, frequency: 1780, q: 1.3, type: "bandpass", pan: .12 });
+    this.tone(this.sfxBus, 58, now, { type: "sawtooth", gain: .11 * amount, attack: .002, duration: .23, release: .18, filter: 410 });
+    if (severity > .58) this.tone(this.sfxBus, 1320, now + .035, { type: "triangle", gain: .035 * amount, attack: .001, duration: .12, release: .1, filter: 2700 });
     return true;
   }
 

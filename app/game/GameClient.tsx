@@ -11,7 +11,7 @@ import { GoalWayfinder } from "./GoalWayfinder";
 import { DebugJumpMenu } from "./mobile/DebugJumpMenu";
 import { MobileHud } from "./mobile/MobileHud";
 import { TouchControls } from "./mobile/TouchControls";
-import { createSlothRig } from "./player/SlothRig";
+import { createSlothRig, layoutCanonicalSlothViewmodel } from "./player/SlothRig";
 import { loadGameTextures } from "./rendering/textures";
 import { AudioQualitySettings, createAdaptiveQualityManager, createPremiumAudioDirector, type AdaptiveQualityManager, type PremiumAudioDirector } from "./systems";
 import { SubwayGame } from "./SubwayGame";
@@ -112,17 +112,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
     if (qaInput === "autowalk") keys.add("KeyW");
     player.y = terrainY(player.x, player.z) + 1.48; camera.position.copy(player);
     const sloth = createSlothRig(textures.fur);
-    const layoutSloth = () => {
-      const portrait = innerWidth < 760;
-      sloth.root.scale.setScalar(portrait ? .54 : .78);
-      sloth.left.position.x = portrait ? -.55 : -.94; sloth.right.position.x = portrait ? .55 : .94;
-      sloth.left.position.y = sloth.right.position.y = portrait ? -.74 : -.86;
-      sloth.left.rotation.z = portrait ? -.48 : -.74; sloth.right.rotation.z = portrait ? .48 : .74;
-      sloth.left.userData.layoutX = sloth.left.position.x; sloth.right.userData.layoutX = sloth.right.position.x;
-      sloth.left.userData.layoutY = sloth.left.position.y; sloth.right.userData.layoutY = sloth.right.position.y;
-      sloth.left.userData.layoutDepth = sloth.left.position.z; sloth.right.userData.layoutDepth = sloth.right.position.z;
-      sloth.left.userData.layoutZ = sloth.left.rotation.z; sloth.right.userData.layoutZ = sloth.right.rotation.z;
-    };
+    const layoutSloth = () => layoutCanonicalSlothViewmodel(sloth, innerWidth);
     layoutSloth(); camera.add(sloth.root); scene.add(camera);
     let yaw = -.35, pitch = -.04, energy = 100, alert = 5, lastHud = 0, gameTime = 0, dragging = false, lastTouchX = 0, lastTouchY = 0;
     let blockedBy: "" | "TREE" | "LANDMARK" = "", climbingTree: ClimbableTree | null = null, climbAngle = 0, climbHeight = 1.48;

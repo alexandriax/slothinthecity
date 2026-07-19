@@ -162,9 +162,13 @@ test("opening the keeper door preserves every authored sloth transform until it 
   assert.doesNotMatch(activation.slice(activation.indexOf("private releaseFromEnclosure")), /follower\.root\.position\.set\(leader/);
 
   assert.match(party, /const catchingUp = !follower\.formationJoined/);
-  assert.match(party, /if \(!catchingUp\) desired\.addScaledVector\(side, offset\.x\)\.addScaledVector\(tangent, offset\.y\)/);
+  assert.match(party, /targetDistance = catchingUp \? 1\.35 \+ index \* 1\.08/);
+  assert.match(party, /desired\.addScaledVector\(side, offset\.x \* \(catchingUp \? \.62 : 1\)\)\.addScaledVector\(tangent, offset\.y\)/);
   assert.match(party, /if \(catchingUp && distance <= 2\.15\) follower\.formationJoined = true/);
   assert.match(party, /maximumSpeed = catchingUp \? 3\.25/);
+  assert.match(party, /for \(let iteration = 0; iteration < 4; iteration\+\+\)/);
+  assert.match(party, /if \(distance <= \.001\) \{ const angle =/);
+  assert.match(party, /formation === "scooter" \? 1\.78 : 1\.34/);
   assert.match(party, /"release-climb-down"/);
 });
 
@@ -178,7 +182,7 @@ test("rescued sloths persist through zoo disposal, shuttle boarding, and the mus
 
   assert.match(game, /actionRequested && hint\?\.kind === "BUS_BOARDING"[\s\S]{0,180}rescuedParty\.allWithin\(zooWorld\.busBoardingPosition, 9\.5\)[\s\S]{0,100}startBusDrive\(\)/);
   assert.doesNotMatch(game, /if \(zooWorld\.busBoardingReached\(player\)/);
-  assert.match(game, /function startBusDrive\(startProgress = 0\)[\s\S]{0,300}zooWorld\.dispose\(\); zooWorld = null[\s\S]{0,420}new CityBusWorld/);
+  assert.match(game, /function startBusDrive\(startProgress = 0, reviewSpawn\?: "missed-exit" \| "uws-reroute" \| "traffic-impact" \| "rear-impact" \| "building-impact" \| "failure-impact"\)[\s\S]{0,300}zooWorld\.dispose\(\); zooWorld = null[\s\S]{0,620}new CityBusWorld/);
   assert.match(game, /rescuedParty\.root\.visible = false/);
   assert.match(bus, /rescued-sloth-on-museum-shuttle-/);
   assert.match(bus, /createPremiumSlothFriend\(textures, quality, index/);
@@ -191,16 +195,26 @@ test("rescued sloths persist through zoo disposal, shuttle boarding, and the mus
   assert.match(game, /zooWorld\?\.dispose\(\); cityBusWorld\?\.dispose\(\); museumWorld\?\.dispose\(\); parkReturnWorld\?\.dispose\(\); rescuedParty\.dispose\(\)/);
 });
 
-test("only all four followers reaching Megatherium completes the campaign", async () => {
+test("all four followers can reach Megatherium from every side on foot or scooter", async () => {
   const [game, museum] = await Promise.all([
     readSource("../app/game/SubwayGame.tsx"),
     readSource("../app/game/world/NaturalHistoryMuseumWorld.ts"),
   ]);
 
-  assert.match(museum, /readonly megatheriumTarget = new THREE\.Vector3/);
+  assert.match(museum, /readonly megatheriumViewingTargets = \[/);
+  assert.match(museum, /new THREE\.Vector3\(0, 1\.48, -184\.5\)/);
+  assert.match(museum, /new THREE\.Vector3\(14\.5, 1\.48, -198\)/);
+  assert.match(museum, /new THREE\.Vector3\(0, 1\.48, -211\.5\)/);
+  assert.match(museum, /new THREE\.Vector3\(-14\.5, 1\.48, -198\)/);
+  assert.match(museum, /const MEGATHERIUM_VIEWING_HALF_SPAN = 9\.5/);
+  assert.match(museum, /nearestMegatheriumViewingTarget/);
+  assert.match(museum, /northOrSouth \? THREE\.MathUtils\.clamp\(player\.x, -MEGATHERIUM_VIEWING_HALF_SPAN, MEGATHERIUM_VIEWING_HALF_SPAN\) : anchor\.x/);
   assert.match(museum, /megatherium-americanum-giant-ground-sloth-articulated-skeleton/);
-  assert.match(game, /function completeMission\(\)[\s\S]{0,300}!museumCompletionArmed \|\| !museumWorld \|\| transitStage !== "MUSEUM" \|\| !museumWorld\.megatheriumNearby\(player\) \|\| !rescuedParty\.allWithin\(museumWorld\.megatheriumTarget, 9\.5\)/);
-  assert.match(game, /museumCompletionArmed && museumWorld\.megatheriumNearby\(player\) && rescuedParty\.allWithin\(target, 9\.5\)[\s\S]{0,80}completeMission\(\)/);
+  assert.match(museum, /skeleton\.rotation\.y = -\.34 \+ Math\.PI \/ 2/);
+  assert.match(museum, /megatherium-americanum-grounded-exhibit-sign/);
+  assert.match(museum, /megatherium-exhibit-sign-grounded-support-post/);
+  assert.match(game, /function museumMissionReady\(\)[\s\S]{0,400}museumWorld\.nearestMegatheriumViewingTarget\(player, museumGatheringTarget\)[\s\S]{0,120}rescuedParty\.allWithin\(museumGatheringTarget, scooterRiding \? 11\.5 : 9\.5\)/);
+  assert.match(game, /if \(museumMissionReady\(\)\) \{ completeMission\(\); renderFrame\(\); return; \}/);
   assert.match(game, /<h2>Your friends found a giant ancestor\.<\/h2>/);
 });
 
@@ -214,7 +228,7 @@ test("mobile prompts, debug checkpoints, and runtime data expose the full rescue
 
   assert.match(touch, /prompt\.includes\("OPEN SLOTH"\) \|\| prompt\.includes\("HABITAT DOOR"\) \? "Open"/);
   assert.match(touch, /prompt\.includes\("TICKET DONOR"\) \|\| prompt\.includes\("SPEAK WITH"\) \? "Talk"/);
-  for (const checkpoint of ["bronxentry", "bronxpolar", "bronxbirds", "bronxmonkeys", "bronxsloths", "rescuefollowers", "busdrive", "busarrival", "museumentry", "museumrotunda", "museummegatherium", "museumfinale"]) {
+  for (const checkpoint of ["bronxentry", "bronxpolar", "bronxbirds", "bronxmonkeys", "bronxsloths", "rescuefollowers", "busboarding", "busbronx", "busdrive", "busarrival", "museumentry", "museumrotunda", "museummegatherium", "museumfinale"]) {
     assert.match(checkpoints, new RegExp(`"?${checkpoint}"?`));
     assert.match(game, new RegExp(`"${checkpoint}"`));
   }

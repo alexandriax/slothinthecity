@@ -652,8 +652,15 @@ export function createPremiumSlothFriend(textures: GameTextures, quality: number
   head.name = "anatomical-sloth-head-jaw-and-integrated-mask";
   head.scale.set(.82, .82, .82); head.position.set(0, .82, -.82); head.rotation.x = -.05; root.add(head);
   for (const side of [-1, 1]) {
-    const eyeball = new THREE.Mesh(new THREE.SphereGeometry(.035, 18, 14), eye); eyeball.position.set(side * .158, .895, -1.218); root.add(eyeball);
-    const gleam = new THREE.Mesh(new THREE.SphereGeometry(.007, 9, 7), new THREE.MeshBasicMaterial({ color: "#fffbe8", toneMapped: false })); gleam.position.set(side * .148, .905, -1.246); root.add(gleam);
+    // Facial features live in head-local space and are embedded through the
+    // painted facial surface. They therefore follow every head transform and
+    // cannot become the detached black spheres visible in three-quarter QA.
+    const eyeball = new THREE.Mesh(new THREE.SphereGeometry(.04, 18, 14), eye);
+    eyeball.name = "head-attached-embedded-sloth-eye";
+    eyeball.position.set(side * .193, .09, -.397); head.add(eyeball);
+    const gleam = new THREE.Mesh(new THREE.SphereGeometry(.0075, 9, 7), new THREE.MeshBasicMaterial({ color: "#fffbe8", toneMapped: false }));
+    gleam.name = "head-attached-sloth-eye-catchlight";
+    gleam.position.set(side * .184, .101, -.428); head.add(gleam);
     const ear = new THREE.Mesh(new THREE.SphereGeometry(.083, segments, 12), fur); ear.scale.set(.48, .92, .63); ear.position.set(side * .39, .865, -.81); root.add(ear);
     const forelimb = new THREE.Mesh(taperedSweepGeometry([
       new THREE.Vector3(side * .31, .76, -.44),
@@ -662,9 +669,12 @@ export function createPremiumSlothFriend(textures: GameTextures, quality: number
       new THREE.Vector3(side * .39, .13, -.79),
     ], [.135, .125, .102, .075], high ? 34 : 24, Math.max(14, segments), .78), fur);
     forelimb.name = "weight-bearing-anatomical-sloth-forelimb"; root.add(forelimb);
+    const forepaw = new THREE.Mesh(new THREE.SphereGeometry(.092, segments, Math.max(10, segments - 6)), fur);
+    forepaw.name = "continuous-furred-sloth-forepaw-claw-root-pad";
+    forepaw.scale.set(.78, .58, 1.08); forepaw.position.set(side * .39, .13, -.79); root.add(forepaw);
     for (let claw = -1; claw <= 1; claw++) {
       const clawMesh = new THREE.Mesh(taperedSweepGeometry([
-        new THREE.Vector3(side * .39 + claw * .035, .14, -.77),
+        new THREE.Vector3(side * .39 + claw * .032, .135, -.805),
         new THREE.Vector3(side * .39 + claw * .039, .085, -.88),
         new THREE.Vector3(side * .39 + claw * .041, .055, -.99),
       ], [.022, .016, .0035], high ? 16 : 10, high ? 8 : 6, .52), ivory);
@@ -677,17 +687,109 @@ export function createPremiumSlothFriend(textures: GameTextures, quality: number
       new THREE.Vector3(side * .37, .13, .77),
     ], [.15, .137, .108, .078], high ? 32 : 22, Math.max(13, segments), .74), fur);
     hindlimb.name = "weight-bearing-anatomical-sloth-hindlimb"; root.add(hindlimb);
+    const hindpaw = new THREE.Mesh(new THREE.SphereGeometry(.096, segments, Math.max(10, segments - 6)), fur);
+    hindpaw.name = "continuous-furred-sloth-hindpaw-claw-root-pad";
+    hindpaw.scale.set(.8, .58, 1.08); hindpaw.position.set(side * .37, .13, .77); root.add(hindpaw);
     for (let claw = -1; claw <= 1; claw++) {
       const footClaw = new THREE.Mesh(taperedSweepGeometry([
-        new THREE.Vector3(side * .37 + claw * .035, .14, .75),
+        new THREE.Vector3(side * .37 + claw * .032, .135, .785),
         new THREE.Vector3(side * .37 + claw * .039, .085, .85),
         new THREE.Vector3(side * .37 + claw * .041, .055, .95),
       ], [.022, .016, .0035], high ? 15 : 9, high ? 8 : 6, .5), ivory);
       footClaw.name = "ground-contact-capped-sloth-hindclaw"; root.add(footClaw);
     }
   }
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(.062, segments, 14), darkFur); nose.scale.set(1.18, .66, .66); nose.position.set(0, .76, -1.252); root.add(nose);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(.062, segments, 14), darkFur);
+  nose.name = "head-attached-embedded-sloth-nose";
+  nose.scale.set(1.18, .66, .66); nose.position.set(0, -.073, -.407); head.add(nose);
   root.userData.anatomicalSurfaceCount = 6;
   root.userData.integratedFacialMask = true;
   castCharacterShadows(root, high); root.scale.setScalar(.94 + variant * .012); return { root, ownedTextures };
+}
+
+/**
+ * The scooter pose is authored around the vehicle's real deck and handlebar
+ * coordinates. It deliberately remains a separate rig from quadrupedal
+ * locomotion: rotating a walking animal at the root put its belly across the
+ * deck, dragged the hind feet on the floor, and detached every facial detail.
+ */
+export function createPremiumScooterSlothFriend(textures: GameTextures, quality: number, variant: number, tint: string): PremiumCharacterResult {
+  const clamped = THREE.MathUtils.clamp(quality, .42, 1.2), high = clamped > .7, segments = clamped > .9 ? 30 : high ? 22 : 15;
+  const darkMap = proceduralSurface("fur", "#241f19", "#5b4b3a", 329 + variant, clamped);
+  const clawMap = proceduralSurface("ivory", "#e4d2a6", "#fff1c7", 341 + variant, clamped);
+  const ownedTextures = [darkMap, clawMap];
+  const bodyTint = new THREE.Color(tint).multiplyScalar(.82 + variant * .035);
+  const creamTint = new THREE.Color("#c3b694").lerp(bodyTint, .12), darkTint = new THREE.Color("#201b17");
+  const fur = new THREE.MeshStandardMaterial({ bumpMap: textures.fur, bumpScale: .105, color: bodyTint, roughness: .96 });
+  const paintedFur = new THREE.MeshStandardMaterial({ bumpMap: textures.fur, bumpScale: .105, color: "#ffffff", vertexColors: true, roughness: .96 });
+  const darkFur = texturedMaterial(darkMap, .92), ivory = texturedMaterial(clawMap, .54, { clearcoat: .16 });
+  const eye = new THREE.MeshPhysicalMaterial({ map: darkMap, color: "#ffffff", roughness: .12, clearcoat: 1 });
+  const root = new THREE.Group();
+  root.name = "upright-anatomical-scooter-sloth-friend";
+  root.userData.locomotion = "scooter-rider";
+  root.userData.deckContactY = .286;
+  root.userData.handlebarContactY = 1.37;
+
+  const body = new THREE.Mesh(quadrupedalSlothTorsoGeometry(segments, bodyTint, creamTint), paintedFur);
+  body.name = "continuous-upright-anatomical-sloth-torso";
+  body.position.set(0, .82, .13); body.rotation.x = Math.PI / 2; body.scale.set(.88, .82, .88); root.add(body);
+  const head = new THREE.Mesh(anatomicalSlothHeadGeometry(segments, bodyTint, creamTint, darkTint), paintedFur);
+  head.name = "upright-anatomical-sloth-head-jaw-and-integrated-mask";
+  head.scale.set(.72, .72, .72); head.position.set(0, 1.3, -.08); head.rotation.x = -.02; root.add(head);
+  for (const side of [-1, 1]) {
+    const eyeball = new THREE.Mesh(new THREE.SphereGeometry(.04, 18, 14), eye);
+    eyeball.name = "scooter-head-attached-embedded-sloth-eye";
+    eyeball.position.set(side * .193, .09, -.397); head.add(eyeball);
+    const gleam = new THREE.Mesh(new THREE.SphereGeometry(.0075, 9, 7), new THREE.MeshBasicMaterial({ color: "#fffbe8", toneMapped: false }));
+    gleam.name = "scooter-head-attached-sloth-eye-catchlight";
+    gleam.position.set(side * .184, .101, -.428); head.add(gleam);
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(.076, segments, 12), fur);
+    ear.scale.set(.48, .92, .63); ear.position.set(side * .34, 1.33, -.065); root.add(ear);
+
+    const forelimb = new THREE.Mesh(taperedSweepGeometry([
+      new THREE.Vector3(side * .27, 1.05, -.06),
+      new THREE.Vector3(side * .31, 1.14, -.13),
+      new THREE.Vector3(side * .34, 1.25, -.2),
+      new THREE.Vector3(side * .32, 1.355, -.27),
+    ], [.12, .105, .085, .062], high ? 30 : 22, Math.max(13, segments), .78), fur);
+    forelimb.name = "scooter-handlebar-bearing-anatomical-sloth-forelimb"; root.add(forelimb);
+    const forepaw = new THREE.Mesh(new THREE.SphereGeometry(.078, segments, Math.max(10, segments - 6)), fur);
+    forepaw.name = "scooter-handlebar-wrapped-sloth-forepaw";
+    forepaw.scale.set(.82, .62, 1.06); forepaw.position.set(side * .32, 1.355, -.27); root.add(forepaw);
+    for (let claw = -1; claw <= 1; claw++) {
+      const lateral = claw * .025;
+      const clawMesh = new THREE.Mesh(taperedSweepGeometry([
+        new THREE.Vector3(side * .32 + lateral, 1.36, -.275),
+        new THREE.Vector3(side * .32 + lateral * 1.1, 1.345, -.315),
+        new THREE.Vector3(side * .31 + lateral * 1.08, 1.3, -.294),
+      ], [.02, .014, .0035], high ? 14 : 10, high ? 8 : 6, .5), ivory);
+      clawMesh.name = "scooter-grip-curled-sloth-foreclaw"; root.add(clawMesh);
+    }
+
+    const hindlimb = new THREE.Mesh(taperedSweepGeometry([
+      new THREE.Vector3(side * .28, .69, .22),
+      new THREE.Vector3(side * .34, .56, .31),
+      new THREE.Vector3(side * .31, .41, .39),
+      new THREE.Vector3(side * .22, .315, .43),
+    ], [.14, .128, .1, .07], high ? 28 : 20, Math.max(13, segments), .74), fur);
+    hindlimb.name = "scooter-deck-planted-anatomical-sloth-hindlimb"; root.add(hindlimb);
+    const hindpaw = new THREE.Mesh(new THREE.SphereGeometry(.086, segments, Math.max(10, segments - 6)), fur);
+    hindpaw.name = "scooter-deck-planted-furred-sloth-hindpaw";
+    hindpaw.scale.set(.9, .52, 1.16); hindpaw.position.set(side * .22, .315, .43); root.add(hindpaw);
+    for (let claw = -1; claw <= 1; claw++) {
+      const deckClaw = new THREE.Mesh(taperedSweepGeometry([
+        new THREE.Vector3(side * .22 + claw * .028, .31, .44),
+        new THREE.Vector3(side * .22 + claw * .032, .296, .5),
+        new THREE.Vector3(side * .22 + claw * .034, .29, .56),
+      ], [.02, .014, .0035], high ? 14 : 10, high ? 8 : 6, .5), ivory);
+      deckClaw.name = "scooter-deck-contact-sloth-hindclaw"; root.add(deckClaw);
+    }
+  }
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(.062, segments, 14), darkFur);
+  nose.name = "scooter-head-attached-embedded-sloth-nose";
+  nose.scale.set(1.18, .66, .66); nose.position.set(0, -.073, -.407); head.add(nose);
+  root.userData.integratedFacialMask = true;
+  castCharacterShadows(root, high);
+  root.scale.setScalar(.94 + variant * .012);
+  return { root, ownedTextures };
 }

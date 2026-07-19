@@ -14,6 +14,25 @@ export type SlothRig = {
   setVehiclePose(mode: "none" | "cart" | "rowboat", steering?: number, oarPhase?: number, rowingEffort?: number, gripTargets?: SlothVehicleGripTargets): void;
 };
 
+/** Canonical Central Park viewmodel framing used by every streamed world. */
+export function layoutCanonicalSlothViewmodel(sloth: SlothRig, viewportWidth: number) {
+  const portrait = viewportWidth < 760;
+  sloth.root.scale.setScalar(portrait ? .54 : .78);
+  sloth.left.position.x = portrait ? -.55 : -.94;
+  sloth.right.position.x = portrait ? .55 : .94;
+  sloth.left.position.y = sloth.right.position.y = portrait ? -.74 : -.86;
+  sloth.left.rotation.z = portrait ? -.48 : -.74;
+  sloth.right.rotation.z = portrait ? .48 : .74;
+  sloth.left.userData.layoutX = sloth.left.position.x;
+  sloth.right.userData.layoutX = sloth.right.position.x;
+  sloth.left.userData.layoutY = sloth.left.position.y;
+  sloth.right.userData.layoutY = sloth.right.position.y;
+  sloth.left.userData.layoutDepth = sloth.left.position.z;
+  sloth.right.userData.layoutDepth = sloth.right.position.z;
+  sloth.left.userData.layoutZ = sloth.left.rotation.z;
+  sloth.right.userData.layoutZ = sloth.right.rotation.z;
+}
+
 type ArmJoints = {
   elbow: THREE.Bone;
   wrist: THREE.Bone;
@@ -365,22 +384,28 @@ export function createSlothRig(furTexture: THREE.Texture): SlothRig {
   viewmodelFur.colorSpace = furTexture.colorSpace;
   viewmodelFur.wrapS = THREE.RepeatWrapping;
   viewmodelFur.wrapT = THREE.ClampToEdgeWrapping;
-  viewmodelFur.repeat.set(1.1, .92);
-  viewmodelFur.offset.set(.03, .04);
+  // Use a close crop of the authored 2K coat rather than squeezing the full
+  // image around the narrow forelimb. At first-person scale the old 1.1× crop
+  // averaged hundreds of strands into a flat brown band.
+  viewmodelFur.repeat.set(.42, .78);
+  viewmodelFur.offset.set(.18, .08);
   viewmodelFur.anisotropy = furTexture.anisotropy;
   markTextureCloneReadyAfterSource(viewmodelFur, furTexture);
   const fur = new THREE.MeshPhysicalMaterial({
     map: viewmodelFur,
     bumpMap: viewmodelFur,
-    bumpScale: .024,
-    color: "#aaa08f",
+    bumpScale: .038,
+    color: "#c6b49d",
     roughness: .96,
     sheen: .32,
     sheenColor: new THREE.Color("#8d8373"),
     sheenRoughness: .9,
-    emissive: new THREE.Color("#766c5d"),
+    // The authored coat also modulates the low-light lift. A flat emissive fill
+    // erased the strand contrast in the shuttle and museum even after the map
+    // decoded, while an unlit material collapsed to silhouette in those rooms.
+    emissive: new THREE.Color("#b28c68"),
     emissiveMap: viewmodelFur,
-    emissiveIntensity: .72,
+    emissiveIntensity: .5,
   });
   const keratin = new THREE.MeshPhysicalMaterial({
     color: "#fff9e9",

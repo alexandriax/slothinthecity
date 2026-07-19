@@ -326,7 +326,8 @@ test("West Farms streams the Bronx Zoo and completion waits for Megatherium at A
   assert.match(subway, /event\.kind === "SLOTHS_RELEASED"[\s\S]{0,180}rescuedParty\.setActive\(true/);
   assert.match(subway, /actionRequested && hint\?\.kind === "BUS_BOARDING"[\s\S]{0,220}rescuedParty\.allWithin\(zooWorld\.busBoardingPosition, 9\.5\)[\s\S]{0,100}startBusDrive\(\)/);
   assert.doesNotMatch(subway, /if \(zooWorld\.busBoardingReached\(player\)/);
-  assert.match(subway, /function completeMission\(\)[\s\S]{0,260}transitStage !== "MUSEUM"[\s\S]{0,260}setTransitStage\("COMPLETE"\)/);
+  assert.match(subway, /function museumMissionReady\(\)[\s\S]{0,260}transitStage !== "MUSEUM"/);
+  assert.match(subway, /function completeMission\(\)[\s\S]{0,180}!museumMissionReady\(\)[\s\S]{0,180}setTransitStage\("COMPLETE"\)/);
   assert.match(zoo, /readonly spawn = new THREE\.Vector3/);
   assert.match(zoo, /resolvePlayer\(player: THREE\.Vector3/);
   assert.match(zoo, /busBoardingReached\(player: THREE\.Vector3/);
