@@ -29,7 +29,7 @@ const DEBUG_DESTINATIONS: Array<{ scene: DebugSceneName; label: string; detail: 
   { scene: "bus-exit", label: "AMNH exit", detail: "W 79 St highway turn" },
   { scene: "bus-highway-continuation", label: "Missed exit", detail: "Mapped highway continues south" },
   { scene: "bus-city", label: "Upper West Side", detail: "Crosstown to Central Park West" },
-  { scene: "bus-reroute", label: "Bus reroute", detail: "Wrong turn · recover through the street grid" },
+  { scene: "bus-reroute", label: "Bus reroute", detail: "Wrong turn · reverse at the blue barriers" },
   { scene: "bus-collision", label: "Traffic impact", detail: "Solid cars · shuttle damage" },
   { scene: "bus-rear-impact", label: "Rear impact", detail: "Traffic push · zero shuttle damage" },
   { scene: "bus-building", label: "Building impact", detail: "Curb escape · solid streetwall" },

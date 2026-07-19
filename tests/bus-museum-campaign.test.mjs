@@ -48,7 +48,8 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
 
   for (const road of ["Jungleworld Road", "Boston Road", "East Tremont Avenue", "East 177th Street", "Sheridan Boulevard", "Cross Bronx Expressway", "Henry Hudson Parkway", "West 79th Street", "Central Park West"]) assert.match(bus, new RegExp(road));
   assert.match(bus, /new-york-stop-and-go-traffic-vehicle-/);
-  assert.match(bus, /const SIGNAL_STOPS = \[150, 335, 565, CROSSTOWN_START \+ 44\.5/);
+  assert.match(bus, /const WEST_79_GRID_OFFSETS = \[44\.5, 89, 133\.5\]/);
+  assert.match(bus, /const SIGNAL_STOPS = \[150, 335, 565, \.\.\.WEST_79_GRID_OFFSETS\.map/);
   assert.match(bus, /nearestGap < 28/);
   assert.doesNotMatch(bus, /RED LIGHT · HOLD POSITION|upcomingSignalAspect|upcomingSignalDistance/);
   assert.match(bus, /input\.accelerate/);
@@ -67,6 +68,8 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
   assert.match(game, /audio\.setCartMotor\(true, speed\)/);
   assert.match(game, /cityBusWorld\.parkingReached/);
   assert.match(bus, /const STREET_TOP_SPEED = 48/);
+  assert.match(bus, /const EXIT_RAMP_TOP_SPEED = 40/);
+  assert.match(bus, /const UWS_TOP_SPEED = 30/);
   assert.match(bus, /const HIGHWAY_TOP_SPEED = 72/);
   assert.match(bus, /const SHUTTLE_GEARS = \[/);
   for (const speedBand of [20, 36, 52]) assert.match(bus, new RegExp(`topSpeed: ${speedBand}`));
@@ -86,6 +89,8 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
   assert.match(bus, /targetLane/);
   assert.match(bus, /vehicle\.lane \+= \(vehicle\.targetLane - vehicle\.lane\)/);
   assert.match(bus, /new CityRoadNetwork\(DRIVE_ROADS\)/);
+  assert.match(bus, /west-79-local-access-dead-end-/);
+  assert.match(bus, /VISIBLE_OSM_ROADS/);
   assert.match(bus, /movementSteps = Math\.max\(1, Math\.ceil\(Math\.abs\(movement\) \/ \.62\)\)/);
   assert.match(bus, /this\.busPosition\.addScaledVector\(driveForward, movement \/ movementSteps\)/);
   assert.match(bus, /missed-w79-highway/);
@@ -127,7 +132,7 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
   assert.match(network, /route\(position: THREE\.Vector3, destination: THREE\.Vector3, heading\?: THREE\.Vector3\)/);
   assert.match(network, /end\.edges\.push\(\{ to: startId, length, road \}\)/);
   assert.match(bus, /openstreetmap-authored-upper-west-side-driveable-road-surfaces/);
-  assert.match(game, /Wrong turn — navigation recalculated through the connected street grid/);
+  assert.match(game, /Wrong turn — this local-access block ends at the blue barriers/);
   assert.match(bus, /CITY_BUS_ROUTE_LENGTH = CENTRAL_PARK_WEST_START/);
   assert.match(bus, /hudson-river-route-following-surface/);
   assert.doesNotMatch(bus, /new THREE\.PlaneGeometry\(320, 2380\)/);
@@ -161,8 +166,9 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
   assert.match(osm, /© OpenStreetMap contributors · ODbL/);
   assert.ok((osm.match(/"id":"osm-/g) ?? []).length >= 900, "the playable district retains a dense OSM street network");
   assert.ok((osm.match(/\{"id":\d+/g) ?? []).length >= 3900, "the context district retains thousands of OSM building footprints");
-  assert.match(minimap, /NYC_OSM_ROADS/);
-  assert.match(minimap, /NYC_OSM_BOUNDARY_CLOSURES/);
+  assert.match(minimap, /CITY_BUS_LOCAL_CLOSURE_POINTS/);
+  assert.match(minimap, /minimap-local-access/);
+  assert.match(minimap, /Guided · Upper West Side/);
   assert.match(minimap, /NYC_OSM_SNAPSHOT\.attributionUrl/);
   assert.match(minimap, /CITY_BUS_MANHATTAN_MINIMAP_POINTS/);
   assert.match(minimap, /const mapX = \(x: number\) => 238 -/);

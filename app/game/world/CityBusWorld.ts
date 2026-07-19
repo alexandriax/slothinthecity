@@ -134,10 +134,9 @@ const HIGHWAY_EXIT_RAMP_POINTS = cubicRoutePoints(
   WEST_79_MERGE,
   12,
 );
+const WEST_79_GRID_OFFSETS = [44.5, 89, 133.5] as const;
 const WEST_79_GRID_POINTS = [
-  addRouteVector(WEST_79_MERGE, MANHATTAN_STREET_EAST, 44.5),
-  addRouteVector(WEST_79_MERGE, MANHATTAN_STREET_EAST, 89),
-  addRouteVector(WEST_79_MERGE, MANHATTAN_STREET_EAST, 133.5),
+  ...WEST_79_GRID_OFFSETS.map(distance => addRouteVector(WEST_79_MERGE, MANHATTAN_STREET_EAST, distance)),
   WEST_79_TURN_IN,
 ] as const;
 const CENTRAL_PARK_WEST_TURN_POINTS = quadraticRoutePoints(
@@ -157,6 +156,21 @@ const MANHATTAN_PRIMARY_POINTS: readonly RoutePoint[] = [
   ...CENTRAL_PARK_WEST_POINTS,
 ];
 export const CITY_BUS_MANHATTAN_MINIMAP_POINTS = MANHATTAN_PRIMARY_POINTS;
+// The playable Upper West Side is deliberately legible at driving speed:
+// three perpendicular local streets end at visible Open Streets barriers,
+// while the fourth junction is the only through turn onto Central Park West.
+const UWS_LOCAL_ACCESS_LENGTH = 31;
+const UWS_LOCAL_ACCESS_CENTERS = WEST_79_GRID_OFFSETS.map(distance => addRouteVector(WEST_79_MERGE, MANHATTAN_STREET_EAST, distance));
+export const CITY_BUS_LOCAL_CLOSURE_POINTS = UWS_LOCAL_ACCESS_CENTERS.flatMap(center => [
+  addRouteVector(center, MANHATTAN_AVENUE_NORTH, UWS_LOCAL_ACCESS_LENGTH),
+  addRouteVector(center, MANHATTAN_AVENUE_NORTH, -UWS_LOCAL_ACCESS_LENGTH),
+]);
+const UWS_PLAYABILITY_BOUNDS = { minimumX: -370, maximumX: -115, minimumZ: -2725, maximumZ: -2575 } as const;
+const insideGuidedUwsDistrict = (x: number, z: number) => x >= UWS_PLAYABILITY_BOUNDS.minimumX && x <= UWS_PLAYABILITY_BOUNDS.maximumX && z >= UWS_PLAYABILITY_BOUNDS.minimumZ && z <= UWS_PLAYABILITY_BOUNDS.maximumZ;
+const VISIBLE_OSM_ROADS = NYC_OSM_ROADS.filter(road => {
+  const midpointX = (road.start[0] + road.end[0]) * .5, midpointZ = (road.start[1] + road.end[1]) * .5;
+  return !insideGuidedUwsDistrict(midpointX, midpointZ) && !insideGuidedUwsDistrict(road.start[0], road.start[1]) && !insideGuidedUwsDistrict(road.end[0], road.end[1]);
+});
 const MANHATTAN_PRIMARY_LENGTHS = MANHATTAN_PRIMARY_POINTS.slice(1).map((point, index) => Math.hypot(point[0] - MANHATTAN_PRIMARY_POINTS[index][0], point[1] - MANHATTAN_PRIMARY_POINTS[index][1]));
 const MANHATTAN_PRIMARY_CUMULATIVE = [0];
 for (const length of MANHATTAN_PRIMARY_LENGTHS) MANHATTAN_PRIMARY_CUMULATIVE.push(MANHATTAN_PRIMARY_CUMULATIVE.at(-1)! + length);
@@ -174,6 +188,8 @@ const TRAFFIC_LANES = [-1.5, -.5, .5, 1.5] as const;
 // exhilarating. These caps are roughly 2–2.5× the previous values; traffic
 // proximity remains readable, but only player brake/handbrake input takes pace.
 const STREET_TOP_SPEED = 48;
+const EXIT_RAMP_TOP_SPEED = 40;
+const UWS_TOP_SPEED = 30;
 const HIGHWAY_TOP_SPEED = 72;
 const SHUTTLE_GEARS = [
   { gear: 1, topSpeed: 20 },
@@ -185,8 +201,8 @@ const SHUTTLE_MAX_DAMAGE = 100;
 const SHUTTLE_COLLISION_RADIUS = 1.08;
 const SHUTTLE_COLLISION_OFFSETS = [-2.75, 0, 2.75] as const;
 const COLLISION_BUCKET_SIZE = 34;
-const SIGNAL_STOPS = [150, 335, 565, CROSSTOWN_START + 44.5, CROSSTOWN_START + 89, CROSSTOWN_START + 133.5, CENTRAL_PARK_WEST_TURN_START + 36] as const;
-const MANHATTAN_GRID_INTERSECTIONS = [CROSSTOWN_START + 44.5, CROSSTOWN_START + 89, CROSSTOWN_START + 133.5, CENTRAL_PARK_WEST_TURN_START] as const;
+const SIGNAL_STOPS = [150, 335, 565, ...WEST_79_GRID_OFFSETS.map(distance => CROSSTOWN_START + distance), CENTRAL_PARK_WEST_TURN_START + 36] as const;
+const MANHATTAN_GRID_INTERSECTIONS = [...WEST_79_GRID_OFFSETS.map(distance => CROSSTOWN_START + distance), CENTRAL_PARK_WEST_TURN_START] as const;
 const SIGNAL_COLORS: Record<TrafficSignalAspect, string> = { RED: "#ff3b2f", YELLOW: "#ffd02f", GREEN: "#37e778" };
 const ROUTE_LEGS = [
   { from: 0, to: 100, name: "Jungleworld Road", detail: "Bronx Zoo shuttle gate" },
@@ -197,7 +213,7 @@ const ROUTE_LEGS = [
   { from: 560, to: HIGHWAY_START, name: "Cross Bronx Expressway", detail: "westbound toward the Henry Hudson" },
   { from: HIGHWAY_START, to: HIGHWAY_EXIT_START, name: "Henry Hudson Parkway", detail: "NY 9A south along the Hudson River" },
   { from: HIGHWAY_EXIT_START, to: CROSSTOWN_START, name: "West 79th Street Exit", detail: "exit for the museum" },
-  { from: CROSSTOWN_START, to: CENTRAL_PARK_WEST_TURN_START, name: "West 79th Street", detail: "straight east through the Manhattan grid" },
+  { from: CROSSTOWN_START, to: CENTRAL_PARK_WEST_TURN_START, name: "West 79th Street", detail: "stay straight · Central Park West left in 3 blocks" },
   { from: CENTRAL_PARK_WEST_TURN_START, to: CITY_BUS_ROUTE_LENGTH, name: "Central Park West", detail: "north to the museum shuttle bay" },
 ] as const;
 
@@ -333,7 +349,9 @@ function buildDriveRoads() {
       name: primaryRoadName(middle),
       start: routeCenter(from), end: routeCenter(to),
       halfWidth: exitRamp ? 5.1 : middle >= CROSSTOWN_START ? 7.9 : 10.75,
-      speedLimit: middle >= 420 && middle < HIGHWAY_EXIT_START ? HIGHWAY_TOP_SPEED : STREET_TOP_SPEED,
+      speedLimit: middle >= HIGHWAY_EXIT_START
+        ? exitRamp ? EXIT_RAMP_TOP_SPEED : UWS_TOP_SPEED
+        : middle >= 420 ? HIGHWAY_TOP_SPEED : STREET_TOP_SPEED,
       primaryFrom: from, primaryTo: to,
     });
   }
@@ -341,7 +359,18 @@ function buildDriveRoads() {
   // southbound carriageway. From there the full mapped West Side Highway—not
   // a detached straight strip—owns navigation, rendering and collisions.
   roads.push({ id: "missed-w79-highway-osm-connector", name: "Henry Hudson Parkway · Southbound", start: new THREE.Vector3(HIGHWAY_EXIT_JUNCTION[0], .4, HIGHWAY_EXIT_JUNCTION[1]), end: new THREE.Vector3(-97.756, .4, -2560.579), halfWidth: 10.8, speedLimit: HIGHWAY_TOP_SPEED });
-  for (const road of NYC_OSM_ROADS) roads.push({
+  for (const [intersectionIndex, center] of UWS_LOCAL_ACCESS_CENTERS.entries()) for (const direction of [-1, 1]) {
+    const end = addRouteVector(center, MANHATTAN_AVENUE_NORTH, direction * UWS_LOCAL_ACCESS_LENGTH);
+    roads.push({
+      id: `west-79-local-access-dead-end-${intersectionIndex + 1}-${direction < 0 ? "south" : "north"}`,
+      name: "West 79th Street local access",
+      start: new THREE.Vector3(center[0], .4, center[1]),
+      end: new THREE.Vector3(end[0], .4, end[1]),
+      halfWidth: 5.4,
+      speedLimit: 18,
+    });
+  }
+  for (const road of VISIBLE_OSM_ROADS) roads.push({
     id: road.id,
     name: road.name,
     start: new THREE.Vector3(road.start[0], .4, road.start[1]),
@@ -660,15 +689,15 @@ function makeTrafficCar(index: number, quality: number) {
 
 function addOsmRoadSurfaces(root: THREE.Group, asphalt: THREE.Material, concrete: THREE.Material, lane: THREE.Material) {
   const roadGeometry = new RoundedBoxGeometry(1, .18, 1, 3, .04), sidewalkGeometry = new RoundedBoxGeometry(1, .28, 1, 3, .05), stripeGeometry = new RoundedBoxGeometry(.09, .025, 1, 2, .01);
-  const roads = new THREE.InstancedMesh(roadGeometry, asphalt, NYC_OSM_ROADS.length);
+  const roads = new THREE.InstancedMesh(roadGeometry, asphalt, VISIBLE_OSM_ROADS.length);
   roads.name = "openstreetmap-authored-upper-west-side-driveable-road-surfaces"; roads.receiveShadow = true;
-  const sidewalks = new THREE.InstancedMesh(sidewalkGeometry, concrete, NYC_OSM_ROADS.length * 2);
+  const sidewalks = new THREE.InstancedMesh(sidewalkGeometry, concrete, VISIBLE_OSM_ROADS.length * 2);
   sidewalks.name = "openstreetmap-authored-upper-west-side-continuous-sidewalks"; sidewalks.receiveShadow = true;
-  const marked = NYC_OSM_ROADS.filter(road => /motorway|trunk|primary|secondary|tertiary/.test(road.roadClass));
+  const marked = VISIBLE_OSM_ROADS.filter(road => /motorway|trunk|primary|secondary|tertiary/.test(road.roadClass));
   const stripes = new THREE.InstancedMesh(stripeGeometry, lane, marked.length * 2);
   stripes.name = "openstreetmap-authored-upper-west-side-lane-markings"; stripes.receiveShadow = true;
   const dummy = new THREE.Object3D(); let sidewalkIndex = 0, stripeIndex = 0;
-  NYC_OSM_ROADS.forEach((road, index) => {
+  VISIBLE_OSM_ROADS.forEach((road, index) => {
     const start = new THREE.Vector3(road.start[0], 0, road.start[1]), end = new THREE.Vector3(road.end[0], 0, road.end[1]), tangent = end.clone().sub(start), length = tangent.length();
     if (length < .01) return;
     tangent.multiplyScalar(1 / length); const right = new THREE.Vector3(-tangent.z, 0, tangent.x), yaw = Math.atan2(-tangent.x, -tangent.z), center = start.add(end).multiplyScalar(.5);
@@ -735,7 +764,7 @@ function addOsmBuildingsAndClosures(
   // W 79th exit, so its two snapshot-edge records must not become physical
   // walls across live motorway lanes. Other edge streets retain visible DOT
   // closures and the larger building-context buffer behind them.
-  NYC_OSM_BOUNDARY_CLOSURES.filter(closure => closure.road !== "West Side Highway").forEach((closure, closureIndex) => {
+  NYC_OSM_BOUNDARY_CLOSURES.filter(closure => closure.road !== "West Side Highway" && !insideGuidedUwsDistrict(closure.x, closure.z)).forEach((closure, closureIndex) => {
     const group = new THREE.Group(); group.name = `nyc-blue-open-streets-performance-boundary-${closureIndex + 1}`; group.position.set(closure.x, .35, closure.z); group.rotation.y = closure.heading;
     for (let segment = -2; segment <= 2; segment++) {
       const barrier = new THREE.Mesh(new RoundedBoxGeometry(2.9, .72, .55, 4, .08), blue); barrier.name = "nyc-dot-blue-water-filled-street-closure-barrier"; barrier.position.x = segment * 2.75; group.add(barrier);
@@ -825,6 +854,32 @@ function addRoadNetwork(root: THREE.Group, ownedTextures: THREE.Texture[], quali
     junction.position.copy(routeCenter(progress)); junction.position.y = .416;
     junction.receiveShadow = true; root.add(junction);
   }
+  // The imported OSM mesh used to draw several overlapping diagonals through
+  // this small gameplay area. Replace them with a readable arcade grid: each
+  // early cross street is genuinely driveable, but ends at a visible blue
+  // local-access closure so a wrong turn is recoverable rather than a maze.
+  const closureBlue = new THREE.MeshPhysicalMaterial({ color: "#176aa3", roughness: .42, clearcoat: .4 });
+  const closureAmber = new THREE.MeshStandardMaterial({ color: "#ffb629", emissive: "#9a4c06", emissiveIntensity: .55, roughness: .4 });
+  const avenueYaw = Math.atan2(-MANHATTAN_AVENUE_NORTH[0], -MANHATTAN_AVENUE_NORTH[1]);
+  UWS_LOCAL_ACCESS_CENTERS.forEach((center, intersectionIndex) => {
+    const centerVector = new THREE.Vector3(center[0], .4, center[1]);
+    const crossRoad = new THREE.Mesh(new RoundedBoxGeometry(10.8, .18, UWS_LOCAL_ACCESS_LENGTH * 2 + 1.2, 3, .04), asphalt);
+    crossRoad.name = `west-79-clear-perpendicular-local-access-street-${intersectionIndex + 1}`;
+    crossRoad.position.copy(centerVector); crossRoad.position.y -= .08; crossRoad.rotation.y = avenueYaw; root.add(crossRoad);
+    const centerLine = new THREE.Mesh(new RoundedBoxGeometry(.1, .026, UWS_LOCAL_ACCESS_LENGTH * 2 - 7, 2, .01), lane);
+    centerLine.name = "west-79-local-access-painted-centerline"; centerLine.position.copy(centerVector); centerLine.position.y += .13; centerLine.rotation.y = avenueYaw; root.add(centerLine);
+    for (const direction of [-1, 1]) {
+      const endpoint = addRouteVector(center, MANHATTAN_AVENUE_NORTH, direction * UWS_LOCAL_ACCESS_LENGTH);
+      const barrier = new THREE.Group(); barrier.name = `west-79-visible-blue-local-access-dead-end-${intersectionIndex + 1}-${direction < 0 ? "south" : "north"}`;
+      barrier.position.set(endpoint[0], .45, endpoint[1]); barrier.rotation.y = avenueYaw;
+      for (let segment = -1; segment <= 1; segment++) {
+        const body = new THREE.Mesh(new RoundedBoxGeometry(3.55, .82, .68, 4, .09), closureBlue); body.position.x = segment * 3.25; barrier.add(body);
+        const lamp = new THREE.Mesh(new THREE.SphereGeometry(.1, 10, 7), closureAmber); lamp.position.set(segment * 3.25, .55, -.18); barrier.add(lamp);
+      }
+      root.add(barrier);
+      collisionIndex.add({ id: `west-79-local-access-closure-${intersectionIndex}-${direction}`, kind: "barrier", label: "West 79th Street local access closure", x: endpoint[0], z: endpoint[1], halfX: 5.45, halfZ: .78, yaw: avenueYaw });
+    }
+  });
   // The trip now begins on actual Bronx surface streets: each controlled
   // intersection has a full cross street, curb returns and lane markings
   // before the expressway ramp. No traffic signals are authored on the river
@@ -1377,7 +1432,14 @@ export class CityBusWorld {
   consumeImpactEvent() { const event = this.lastImpact; this.lastImpact = null; return event; }
   get navigationBearingDegrees() {
     const forward = new THREE.Vector3(-Math.sin(this.busHeading), 0, -Math.cos(this.busHeading)), right = new THREE.Vector3(-forward.z, 0, forward.x);
-    const direction = this.guidance.nextPoint.clone().sub(this.busPosition).setY(0).normalize();
+    // On the recommended line, follow a stable route look-ahead instead of a
+    // graph node selected from adjacent imported streets. This keeps the HUD
+    // arrow straight after the ramp and progressively bends it into the CPW
+    // turn only when that maneuver is actually approaching.
+    const target = this.onRecommendedRoute
+      ? routeCenter(Math.min(CITY_BUS_ROUTE_LENGTH, this.progress + (this.progress < CROSSTOWN_START ? 38 : 30)))
+      : this.guidance.nextPoint;
+    const direction = target.clone().sub(this.busPosition).setY(0).normalize();
     return THREE.MathUtils.radToDeg(Math.atan2(direction.dot(right), direction.dot(forward)));
   }
   get navigationInstruction() {
@@ -1391,8 +1453,19 @@ export class CityBusWorld {
     if (waypointDistance > .01) toWaypoint.multiplyScalar(1 / waypointDistance);
     const turn = Math.atan2(toWaypoint.dot(right), toWaypoint.dot(forward));
     const rerouting = this.onRecommendedRoute ? "" : "REROUTING · ";
-    if (waypointDistance < 68 && Math.abs(turn) > .38) return `${rerouting}TURN ${turn > 0 ? "RIGHT" : "LEFT"} ONTO ${displayRoadName(this.guidance.nextRoadName).toUpperCase()}`;
-    if (this.onRecommendedRoute && this.progress >= HIGHWAY_EXIT_START - 170 && this.progress < CROSSTOWN_START) return `EXIT HERE FOR AMERICAN MUSEUM OF NATURAL HISTORY · KEEP LEFT`;
+    if (this.onRecommendedRoute) {
+      if (this.progress >= HIGHWAY_EXIT_START - 170 && this.progress < HIGHWAY_EXIT_START) return `EXIT HERE FOR AMERICAN MUSEUM OF NATURAL HISTORY · KEEP LEFT`;
+      if (this.progress < CROSSTOWN_START) return `FOLLOW THE CURVED WEST 79TH STREET EXIT · STAY IN LANE`;
+      if (this.progress < CENTRAL_PARK_WEST_TURN_START) {
+        const turnDistance = Math.max(0, CENTRAL_PARK_WEST_TURN_START - this.progress);
+        if (turnDistance > 120) return `STAY STRAIGHT ON WEST 79TH STREET · CENTRAL PARK WEST LEFT IN ${Math.round(turnDistance)} M`;
+        if (turnDistance > 65) return `LEFT TURN AHEAD · CENTRAL PARK WEST IN ${Math.round(turnDistance)} M · MOVE LEFT`;
+        if (turnDistance > 22) return `BRAKE · TURN LEFT ONTO CENTRAL PARK WEST IN ${Math.round(turnDistance)} M`;
+        return `TURN LEFT NOW · CENTRAL PARK WEST`;
+      }
+      return `CONTINUE ON CENTRAL PARK WEST · MUSEUM SHUTTLE BAY AHEAD`;
+    }
+    if (waypointDistance < 92 && Math.abs(turn) > .3) return `${rerouting}TURN ${turn > 0 ? "RIGHT" : "LEFT"} ONTO ${displayRoadName(this.guidance.nextRoadName).toUpperCase()}`;
     return `${rerouting}CONTINUE ON ${this.currentRoad.toUpperCase()} · NEXT ${displayRoadName(this.guidance.nextRoadName).toUpperCase()}`;
   }
   get parkingReached() { return this.busPosition.distanceTo(AMNH_BUS_BAY) < 5.2 && Math.abs(this.speed) < .6; }

@@ -378,6 +378,8 @@ button { font: inherit; }
 .minimap-osm-local { fill:none; stroke:#6f7772; stroke-width:1.05; stroke-linecap:round; opacity:.78; }
 .minimap-osm-major { fill:none; stroke:#d6d0bc; stroke-width:2.2; stroke-linecap:round; }
 .minimap-osm-route { fill:none; stroke:#f5c91f; stroke-width:3.15; stroke-linecap:round; stroke-linejoin:round; }
+.minimap-local-access { fill:none; stroke:#a9aea5; stroke-width:2; stroke-linecap:round; opacity:.82; }
+.minimap-local-closure { fill:#58b9eb; stroke:#102c3e; stroke-width:1; }
 .minimap-closure line { stroke:#2998dd; stroke-width:2.8; stroke-linecap:round; }
 .minimap-closure circle { fill:#79c9f4; stroke:#102c3e; stroke-width:.7; }
 .minimap-osm-label { fill:rgba(242,239,219,.6); font:700 5px "Helvetica Neue",Arial,sans-serif; letter-spacing:.06em; }

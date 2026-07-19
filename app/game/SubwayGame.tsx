@@ -548,7 +548,7 @@ export function SubwayGame({ audio, quality }: SubwayGameProps) {
           else if (!impact.disabled) showToast(`${impact.label} impact · −${Math.round(impact.damage)} integrity · ${Math.round(impact.integrity * 100)}% remaining`, 2200);
         }
         if (liveRouteStatus !== previousBusRouteStatus) {
-          if (liveRouteStatus === "OPEN-WORLD REROUTE ACTIVE") showToast("Wrong turn — navigation recalculated through the connected street grid. Follow the next-street callout or choose another loop.", 5200);
+          if (liveRouteStatus === "OPEN-WORLD REROUTE ACTIVE") showToast("Wrong turn — this local-access block ends at the blue barriers. Reverse to West 79th Street and continue straight toward Central Park West.", 5200);
           else if (liveRouteStatus === "OFF STREET · RETURN TO ROAD") showToast("The shuttle is beyond the curb line. Steer back toward the highlighted street; throttle remains fully yours.", 4200);
           else if (previousBusRouteStatus !== "") showToast("Recommended route reacquired — you can stay on it or keep exploring the street network.", 3600);
           previousBusRouteStatus = liveRouteStatus;
