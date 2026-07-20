@@ -1,0 +1,316 @@
+export const ZOO_SIDE_QUEST_IDS = [
+  "aviary-voices",
+  "sea-lion-current",
+  "monkey-canopy-rig",
+  "zebra-stripe-scan",
+  "red-panda-scent-wind",
+  "tortoise-sun-trail",
+  "flamingo-wetland-balance",
+  "bison-prairie-seeding",
+] as const;
+
+export type ZooSideQuestId = typeof ZOO_SIDE_QUEST_IDS[number];
+
+export type ZooRecruitSpeciesId =
+  | "sun-conure"
+  | "blue-and-gold-macaw"
+  | "scarlet-ibis"
+  | "green-aracari"
+  | "california-sea-lion"
+  | "spider-monkey"
+  | "plains-zebra"
+  | "red-panda"
+  | "aldabra-tortoise"
+  | "american-flamingo"
+  | "american-bison";
+
+export type ZooSideQuestMetadata = {
+  id: ZooSideQuestId;
+  eyebrow: string;
+  title: string;
+  objective: string;
+  instructions: string;
+  keyboard: string;
+  recruitedSpecies: readonly ZooRecruitSpeciesId[];
+  theme: "canopy" | "water" | "forest" | "plains" | "alpine" | "solar" | "wetland" | "prairie";
+};
+
+export const ZOO_SIDE_QUESTS: Record<ZooSideQuestId, ZooSideQuestMetadata> = {
+  "aviary-voices": {
+    id: "aviary-voices",
+    eyebrow: "World of Birds · Canopy chorus",
+    title: "Four Voices",
+    objective: "Echo the flock’s calls through three growing phrases.",
+    instructions: "Watch the four perches. When the cue lamps go dark, repeat the phrase in order. A wrong call replays the same phrase; the melody never changes during this attempt.",
+    keyboard: "Keys 1–4 answer · R replays",
+    recruitedSpecies: ["sun-conure", "blue-and-gold-macaw", "scarlet-ibis", "green-aracari"],
+    theme: "canopy",
+  },
+  "sea-lion-current": {
+    id: "sea-lion-current",
+    eyebrow: "Sea Lion Pool · Enrichment channel",
+    title: "Ride the Current",
+    objective: "Pilot the floating buoy through all three current gates.",
+    instructions: "Every move is followed by the indicated cross-current. Steer ahead of the drift, pass through the numbered gates in order, and use reverse if you sweep past one.",
+    keyboard: "Arrow keys or W A S D steer",
+    recruitedSpecies: ["california-sea-lion"],
+    theme: "water",
+  },
+  "monkey-canopy-rig": {
+    id: "monkey-canopy-rig",
+    eyebrow: "Monkey Forest · Canopy maintenance",
+    title: "Canopy Rig",
+    objective: "Hold safe rope tension and latch three moving knots.",
+    instructions: "Tap tension into the green band, then latch an anchor as its knot crosses the center jaw. Secured anchors stay fixed, but excess tension makes every moving line harder to read.",
+    keyboard: "Space tensions · Keys 1–3 latch",
+    recruitedSpecies: ["spider-monkey"],
+    theme: "forest",
+  },
+  "zebra-stripe-scan": {
+    id: "zebra-stripe-scan",
+    eyebrow: "African Plains · Conservation scanner",
+    title: "Stripe Scan",
+    objective: "Align and lock all three identity bands.",
+    instructions: "Select a body band, slide its live stripe sample onto the amber reference, then lock it. Every zebra has a unique pattern, so all three regions must agree.",
+    keyboard: "Keys 1–3 select · A/D slide · Space locks",
+    recruitedSpecies: ["plains-zebra"],
+    theme: "plains",
+  },
+  "red-panda-scent-wind": {
+    id: "red-panda-scent-wind",
+    eyebrow: "Himalayan Forest · Scent enrichment",
+    title: "Scent on the Wind",
+    objective: "Turn four canopy vanes into one continuous scent trail.",
+    instructions: "Each numbered vane rotates ninety degrees. The glowing scent ribbon advances only through a correctly aimed prefix, so follow its leading edge up the canopy.",
+    keyboard: "Keys 1–4 rotate vanes",
+    recruitedSpecies: ["red-panda"],
+    theme: "alpine",
+  },
+  "tortoise-sun-trail": {
+    id: "tortoise-sun-trail",
+    eyebrow: "Giant Tortoise · Solar warming yard",
+    title: "Sun Trail",
+    objective: "Bounce daylight across three mirrors to the warming stone.",
+    instructions: "Select a mirror and rotate it left or right. Each correctly aimed mirror ignites the next beam segment; tune all three angles until the stone reaches full warmth.",
+    keyboard: "Keys 1–3 select · Arrow keys rotate",
+    recruitedSpecies: ["aldabra-tortoise"],
+    theme: "solar",
+  },
+  "flamingo-wetland-balance": {
+    id: "flamingo-wetland-balance",
+    eyebrow: "Flamingo Wetland · Habitat controls",
+    title: "Wetland Balance",
+    objective: "Hold water depth and salinity in their habitat bands.",
+    instructions: "Intake raises the pool, drainage lowers it, and fresh flow washes out salt. Keep both gauges green continuously while the flock tests the restored shallows.",
+    keyboard: "Keys 1–3 operate valves",
+    recruitedSpecies: ["american-flamingo"],
+    theme: "wetland",
+  },
+  "bison-prairie-seeding": {
+    id: "bison-prairie-seeding",
+    eyebrow: "Bison Range · Grassland restoration",
+    title: "Prairie Seeding",
+    objective: "Land seed pods in three bare restoration plots.",
+    instructions: "Aim across the crosswind, build spring charge, and compare the projected landing reticle with the active soil ring. Misses scatter harmlessly and the launcher reloads.",
+    keyboard: "←/→ aim · Space charge · X bleed · Enter launches",
+    recruitedSpecies: ["american-bison"],
+    theme: "prairie",
+  },
+};
+
+export type AviaryVoicesConfig = {
+  questId: "aviary-voices";
+  melody: readonly number[];
+  roundLengths: readonly [number, number, number];
+};
+
+export type CurrentGridPoint = { x: number; y: number };
+export type CurrentDirection = "left" | "right" | "forward" | "reverse";
+export type SeaLionCurrentConfig = {
+  questId: "sea-lion-current";
+  start: CurrentGridPoint;
+  gates: readonly CurrentGridPoint[];
+  currentPattern: readonly (-1 | 0 | 1)[];
+};
+export type SeaLionCurrentState = { position: CurrentGridPoint; gateIndex: number; turn: number };
+
+export type MonkeyCanopyConfig = {
+  questId: "monkey-canopy-rig";
+  anchorOffsets: readonly number[];
+  anchorSpeeds: readonly number[];
+};
+
+export type ZebraStripeConfig = {
+  questId: "zebra-stripe-scan";
+  initialOffsets: readonly number[];
+  targetOffsets: readonly number[];
+};
+
+export type RedPandaScentConfig = {
+  questId: "red-panda-scent-wind";
+  initialDirections: readonly number[];
+  solution: readonly number[];
+};
+
+export type TortoiseSunConfig = {
+  questId: "tortoise-sun-trail";
+  initialAngles: readonly number[];
+  solution: readonly number[];
+};
+
+export type FlamingoWetlandConfig = {
+  questId: "flamingo-wetland-balance";
+  initialWater: number;
+  initialSalinity: number;
+  waterDrift: number;
+  salinityDrift: number;
+};
+
+export type PrairieTarget = CurrentGridPoint & { radius: number; solutionAngle: number; solutionPower: number };
+export type BisonPrairieConfig = {
+  questId: "bison-prairie-seeding";
+  wind: number;
+  targets: readonly PrairieTarget[];
+};
+
+export type ZooSideQuestConfig =
+  | AviaryVoicesConfig
+  | SeaLionCurrentConfig
+  | MonkeyCanopyConfig
+  | ZebraStripeConfig
+  | RedPandaScentConfig
+  | TortoiseSunConfig
+  | FlamingoWetlandConfig
+  | BisonPrairieConfig;
+
+function randomInt(random: () => number, minimum: number, maximumInclusive: number) {
+  return minimum + Math.floor(random() * (maximumInclusive - minimum + 1));
+}
+
+export function clamp(value: number, minimum: number, maximum: number) {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+export function circularStepDistance(a: number, b: number, steps: number) {
+  const difference = Math.abs(a - b) % steps;
+  return Math.min(difference, steps - difference);
+}
+
+export function createZooSideQuestConfig(id: ZooSideQuestId, random = Math.random): ZooSideQuestConfig {
+  switch (id) {
+    case "aviary-voices": {
+      const melody: number[] = [];
+      for (let index = 0; index < 7; index++) {
+        let voice = randomInt(random, 0, 3);
+        if (voice === melody[index - 1]) voice = (voice + 1 + randomInt(random, 0, 2)) % 4;
+        melody.push(voice);
+      }
+      return { questId: id, melody, roundLengths: [3, 5, 7] };
+    }
+    case "sea-lion-current":
+      return {
+        questId: id,
+        start: { x: 3, y: 4 },
+        gates: [3, 2, 1].map(y => ({ x: randomInt(random, 1, 5), y })),
+        currentPattern: Array.from({ length: 12 }, () => randomInt(random, -1, 1) as -1 | 0 | 1),
+      };
+    case "monkey-canopy-rig":
+      return {
+        questId: id,
+        anchorOffsets: Array.from({ length: 3 }, () => random()),
+        anchorSpeeds: Array.from({ length: 3 }, (_, index) => .22 + index * .035 + random() * .035),
+      };
+    case "zebra-stripe-scan": {
+      const targetOffsets = Array.from({ length: 3 }, () => randomInt(random, -4, 4));
+      const initialOffsets = targetOffsets.map(target => clamp(target + (random() < .5 ? -1 : 1) * randomInt(random, 2, 4), -6, 6));
+      return { questId: id, targetOffsets, initialOffsets };
+    }
+    case "red-panda-scent-wind": {
+      const solution = Array.from({ length: 4 }, () => randomInt(random, 0, 3));
+      return { questId: id, solution, initialDirections: solution.map(direction => (direction + randomInt(random, 1, 3)) % 4) };
+    }
+    case "tortoise-sun-trail": {
+      const solution = Array.from({ length: 3 }, () => randomInt(random, 0, 5));
+      return { questId: id, solution, initialAngles: solution.map(angle => (angle + randomInt(random, 1, 5)) % 6) };
+    }
+    case "flamingo-wetland-balance":
+      return {
+        questId: id,
+        initialWater: 24 + random() * 15,
+        initialSalinity: 66 + random() * 14,
+        waterDrift: -.16 + random() * .34,
+        salinityDrift: -.11 + random() * .3,
+      };
+    case "bison-prairie-seeding": {
+      const wind = -.14 + random() * .28;
+      const targets = Array.from({ length: 3 }, (_, index) => {
+        const solutionAngle = -25 + randomInt(random, 0, 10) * 5;
+        const solutionPower = 40 + randomInt(random, 0, 6) * 8;
+        const landing = prairieLanding(solutionAngle, solutionPower, wind);
+        return { ...landing, radius: .78 + index * .08, solutionAngle, solutionPower };
+      });
+      return { questId: id, wind, targets };
+    }
+  }
+}
+
+export function advanceSeaLionCurrent(
+  state: SeaLionCurrentState,
+  config: SeaLionCurrentConfig,
+  direction: CurrentDirection,
+): SeaLionCurrentState {
+  const movement = direction === "left" ? [-1, 0] : direction === "right" ? [1, 0] : direction === "forward" ? [0, -1] : [0, 1];
+  const drift = config.currentPattern[state.turn % config.currentPattern.length] ?? 0;
+  const position = {
+    x: clamp(state.position.x + movement[0] + drift, 0, 6),
+    y: clamp(state.position.y + movement[1], 0, 4),
+  };
+  const gate = config.gates[state.gateIndex];
+  const gateIndex = gate && position.x === gate.x && position.y === gate.y ? state.gateIndex + 1 : state.gateIndex;
+  return { position, gateIndex, turn: state.turn + 1 };
+}
+
+export function canopyAnchorReady(phase: number) {
+  return Math.min(Math.abs(phase - .5), 1 - Math.abs(phase - .5)) <= .105;
+}
+
+export function stripeBandAligned(offset: number, target: number) {
+  return Math.abs(offset - target) <= .35;
+}
+
+export function scentTrailReach(directions: readonly number[], solution: readonly number[]) {
+  let reach = 0;
+  while (reach < solution.length && directions[reach] === solution[reach]) reach++;
+  return reach;
+}
+
+export function sunTrailReach(angles: readonly number[], solution: readonly number[]) {
+  let reach = 0;
+  while (reach < solution.length && angles[reach] === solution[reach]) reach++;
+  return reach;
+}
+
+export type WetlandValve = "intake" | "drain" | "fresh";
+export type WetlandReading = { water: number; salinity: number };
+
+export function operateWetlandValve(reading: WetlandReading, valve: WetlandValve): WetlandReading {
+  if (valve === "intake") return { water: clamp(reading.water + 7.5, 0, 100), salinity: clamp(reading.salinity + 2.2, 0, 100) };
+  if (valve === "drain") return { water: clamp(reading.water - 6.5, 0, 100), salinity: clamp(reading.salinity + 2.8, 0, 100) };
+  return { water: clamp(reading.water + 4.5, 0, 100), salinity: clamp(reading.salinity - 8, 0, 100) };
+}
+
+export function wetlandReadingSafe(reading: WetlandReading) {
+  return reading.water >= 46 && reading.water <= 59 && reading.salinity >= 42 && reading.salinity <= 57;
+}
+
+export function prairieLanding(angleDegrees: number, power: number, wind: number): CurrentGridPoint {
+  const angle = angleDegrees * Math.PI / 180;
+  return {
+    x: Math.sin(angle) * power * .115 + wind * power * .055,
+    y: Math.cos(angle) * power * .13,
+  };
+}
+
+export function prairieShotHits(landing: CurrentGridPoint, target: PrairieTarget) {
+  return Math.hypot(landing.x - target.x, landing.y - target.y) <= target.radius;
+}

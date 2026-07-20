@@ -541,6 +541,28 @@ export function createSunConure(textures: GameTextures, quality: number) {
   });
 }
 
+/**
+ * Project-authored Central Park mallard. The empty synchronous shell is
+ * intentional: the manifest loader keeps it hidden until the reviewed GLB is
+ * decoded, so no primitive-era bird can flash before the authored animal.
+ */
+export function createMallard(_textures: GameTextures, quality: number): ZooAnimalRig {
+  const root = new THREE.Group();
+  root.name = "central-park-mallard-duck";
+  root.userData.species = "mallard-duck";
+  root.userData.commonName = "Mallard duck";
+  root.userData.logicalId = "central-park-mallard";
+  root.userData.animationStates = ["idle", "walk", "swim", "short-flight", "landing-settle"];
+  return authorZooAnimalRig({ root, update() {} }, {
+    species: "mallard-duck",
+    quality,
+    defaultMotion: "swim",
+    phaseOffset: .37,
+  }) as ZooAnimalRig;
+}
+
+export const createMallardDuck = createMallard;
+
 export function createBlueAndGoldMacaw(textures: GameTextures, quality: number) {
   return createPerchedBird(textures, quality, "blue-and-gold-macaw", {
     breast: "#dcae35", crown: "#2777a5", wing: "#1f638f", tail: "#22557f",

@@ -3,6 +3,7 @@ import type { GameTextures } from "../rendering/textures";
 import { createElectricScooter, rollPersonalMobility, type PersonalMobilityVehicle } from "./PersonalMobility";
 import { createGaryPolarBear, type ZooAnimalRig } from "./ZooAnimals";
 import { markAuthoredZooAnimalDisposed } from "./animals/AuthoredZooAnimalAssets";
+import type { CompanionCollisionBody } from "./CompanionNavigation";
 
 type GaryMotion = "hidden" | "eating" | "climbing" | "following";
 type Breadcrumb = { position: THREE.Vector3 };
@@ -11,6 +12,7 @@ const GARY_HABITAT_START = new THREE.Vector3(39, 0, -48);
 const GARY_FENCE_APPROACH = new THREE.Vector3(34, 0, -42);
 const GARY_FENCE_LANDING = new THREE.Vector3(31.5, 0, -39.5);
 const GARY_VISITOR_PATH = new THREE.Vector3(28.5, 0, -37.5);
+const NO_GARY_COLLISION_BODIES: readonly CompanionCollisionBody[] = Object.freeze([]);
 
 /**
  * Scene-owned Gary state. The companion is deliberately independent from the
@@ -25,6 +27,14 @@ export class GaryCompanion {
   private readonly breadcrumbs: Breadcrumb[] = [];
   private readonly lastLeader = new THREE.Vector3();
   private readonly previous = new THREE.Vector3();
+  private readonly collisionVelocity = new THREE.Vector3();
+  private readonly followerCollisionBody: CompanionCollisionBody = {
+    id: "gary-polar-bear",
+    root: this.root,
+    velocity: this.collisionVelocity,
+    radius: 1.08,
+  };
+  private readonly followerCollisionBodies = [this.followerCollisionBody];
   private motion: GaryMotion = "hidden";
   private motionStarted = 0;
   private scooterMode = false;
@@ -58,6 +68,12 @@ export class GaryCompanion {
   get isFed() { return this.motion !== "hidden"; }
   get isFollowing() { return this.motion === "following"; }
   get isScooterMode() { return this.scooterMode; }
+  get collisionBodies(): readonly CompanionCollisionBody[] {
+    // Gary's authored eating/climb path intentionally begins inside the polar
+    // bear habitat. World collision projection becomes authoritative only once
+    // he reaches the visitor path and joins the normal following formation.
+    return this.isFollowing && this.root.visible ? this.followerCollisionBodies : NO_GARY_COLLISION_BODIES;
+  }
 
   feed(elapsed: number, floorY: number) {
     if (this.isFed) return;
@@ -78,6 +94,7 @@ export class GaryCompanion {
 
   setScooterMode(active: boolean) {
     this.scooterMode = active && this.isFed;
+    this.followerCollisionBody.radius = this.scooterMode ? 1.18 : 1.08;
     this.scooter.root.visible = this.scooterMode;
     this.root.userData.ridingElectricScooter = this.scooterMode;
     if (this.scooterMode) {
@@ -126,6 +143,23 @@ export class GaryCompanion {
     this.previous.copy(this.root.position);
     this.seedBreadcrumbs(viewer);
     this.syncScooter(0);
+  }
+
+  stageFinale(point: THREE.Vector3, floorYAt: (x: number, z: number) => number) {
+    if (!this.isFed) return;
+    this.motion = "following";
+    this.reviewStaged = true;
+    this.root.visible = true;
+    this.jam.visible = true;
+    this.setScooterMode(false);
+    const x = point.x + 4.45, z = point.z + 3.65;
+    this.root.position.set(x, floorYAt(x, z), z);
+    this.root.rotation.set(0, Math.atan2(point.x - x, point.z - z), 0);
+    this.previous.copy(this.root.position);
+    this.collisionVelocity.set(0, 0, 0);
+    this.animal.root.userData.animationState = "idle";
+    this.root.userData.motion = "gary-finale-idle-with-persistent-jam";
+    this.applyJamMaterial();
   }
 
   private seedBreadcrumbs(leader: THREE.Vector3) {
@@ -213,8 +247,12 @@ export class GaryCompanion {
     }
     this.setScooterMode(scooter);
     if (this.jam.visible) this.applyJamMaterial();
+    const collisionDistance = Math.hypot(this.root.position.x - this.previous.x, this.root.position.z - this.previous.z);
+    this.collisionVelocity.subVectors(this.root.position, this.previous).multiplyScalar(1 / Math.max(delta, .0001));
+    this.collisionVelocity.y = 0;
     this.animal.update(elapsed, delta);
-    this.syncScooter(Math.hypot(this.root.position.x - this.previous.x, this.root.position.z - this.previous.z));
+    this.syncScooter(collisionDistance);
+    this.previous.copy(this.root.position);
   }
 
   private applyJamMaterial() {

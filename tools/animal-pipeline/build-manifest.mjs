@@ -53,6 +53,17 @@ const reviewedSpecies = [
     clips: { idle: ["Perch"], perch: ["Perch"], "short-flight": ["ShortFlight"], preen: ["Preen"], "landing-settle": ["LandingSettle"] },
   },
   {
+    id: "mallard-duck",
+    approved: true,
+    asset: "tools/animal-pipeline/source/mallard-duck.asset.json",
+    blend: "tools/animal-pipeline/source/mallard-duck-source.blend",
+    commonName: "Mallard duck",
+    sourceFacing: "-z",
+    targetHeightMeters: .44,
+    method: "Original continuous axial mallard loft, embedded feather shells, webbed feet, project-authored skinning, five clips, and deterministic feather PBR maps.",
+    clips: { idle: ["DuckIdle"], walk: ["DuckWaddle"], swim: ["DuckSwim"], "short-flight": ["DuckShortFlight"], "landing-settle": ["DuckLandingSettle"] },
+  },
+  {
     id: "plains-zebra",
     approved: false,
     asset: "tools/animal-pipeline/source/plains-zebra.asset.json",

@@ -1199,6 +1199,13 @@ export class SubwayWorld {
     player.y = this.floorHeight(player.x, player.z) + 1.48;
   }
 
+  resolveCompanion(position: THREE.Vector3, velocity: THREE.Vector3, radius: number) {
+    position.y += 1.48;
+    this.resolvePlayer(position, velocity);
+    position.x = THREE.MathUtils.clamp(position.x, -9.82 + radius, 9.82 - radius);
+    position.y = this.floorHeight(position.x, position.z);
+  }
+
   update(elapsed: number) {
     const delta = Math.min(Math.max(elapsed - this.lastUpdateElapsed, 0), .08);
     this.lastUpdateElapsed = elapsed;

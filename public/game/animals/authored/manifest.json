@@ -367,6 +367,89 @@
           "width": 1024
         }
       ]
+    },
+    {
+      "id": "mallard-duck",
+      "commonName": "Mallard duck",
+      "sourceFacing": "-z",
+      "targetHeightMeters": 0.44,
+      "groundOffsetMeters": 0,
+      "license": "Project-original",
+      "source": {
+        "blendBytes": 7832108,
+        "blendFile": "tools/animal-pipeline/source/mallard-duck-source.blend",
+        "blendSha256": "617047c74e781e4e9cf3a0a9d8359eca7ee4e38233c305a0bf0cc1c06e4c414d",
+        "generator": "tools/animal-pipeline/build_mallard_duck.py",
+        "method": "Original continuous axial mallard loft, embedded feather shells, webbed feet, project-authored skinning, five clips, and deterministic feather PBR maps.",
+        "referenceUse": "visual-reference-only"
+      },
+      "lod0": {
+        "bytes": 4808836,
+        "file": "mallard-duck-lod0.glb",
+        "materials": 12,
+        "meshes": 12,
+        "sha256": "cb352d591304c3345fa1a60d4ef72e506813362f2d499be7d752211ef380e541",
+        "triangles": 37776,
+        "vertices": 22738
+      },
+      "lod2": {
+        "bytes": 4735340,
+        "file": "mallard-duck-lod2.glb",
+        "materials": 12,
+        "meshes": 12,
+        "sha256": "926a937aa8be7bb20975638bf2bc5ce1ab2fa039babd30429acb8544265945e6",
+        "triangles": 14354,
+        "vertices": 9335
+      },
+      "clips": {
+        "idle": [
+          "DuckIdle"
+        ],
+        "walk": [
+          "DuckWaddle"
+        ],
+        "swim": [
+          "DuckSwim"
+        ],
+        "short-flight": [
+          "DuckShortFlight"
+        ],
+        "landing-settle": [
+          "DuckLandingSettle"
+        ]
+      },
+      "textures": [
+        {
+          "bytes": 5468089,
+          "embedded": true,
+          "embeddedImage": "mallard-duck-mallardmottledbodypbr-albedo",
+          "height": 2048,
+          "kind": "albedo",
+          "sha256": "2168bf333ee149d7f1bcd92a1355192634fbf62e8741d895abb71edf8e124d51",
+          "sourceFile": "tools/animal-pipeline/source/mallard-duck-albedo.png",
+          "width": 2048
+        },
+        {
+          "bytes": 10633094,
+          "embedded": true,
+          "embeddedImage": "mallard-duck-normal",
+          "height": 2048,
+          "kind": "normal",
+          "sha256": "6486173a65db2ee3ebdc58a582b3131300282ff60cedadd2bac03b326933feab",
+          "sourceFile": "tools/animal-pipeline/source/mallard-duck-normal.png",
+          "width": 2048
+        },
+        {
+          "bytes": 3143232,
+          "embedded": true,
+          "embeddedImage": "mallard-duck-roughness",
+          "height": 2048,
+          "kind": "roughness",
+          "sha256": "16bc8fa3a5351b47a2bc35daf7a6a1a75065ee30fedc9f8c000dfb07e7141372",
+          "sourceFile": "tools/animal-pipeline/source/mallard-duck-roughness.png",
+          "width": 2048
+        }
+      ]
     }
   ]
 }

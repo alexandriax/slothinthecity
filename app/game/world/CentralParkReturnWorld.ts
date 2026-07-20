@@ -233,14 +233,14 @@ export class CentralParkReturnWorld {
     return Math.hypot(player.x - this.sanctuaryTarget.x, player.z - this.sanctuaryTarget.z) <= distance;
   }
 
-  private resolveObstacle(player: THREE.Vector3, velocity: THREE.Vector3, obstacle: WorldObstacle) {
-    const footY = player.y - 1.48;
+  private resolveObstacle(player: THREE.Vector3, velocity: THREE.Vector3, obstacle: WorldObstacle, radius = .48, eyeHeight = 1.48) {
+    const footY = player.y - eyeHeight;
     if (footY < obstacle.minY - .25 || footY > obstacle.maxY + .3) return;
     if (obstacle.kind === "circle") {
       const dx = player.x - obstacle.x;
       const dz = player.z - obstacle.z;
       const distance = Math.hypot(dx, dz);
-      const clearance = obstacle.radius + .48;
+      const clearance = obstacle.radius + radius;
       if (distance >= clearance) return;
       const nx = dx / Math.max(distance, .001);
       const nz = dz / Math.max(distance, .001);
@@ -254,29 +254,29 @@ export class CentralParkReturnWorld {
       return;
     }
     if (
-      player.x <= obstacle.minX - .48
-      || player.x >= obstacle.maxX + .48
-      || player.z <= obstacle.minZ - .48
-      || player.z >= obstacle.maxZ + .48
+      player.x <= obstacle.minX - radius
+      || player.x >= obstacle.maxX + radius
+      || player.z <= obstacle.minZ - radius
+      || player.z >= obstacle.maxZ + radius
     ) return;
     const distances = [
-      Math.abs(player.x - (obstacle.minX - .48)),
-      Math.abs(player.x - (obstacle.maxX + .48)),
-      Math.abs(player.z - (obstacle.minZ - .48)),
-      Math.abs(player.z - (obstacle.maxZ + .48)),
+      Math.abs(player.x - (obstacle.minX - radius)),
+      Math.abs(player.x - (obstacle.maxX + radius)),
+      Math.abs(player.z - (obstacle.minZ - radius)),
+      Math.abs(player.z - (obstacle.maxZ + radius)),
     ];
     const side = distances.indexOf(Math.min(...distances));
     if (side === 0) {
-      player.x = obstacle.minX - .48;
+      player.x = obstacle.minX - radius;
       velocity.x = Math.min(0, velocity.x);
     } else if (side === 1) {
-      player.x = obstacle.maxX + .48;
+      player.x = obstacle.maxX + radius;
       velocity.x = Math.max(0, velocity.x);
     } else if (side === 2) {
-      player.z = obstacle.minZ - .48;
+      player.z = obstacle.minZ - radius;
       velocity.z = Math.min(0, velocity.z);
     } else {
-      player.z = obstacle.maxZ + .48;
+      player.z = obstacle.maxZ + radius;
       velocity.z = Math.max(0, velocity.z);
     }
   }
@@ -320,6 +320,31 @@ export class CentralParkReturnWorld {
     player.z = THREE.MathUtils.clamp(player.z, -546, 266);
     player.y = this.surfaceHeightAt(player.x, player.z) + 1.48;
     this.lastPlayer.copy(player);
+  }
+
+  resolveCompanion(position: THREE.Vector3, velocity: THREE.Vector3, radius: number) {
+    for (const tree of this.world.trees) {
+      const dx = position.x - tree.x, dz = position.z - tree.z;
+      const distance = Math.hypot(dx, dz), clearance = tree.radius + radius;
+      if (distance >= clearance) continue;
+      const nx = dx / Math.max(distance, .001), nz = dz / Math.max(distance, .001);
+      position.x = tree.x + nx * clearance; position.z = tree.z + nz * clearance;
+      const inward = velocity.x * nx + velocity.z * nz;
+      if (inward < 0) { velocity.x -= inward * nx; velocity.z -= inward * nz; }
+    }
+    for (const cart of this.carts) {
+      const dx = position.x - cart.root.position.x, dz = position.z - cart.root.position.z;
+      const distance = Math.hypot(dx, dz), clearance = cart.collisionRadius + radius;
+      if (distance >= clearance) continue;
+      const nx = dx / Math.max(distance, .001), nz = dz / Math.max(distance, .001);
+      position.x = cart.root.position.x + nx * clearance; position.z = cart.root.position.z + nz * clearance;
+      const inward = velocity.x * nx + velocity.z * nz;
+      if (inward < 0) { velocity.x -= inward * nx; velocity.z -= inward * nz; }
+    }
+    this.world.obstacles.forEach((obstacle) => this.resolveObstacle(position, velocity, obstacle, radius, 0));
+    position.x = THREE.MathUtils.clamp(position.x, -326 + radius, 486 - radius);
+    position.z = THREE.MathUtils.clamp(position.z, -546 + radius, 266 - radius);
+    position.y = this.surfaceHeightAt(position.x, position.z);
   }
 
   update(elapsed: number) {
