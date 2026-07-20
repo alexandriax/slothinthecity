@@ -80,7 +80,7 @@ function cssVars(values: Record<`--${string}`, string | number>) {
 // thick border, especially at narrow or short aspect ratios.
 function seaLionStagePosition(point: { x: number; y: number }) {
   return cssVars({
-    "--grid-x": `${13 + (point.x / 6) * 74}%`,
+    "--grid-x": `${16 + (point.x / 6) * 68}%`,
     "--grid-y": `${22 + (point.y / 4) * 66}%`,
   });
 }
@@ -1274,8 +1274,10 @@ function PrairieSeeding({
 
   const plotStyle = (point: { x: number; y: number }) =>
     cssVars({
-      "--field-x": `${clamp(50 + point.x * 6.2, 6, 94)}%`,
-      "--field-y": `${clamp(96 - point.y * 7, 5, 94)}%`,
+      // Keep the full numbered soil ring and projected-reticle label inside
+      // the field, even when a narrow phone renders an extreme manual shot.
+      "--field-x": `${clamp(50 + point.x * 6.2, 12, 88)}%`,
+      "--field-y": `${clamp(96 - point.y * 7, 10, 88)}%`,
     });
   return (
     <div className={styles.prairieLayout}>

@@ -92,8 +92,20 @@ test("wetland valves create recoverable gauge tradeoffs and prairie solutions la
   assert.equal(Logic.wetlandReadingSafe({ water: 70, salinity: 49 }), false);
 
   const prairie = Logic.createZooSideQuestConfig("bison-prairie-seeding", seeded(44));
+  assert.deepEqual(prairie.targets.map(target => target.solutionAngle).sort((left, right) => left - right), [-35, 0, 35]);
   for (const target of prairie.targets) {
     const landing = Logic.prairieLanding(target.solutionAngle, target.solutionPower, prairie.wind);
     assert.equal(Logic.prairieShotHits(landing, target), true);
+  }
+  for (let left = 0; left < prairie.targets.length; left++) {
+    for (let right = left + 1; right < prairie.targets.length; right++) {
+      assert.ok(
+        Math.hypot(
+          prairie.targets[left].x - prairie.targets[right].x,
+          prairie.targets[left].y - prairie.targets[right].y,
+        ) > 3.4,
+        "numbered prairie plots must remain visually distinct on a narrow field",
+      );
+    }
   }
 });

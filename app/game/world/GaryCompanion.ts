@@ -32,7 +32,9 @@ export class GaryCompanion {
     id: "gary-polar-bear",
     root: this.root,
     velocity: this.collisionVelocity,
-    radius: 1.08,
+    // Gary's authored torso is long enough that the old 1.08 m footprint let
+    // sloths enter his shoulder and hip volume whenever the formation turned.
+    radius: 1.35,
   };
   private readonly followerCollisionBodies = [this.followerCollisionBody];
   private motion: GaryMotion = "hidden";
@@ -94,7 +96,7 @@ export class GaryCompanion {
 
   setScooterMode(active: boolean) {
     this.scooterMode = active && this.isFed;
-    this.followerCollisionBody.radius = this.scooterMode ? 1.18 : 1.08;
+    this.followerCollisionBody.radius = this.scooterMode ? 1.2 : 1.35;
     this.scooter.root.visible = this.scooterMode;
     this.root.userData.ridingElectricScooter = this.scooterMode;
     if (this.scooterMode) {

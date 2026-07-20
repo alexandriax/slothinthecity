@@ -1811,6 +1811,7 @@ export function SubwayGame({
     }
 
     let raf = 0;
+    let overlayBackdropRendered = false;
     function frame(timestamp?: number) {
       raf = requestAnimationFrame(frame);
       const zooOverlayPaused = transitStage === "BRONX_ZOO" && Boolean(lockPickingRef.current || sideQuestRef.current);
@@ -1818,6 +1819,18 @@ export function SubwayGame({
       timer.update(timestamp);
       const delta = Math.min(timer.getDelta(), 0.05);
       if (!zooOverlayPaused) gameTime += delta;
+      // Full-screen zoo mechanics are DOM-driven and keep their own timers.
+      // Render the opaque 3D backdrop once, then release the GPU/scene update
+      // budget until the mechanic closes so touch input and gauges remain
+      // responsive even with the complete zoo and menagerie still resident.
+      if (zooOverlayPaused) {
+        if (!overlayBackdropRendered) {
+          renderFrame();
+          overlayBackdropRendered = true;
+        }
+        return;
+      }
+      overlayBackdropRendered = false;
       if (transitStage === "RIDING" && interiorWorld) {
         const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)),
           right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)),

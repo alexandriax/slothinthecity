@@ -56,7 +56,16 @@ type GarySnackState = "NONE" | "CARRIED" | "AIRBORNE" | "LOOSE" | "EATEN";
 
 type CircleObstacle = { kind: "circle"; x: number; z: number; radius: number; enabled?: () => boolean };
 type BoxObstacle = { kind: "box"; minX: number; maxX: number; minZ: number; maxZ: number; enabled?: () => boolean };
-type Obstacle = CircleObstacle | BoxObstacle;
+type OrientedBoxObstacle = {
+  kind: "oriented-box";
+  x: number;
+  z: number;
+  halfWidth: number;
+  halfDepth: number;
+  yaw: number;
+  enabled?: () => boolean;
+};
+type Obstacle = CircleObstacle | BoxObstacle | OrientedBoxObstacle;
 
 const ANIMAL_QUEST_ANCHORS: Record<ZooSideQuestId, { target: THREE.Vector3; prompt: string }> = {
   "aviary-voices": { target: new THREE.Vector3(-29.5, 1.48, -39), prompt: "JOIN THE WORLD OF BIRDS CANOPY CHORUS" },
@@ -278,7 +287,13 @@ function addZooSky(root: THREE.Group) {
   root.add(sky);
 }
 
-function addPathRibbon(root: THREE.Group, points: Array<[number, number]>, width: number, material: THREE.Material, name: string) {
+function pathPointNormal(points: ReadonlyArray<readonly [number, number]>, index: number) {
+  const previous = points[Math.max(0, index - 1)], next = points[Math.min(points.length - 1, index + 1)];
+  const tangent = new THREE.Vector2(next[0] - previous[0], next[1] - previous[1]).normalize();
+  return new THREE.Vector2(-tangent.y, tangent.x);
+}
+
+function addPathRibbon(root: THREE.Group, points: ReadonlyArray<readonly [number, number]>, width: number, material: THREE.Material, name: string) {
   const positions: number[] = [];
   const uvs: number[] = [];
   const indices: number[] = [];
@@ -286,9 +301,7 @@ function addPathRibbon(root: THREE.Group, points: Array<[number, number]>, width
   for (let index = 0; index < points.length; index++) {
     const [x, z] = points[index];
     if (index > 0) cumulativeLength += Math.hypot(x - points[index - 1][0], z - points[index - 1][1]);
-    const previous = points[Math.max(0, index - 1)], next = points[Math.min(points.length - 1, index + 1)];
-    const tangent = new THREE.Vector2(next[0] - previous[0], next[1] - previous[1]).normalize();
-    const normal = new THREE.Vector2(-tangent.y, tangent.x);
+    const normal = pathPointNormal(points, index);
     for (const side of [-1, 1]) {
       const px = x + normal.x * width * .5 * side, pz = z + normal.y * width * .5 * side;
       positions.push(px, terrainHeight(px, pz) + .035, pz);
@@ -309,32 +322,55 @@ function addPathRibbon(root: THREE.Group, points: Array<[number, number]>, width
   root.add(path);
 }
 
-function addPathKerbs(root: THREE.Group, points: ReadonlyArray<readonly [number, number]>, width: number, material: THREE.Material, name: string) {
-  const kerbs = new THREE.Group();
-  kerbs.name = `${name}-stone-kerbs-and-drainage-edge`;
-  points.slice(1).forEach((end, index) => {
-    const start = points[index];
-    const dx = end[0] - start[0], dz = end[1] - start[1], length = Math.hypot(dx, dz);
-    const unitX = dx / length, unitZ = dz / length;
-    const normalX = -dz / length, normalZ = dx / length;
-    const atJunction = (point: readonly [number, number]) => ZOO_PATH_JUNCTIONS.some(junction => Math.hypot(point[0] - junction[0], point[1] - junction[1]) < .25);
-    // Kerbs stop before the shared path envelope. Previously every branch was
-    // authored edge-to-edge, so long rectangular kerbs crossed the promenade
-    // and each other like loose boards. Small miter trims remain at ordinary
-    // bends; true circulation junctions get a full curb-cut opening.
-    const startTrim = atJunction(start) ? Math.min(width * .64, length * .28) : index > 0 ? .12 : .3;
-    const endTrim = atJunction(end) ? Math.min(width * .64, length * .28) : index < points.length - 2 ? .12 : .3;
-    const kerbLength = Math.max(.35, length - startTrim - endTrim);
-    for (const side of [-1, 1]) {
-      const midpointX = start[0] + unitX * (startTrim + kerbLength * .5) + normalX * width * .5 * side;
-      const midpointZ = start[1] + unitZ * (startTrim + kerbLength * .5) + normalZ * width * .5 * side;
-      const kerb = setShadow(new THREE.Mesh(new THREE.BoxGeometry(kerbLength, .14, .19), material), false, true);
-      kerb.position.set(midpointX, terrainHeight(midpointX, midpointZ) + .085, midpointZ);
-      kerb.rotation.y = -Math.atan2(dz, dx);
-      kerbs.add(kerb);
+function addPathDrainageEdges(root: THREE.Group, points: ReadonlyArray<readonly [number, number]>, width: number, material: THREE.Material, name: string) {
+  const positions: number[] = [], indices: number[] = [];
+  const pushQuad = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, d: THREE.Vector3) => {
+    const base = positions.length / 3;
+    positions.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z);
+    indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  };
+  const atJunction = (point: readonly [number, number]) => ZOO_PATH_JUNCTIONS.some(junction => Math.hypot(point[0] - junction[0], point[1] - junction[1]) < .25);
+  const edgeWidth = .22, topLift = .065, bottomLift = .018;
+
+  points.slice(1).forEach((end, segmentIndex) => {
+    const start = points[segmentIndex];
+    const length = Math.hypot(end[0] - start[0], end[1] - start[1]);
+    const startNormal = pathPointNormal(points, segmentIndex), endNormal = pathPointNormal(points, segmentIndex + 1);
+    const startTrim = atJunction(start) ? Math.min(width * .64, length * .28) : segmentIndex === 0 ? .24 : 0;
+    const endTrim = atJunction(end) ? Math.min(width * .64, length * .28) : segmentIndex === points.length - 2 ? .24 : 0;
+    const startAmount = THREE.MathUtils.clamp(startTrim / length, 0, .45);
+    const endAmount = THREE.MathUtils.clamp(1 - endTrim / length, .55, 1);
+
+    for (const side of [-1, 1] as const) {
+      const crossSection = (amount: number) => {
+        const x = THREE.MathUtils.lerp(start[0], end[0], amount), z = THREE.MathUtils.lerp(start[1], end[1], amount);
+        const nx = THREE.MathUtils.lerp(startNormal.x, endNormal.x, amount), nz = THREE.MathUtils.lerp(startNormal.y, endNormal.y, amount);
+        const normalLength = Math.max(.0001, Math.hypot(nx, nz));
+        const unitX = nx / normalLength * side, unitZ = nz / normalLength * side;
+        const innerX = x + unitX * width * .5, innerZ = z + unitZ * width * .5;
+        const outerX = x + unitX * (width * .5 + edgeWidth), outerZ = z + unitZ * (width * .5 + edgeWidth);
+        return {
+          innerBottom: new THREE.Vector3(innerX, terrainHeight(innerX, innerZ) + bottomLift, innerZ),
+          outerBottom: new THREE.Vector3(outerX, terrainHeight(outerX, outerZ) + bottomLift, outerZ),
+          innerTop: new THREE.Vector3(innerX, terrainHeight(innerX, innerZ) + topLift, innerZ),
+          outerTop: new THREE.Vector3(outerX, terrainHeight(outerX, outerZ) + topLift, outerZ),
+        };
+      };
+      const startEdge = crossSection(startAmount), endEdge = crossSection(endAmount);
+      pushQuad(startEdge.innerTop, startEdge.outerTop, endEdge.outerTop, endEdge.innerTop);
+      pushQuad(startEdge.outerBottom, endEdge.outerBottom, endEdge.outerTop, startEdge.outerTop);
+      pushQuad(startEdge.innerTop, endEdge.innerTop, endEdge.innerBottom, startEdge.innerBottom);
+      pushQuad(startEdge.innerBottom, startEdge.outerBottom, startEdge.outerTop, startEdge.innerTop);
+      pushQuad(endEdge.outerBottom, endEdge.innerBottom, endEdge.innerTop, endEdge.outerTop);
     }
   });
-  root.add(kerbs);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  const drainageEdges = setShadow(new THREE.Mesh(geometry, material), false, true);
+  drainageEdges.name = `${name}-terrain-following-drainage-edges`;
+  root.add(drainageEdges);
 }
 
 // Visitor circulation is authored independently from habitat geometry. Every
@@ -468,7 +504,7 @@ function addCampusBuilding(
   root.add(building);
 }
 
-function addHabitatLabel(root: THREE.Group, ownedTextures: THREE.Texture[], materials: ZooMaterials, title: string, subtitle: string, x: number, z: number, yaw = 0) {
+function addHabitatLabel(root: THREE.Group, ownedTextures: THREE.Texture[], materials: ZooMaterials, title: string, subtitle: string, x: number, z: number, yaw: number, obstacles: Obstacle[]) {
   const texture = signTexture(title, subtitle);
   ownedTextures.push(texture);
   const group = new THREE.Group();
@@ -482,6 +518,10 @@ function addHabitatLabel(root: THREE.Group, ownedTextures: THREE.Texture[], mate
   sign.position.y = 2.25;
   group.add(sign);
   root.add(group);
+  // Match the full interpreted sign face, not just its narrow center post.
+  // This keeps large followers from visibly walking through either end while
+  // leaving the visitor-facing side close enough for the interaction prompt.
+  obstacles.push({ kind: "oriented-box", x, z, halfWidth: 2.32, halfDepth: .18, yaw });
 }
 
 function addCircularFence(root: THREE.Group, materials: ZooMaterials, x: number, z: number, radius: number, segments: number, glass = false) {
@@ -899,8 +939,8 @@ export class BronxZooWorld {
     addZooSky(this.root);
     addTerrain(this.root, textures);
     ZOO_VISITOR_PATHS.forEach(path => {
-      addPathRibbon(this.root, path.points.map(point => [...point] as [number, number]), path.width, materials.path, path.name);
-      addPathKerbs(this.root, path.points, path.width, materials.stone, path.name);
+      addPathRibbon(this.root, path.points, path.width, materials.path, path.name);
+      addPathDrainageEdges(this.root, path.points, path.width, materials.stone, path.name);
     });
     addStationExit(this.root, materials, textures, this.ownedTextures, quality);
     addArrivalFountain(this.root, materials, quality);
@@ -1171,7 +1211,8 @@ export class BronxZooWorld {
     for (const obstacle of this.obstacles) {
       if (obstacle.enabled && !obstacle.enabled()) continue;
       if (obstacle.kind === "circle") this.resolveCircle(player, velocity, obstacle);
-      else this.resolveBox(player, velocity, obstacle);
+      else if (obstacle.kind === "box") this.resolveBox(player, velocity, obstacle);
+      else this.resolveOrientedBox(player, velocity, obstacle);
     }
     player.y = this.floorHeight(player.x, player.z) + 1.48;
   }
@@ -1182,7 +1223,8 @@ export class BronxZooWorld {
     for (const obstacle of this.obstacles) {
       if (obstacle.enabled && !obstacle.enabled()) continue;
       if (obstacle.kind === "circle") this.resolveCircle(position, velocity, obstacle, radius);
-      else this.resolveBox(position, velocity, obstacle, radius);
+      else if (obstacle.kind === "box") this.resolveBox(position, velocity, obstacle, radius);
+      else this.resolveOrientedBox(position, velocity, obstacle, radius);
     }
     position.y = this.floorHeight(position.x, position.z);
   }
@@ -1496,7 +1538,7 @@ export class BronxZooWorld {
         aracari.update(elapsed + 3.4, delta);
       },
     });
-    addHabitatLabel(this.root, this.ownedTextures, materials, "WORLD OF BIRDS", "SUN CONURE · MACAW · SCARLET IBIS · GREEN ARACARI", -31, -39, -.74);
+    addHabitatLabel(this.root, this.ownedTextures, materials, "WORLD OF BIRDS", "SUN CONURE · MACAW · SCARLET IBIS · GREEN ARACARI", -31, -39, -.74, this.obstacles);
   }
 
   private addGaryHabitat(materials: ZooMaterials, textures: GameTextures, quality: number) {
@@ -1535,7 +1577,8 @@ export class BronxZooWorld {
     face.position.set(0, 1.04, .22);
     plaque.add(face);
     this.root.add(plaque);
-    addHabitatLabel(this.root, this.ownedTextures, materials, "POLAR BEAR", "GARY · ARCTIC CONSERVATION", 32, -61.5, -.15);
+    this.obstacles.push({ kind: "oriented-box", x: 28.6, z: -36.8, halfWidth: 1.66, halfDepth: .26, yaw: -2.12 });
+    addHabitatLabel(this.root, this.ownedTextures, materials, "POLAR BEAR", "GARY · ARCTIC CONSERVATION", 32, -61.5, -.15, this.obstacles);
   }
 
   private addSeaLionHabitat(materials: ZooMaterials, textures: GameTextures, quality: number) {
@@ -1550,7 +1593,7 @@ export class BronxZooWorld {
     this.root.add(pool);
     placeAnimal(this.root, this.animals, createSeaLion(textures, quality, 0), -2.5, -76, .7, .75, { mode: "aquatic", radius: 2.8, speed: .34, phase: .7 });
     placeAnimal(this.root, this.animals, createSeaLion(textures, quality, 1), 3.2, -78.5, -1.4, .75, { mode: "aquatic", radius: 2.2, speed: .29, phase: 4.1 });
-    addHabitatLabel(this.root, this.ownedTextures, materials, "SEA LION POOL", "CALIFORNIA SEA LIONS", -9, -65, -.2);
+    addHabitatLabel(this.root, this.ownedTextures, materials, "SEA LION POOL", "CALIFORNIA SEA LIONS", -9, -65, -.2, this.obstacles);
     this.obstacles.push({ kind: "circle", x: 0, z: -76, radius: 11.4 });
   }
 
@@ -1854,14 +1897,14 @@ export class BronxZooWorld {
     placeAnimal(this.root, this.animals, westGroundMonkey, x - 3.8, z + 6, 1.7, 0, {
       mode: "terrestrial", radius: 1.65, speed: .13, phase: 7.1, animationSpeed: 1.08,
     });
-    addHabitatLabel(this.root, this.ownedTextures, materials, "MONKEY FOREST", "GEOFFROY'S SPIDER MONKEYS", -31, -89, -.75);
+    addHabitatLabel(this.root, this.ownedTextures, materials, "MONKEY FOREST", "GEOFFROY'S SPIDER MONKEYS", -31, -89, -.75, this.obstacles);
   }
 
   private addZebraHabitat(materials: ZooMaterials, textures: GameTextures, quality: number) {
     addCircularFence(this.root, materials, 43, -101, 15.5, quality > .72 ? 28 : 20);
     placeAnimal(this.root, this.animals, createZebra(textures, quality, 0), 40, -101, -1.1, 0, { mode: "terrestrial", radius: 2.8, speed: .12, phase: 1.2 });
     placeAnimal(this.root, this.animals, createZebra(textures, quality, 1), 47, -105, 2.1, 0, { mode: "terrestrial", radius: 2.2, speed: .1, phase: 5.6 });
-    addHabitatLabel(this.root, this.ownedTextures, materials, "AFRICAN PLAINS", "PLAINS ZEBRA · GRASSLAND CONSERVATION", 31, -89, .75);
+    addHabitatLabel(this.root, this.ownedTextures, materials, "AFRICAN PLAINS", "PLAINS ZEBRA · GRASSLAND CONSERVATION", 31, -89, .75, this.obstacles);
   }
 
   private addRedPandaHabitat(materials: ZooMaterials, textures: GameTextures, quality: number) {
@@ -1870,13 +1913,13 @@ export class BronxZooWorld {
     branch.name = "red-panda-arboreal-branch";
     this.root.add(branch);
     placeAnimal(this.root, this.animals, createRedPanda(textures, quality), -35, -132, .7, 2.85, { mode: "arboreal", radius: 1.7, speed: .18, phase: 2.4, verticalRange: .65 });
-    addHabitatLabel(this.root, this.ownedTextures, materials, "RED PANDA", "HIMALAYAN FOREST", -28, -123, -.7);
+    addHabitatLabel(this.root, this.ownedTextures, materials, "RED PANDA", "HIMALAYAN FOREST", -28, -123, -.7, this.obstacles);
   }
 
   private addTortoiseHabitat(materials: ZooMaterials, textures: GameTextures, quality: number) {
     addCircularFence(this.root, materials, 36, -132, 9.5, quality > .72 ? 20 : 14);
     placeAnimal(this.root, this.animals, createAldabraTortoise(textures, quality), 36, -132, -.6, 0, { mode: "terrestrial", radius: 1.35, speed: .035, phase: 3.7 });
-    addHabitatLabel(this.root, this.ownedTextures, materials, "GIANT TORTOISE", "ALDABRA ATOLL CONSERVATION", 28, -123, .7);
+    addHabitatLabel(this.root, this.ownedTextures, materials, "GIANT TORTOISE", "ALDABRA ATOLL CONSERVATION", 28, -123, .7, this.obstacles);
   }
 
   private addFlamingoWetland(materials: ZooMaterials, textures: GameTextures, quality: number) {
@@ -1900,7 +1943,7 @@ export class BronxZooWorld {
     for (let index = 0; index < 3; index++) placeAnimal(this.root, this.animals, createAmericanFlamingo(textures, quality, index), x - 2.1 + index * 2.1, z + (index % 2 ? 1.3 : -1), index * .7, .3, {
       mode: "terrestrial", radius: 1 + index * .22, speed: .06 + index * .012, phase: index * 4.2,
     });
-    addHabitatLabel(this.root, this.ownedTextures, materials, "FLAMINGO WETLAND", "AMERICAN FLAMINGOS · WETLAND RESTORATION", -63.5, -47, -.7);
+    addHabitatLabel(this.root, this.ownedTextures, materials, "FLAMINGO WETLAND", "AMERICAN FLAMINGOS · WETLAND RESTORATION", -63.5, -47, -.7, this.obstacles);
   }
 
   private addBisonHabitat(materials: ZooMaterials, textures: GameTextures, quality: number) {
@@ -1926,7 +1969,7 @@ export class BronxZooWorld {
     addCircularFence(this.root, materials, x, z, radius + .35, quality > .72 ? 20 : 14);
     placeAnimal(this.root, this.animals, createAmericanBison(textures, quality, 0), x - 1.7, z - .4, .2, 0, { mode: "terrestrial", radius: 1.7, speed: .055, phase: 1.1 });
     placeAnimal(this.root, this.animals, createAmericanBison(textures, quality, 1), x + 2.4, z + 1.2, -2.1, 0, { mode: "terrestrial", radius: 1.2, speed: .045, phase: 6.2 });
-    addHabitatLabel(this.root, this.ownedTextures, materials, "BISON RANGE", "AMERICAN BISON · GRASSLAND RECOVERY", 63, -97, .72);
+    addHabitatLabel(this.root, this.ownedTextures, materials, "BISON RANGE", "AMERICAN BISON · GRASSLAND RECOVERY", 63, -97, .72, this.obstacles);
   }
 
   private addGuestAmenities(materials: ZooMaterials, textures: GameTextures, quality: number) {
@@ -1954,6 +1997,7 @@ export class BronxZooWorld {
         bench.add(leg);
       }
       amenities.add(bench);
+      this.obstacles.push({ kind: "oriented-box", x, z, halfWidth: 1.72, halfDepth: .48, yaw });
     });
 
     const vendingTexture = canvasTexture(768, 1024, (context, width, height) => {
@@ -1981,6 +2025,7 @@ export class BronxZooWorld {
       const payment = new THREE.Mesh(new RoundedBoxGeometry(.2, .34, .04, 3, .025), materials.iron);
       payment.position.set(.39, 1.35, .44); station.add(payment);
       amenities.add(station);
+      this.obstacles.push({ kind: "oriented-box", x, z, halfWidth: .7, halfDepth: .48, yaw });
     }
 
     const binPositions = [[-8, -27], [8, -27], [-31, -79], [31, -79], [-23, -126], [23, -126]] as const;
@@ -1992,6 +2037,7 @@ export class BronxZooWorld {
         const lid = new THREE.Mesh(new THREE.CylinderGeometry(.34, .34, .09, 16), materials.iron); lid.position.set(side * .35, .95, 0); pair.add(lid);
       }
       pair.rotation.y = index * .7; amenities.add(pair);
+      this.obstacles.push({ kind: "oriented-box", x, z, halfWidth: .72, halfDepth: .38, yaw: pair.rotation.y });
     });
 
     const lampMaterial = new THREE.MeshPhysicalMaterial({ color: "#fff0bf", emissive: "#f5cb72", emissiveIntensity: 1.4, roughness: .28, clearcoat: .55 });
@@ -2000,6 +2046,7 @@ export class BronxZooWorld {
       const post = new THREE.Mesh(new THREE.CylinderGeometry(.055, .08, 4.4, 10), materials.iron);
       post.name = "bronx-zoo-low-glare-path-lamp"; post.position.set(x, terrainHeight(x, z) + 2.2, z); amenities.add(post);
       const lantern = new THREE.Mesh(new THREE.SphereGeometry(.22, 16, 11), lampMaterial); lantern.position.set(x, terrainHeight(x, z) + 4.48, z); amenities.add(lantern);
+      this.obstacles.push({ kind: "circle", x, z, radius: .13 });
     }
 
     const service = new THREE.Group(); service.name = "bronx-zoo-keeper-service-yard-detail"; service.position.set(21, terrainHeight(21, -151), -151);
@@ -2011,6 +2058,11 @@ export class BronxZooWorld {
     const cart = new THREE.Mesh(new RoundedBoxGeometry(2.1, .55, 1.05, 4, .08), new THREE.MeshStandardMaterial({ color: "#416a4b", roughness: .62, metalness: .12 }));
     cart.name = "keeper-feed-service-cart"; cart.position.set(-3.2, .65, .2); service.add(cart);
     amenities.add(service);
+    this.obstacles.push(
+      { kind: "box", minX: 18.7, maxX: 23.3, minZ: -151.5, maxZ: -150.5 },
+      { kind: "box", minX: 23.05, maxX: 26.7, minZ: -151.55, maxZ: -149.65 },
+      { kind: "box", minX: 16.65, maxX: 18.95, minZ: -151.55, maxZ: -149.95 },
+    );
     this.root.add(amenities);
   }
 
@@ -2143,7 +2195,7 @@ export class BronxZooWorld {
       });
       this.ownedTextures.push(...result.ownedTextures);
     });
-    addHabitatLabel(this.root, this.ownedTextures, materials, "SLOTH CONSERVATION", "RESCUE HABITAT · KEEPER ACCESS", -9.5, -126.5, -.22);
+    addHabitatLabel(this.root, this.ownedTextures, materials, "SLOTH CONSERVATION", "RESCUE HABITAT · KEEPER ACCESS", -9.5, -126.5, -.22, this.obstacles);
   }
 
   private addPermanentCollisions() {
@@ -2171,21 +2223,22 @@ export class BronxZooWorld {
       { kind: "box", minX: -16, maxX: -3, minZ: -156, maxZ: -130 },
       { kind: "box", minX: 3, maxX: 16, minZ: -156, maxZ: -130 },
       { kind: "box", minX: -3, maxX: 3, minZ: -156, maxZ: -130.2, enabled: () => !this.releasedFriends },
-      // Habitat signs and vending machines are physical street furniture for
-      // the menagerie as well as the player. Small circular footprints keep
-      // wide animals from cutting through posts while preserving prompt reach.
-      ...[
-        [-31, -39], [32, -61.5], [-9, -65], [-31, -89], [31, -89],
-        [-28, -123], [28, -123], [-63.5, -47], [63, -97], [-9.5, -126.5],
-      ].map(([x, z]) => ({ kind: "circle" as const, x, z, radius: .52 })),
-      ...this.snackMachinePositions.map(position => ({ kind: "circle" as const, x: position.x, z: position.z, radius: .68 })),
     );
   }
 
   private resolveCircle(player: THREE.Vector3, velocity: THREE.Vector3, obstacle: CircleObstacle, padding = 0) {
     const dx = player.x - obstacle.x, dz = player.z - obstacle.z, distance = Math.hypot(dx, dz);
     const clearance = obstacle.radius + padding;
-    if (distance <= 0 || distance >= clearance) return;
+    if (distance >= clearance) return;
+    if (distance <= .0001) {
+      // A follower can be projected to an object's exact center by an earlier
+      // pairwise solve. Give that degenerate overlap a stable escape direction
+      // instead of leaving it embedded forever.
+      player.x = obstacle.x + clearance;
+      player.z = obstacle.z;
+      velocity.multiplyScalar(.58);
+      return;
+    }
     const correction = (clearance - distance) / distance;
     player.x += dx * correction;
     player.z += dz * correction;
@@ -2202,6 +2255,23 @@ export class BronxZooWorld {
     else if (index === 2) player.z = minZ;
     else player.z = maxZ;
     velocity.multiplyScalar(.52);
+  }
+
+  private resolveOrientedBox(player: THREE.Vector3, velocity: THREE.Vector3, obstacle: OrientedBoxObstacle, padding = 0) {
+    const cosine = Math.cos(obstacle.yaw), sine = Math.sin(obstacle.yaw);
+    const dx = player.x - obstacle.x, dz = player.z - obstacle.z;
+    let localX = cosine * dx - sine * dz, localZ = sine * dx + cosine * dz;
+    const halfWidth = obstacle.halfWidth + padding, halfDepth = obstacle.halfDepth + padding;
+    if (Math.abs(localX) >= halfWidth || Math.abs(localZ) >= halfDepth) return;
+    const distances = [localX + halfWidth, halfWidth - localX, localZ + halfDepth, halfDepth - localZ];
+    const side = distances.indexOf(Math.min(...distances));
+    if (side === 0) localX = -halfWidth;
+    else if (side === 1) localX = halfWidth;
+    else if (side === 2) localZ = -halfDepth;
+    else localZ = halfDepth;
+    player.x = obstacle.x + cosine * localX + sine * localZ;
+    player.z = obstacle.z - sine * localX + cosine * localZ;
+    velocity.multiplyScalar(.5);
   }
 
   private distanceXZ(a: THREE.Vector3, b: THREE.Vector3) {
