@@ -295,9 +295,13 @@ test("shuttle boarding is a visible exterior interaction, never an invisible bod
   assert.match(zoo, /museum-shuttle-stop-dedicated-front-back-face/);
   assert.match(zoo, /kind: "BUS_BOARDING"/);
   assert.match(zoo, /BOARD MUSEUM SHUTTLE WITH YOUR WHOLE MENAGERIE/);
-  assert.match(game, /actionRequested && hint\?\.kind === "BUS_BOARDING"/);
-  assert.match(game, /allFollowersWithin\(zooWorld\.busBoardingPosition, 12\.5\)/);
-  assert.match(game, /Wait in the marked loading zone until all \$\{animalCountLabel\(totalFollowerCount\(\)\)\} reach the shuttle door/);
+  assert.match(zoo, /RoundedBoxGeometry\(9\.4, \.055, 7\.2/);
+  assert.match(zoo, /boardingDistance <= 7\.5/);
+  assert.match(game, /const prompt = shuttleReady[\s\S]{0,220}RIDE ZOO SKATEBOARD/);
+  assert.match(game, /actionRequested && shuttleReady/);
+  assert.match(game, /shuttleBoardingRadiusFor\(totalFollowerCount\(\)\)/);
+  assert.match(game, /allFollowersWithin\(zooWorld\.busBoardingPosition, boardingRadius\)/);
+  assert.match(game, /broad yellow shuttle apron/);
   assert.doesNotMatch(game, /if \(zooWorld\.busBoardingReached\(player\)/);
 });
 

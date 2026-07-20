@@ -319,7 +319,7 @@ test("West Farms streams the Bronx Zoo and completion waits for Megatherium at A
   assert.match(subway, /player\.copy\(zooWorld\.spawn\)/);
   assert.match(subway, /zooWorld\.interactionHint\(player\)/);
   assert.match(subway, /zooWorld\.completeLockPicking\(\)[\s\S]{0,320}rescuedParty\.setActive\(\s*true/);
-  assert.match(subway, /actionRequested && hint\?\.kind === "BUS_BOARDING"[\s\S]{0,300}allFollowersWithin\(zooWorld\.busBoardingPosition, 12\.5\)[\s\S]{0,180}startBusDrive\(\)/);
+  assert.match(subway, /actionRequested && shuttleReady[\s\S]{0,300}allFollowersWithin\(zooWorld\.busBoardingPosition, boardingRadius\)[\s\S]{0,180}startBusDrive\(\)/);
   assert.doesNotMatch(subway, /if \(zooWorld\.busBoardingReached\(player\)/);
   assert.match(subway, /function museumMissionReady\(\)[\s\S]{0,260}transitStage !== "MUSEUM"/);
   assert.match(subway, /function completeMission\(\)[\s\S]{0,180}!museumMissionReady\(\)[\s\S]{0,180}setTransitStage\("COMPLETE"\)/);

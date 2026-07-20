@@ -272,7 +272,7 @@ test("rescued sloths persist through zoo disposal, shuttle boarding, and the mus
     readSource("../app/game/world/NaturalHistoryMuseumWorld.ts"),
   ]);
 
-  assert.match(game, /actionRequested && hint\?\.kind === "BUS_BOARDING"[\s\S]{0,260}allFollowersWithin\(zooWorld\.busBoardingPosition, 12\.5\)[\s\S]{0,160}startBusDrive\(\)/);
+  assert.match(game, /actionRequested && shuttleReady[\s\S]{0,300}allFollowersWithin\(zooWorld\.busBoardingPosition, boardingRadius\)[\s\S]{0,160}startBusDrive\(\)/);
   assert.doesNotMatch(game, /if \(zooWorld\.busBoardingReached\(player\)/);
   assert.match(game, /function startBusDrive\([\s\S]{0,360}reviewSpawn\?:[\s\S]{0,260}"failure-impact"[\s\S]{0,500}zooWorld\.dispose\(\);\s*zooWorld = null/);
   assert.match(game, /cityBusWorld = new CityBusWorld\(/);

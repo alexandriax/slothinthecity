@@ -75,6 +75,16 @@ function cssVars(values: Record<`--${string}`, string | number>) {
   return values as CSSProperties;
 }
 
+// Keep the entire seven-by-five course inside the sculpted pool. Using the
+// raw 0–100% grid clipped edge gates (and the starting buoy) behind the pool's
+// thick border, especially at narrow or short aspect ratios.
+function seaLionStagePosition(point: { x: number; y: number }) {
+  return cssVars({
+    "--grid-x": `${13 + (point.x / 6) * 74}%`,
+    "--grid-y": `${22 + (point.y / 4) * 66}%`,
+  });
+}
+
 function useQuestKeyboard(handler: (event: KeyboardEvent) => void) {
   const handlerRef = useRef(handler);
   useEffect(() => {
@@ -428,20 +438,14 @@ function RideTheCurrent({ config, audio, onSolved }: MechanicProps<SeaLionCurren
           <div
             className={`${styles.currentGate} ${index < state.gateIndex ? styles.cleared : index === state.gateIndex ? styles.activeGate : ""}`}
             key={index}
-            style={cssVars({
-              "--grid-x": `${(gate.x / 6) * 100}%`,
-              "--grid-y": `${(gate.y / 4) * 100}%`,
-            })}
+            style={seaLionStagePosition(gate)}
           >
             <span>{index + 1}</span>
           </div>
         ))}
         <div
           className={styles.buoy}
-          style={cssVars({
-            "--grid-x": `${(state.position.x / 6) * 100}%`,
-            "--grid-y": `${(state.position.y / 4) * 100}%`,
-          })}
+          style={seaLionStagePosition(state.position)}
         >
           <i />
         </div>
@@ -485,6 +489,17 @@ function RideTheCurrent({ config, audio, onSolved }: MechanicProps<SeaLionCurren
       <aside className={styles.readoutPanel}>
         <span className={styles.panelLabel}>Channel telemetry</span>
         <strong>Gate {Math.min(state.gateIndex + 1, 3)} / 3</strong>
+        <ol className={styles.gateManifest} aria-label="All current gate positions">
+          {config.gates.map((gate, index) => (
+            <li
+              className={index < state.gateIndex ? styles.gateCleared : index === state.gateIndex ? styles.gateLive : ""}
+              key={index}
+            >
+              <b>{index + 1}</b>
+              <span>C{gate.x + 1} · R{gate.y + 1}</span>
+            </li>
+          ))}
+        </ol>
         <p>
           Stroke first, cross-current second. The current pattern remains fixed.
         </p>

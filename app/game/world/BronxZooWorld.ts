@@ -766,14 +766,17 @@ function addMuseumShuttleBus(root: THREE.Group, materials: ZooMaterials, ownedTe
   boardingPad.name = "museum-shuttle-visible-exterior-boarding-zone";
   boardingPad.position.set(17.05, 1.035, 22.48);
   const boardingYellow = new THREE.MeshStandardMaterial({ color: "#f3c722", emissive: "#7d5c05", emissiveIntensity: .22, roughness: .68 });
-  const pad = new THREE.Mesh(new RoundedBoxGeometry(3.4, .055, 2.15, 4, .035), new THREE.MeshStandardMaterial({ color: "#29302e", roughness: .9 }));
+  // Fourteen large companions need a real marshalling apron, not a one-person
+  // doormat. The broad painted zone communicates the same generous gathering
+  // tolerance used by the campaign boarding check.
+  const pad = new THREE.Mesh(new RoundedBoxGeometry(9.4, .055, 7.2, 4, .035), new THREE.MeshStandardMaterial({ color: "#29302e", roughness: .9 }));
   pad.position.y = .028; boardingPad.add(pad);
-  for (const x of [-1.5, 1.5]) {
-    const edge = new THREE.Mesh(new RoundedBoxGeometry(.12, .07, 2.05, 2, .018), boardingYellow);
+  for (const x of [-4.45, 4.45]) {
+    const edge = new THREE.Mesh(new RoundedBoxGeometry(.12, .07, 6.8, 2, .018), boardingYellow);
     edge.position.set(x, .07, 0); boardingPad.add(edge);
   }
-  for (const z of [-.92, .92]) {
-    const edge = new THREE.Mesh(new RoundedBoxGeometry(3.05, .07, .12, 2, .018), boardingYellow);
+  for (const z of [-3.35, 3.35]) {
+    const edge = new THREE.Mesh(new RoundedBoxGeometry(8.9, .07, .12, 2, .018), boardingYellow);
     edge.position.set(0, .07, z); boardingPad.add(edge);
   }
   const step = new THREE.Mesh(new RoundedBoxGeometry(1.55, .16, .72, 4, .04), materials.stone);
@@ -1044,7 +1047,7 @@ export class BronxZooWorld {
     const habitatDistance = this.distanceXZ(player, this.slothHabitatPosition);
     if (!this.releasedFriends && habitatDistance <= 3.2) return { kind: "SLOTH_HABITAT", label: "PICK THE SIX-PIN SLOTH HABITAT LOCK", target: this.slothHabitatPosition.clone(), distance: habitatDistance };
     const boardingDistance = this.distanceXZ(player, this.busBoardingPosition);
-    if (this.releasedFriends && boardingDistance <= 4.2) return { kind: "BUS_BOARDING", label: "BOARD MUSEUM SHUTTLE WITH YOUR WHOLE MENAGERIE", target: this.busBoardingPosition.clone(), distance: boardingDistance };
+    if (this.releasedFriends && boardingDistance <= 7.5) return { kind: "BUS_BOARDING", label: "BOARD MUSEUM SHUTTLE WITH YOUR WHOLE MENAGERIE", target: this.busBoardingPosition.clone(), distance: boardingDistance };
     return null;
   }
 
@@ -1115,7 +1118,7 @@ export class BronxZooWorld {
   skateboardDonorNearby(player: THREE.Vector3, distance = 2.6) { return this.distanceXZ(player, this.skateboardDonorPosition) <= distance; }
   gateNearby(player: THREE.Vector3, distance = 3.5) { return this.distanceXZ(player, this.gatePosition) <= distance; }
   slothHabitatNearby(player: THREE.Vector3, distance = 3.2) { return this.distanceXZ(player, this.slothHabitatPosition) <= distance; }
-  busBoardingReached(player: THREE.Vector3, distance = 2.8) { return this.releasedFriends && this.distanceXZ(player, this.busBoardingPosition) <= distance; }
+  busBoardingReached(player: THREE.Vector3, distance = 7.5) { return this.releasedFriends && this.distanceXZ(player, this.busBoardingPosition) <= distance; }
   skateboardNearby(player: THREE.Vector3, distance = 2.4) { return !this.skateboardMounted && this.distanceXZ(player, this.skateboard.root.position) <= distance; }
 
   setSkateboardMounted(mounted: boolean, player?: THREE.Vector3, yaw = 0) {

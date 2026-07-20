@@ -77,6 +77,12 @@ type TransitStage =
   | "RETURN_FIFTH_AV"
   | "CENTRAL_PARK"
   | "COMPLETE";
+
+export function shuttleBoardingRadiusFor(friendCount: number) {
+  const safeCount = Math.max(0, Math.floor(friendCount));
+  return Math.min(28, Math.max(18, 14 + safeCount * .75));
+}
+
 type TransitHud = {
   bearing: number;
   distance: number;
@@ -2304,13 +2310,28 @@ export function SubwayGame({
           side = targetX * Math.cos(yaw) - targetZ * Math.sin(yaw),
           bearing = THREE.MathUtils.radToDeg(Math.atan2(side, ahead));
         const hint = zooWorld.interactionHint(player),
-          skateboardNear = zooWorld.skateboardNearby(player);
-        const prompt = skateboarding
-          ? "STEP OFF ZOO SKATEBOARD"
-          : skateboardNear
-            ? "RIDE ZOO SKATEBOARD · SPACE KICKFLIP"
-            : (hint?.label ?? "");
-        if (actionRequested && skateboarding) {
+          skateboardNear = zooWorld.skateboardNearby(player),
+          shuttleReady = hint?.kind === "BUS_BOARDING";
+        const prompt = shuttleReady
+          ? hint.label
+          : skateboarding
+            ? "STEP OFF ZOO SKATEBOARD"
+            : skateboardNear
+              ? "RIDE ZOO SKATEBOARD · SPACE KICKFLIP"
+              : (hint?.label ?? "");
+        if (actionRequested && shuttleReady) {
+          actionRequested = false;
+          const boardingRadius = shuttleBoardingRadiusFor(totalFollowerCount());
+          if (allFollowersWithin(zooWorld.busBoardingPosition, boardingRadius)) {
+            startBusDrive();
+            renderFrame();
+            return;
+          }
+          showToast(
+            `Gather all ${animalCountLabel(totalFollowerCount())} anywhere inside the broad yellow shuttle apron.`,
+            4600,
+          );
+        } else if (actionRequested && skateboarding) {
           skateboarding = false;
           zooWorld.setSkateboardMounted(false, player, yaw);
           setMobilityMode(null);
@@ -2323,17 +2344,6 @@ export function SubwayGame({
           setMobilityMode("skateboard");
           showToast(
             "Skateboard ready — W / A / S / D ride fast, Space kickflips, E steps off.",
-            4600,
-          );
-        } else if (actionRequested && hint?.kind === "BUS_BOARDING") {
-          actionRequested = false;
-          if (allFollowersWithin(zooWorld.busBoardingPosition, 12.5)) {
-            startBusDrive();
-            renderFrame();
-            return;
-          }
-          showToast(
-            `Wait in the marked loading zone until all ${animalCountLabel(totalFollowerCount())} reach the shuttle door.`,
             4600,
           );
         } else if (actionRequested && hint) {

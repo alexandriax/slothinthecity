@@ -435,11 +435,23 @@ export class PremiumAudioDirector {
         { from: 2060, to: 1420, notes: [0, .14, .28], duration: .12 },
       ] as const;
       const voice = voices[Math.abs(Math.round(variant)) % voices.length];
+      // The melody is the mechanic, so it must remain intelligible over any
+      // soundtrack track. Briefly lower the score for each call and reinforce
+      // the high chirp with a speaker-friendly chime fundamental.
+      this.duckScoreFor(.58, .24);
+      this.tone(this.sfxBus, voice.from * .46, now, {
+        duration: .19,
+        gain: variant === 1 ? .13 : .115,
+        pan,
+        release: .17,
+        type: "sine",
+        filter: 4200,
+      });
       voice.notes.forEach((offset, index) => {
         const direction = index % 2 ? .9 : 1;
         this.chirp(this.sfxBus!, voice.from * direction, voice.to * direction, now + offset, {
           duration: voice.duration,
-          gain: variant === 1 ? .085 : .072,
+          gain: variant === 1 ? .18 : .155,
           pan,
           type: variant === 1 ? "sawtooth" : "triangle",
         });
@@ -880,6 +892,18 @@ export class PremiumAudioDirector {
     gain.gain.setValueAtTime(0.0001, at); gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, options.gain ?? 0.08), at + Math.min(0.025, duration * 0.25)); gain.gain.exponentialRampToValueAtTime(0.0001, at + duration);
     panner.pan.value = Math.max(-1, Math.min(1, options.pan ?? 0));
     source.connect(filter).connect(gain).connect(panner).connect(output); source.start(at); source.stop(at + duration + 0.02);
+  }
+
+  private duckScoreFor(durationSeconds: number, factor: number) {
+    if (!this.context || !this.musicBus) return;
+    const now = this.context.currentTime;
+    const base = equalPower(this.snapshot.music) * (this.announcementSource ? .38 : 1);
+    const quiet = Math.max(.0001, base * clamp01(factor));
+    this.musicBus.gain.cancelScheduledValues(now);
+    this.musicBus.gain.setValueAtTime(Math.max(.0001, this.musicBus.gain.value), now);
+    this.musicBus.gain.linearRampToValueAtTime(quiet, now + .025);
+    this.musicBus.gain.setValueAtTime(quiet, now + Math.max(.05, durationSeconds - .12));
+    this.musicBus.gain.linearRampToValueAtTime(base, now + Math.max(.14, durationSeconds));
   }
 
   private applyMix(rampSeconds = 0.14) {

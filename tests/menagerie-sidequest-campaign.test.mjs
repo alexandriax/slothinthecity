@@ -43,12 +43,17 @@ test("every Bronx Zoo habitat quest hands its animal to the persistent menagerie
   assert.match(game, /audio=\{audio\}/);
   assert.match(screen, /Listen to phrase/);
   assert.match(screen, /playZooQuestCue\("bird-call"/);
+  assert.match(screen, /function seaLionStagePosition/);
+  assert.match(screen, /13 \+ \(point\.x \/ 6\) \* 74/);
+  assert.match(screen, /className=\{styles\.gateManifest\}/);
   assert.match(screen, /className=\{styles\.launchControls\}/);
   assert.match(screen, /completionTimerRef\.current = window\.setTimeout\(onSolved, 420\)/);
   assert.match(screen, /Math\.min\(2600, previous\.hold \+ 100\)/);
   assert.doesNotMatch(css, /prairieLayout \.launchControls \{ display: none/);
   assert.match(css, /z-index: 620/);
   assert.match(audio, /playZooQuestCue\(cue: ZooQuestAudioCue/);
+  assert.match(audio, /this\.duckScoreFor\(\.58, \.24\)/);
+  assert.match(audio, /gain: variant === 1 \? \.18 : \.155/);
 });
 
 test("the lake duck, dynamic counts, scalable scooters, and collision-safe convoy persist across worlds", async () => {
