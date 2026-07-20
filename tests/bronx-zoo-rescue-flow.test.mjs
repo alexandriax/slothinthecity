@@ -65,10 +65,10 @@ test("the sloth keeper door launches a full-screen randomized six-pin tension lo
   assert.match(lock, /Space · \+9%/);
   assert.match(lock, /Below 40%, set pins fall\. Above 60%, the plug locks and tested pins jam\./);
   assert.match(game, /event\.kind === "LOCK_PICKING_STARTED"/);
-  assert.match(game, /lockPicking && <SlothLockPick/);
+  assert.match(game, /lockPicking\s*&&\s*\(\s*<SlothLockPick/);
   assert.match(game, /zooWorld\.completeLockPicking\(\)/);
   const zooFrameStart = game.indexOf('transitStage === "BRONX_ZOO"');
-  const lockPauseStart = game.indexOf("if (lockPickingRef.current)", zooFrameStart);
+  const lockPauseStart = game.indexOf("if (lockPickingRef.current || sideQuestRef.current)", zooFrameStart);
   const pausedWorldBranch = game.slice(lockPauseStart, game.indexOf("const forward", lockPauseStart));
   assert.match(pausedWorldBranch, /Preserve the last rendered zoo frame/);
   assert.doesNotMatch(pausedWorldBranch, /zooWorld\.update|sloth\.animate|renderFrame/);
@@ -124,7 +124,7 @@ test("Gary's optional jam-sandwich quest supports throwing, retry pickup, climbi
   assert.match(game, /garyCompanion\.feed\(gameTime/);
   assert.match(game, /garyCompanion\.update\(gameTime/);
   assert.match(game, /data-gary-fed=/);
-  assert.match(museum, /for \(let index = 0; index < 6; index\+\+\)/);
+  assert.match(museum, /const scooterCapacity = Math\.max\(1, Math\.floor\(riderCount\)\)/);
   assert.match(checkpoints, /"bronx-gary-fed": "bronxgaryfed"/);
   assert.match(checkpoints, /"museum-gary-scooter": "museumgaryscooter"/);
 });
@@ -217,7 +217,7 @@ test("completing the keeper lock releases four branch-dwelling sloths into a sce
   assert.match(zoo, /sloth-enclosure-load-bearing-tree-branch-\$\{index \+ 1\}/);
   assert.match(zoo, /captive-sloth-friend-\$\{index \+ 1\}-on-real-branch/);
   assert.match(zoo, /PICK THE SIX-PIN SLOTH HABITAT LOCK/);
-  assert.match(zoo, /The six pins set and the keeper lock turns\. Lead your four friends along the promenade and board the museum shuttle bus\./);
+  assert.match(zoo, /The six pins set and the keeper lock turns\. Lead your growing menagerie along the promenade and board the museum shuttle bus\./);
   assert.match(zoo, /this\.captiveSloths\.forEach\(sloth => \{ sloth\.visible = !released; \}\)/);
 
   const tints = party.slice(party.indexOf("const FOLLOWER_TINTS"), party.indexOf("as const;", party.indexOf("const FOLLOWER_TINTS")));
@@ -226,8 +226,8 @@ test("completing the keeper lock releases four branch-dwelling sloths into a sce
   assert.match(party, /scene\.add\(this\.root\)/);
   assert.match(party, /rescued-sloth-follower-\$\{index \+ 1\}/);
   assert.match(party, /SlothPartyFormation = "grove" \| "open" \| "station" \| "train"/);
-  assert.match(game, /const rescuedParty = new SlothFollowerParty\(scene, textures/);
-  assert.match(game, /zooWorld\.completeLockPicking\(\)[\s\S]{0,220}rescuedParty\.setActive\(true/);
+  assert.match(game, /const rescuedParty = new SlothFollowerParty\(\s*scene,\s*textures/);
+  assert.match(game, /zooWorld\.completeLockPicking\(\)[\s\S]{0,320}rescuedParty\.setActive\(\s*true/);
 });
 
 test("opening the keeper door preserves every authored sloth transform until it naturally catches the player", async () => {
@@ -256,7 +256,7 @@ test("opening the keeper door preserves every authored sloth transform until it 
   assert.match(party, /const catchingUp = !follower\.formationJoined/);
   assert.match(party, /targetDistance = catchingUp \? 1\.35 \+ index \* 1\.08/);
   assert.match(party, /desired\.addScaledVector\(side, offset\.x \* \(catchingUp \? \.62 : 1\)\)\.addScaledVector\(tangent, offset\.y\)/);
-  assert.match(party, /if \(catchingUp && distance <= 2\.15\) follower\.formationJoined = true/);
+  assert.match(party, /if \(catchingUp && distance <= 2\.15\)[\s\S]{0,120}follower\.formationJoined = true[\s\S]{0,120}follower\.collisionBody\.enabled = true/);
   assert.match(party, /maximumSpeed = catchingUp \? 3\.25/);
   assert.match(party, /for \(let iteration = 0; iteration < 4; iteration\+\+\)/);
   assert.match(party, /if \(distance <= \.001\) \{ const angle =/);
@@ -272,19 +272,20 @@ test("rescued sloths persist through zoo disposal, shuttle boarding, and the mus
     readSource("../app/game/world/NaturalHistoryMuseumWorld.ts"),
   ]);
 
-  assert.match(game, /actionRequested && hint\?\.kind === "BUS_BOARDING"[\s\S]{0,180}rescuedParty\.allWithin\(zooWorld\.busBoardingPosition, 9\.5\)[\s\S]{0,100}startBusDrive\(\)/);
+  assert.match(game, /actionRequested && shuttleReady[\s\S]{0,300}allFollowersWithin\(zooWorld\.busBoardingPosition, boardingRadius\)[\s\S]{0,160}startBusDrive\(\)/);
   assert.doesNotMatch(game, /if \(zooWorld\.busBoardingReached\(player\)/);
-  assert.match(game, /function startBusDrive\(startProgress = 0, reviewSpawn\?: "missed-exit" \| "uws-reroute" \| "traffic-impact" \| "rear-impact" \| "building-impact" \| "failure-impact"\)[\s\S]{0,300}zooWorld\.dispose\(\); zooWorld = null[\s\S]{0,620}new CityBusWorld/);
+  assert.match(game, /function startBusDrive\([\s\S]{0,360}reviewSpawn\?:[\s\S]{0,260}"failure-impact"[\s\S]{0,500}zooWorld\.dispose\(\);\s*zooWorld = null/);
+  assert.match(game, /cityBusWorld = new CityBusWorld\(/);
   assert.match(game, /rescuedParty\.root\.visible = false/);
   assert.match(bus, /rescued-sloth-on-museum-shuttle-/);
   assert.match(bus, /createPremiumSlothFriend\(textures, quality, index/);
   assert.match(game, /function enterMuseum/);
-  assert.match(game, /cityBusWorld\.dispose\(\); cityBusWorld = null/);
+  assert.match(game, /cityBusWorld\.dispose\(\);\s*cityBusWorld = null/);
   assert.match(game, /museumWorld = new NaturalHistoryMuseumWorld/);
-  assert.match(game, /rescuedParty\.root\.visible = true; rescuedParty\.reset\(player/);
+  assert.match(game, /rescuedParty\.root\.visible = true;[\s\S]{0,100}rescuedParty\.reset\(player/);
   assert.match(museum, /american-museum-of-natural-history-exploration-level/);
   assert.match(party, /deliberately outlives streamed zoo, station,[\s\S]{0,80}and train worlds/);
-  assert.match(game, /zooWorld\?\.dispose\(\); cityBusWorld\?\.dispose\(\); museumWorld\?\.dispose\(\); parkReturnWorld\?\.dispose\(\); rescuedParty\.dispose\(\)/);
+  assert.match(game, /zooWorld\?\.dispose\(\);[\s\S]{0,240}cityBusWorld\?\.dispose\(\);[\s\S]{0,240}museumWorld\?\.dispose\(\);[\s\S]{0,240}parkReturnWorld\?\.dispose\(\);[\s\S]{0,240}rescuedParty\.dispose\(\)/);
 });
 
 test("all four followers can reach Megatherium from every side on foot or scooter", async () => {
@@ -305,8 +306,8 @@ test("all four followers can reach Megatherium from every side on foot or scoote
   assert.match(museum, /skeleton\.rotation\.y = -\.34 \+ Math\.PI \/ 2/);
   assert.match(museum, /megatherium-americanum-grounded-exhibit-sign/);
   assert.match(museum, /megatherium-exhibit-sign-grounded-support-post/);
-  assert.match(game, /function museumMissionReady\(\)[\s\S]{0,400}museumWorld\.nearestMegatheriumViewingTarget\(player, museumGatheringTarget\)[\s\S]{0,120}rescuedParty\.allWithin\(museumGatheringTarget, scooterRiding \? 11\.5 : 9\.5\)/);
-  assert.match(game, /if \(museumMissionReady\(\)\) \{ completeMission\(\); renderFrame\(\); return; \}/);
+  assert.match(game, /function museumMissionReady\(\)[\s\S]{0,600}museumWorld\.nearestMegatheriumViewingTarget[\s\S]{0,220}allFollowersWithin\([\s\S]{0,120}scooterRiding \? 13\.5 : 11\.5/);
+  assert.match(game, /if \(museumMissionReady\(\)\) \{\s*completeMission\(\);\s*renderFrame\(\);\s*return;\s*\}/);
   assert.match(game, /<h2>Your friends found a giant ancestor\.<\/h2>/);
 });
 
@@ -341,7 +342,8 @@ test("follower resources have one idempotent owner and are disposed after stream
   assert.match(party, /materials\.forEach\(material => material\.dispose\(\)\)/);
   assert.match(party, /this\.ownedTextures\.forEach\(texture => texture\.dispose\(\)\)/);
   assert.doesNotMatch(zoo, /SlothFollowerParty|rescuedParty/);
-  const cleanup = game.slice(game.indexOf("return () => { lockPickingRef.current"), game.indexOf("}, [audio, quality, showToast])"));
+  const cleanupStart = game.indexOf("lockPickingRef.current = false");
+  const cleanup = game.slice(cleanupStart, game.indexOf("}, [audio, quality, showToast])", cleanupStart));
   assert.ok(cleanup.indexOf("zooWorld?.dispose()") < cleanup.indexOf("rescuedParty.dispose()"));
   assert.ok(cleanup.indexOf("cityBusWorld?.dispose()") < cleanup.indexOf("rescuedParty.dispose()"));
   assert.ok(cleanup.indexOf("museumWorld?.dispose()") < cleanup.indexOf("rescuedParty.dispose()"));

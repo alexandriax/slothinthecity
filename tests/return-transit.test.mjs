@@ -115,7 +115,7 @@ test("return route uses direction-specific voiced copy and never reuses outbound
   assert.match(director, /southbound_5_e180: "This is East 180th Street\. The next stop is 125th Street\."/);
   assert.match(director, /southbound_5_125: "This is 125th Street\. The next stop is 86th Street\."/);
   assert.match(director, /southbound_5_86: "This is 86th Street\. The next stop is Lexington Avenue, 59th Street/);
-  assert.match(game, /boarded\?\.journeyKey === "WEST_FARMS_TO_LEXINGTON" \? returnCue : outboundCue/);
+  assert.match(game, /boarded\?\.journeyKey === "WEST_FARMS_TO_LEXINGTON"\s*\? returnCue\s*: outboundCue/);
   assert.match(game, /next stop \$\{event\.nextStop\}/);
   assert.match(game, /`lex_downtown_\$\{route\}_platform`/);
   assert.match(game, /`lex_downtown_\$\{route\}_boarding`/);
@@ -130,8 +130,8 @@ test("legacy QA return HUD still keeps the 5 train and later N/R transfer as sep
   assert.match(game, /Take the downtown 5 to Lexington Av; transfer to N \/ R there/);
   assert.match(game, /Transfer here to a downtown \$\{arrivingRoute\} train for Fifth Avenue/);
   assert.match(game, /Publish the checkpoint's real service immediately/);
-  assert.match(game, /Lead all four friends out of the zoo and board the museum shuttle/);
-  assert.match(game, /<div className="compass-line"><span>FROM<\/span><span className="active">\{hud\.motion\}<\/span><span>TO<\/span>/);
+  assert.match(game, /Lead \$\{friendCountLabel\(count\)\} out of the zoo and board the museum shuttle/);
+  assert.match(game, /<div className="compass-line">[\s\S]{0,100}<span>FROM<\/span>[\s\S]{0,100}<span className="active">\{hud\.motion\}<\/span>[\s\S]{0,100}<span>TO<\/span>/);
   assert.doesNotMatch(game, /<div className="compass-line">[\s\S]{0,120}<span>R<\/span>/);
   assert.doesNotMatch(styles, /\.subway-shell \.compass:(?:before|after)/);
 });

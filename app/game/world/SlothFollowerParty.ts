@@ -3,6 +3,7 @@ import type { GameTextures } from "../rendering/textures";
 import { createPremiumScooterSlothFriend, createPremiumSlothFriend } from "./PremiumCharacter";
 import { cloneZooAnimalAtlasCell } from "./ZooAnimals";
 import { createElectricScooter, rollPersonalMobility, type PersonalMobilityVehicle } from "./PersonalMobility";
+import type { CompanionCollisionBody } from "./CompanionNavigation";
 
 export type SlothPartyFormation = "grove" | "open" | "station" | "train";
 type SlothPartyMovementFormation = SlothPartyFormation | "scooter";
@@ -22,7 +23,10 @@ type Follower = {
   trailingDistance: number;
   formationJoined: boolean;
   scooter: PersonalMobilityVehicle;
+  collisionBody: CompanionCollisionBody;
 };
+
+const NO_SLOTH_COLLISION_BODIES: readonly CompanionCollisionBody[] = Object.freeze([]);
 
 // Match the authored enclosure animals so opening the keeper door is a
 // continuous character handoff instead of a visible model/color swap.
@@ -45,6 +49,7 @@ export class SlothFollowerParty {
   readonly root = new THREE.Group();
   readonly count = FOLLOWER_TINTS.length;
   private readonly followers: Follower[] = [];
+  private readonly followerCollisionBodies: CompanionCollisionBody[] = [];
   private readonly ownedTextures: THREE.Texture[] = [];
   private readonly breadcrumbs: Breadcrumb[] = [];
   private lastLeader = new THREE.Vector3();
@@ -89,27 +94,41 @@ export class SlothFollowerParty {
       scooter.root.visible = false;
       this.root.add(scooter.root);
       this.ownedTextures.push(...walking.ownedTextures, ...rider.ownedTextures);
+      const velocity = new THREE.Vector3();
+      const collisionBody: CompanionCollisionBody = {
+        id: `sloth-friend-${index + 1}`,
+        root: anchor,
+        velocity,
+        radius: .62,
+        enabled: false,
+      };
       this.followers.push({
         root: anchor,
         walkingRig: walking.root,
         riderRig: rider.root,
-        velocity: new THREE.Vector3(),
+        velocity,
         previous: new THREE.Vector3(),
         gaitPhase: index * 1.47,
         groundY: 0,
         trailingDistance: 1.55 + index * 1.22,
         formationJoined: false,
         scooter,
+        collisionBody,
       });
+      this.followerCollisionBodies.push(collisionBody);
     });
   }
 
   get isActive() { return this.active; }
   get isScooterMode() { return this.scooterMode; }
+  get collisionBodies(): readonly CompanionCollisionBody[] {
+    return this.active && this.root.visible ? this.followerCollisionBodies : NO_SLOTH_COLLISION_BODIES;
+  }
 
   setScooterMode(active: boolean) {
     this.scooterMode = active;
     this.followers.forEach(follower => {
+      follower.collisionBody.radius = active ? .8 : .62;
       follower.scooter.root.visible = active;
       follower.root.userData.ridingElectricScooter = active;
       follower.walkingRig.visible = !active;
@@ -146,6 +165,7 @@ export class SlothFollowerParty {
       follower.previous.copy(follower.root.position);
       follower.velocity.set(0, 0, 0);
       follower.formationJoined = false;
+      follower.collisionBody.enabled = false;
       follower.root.userData.motion = "release-catch-up";
     });
     return true;
@@ -170,6 +190,7 @@ export class SlothFollowerParty {
       follower.previous.copy(follower.root.position);
       follower.velocity.set(0, 0, 0);
       follower.formationJoined = true;
+      follower.collisionBody.enabled = true;
     });
   }
 
@@ -209,6 +230,7 @@ export class SlothFollowerParty {
       follower.velocity.set(0, 0, 0);
       follower.previous.copy(follower.root.position);
       follower.formationJoined = true;
+      follower.collisionBody.enabled = true;
       follower.scooter.root.position.set(follower.root.position.x, follower.groundY, follower.root.position.z);
       follower.scooter.root.rotation.set(0, follower.root.rotation.y, 0);
     });
@@ -230,6 +252,7 @@ export class SlothFollowerParty {
       follower.velocity.set(0, 0, 0);
       follower.previous.copy(follower.root.position);
       follower.formationJoined = true;
+      follower.collisionBody.enabled = true;
       follower.root.traverse(object => { if (object instanceof THREE.Mesh) object.frustumCulled = false; });
     });
   }
@@ -329,7 +352,10 @@ export class SlothFollowerParty {
       desired.y = formation === "station" || formation === "train" ? target.y : floorYAt(desired.x, desired.z);
       toTarget.set(desired.x - follower.root.position.x, 0, desired.z - follower.root.position.z);
       const distance = toTarget.length();
-      if (catchingUp && distance <= 2.15) follower.formationJoined = true;
+      if (catchingUp && distance <= 2.15) {
+        follower.formationJoined = true;
+        follower.collisionBody.enabled = true;
+      }
       const maximumSpeed = catchingUp ? 3.25 : formation === "train" ? 1.65 : 2.35;
       const mobilityMaximumSpeed = formation === "scooter" ? catchingUp ? 10.5 : 9.1 : maximumSpeed;
       const speed = THREE.MathUtils.clamp(distance * (catchingUp ? 1.45 : 2.25), 0, mobilityMaximumSpeed);

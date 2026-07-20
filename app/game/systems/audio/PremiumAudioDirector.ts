@@ -6,6 +6,24 @@ export type TrainChimeKind = "arrival" | "doors-closing" | "transfer";
 
 export type HawkAudioCue = "near" | "dive";
 
+export type ZooQuestAudioCue =
+  | "bird-call"
+  | "count-in"
+  | "move"
+  | "water"
+  | "tension"
+  | "latch"
+  | "scan"
+  | "wind"
+  | "sun"
+  | "valve"
+  | "launch"
+  | "impact"
+  | "success"
+  | "failure";
+
+export type MallardAudioCue = "call" | "line-release" | "landing";
+
 export type AudioMix = {
   master: number;
   music: number;
@@ -400,6 +418,121 @@ export class PremiumAudioDirector {
   }
 
   /**
+   * Tactile, project-authored procedural cues for the zoo habitat activities.
+   * They share the game's compressed SFX bus, so they respect mute/volume and
+   * cannot overpower the soundtrack. `variant` selects a species voice or a
+   * small pitch/pan variation without changing puzzle timing.
+   */
+  playZooQuestCue(cue: ZooQuestAudioCue, variant = 0) {
+    if (!this.context || !this.sfxBus) return false;
+    const now = this.context.currentTime;
+    const pan = Math.max(-.72, Math.min(.72, (variant - 1.5) * .42));
+    if (cue === "bird-call") {
+      const voices = [
+        { from: 2380, to: 3560, notes: [0, .115, .21], duration: .1 },
+        { from: 1180, to: 780, notes: [0, .18], duration: .17 },
+        { from: 1640, to: 2160, notes: [0, .09, .25], duration: .085 },
+        { from: 2060, to: 1420, notes: [0, .14, .28], duration: .12 },
+      ] as const;
+      const voice = voices[Math.abs(Math.round(variant)) % voices.length];
+      // The melody is the mechanic, so it must remain intelligible over any
+      // soundtrack track. Briefly lower the score for each call and reinforce
+      // the high chirp with a speaker-friendly chime fundamental.
+      this.duckScoreFor(.58, .24);
+      this.tone(this.sfxBus, voice.from * .46, now, {
+        duration: .19,
+        gain: variant === 1 ? .13 : .115,
+        pan,
+        release: .17,
+        type: "sine",
+        filter: 4200,
+      });
+      voice.notes.forEach((offset, index) => {
+        const direction = index % 2 ? .9 : 1;
+        this.chirp(this.sfxBus!, voice.from * direction, voice.to * direction, now + offset, {
+          duration: voice.duration,
+          gain: variant === 1 ? .18 : .155,
+          pan,
+          type: variant === 1 ? "sawtooth" : "triangle",
+        });
+      });
+      return true;
+    }
+    if (cue === "count-in") {
+      this.tone(this.sfxBus, 720 + variant * 90, now, { type: "sine", gain: .045, duration: .07, release: .08, filter: 2600, pan });
+      return true;
+    }
+    if (cue === "move") {
+      this.tone(this.sfxBus, 310 + variant * 24, now, { type: "triangle", gain: .035, duration: .075, release: .06, filter: 1450, pan });
+      return true;
+    }
+    if (cue === "water") {
+      this.noise(this.sfxBus, now, { duration: .24, gain: .065, frequency: 1150 + variant * 120, q: .75, type: "bandpass", pan });
+      this.tone(this.sfxBus, 86 + variant * 7, now, { type: "sine", gain: .032, duration: .12, release: .15, filter: 460, pan });
+      return true;
+    }
+    if (cue === "tension") {
+      this.noise(this.sfxBus, now, { duration: .12, gain: .042, frequency: 760, q: 1.3, type: "bandpass", pan });
+      this.chirp(this.sfxBus, 170 + variant * 8, 228 + variant * 11, now, { duration: .11, gain: .035, pan, type: "triangle" });
+      return true;
+    }
+    if (cue === "latch") {
+      this.noise(this.sfxBus, now, { duration: .09, gain: .075, frequency: 1850, q: 2.2, type: "bandpass", pan });
+      this.tone(this.sfxBus, 520 + variant * 55, now + .025, { type: "triangle", gain: .06, duration: .12, release: .11, filter: 3100, pan });
+      return true;
+    }
+    if (cue === "scan") {
+      this.chirp(this.sfxBus, 540 + variant * 18, 980 + variant * 25, now, { duration: .13, gain: .04, pan, type: "sine" });
+      return true;
+    }
+    if (cue === "wind") {
+      this.noise(this.sfxBus, now, { duration: .34, gain: .035, frequency: 1780 + variant * 140, q: 3.2, type: "bandpass", pan });
+      this.tone(this.sfxBus, 880 + variant * 95, now + .05, { type: "sine", gain: .025, duration: .18, release: .25, filter: 3600, pan });
+      return true;
+    }
+    if (cue === "sun") {
+      [0, .075, .16].forEach((offset, index) => this.tone(this.sfxBus!, 720 + variant * 38 + index * 245, now + offset, { type: "sine", gain: .034, duration: .18, release: .22, filter: 4200, pan }));
+      return true;
+    }
+    if (cue === "valve") {
+      this.noise(this.sfxBus, now, { duration: .42, gain: .06, frequency: variant === 2 ? 1450 : 640, q: .8, type: variant === 2 ? "bandpass" : "lowpass", pan });
+      this.tone(this.sfxBus, 105 + variant * 28, now, { type: "triangle", gain: .038, duration: .22, release: .24, filter: 730, pan });
+      return true;
+    }
+    if (cue === "launch") {
+      this.noise(this.sfxBus, now, { duration: .3, gain: .09, frequency: 520, q: .8, type: "lowpass" });
+      this.chirp(this.sfxBus, 170, 72, now, { duration: .28, gain: .075, type: "triangle" });
+      return true;
+    }
+    if (cue === "impact") {
+      this.noise(this.sfxBus, now, { duration: .16, gain: .07, frequency: 430 + variant * 80, q: .9, type: "lowpass", pan });
+      this.tone(this.sfxBus, 92 + variant * 12, now, { type: "sine", gain: .045, duration: .1, release: .12, filter: 420, pan });
+      return true;
+    }
+    if (cue === "success") return this.playUiConfirm();
+    return this.playFailure();
+  }
+
+  /** Lake-local duck, reedline, and passenger-landing cues. */
+  playMallardCue(cue: MallardAudioCue) {
+    if (!this.context || !this.sfxBus) return false;
+    const now = this.context.currentTime;
+    if (cue === "call") {
+      this.chirp(this.sfxBus, 285, 205, now, { duration: .16, gain: .075, type: "sawtooth", pan: -.12 });
+      this.chirp(this.sfxBus, 265, 188, now + .21, { duration: .14, gain: .062, type: "sawtooth", pan: .08 });
+      return true;
+    }
+    if (cue === "line-release") {
+      this.noise(this.sfxBus, now, { duration: .18, gain: .055, frequency: 1480, q: 1.8, type: "bandpass" });
+      this.chirp(this.sfxBus, 610, 920, now + .035, { duration: .11, gain: .038, type: "triangle" });
+      return true;
+    }
+    this.noise(this.sfxBus, now, { duration: .24, gain: .047, frequency: 980, q: .8, type: "bandpass" });
+    [392, 523.25, 659.25].forEach((frequency, index) => this.tone(this.sfxBus!, frequency, now + index * .085, { type: "sine", gain: .045, duration: .18, release: .2, pan: -.18 + index * .18 }));
+    return true;
+  }
+
+  /**
    * Start, update, or stop the authored field-cart motor loop. Calling this
    * every frame is cheap: one source is retained and only its gain/rate ramps.
    */
@@ -736,6 +869,22 @@ export class PremiumAudioDirector {
     oscillator.connect(filter).connect(gain).connect(panner).connect(output); oscillator.start(at); oscillator.stop(at + duration + release + 0.02);
   }
 
+  private chirp(output: AudioNode, from: number, to: number, at: number, options: ToneOptions = {}) {
+    if (!this.context) return;
+    const duration = Math.max(.045, options.duration ?? .18), release = Math.max(.025, options.release ?? .07);
+    const oscillator = this.context.createOscillator(), filter = this.context.createBiquadFilter(), gain = this.context.createGain(), panner = this.context.createStereoPanner();
+    oscillator.type = options.type ?? "triangle";
+    oscillator.frequency.setValueAtTime(Math.max(24, from), at);
+    oscillator.frequency.exponentialRampToValueAtTime(Math.max(24, to), at + duration);
+    filter.type = "lowpass"; filter.frequency.value = options.filter ?? 5200; filter.Q.value = .55;
+    gain.gain.setValueAtTime(.0001, at);
+    gain.gain.exponentialRampToValueAtTime(Math.max(.0002, options.gain ?? .06), at + Math.min(.018, duration * .25));
+    gain.gain.exponentialRampToValueAtTime(.0001, at + duration + release);
+    panner.pan.value = Math.max(-1, Math.min(1, options.pan ?? 0));
+    oscillator.connect(filter).connect(gain).connect(panner).connect(output);
+    oscillator.start(at); oscillator.stop(at + duration + release + .02);
+  }
+
   private noise(output: AudioNode, at: number, options: NoiseOptions = {}) {
     if (!this.context || !this.noiseBuffer) return;
     const duration = Math.max(0.04, options.duration ?? 0.24), source = this.context.createBufferSource(), filter = this.context.createBiquadFilter(), gain = this.context.createGain(), panner = this.context.createStereoPanner();
@@ -743,6 +892,18 @@ export class PremiumAudioDirector {
     gain.gain.setValueAtTime(0.0001, at); gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, options.gain ?? 0.08), at + Math.min(0.025, duration * 0.25)); gain.gain.exponentialRampToValueAtTime(0.0001, at + duration);
     panner.pan.value = Math.max(-1, Math.min(1, options.pan ?? 0));
     source.connect(filter).connect(gain).connect(panner).connect(output); source.start(at); source.stop(at + duration + 0.02);
+  }
+
+  private duckScoreFor(durationSeconds: number, factor: number) {
+    if (!this.context || !this.musicBus) return;
+    const now = this.context.currentTime;
+    const base = equalPower(this.snapshot.music) * (this.announcementSource ? .38 : 1);
+    const quiet = Math.max(.0001, base * clamp01(factor));
+    this.musicBus.gain.cancelScheduledValues(now);
+    this.musicBus.gain.setValueAtTime(Math.max(.0001, this.musicBus.gain.value), now);
+    this.musicBus.gain.linearRampToValueAtTime(quiet, now + .025);
+    this.musicBus.gain.setValueAtTime(quiet, now + Math.max(.05, durationSeconds - .12));
+    this.musicBus.gain.linearRampToValueAtTime(base, now + Math.max(.14, durationSeconds));
   }
 
   private applyMix(rampSeconds = 0.14) {

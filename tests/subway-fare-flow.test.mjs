@@ -66,7 +66,7 @@ test("boarding requires a platform-level crossing through one open doorway", asy
   assert.match(world, /Math\.abs\(player\.z - door\.z\) > \.78/);
   assert.match(world, /boardingHint[\s\S]{0,220}Math\.abs\(player\.y - 1\.48\) > \.58/);
   assert.match(game, /playerBeforeMovement\.copy\(player\)/);
-  assert.match(game, /boardingOption\(player, playerBeforeMovement\)/);
+  assert.match(game, /boardingOption\(\s*player,\s*playerBeforeMovement,?\s*\)/);
 });
 
 test("street stairs blend daylight into the mezzanine without a fake initial loading card", async () => {
@@ -86,10 +86,10 @@ test("failed rides restore the paid platform checkpoint without replaying door a
   assert.match(world, /restoreProgressState\(progress: SubwayProgressState\)/);
   assert.match(world, /checkpointSpawn\(platform = false\)/);
   assert.match(game, /let subwayProgress = stationWorld\.progressState/);
-  assert.match(game, /subwayProgress = stationWorld\.progressState; stationWorld\.dispose\(\)/);
-  assert.match(game, /checkpoint\(currentStation, message, true, false, true\)/);
+  assert.match(game, /subwayProgress = stationWorld\.progressState;\s*stationWorld\.dispose\(\)/);
+  assert.match(game, /checkpoint\(\s*currentStation,\s*message,\s*true,\s*false,\s*true,?\s*\)/);
   assert.match(game, /stationWorld\.checkpointSpawn\(resumeAtPlatform\)/);
-  assert.match(game, /stationWorld\.update\(stationClock\); previousTrainPhase = stationWorld\.trainPhase; previousDoorsOpen = stationWorld\.doorsOpen/);
+  assert.match(game, /stationWorld\.update\(stationClock\);[\s\S]{0,120}previousTrainPhase = stationWorld\.trainPhase;[\s\S]{0,120}previousDoorsOpen = stationWorld\.doorsOpen/);
 });
 
 test("successful transfers arrive on the paid Lexington concourse to choose a platform", async () => {
@@ -98,7 +98,7 @@ test("successful transfers arrive on the paid Lexington concourse to choose a pl
   assert.match(game, /const destination = boarded\.destination/);
   assert.match(game, /destination === "LEXINGTON"/);
   assert.match(game, /Lexington Av \/ 59 St — take the uptown 5 for the Bronx, or a downtown N \/ R to ride back to Fifth Avenue/);
-  assert.match(game, /checkpoint\(destination, message, false, true, destination !== "LEXINGTON"\)/);
+  assert.match(game, /checkpoint\(\s*destination,\s*message,\s*false,\s*true,\s*destination !== "LEXINGTON",?\s*\)/);
   assert.match(game, /qaInput === "lexingtontransfer"/);
   assert.match(game, /paid-area transfer platform/);
 });

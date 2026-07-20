@@ -1166,8 +1166,7 @@ function addMegatherium(root: THREE.Group, ownedTextures: THREE.Texture[], bone:
   addGroundedMegatheriumSign(root, ownedTextures, brass);
 }
 
-function resolveBox(player: THREE.Vector3, velocity: THREE.Vector3, box: BoxObstacle) {
-  const radius = .42;
+function resolveBox(player: THREE.Vector3, velocity: THREE.Vector3, box: BoxObstacle, radius = .42) {
   if (player.x < box.minX - radius || player.x > box.maxX + radius || player.z < box.minZ - radius || player.z > box.maxZ + radius) return;
   const distances = [Math.abs(player.x - (box.minX - radius)), Math.abs((box.maxX + radius) - player.x), Math.abs(player.z - (box.minZ - radius)), Math.abs((box.maxZ + radius) - player.z)];
   const edge = distances.indexOf(Math.min(...distances));
@@ -1216,7 +1215,7 @@ export class NaturalHistoryMuseumWorld {
   private disposed = false;
   private readonly quality: number;
 
-  constructor(scene: THREE.Scene, textures: GameTextures, quality = 1) {
+  constructor(scene: THREE.Scene, textures: GameTextures, quality = 1, riderCount = 6) {
     this.quality = quality;
     this.root.name = "american-museum-of-natural-history-exploration-level"; scene.add(this.root);
     const bone = new THREE.MeshStandardMaterial({ color: "#d5c6a2", roughness: .8, metalness: .02 });
@@ -1231,19 +1230,23 @@ export class NaturalHistoryMuseumWorld {
     addOfficialPermanentHallMoments(this.root, textures, this.ownedTextures, quality, this.circles);
     addSlothEvolutionGallery(this.root, textures, this.ownedTextures, bone, quality, this.circles);
     addMegatherium(this.root, this.ownedTextures, bone, this.circles);
-    for (let index = 0; index < 6; index++) {
+    const scooterCapacity = Math.max(1, Math.floor(riderCount));
+    const scooterColumns = Math.min(6, scooterCapacity);
+    for (let index = 0; index < scooterCapacity; index++) {
       const scooter = createElectricScooter(index);
-      scooter.root.name = `amnh-six-scooter-fast-travel-line-${index + 1}`;
-      scooter.root.position.set(-21.85 + index * 1.5, 0, 47.5);
+      const column = index % scooterColumns, row = Math.floor(index / scooterColumns);
+      scooter.root.name = `amnh-menagerie-scooter-${index + 1}-of-${scooterCapacity}`;
+      scooter.root.position.set(-21.85 + column * 1.5, 0, 47.5 - row * 1.55);
       scooter.root.rotation.y = index % 2 ? -.045 : .045;
       scooter.root.userData.interactable = true;
       scooter.root.userData.interactionKind = "amnh-electric-scooter";
       this.scooters.push(scooter); this.root.add(scooter.root);
     }
     this.scooterPrevious.copy(this.scooters[0].root.position);
-    const mobilityTexture = exhibitTexture("ELECTRIC SCOOTER CORRAL", "SIX SCOOTERS · ONE RESERVED FOR GARY", "#78c8ba"); this.ownedTextures.push(mobilityTexture);
+    const mobilityTexture = exhibitTexture("ELECTRIC SCOOTER CORRAL", `${scooterCapacity} SCOOTERS READY · WHOLE MENAGERIE`, "#78c8ba"); this.ownedTextures.push(mobilityTexture);
     const mobilitySign = new THREE.Mesh(new RoundedBoxGeometry(6.8, 1.12, .16, 5, .05), new THREE.MeshBasicMaterial({ map: mobilityTexture, toneMapped: false }));
-    mobilitySign.name = "amnh-six-electric-scooters-group-fast-travel-sign"; mobilitySign.position.set(-23.4, 2.42, 45.1); this.root.add(mobilitySign);
+    mobilitySign.name = "amnh-dynamic-menagerie-scooter-capacity-sign"; mobilitySign.position.set(-23.4, 2.42, 45.1); this.root.add(mobilitySign);
+    this.circles.push({ x: -23.4, z: 45.1, radius: .62 });
     const mobilityPostMaterial = new THREE.MeshStandardMaterial({ color: "#343a38", metalness: .66, roughness: .38 });
     for (const x of [-25.9, -20.9]) {
       const post = new THREE.Mesh(new THREE.CylinderGeometry(.055, .08, 1.9, 10), mobilityPostMaterial); post.name = "amnh-electric-scooter-corral-grounded-sign-post"; post.position.set(x, .95, 45.14); this.root.add(post);
@@ -1317,6 +1320,7 @@ export class NaturalHistoryMuseumWorld {
   get objectiveTarget() { return this.megatheriumTarget.clone(); }
   get objectiveLabel() { return "Find the Megatherium in the Fossil Mammal Halls"; }
   get isScooterConvoyActive() { return this.scooterConvoyActive; }
+  get scooterCapacity() { return this.scooters.length; }
   floorHeight(x = 0, z = 0) {
     if (Math.abs(x) > 22.5) return 0;
     if (z >= 24.45 && z <= 34.65) {
@@ -1378,14 +1382,20 @@ export class NaturalHistoryMuseumWorld {
   }
 
   resolvePlayer(player: THREE.Vector3, velocity: THREE.Vector3) {
-    player.x = THREE.MathUtils.clamp(player.x, -62, 62); player.z = THREE.MathUtils.clamp(player.z, -221, 61);
-    this.boxes.forEach(box => resolveBox(player, velocity, box));
+    this.resolveCompanion(player, velocity, .42);
+    player.y += 1.48;
+  }
+
+  resolveCompanion(position: THREE.Vector3, velocity: THREE.Vector3, radius: number) {
+    position.x = THREE.MathUtils.clamp(position.x, -62 + radius, 62 - radius);
+    position.z = THREE.MathUtils.clamp(position.z, -221 + radius, 61 - radius);
+    this.boxes.forEach(box => resolveBox(position, velocity, box, radius));
     for (const circle of this.circles) {
-      const dx = player.x - circle.x, dz = player.z - circle.z, distance = Math.hypot(dx, dz), clearance = circle.radius + .42;
+      const dx = position.x - circle.x, dz = position.z - circle.z, distance = Math.hypot(dx, dz), clearance = circle.radius + radius;
       if (distance <= .001 || distance >= clearance) continue;
-      player.x = circle.x + dx / distance * clearance; player.z = circle.z + dz / distance * clearance; velocity.set(0, 0, 0);
+      position.x = circle.x + dx / distance * clearance; position.z = circle.z + dz / distance * clearance; velocity.set(0, 0, 0);
     }
-    player.y = this.floorHeight(player.x, player.z) + 1.48;
+    position.y = this.floorHeight(position.x, position.z);
   }
 
   update(elapsed: number, delta: number, player?: THREE.Vector3) {

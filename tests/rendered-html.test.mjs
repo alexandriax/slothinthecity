@@ -80,7 +80,7 @@ test("mobile entry cannot be stranded by unavailable Pointer Lock", async () => 
   assert.match(game, /phase === "intro" \|\| exiting/);
   assert.match(game, /data-touch-capable/);
   assert.match(game, /useState<"park" \| "subway">\("park"\)/);
-  assert.match(game, /const enterSubway = useCallback\(\(\) => setLevel\("subway"\), \[\]\)/);
+  assert.match(game, /const enterSubway = useCallback\(\(companions: readonly string\[\]\) => \{[\s\S]{0,160}setInitialCompanionIds\(\[\.\.\.companions\]\)[\s\S]{0,100}setLevel\("subway"\)/);
 });
 
 test("mobile wayfinding stays bounded and the atmospheric sky follows the camera", async () => {
@@ -113,7 +113,7 @@ test("foraging opens the Bow Bridge, Bronx Zoo island ticket, and direct subway 
   assert.match(game, /RECOVER BRONX ZOO TICKET/);
   assert.match(game, /data-ticket-collected/);
   assert.match(game, /parkStage = "SUBWAY_ENTRANCE"/);
-  assert.match(game, /subwayStepsReached[\s\S]{0,300}onEnterSubway\(\)/);
+  assert.match(game, /subwayStepsReached[\s\S]{0,420}onEnterSubway\(duckRecruited \? \[CENTRAL_PARK_MALLARD_COMPANION_ID\] : \[\]\)/);
   assert.match(game, /<GoalWayfinder/);
   assert.match(game, /data-goal-distance/);
   assert.match(game, /active=\{hud\.targetActive\}/);
@@ -286,14 +286,14 @@ test("playable subway services advance through graph destinations while out-of-s
   const checkpoint = subway.slice(checkpointStart, finishRideStart);
   const finishRide = subway.slice(finishRideStart, frameStart);
 
-  assert.match(checkpoint, /stationWorld\.setStation\(station, travelDirection\)\.restoreProgressState\(subwayProgress\)/);
+  assert.match(checkpoint, /stationWorld\s*\.setStation\(station, travelDirection\)\s*\.restoreProgressState\(subwayProgress\)/);
   assert.match(checkpoint, /player\.copy\(stationWorld\.checkpointSpawn\(resumeAtPlatform\)\)/);
   assert.match(checkpoint, /stationClock = waitForNextTrain \? 18 : 0/);
   assert.match(checkpoint, /previousDoorsOpen = stationWorld\.doorsOpen/);
   assert.match(checkpoint, /boarded = null/);
   assert.match(finishRide, /if \(!boarded\?\.destination\) return/);
   assert.match(finishRide, /const destination = boarded\.destination/);
-  assert.match(finishRide, /checkpoint\(destination, message/);
+  assert.match(finishRide, /checkpoint\(\s*destination,\s*message/);
   assert.match(finishRide, /if \(!option\.journeyKey \|\| !option\.destination\)[\s\S]{0,220}player\.copy\(playerBeforeMovement\)/);
   assert.match(finishRide, /continues beyond this playable route/);
 });
@@ -312,14 +312,14 @@ test("West Farms streams the Bronx Zoo and completion waits for Megatherium at A
   assert.match(world, /Bronx Zoo · Asia Gate/);
   assert.match(world, /station === "WEST_FARMS" && route === "5"[\s\S]{0,180}journeyKey: "WEST_FARMS_TO_LEXINGTON"/);
   assert.match(subway, /prompt = "WALK UP TO THE BRONX ZOO EXIT"/);
-  assert.match(subway, /distance < 1\.45\) enterBronxZoo\(\)/);
+  assert.match(subway, /currentStation === "WEST_FARMS" &&[\s\S]{0,100}distance < 1\.45[\s\S]{0,60}enterBronxZoo\(\)/);
   assert.match(subway, /setTransitStage\("BRONX_ZOO"\)/);
-  assert.match(subway, /new BronxZooWorld\(scene, textures/);
-  assert.match(subway, /stationWorld\.dispose\(\); stationWorld = null/);
+  assert.match(subway, /new BronxZooWorld\(\s*scene,\s*textures/);
+  assert.match(subway, /stationWorld\.dispose\(\);\s*stationWorld = null/);
   assert.match(subway, /player\.copy\(zooWorld\.spawn\)/);
   assert.match(subway, /zooWorld\.interactionHint\(player\)/);
-  assert.match(subway, /zooWorld\.completeLockPicking\(\)[\s\S]{0,220}rescuedParty\.setActive\(true/);
-  assert.match(subway, /actionRequested && hint\?\.kind === "BUS_BOARDING"[\s\S]{0,220}rescuedParty\.allWithin\(zooWorld\.busBoardingPosition, 9\.5\)[\s\S]{0,100}startBusDrive\(\)/);
+  assert.match(subway, /zooWorld\.completeLockPicking\(\)[\s\S]{0,320}rescuedParty\.setActive\(\s*true/);
+  assert.match(subway, /actionRequested && shuttleReady[\s\S]{0,300}allFollowersWithin\(zooWorld\.busBoardingPosition, boardingRadius\)[\s\S]{0,180}startBusDrive\(\)/);
   assert.doesNotMatch(subway, /if \(zooWorld\.busBoardingReached\(player\)/);
   assert.match(subway, /function museumMissionReady\(\)[\s\S]{0,260}transitStage !== "MUSEUM"/);
   assert.match(subway, /function completeMission\(\)[\s\S]{0,180}!museumMissionReady\(\)[\s\S]{0,180}setTransitStage\("COMPLETE"\)/);
@@ -339,10 +339,10 @@ test("train boarding streams a dedicated interior world with crowd and door game
     readFile(new URL("../app/game/world/TrainInteriorWorld.ts", import.meta.url), "utf8"),
   ]);
 
-  assert.match(subway, /stationWorld\.dispose\(\); stationWorld = null; interiorWorld = new TrainInteriorWorld/);
+  assert.match(subway, /stationWorld\.dispose\(\);\s*stationWorld = null;[\s\S]{0,160}interiorWorld = new TrainInteriorWorld/);
   assert.match(subway, /stationWorld \?\?= createStationWorld\(station, travelDirection\)/);
-  assert.match(subway, /new TrainInteriorWorld\(scene, textures/);
-  assert.match(subway, /data-loaded-world=\{stage === "RIDING" \? "train-interior"/);
+  assert.match(subway, /new TrainInteriorWorld\(\s*scene,\s*textures/);
+  assert.match(subway, /data-loaded-world=\{\s*stage === "RIDING"\s*\? "train-interior"/);
   assert.match(subway, /boardThroughOpenDoor\(option\)/);
   assert.match(subway, /stationWorld\.boardingHint\(player\)/);
   assert.match(subway, /WALK THROUGH OPEN/);

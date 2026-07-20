@@ -651,6 +651,28 @@ export class TrainInteriorWorld {
     player.x = THREE.MathUtils.clamp(player.x, minX, maxX); player.z = THREE.MathUtils.clamp(player.z, -8.58, 8.58);
   }
 
+  resolveCompanion(position: THREE.Vector3, velocity: THREE.Vector3, radius: number) {
+    if (this.phase === "FAILED" || this.phase === "COMPLETE") return;
+    position.z = THREE.MathUtils.clamp(position.z, -8.58 + radius, 8.58 - radius);
+    const openDoorZ = DOOR_Z.find(z => Math.abs(position.z - z) < .78);
+    const passageOpen = openDoorZ !== undefined && this.doorsOpenAmount > .55 && this.phase === "DWELL";
+    const minX = passageOpen && this.currentStop.side < 0 ? -(CAR_HALF_WIDTH + .48) : -1.08 + radius;
+    const maxX = passageOpen && this.currentStop.side > 0 ? CAR_HALF_WIDTH + .48 : 1.08 - radius;
+    position.x = THREE.MathUtils.clamp(position.x, minX, maxX);
+    position.y = 0;
+    for (const passenger of this.passengers) {
+      if (!passenger.group.visible) continue;
+      const dx = position.x - passenger.group.position.x, dz = position.z - passenger.group.position.z, distance = Math.hypot(dx, dz);
+      const clearance = radius + .28;
+      if (distance <= .001 || distance >= clearance) continue;
+      position.x = passenger.group.position.x + dx / distance * clearance;
+      position.z = passenger.group.position.z + dz / distance * clearance;
+      velocity.multiplyScalar(.72);
+    }
+    position.x = THREE.MathUtils.clamp(position.x, minX, maxX);
+    position.z = THREE.MathUtils.clamp(position.z, -8.58 + radius, 8.58 - radius);
+  }
+
   private detectDestinationCrossing(player: THREE.Vector3, velocity: THREE.Vector3) {
     if (this.phase !== "DWELL" || !this.isDestination || this.doorsOpenAmount <= .58) return;
     const crossedThreshold = this.journey.destination.side * player.x > CAR_HALF_WIDTH + .08;

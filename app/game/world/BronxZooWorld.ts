@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { Sky } from "three/addons/objects/Sky.js";
 import type { GameTextures } from "../rendering/textures";
+import { ZOO_SIDE_QUESTS, type ZooSideQuestId } from "../zooSideQuestLogic";
 import {
   createPremiumHuman,
   createPremiumSlothFriend,
@@ -38,15 +39,17 @@ import { createSkateboard, rollPersonalMobility, type PersonalMobilityVehicle } 
 export type BronxZooQuestState = "ENTER_ZOO" | "FIND_SLOTHS" | "ESCORT_TO_BUS";
 
 export type BronxZooEvent = {
-  kind: "SKATEBOARD_OFFERED" | "LOCK_PICKING_STARTED" | "SLOTHS_RELEASED" | "GARY_HUNGRY" | "JAM_SANDWICH_VENDED" | "JAM_SANDWICH_RECOVERED" | "JAM_SANDWICH_MISSED" | "GARY_FED";
+  kind: "SKATEBOARD_OFFERED" | "LOCK_PICKING_STARTED" | "SLOTHS_RELEASED" | "GARY_HUNGRY" | "JAM_SANDWICH_VENDED" | "JAM_SANDWICH_RECOVERED" | "JAM_SANDWICH_MISSED" | "GARY_FED" | "ANIMAL_QUEST_STARTED";
   message: string;
+  questId?: ZooSideQuestId;
 };
 
 export type BronxZooInteractionHint = {
-  kind: "SKATEBOARD_DONOR" | "SLOTH_HABITAT" | "BUS_BOARDING" | "SNACK_MACHINE" | "GARY_HABITAT" | "LOOSE_JAM_SANDWICH";
+  kind: "SKATEBOARD_DONOR" | "SLOTH_HABITAT" | "BUS_BOARDING" | "SNACK_MACHINE" | "GARY_HABITAT" | "LOOSE_JAM_SANDWICH" | "ANIMAL_QUEST";
   label: string;
   target: THREE.Vector3;
   distance: number;
+  questId?: ZooSideQuestId;
 };
 
 type GarySnackState = "NONE" | "CARRIED" | "AIRBORNE" | "LOOSE" | "EATEN";
@@ -54,6 +57,28 @@ type GarySnackState = "NONE" | "CARRIED" | "AIRBORNE" | "LOOSE" | "EATEN";
 type CircleObstacle = { kind: "circle"; x: number; z: number; radius: number; enabled?: () => boolean };
 type BoxObstacle = { kind: "box"; minX: number; maxX: number; minZ: number; maxZ: number; enabled?: () => boolean };
 type Obstacle = CircleObstacle | BoxObstacle;
+
+const ANIMAL_QUEST_ANCHORS: Record<ZooSideQuestId, { target: THREE.Vector3; prompt: string }> = {
+  "aviary-voices": { target: new THREE.Vector3(-29.5, 1.48, -39), prompt: "JOIN THE WORLD OF BIRDS CANOPY CHORUS" },
+  "sea-lion-current": { target: new THREE.Vector3(0, 1.48, -63), prompt: "STEER THE SEA LION ENRICHMENT CURRENT" },
+  "monkey-canopy-rig": { target: new THREE.Vector3(-24, 1.48, -98), prompt: "STABILIZE THE MONKEY CANOPY RIG" },
+  "zebra-stripe-scan": { target: new THREE.Vector3(26, 1.48, -98), prompt: "CALIBRATE THE ZEBRA STRIPE SCANNER" },
+  "red-panda-scent-wind": { target: new THREE.Vector3(-25.5, 1.48, -123), prompt: "ROUTE THE RED PANDA SCENT TRAIL" },
+  "tortoise-sun-trail": { target: new THREE.Vector3(25.5, 1.48, -123), prompt: "AIM THE TORTOISE WARMING MIRRORS" },
+  "flamingo-wetland-balance": { target: new THREE.Vector3(-62, 1.48, -47), prompt: "BALANCE THE FLAMINGO WETLAND" },
+  "bison-prairie-seeding": { target: new THREE.Vector3(62, 1.48, -97), prompt: "RESEED THE BISON PRAIRIE" },
+};
+
+const ANIMAL_QUEST_SOURCE_ROOTS: Record<ZooSideQuestId, readonly string[]> = {
+  "aviary-voices": ["sun-conure-hero-bird", "blue-and-gold-macaw-bird", "scarlet-ibis-bird", "green-aracari-bird"],
+  "sea-lion-current": ["bronx-zoo-sea-lion-1"],
+  "monkey-canopy-rig": ["spider-monkey-1"],
+  "zebra-stripe-scan": ["bronx-zoo-plains-zebra-1"],
+  "red-panda-scent-wind": ["bronx-zoo-red-panda"],
+  "tortoise-sun-trail": ["bronx-zoo-aldabra-giant-tortoise"],
+  "flamingo-wetland-balance": ["bronx-zoo-american-flamingo-1"],
+  "bison-prairie-seeding": ["bronx-zoo-american-bison-1"],
+};
 
 type CaptiveSlothMotion = {
   root: THREE.Group;
@@ -132,7 +157,7 @@ function shuttleStopTexture() {
     context.fillStyle = "#fff8e6"; context.font = "800 72px Helvetica, Arial, sans-serif"; context.fillText("MUSEUM", width / 2, 350); context.fillText("SHUTTLE", width / 2, 438);
     context.fillStyle = "#f0d36a"; context.fillRect(88, 505, width - 176, 6);
     context.font = "700 42px Helvetica, Arial, sans-serif"; context.fillText("BRONX ZOO", width / 2, 596); context.fillText("TO AMNH", width / 2, 660);
-    context.fillStyle = "#d6e7d8"; context.font = "600 31px Helvetica, Arial, sans-serif"; context.fillText("ALL FOUR FRIENDS", width / 2, 780); context.fillText("BOARD TOGETHER", width / 2, 828);
+    context.fillStyle = "#d6e7d8"; context.font = "600 31px Helvetica, Arial, sans-serif"; context.fillText("WHOLE MENAGERIE", width / 2, 780); context.fillText("BOARDS TOGETHER", width / 2, 828);
   });
 }
 
@@ -741,14 +766,17 @@ function addMuseumShuttleBus(root: THREE.Group, materials: ZooMaterials, ownedTe
   boardingPad.name = "museum-shuttle-visible-exterior-boarding-zone";
   boardingPad.position.set(17.05, 1.035, 22.48);
   const boardingYellow = new THREE.MeshStandardMaterial({ color: "#f3c722", emissive: "#7d5c05", emissiveIntensity: .22, roughness: .68 });
-  const pad = new THREE.Mesh(new RoundedBoxGeometry(3.4, .055, 2.15, 4, .035), new THREE.MeshStandardMaterial({ color: "#29302e", roughness: .9 }));
+  // Fourteen large companions need a real marshalling apron, not a one-person
+  // doormat. The broad painted zone communicates the same generous gathering
+  // tolerance used by the campaign boarding check.
+  const pad = new THREE.Mesh(new RoundedBoxGeometry(9.4, .055, 7.2, 4, .035), new THREE.MeshStandardMaterial({ color: "#29302e", roughness: .9 }));
   pad.position.y = .028; boardingPad.add(pad);
-  for (const x of [-1.5, 1.5]) {
-    const edge = new THREE.Mesh(new RoundedBoxGeometry(.12, .07, 2.05, 2, .018), boardingYellow);
+  for (const x of [-4.45, 4.45]) {
+    const edge = new THREE.Mesh(new RoundedBoxGeometry(.12, .07, 6.8, 2, .018), boardingYellow);
     edge.position.set(x, .07, 0); boardingPad.add(edge);
   }
-  for (const z of [-.92, .92]) {
-    const edge = new THREE.Mesh(new RoundedBoxGeometry(3.05, .07, .12, 2, .018), boardingYellow);
+  for (const z of [-3.35, 3.35]) {
+    const edge = new THREE.Mesh(new RoundedBoxGeometry(8.9, .07, .12, 2, .018), boardingYellow);
     edge.position.set(0, .07, z); boardingPad.add(edge);
   }
   const step = new THREE.Mesh(new RoundedBoxGeometry(1.55, .16, .72, 4, .04), materials.stone);
@@ -813,6 +841,7 @@ export class BronxZooWorld {
   private readonly jamSandwich = createJamSandwich();
   private readonly jamSandwichVelocity = new THREE.Vector3();
   private readonly garyEvents: BronxZooEvent[] = [];
+  private readonly completedAnimalQuests = new Set<ZooSideQuestId>();
   private garyRig: ZooAnimalRig | null = null;
   private garySnackState: GarySnackState = "NONE";
   private garyHungryAnnounced = false;
@@ -969,6 +998,7 @@ export class BronxZooWorld {
   get hasJamSandwich() { return this.garySnackState === "CARRIED"; }
   get isSkateboardMounted() { return this.skateboardMounted; }
   get skateboardRideLift() { return this.skateboardLift; }
+  get completedSideQuestIds() { return [...this.completedAnimalQuests]; }
 
   get objectiveTarget() {
     if (this.state === "ENTER_ZOO") return this.gatePosition.clone();
@@ -1006,10 +1036,18 @@ export class BronxZooWorld {
         distance: garyDistance,
       };
     }
+    let closestAnimalQuest: BronxZooInteractionHint | null = null;
+    for (const [questId, anchor] of Object.entries(ANIMAL_QUEST_ANCHORS) as Array<[ZooSideQuestId, (typeof ANIMAL_QUEST_ANCHORS)[ZooSideQuestId]]>) {
+      if (this.completedAnimalQuests.has(questId)) continue;
+      const distance = this.distanceXZ(player, anchor.target);
+      if (distance > 4.6 || closestAnimalQuest && distance >= closestAnimalQuest.distance) continue;
+      closestAnimalQuest = { kind: "ANIMAL_QUEST", questId, label: anchor.prompt, target: anchor.target.clone(), distance };
+    }
+    if (closestAnimalQuest) return closestAnimalQuest;
     const habitatDistance = this.distanceXZ(player, this.slothHabitatPosition);
     if (!this.releasedFriends && habitatDistance <= 3.2) return { kind: "SLOTH_HABITAT", label: "PICK THE SIX-PIN SLOTH HABITAT LOCK", target: this.slothHabitatPosition.clone(), distance: habitatDistance };
     const boardingDistance = this.distanceXZ(player, this.busBoardingPosition);
-    if (this.releasedFriends && boardingDistance <= 4.2) return { kind: "BUS_BOARDING", label: "BOARD MUSEUM SHUTTLE WITH ALL FOUR FRIENDS", target: this.busBoardingPosition.clone(), distance: boardingDistance };
+    if (this.releasedFriends && boardingDistance <= 7.5) return { kind: "BUS_BOARDING", label: "BOARD MUSEUM SHUTTLE WITH YOUR WHOLE MENAGERIE", target: this.busBoardingPosition.clone(), distance: boardingDistance };
     return null;
   }
 
@@ -1036,7 +1074,21 @@ export class BronxZooWorld {
       this.garySnackState = "AIRBORNE";
       return null;
     }
+    if (hint.kind === "ANIMAL_QUEST" && hint.questId) {
+      const quest = ZOO_SIDE_QUESTS[hint.questId];
+      return { kind: "ANIMAL_QUEST_STARTED", questId: hint.questId, message: `${quest.title}: ${quest.objective}` };
+    }
     return { kind: "LOCK_PICKING_STARTED", message: "Keep plug tension between 40% and 60%, then find the six pins in binding order." };
+  }
+
+  completeAnimalQuest(questId: ZooSideQuestId) {
+    if (this.completedAnimalQuests.has(questId)) return ZOO_SIDE_QUESTS[questId].recruitedSpecies;
+    this.completedAnimalQuests.add(questId);
+    ANIMAL_QUEST_SOURCE_ROOTS[questId].forEach(name => {
+      const source = this.root.getObjectByName(name);
+      if (source) source.visible = false;
+    });
+    return ZOO_SIDE_QUESTS[questId].recruitedSpecies;
   }
 
   consumeGaryEvent() { return this.garyEvents.shift() ?? null; }
@@ -1050,7 +1102,7 @@ export class BronxZooWorld {
 
   completeLockPicking() {
     this.setFriendsReleased(true);
-    return { kind: "SLOTHS_RELEASED", message: "The six pins set and the keeper lock turns. Lead your four friends along the promenade and board the museum shuttle bus." } as const;
+    return { kind: "SLOTHS_RELEASED", message: "The six pins set and the keeper lock turns. Lead your growing menagerie along the promenade and board the museum shuttle bus." } as const;
   }
 
   setFriendsReleased(released: boolean) {
@@ -1066,7 +1118,7 @@ export class BronxZooWorld {
   skateboardDonorNearby(player: THREE.Vector3, distance = 2.6) { return this.distanceXZ(player, this.skateboardDonorPosition) <= distance; }
   gateNearby(player: THREE.Vector3, distance = 3.5) { return this.distanceXZ(player, this.gatePosition) <= distance; }
   slothHabitatNearby(player: THREE.Vector3, distance = 3.2) { return this.distanceXZ(player, this.slothHabitatPosition) <= distance; }
-  busBoardingReached(player: THREE.Vector3, distance = 2.8) { return this.releasedFriends && this.distanceXZ(player, this.busBoardingPosition) <= distance; }
+  busBoardingReached(player: THREE.Vector3, distance = 7.5) { return this.releasedFriends && this.distanceXZ(player, this.busBoardingPosition) <= distance; }
   skateboardNearby(player: THREE.Vector3, distance = 2.4) { return !this.skateboardMounted && this.distanceXZ(player, this.skateboard.root.position) <= distance; }
 
   setSkateboardMounted(mounted: boolean, player?: THREE.Vector3, yaw = 0) {
@@ -1124,6 +1176,17 @@ export class BronxZooWorld {
     player.y = this.floorHeight(player.x, player.z) + 1.48;
   }
 
+  resolveCompanion(position: THREE.Vector3, velocity: THREE.Vector3, radius: number) {
+    position.x = THREE.MathUtils.clamp(position.x, this.worldBounds.minX + radius, this.worldBounds.maxX - radius);
+    position.z = THREE.MathUtils.clamp(position.z, this.worldBounds.minZ + radius, this.worldBounds.maxZ - radius);
+    for (const obstacle of this.obstacles) {
+      if (obstacle.enabled && !obstacle.enabled()) continue;
+      if (obstacle.kind === "circle") this.resolveCircle(position, velocity, obstacle, radius);
+      else this.resolveBox(position, velocity, obstacle, radius);
+    }
+    position.y = this.floorHeight(position.x, position.z);
+  }
+
   update(elapsed: number, delta = 1 / 60, player?: THREE.Vector3) {
     if (this.hasAdmissionTicket && this.state === "ENTER_ZOO" && player && player.z < -10.5) this.state = "FIND_SLOTHS";
     const gateOpen = this.hasAdmissionTicket ? 1 : 0;
@@ -1139,6 +1202,12 @@ export class BronxZooWorld {
     idleAuthoredHuman(this.skateboardDonor, delta);
     this.guestAgents.forEach(agent => updateAmbientHumanAgent(agent, elapsed, delta));
     this.animals.forEach(animal => animal.update(elapsed, delta));
+    this.completedAnimalQuests.forEach(questId => {
+      ANIMAL_QUEST_SOURCE_ROOTS[questId].forEach(name => {
+        const source = this.root.getObjectByName(name);
+        if (source) source.visible = false;
+      });
+    });
     if (player && !this.garyFed && !this.garyHungryAnnounced && this.distanceXZ(player, this.garyViewingPosition) <= 5.2) {
       this.garyHungryAnnounced = true;
       this.garyEvents.push({ kind: "GARY_HUNGRY", message: "Gary presses his nose toward the fence. He’s hungry — a nearby snack machine vends jam sandwiches." });
@@ -2102,26 +2171,36 @@ export class BronxZooWorld {
       { kind: "box", minX: -16, maxX: -3, minZ: -156, maxZ: -130 },
       { kind: "box", minX: 3, maxX: 16, minZ: -156, maxZ: -130 },
       { kind: "box", minX: -3, maxX: 3, minZ: -156, maxZ: -130.2, enabled: () => !this.releasedFriends },
+      // Habitat signs and vending machines are physical street furniture for
+      // the menagerie as well as the player. Small circular footprints keep
+      // wide animals from cutting through posts while preserving prompt reach.
+      ...[
+        [-31, -39], [32, -61.5], [-9, -65], [-31, -89], [31, -89],
+        [-28, -123], [28, -123], [-63.5, -47], [63, -97], [-9.5, -126.5],
+      ].map(([x, z]) => ({ kind: "circle" as const, x, z, radius: .52 })),
+      ...this.snackMachinePositions.map(position => ({ kind: "circle" as const, x: position.x, z: position.z, radius: .68 })),
     );
   }
 
-  private resolveCircle(player: THREE.Vector3, velocity: THREE.Vector3, obstacle: CircleObstacle) {
+  private resolveCircle(player: THREE.Vector3, velocity: THREE.Vector3, obstacle: CircleObstacle, padding = 0) {
     const dx = player.x - obstacle.x, dz = player.z - obstacle.z, distance = Math.hypot(dx, dz);
-    if (distance <= 0 || distance >= obstacle.radius) return;
-    const correction = (obstacle.radius - distance) / distance;
+    const clearance = obstacle.radius + padding;
+    if (distance <= 0 || distance >= clearance) return;
+    const correction = (clearance - distance) / distance;
     player.x += dx * correction;
     player.z += dz * correction;
     velocity.multiplyScalar(.58);
   }
 
-  private resolveBox(player: THREE.Vector3, velocity: THREE.Vector3, obstacle: BoxObstacle) {
-    if (player.x <= obstacle.minX || player.x >= obstacle.maxX || player.z <= obstacle.minZ || player.z >= obstacle.maxZ) return;
-    const distances = [player.x - obstacle.minX, obstacle.maxX - player.x, player.z - obstacle.minZ, obstacle.maxZ - player.z];
+  private resolveBox(player: THREE.Vector3, velocity: THREE.Vector3, obstacle: BoxObstacle, padding = 0) {
+    const minX = obstacle.minX - padding, maxX = obstacle.maxX + padding, minZ = obstacle.minZ - padding, maxZ = obstacle.maxZ + padding;
+    if (player.x <= minX || player.x >= maxX || player.z <= minZ || player.z >= maxZ) return;
+    const distances = [player.x - minX, maxX - player.x, player.z - minZ, maxZ - player.z];
     const smallest = Math.min(...distances), index = distances.indexOf(smallest);
-    if (index === 0) player.x = obstacle.minX;
-    else if (index === 1) player.x = obstacle.maxX;
-    else if (index === 2) player.z = obstacle.minZ;
-    else player.z = obstacle.maxZ;
+    if (index === 0) player.x = minX;
+    else if (index === 1) player.x = maxX;
+    else if (index === 2) player.z = minZ;
+    else player.z = maxZ;
     velocity.multiplyScalar(.52);
   }
 

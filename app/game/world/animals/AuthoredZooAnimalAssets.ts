@@ -5,7 +5,8 @@ export type AuthoredZooAnimalSpecies =
   | "gary-polar-bear"
   | "spider-monkey"
   | "sun-conure"
-  | "california-sea-lion";
+  | "california-sea-lion"
+  | "mallard-duck";
 export type AuthoredZooAnimalLod = "lod0" | "lod1" | "lod2";
 export type AuthoredZooAnimalMotion =
   | "idle"
@@ -140,6 +141,7 @@ const APPROVED_AUTHORED_ZOO_ANIMAL_SPECIES = new Set<AuthoredZooAnimalSpecies>([
   "spider-monkey",
   "california-sea-lion",
   "sun-conure",
+  "mallard-duck",
 ]);
 
 const templatePromises = new Map<string, Promise<AnimalTemplate>>();

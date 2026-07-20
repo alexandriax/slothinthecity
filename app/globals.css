@@ -468,6 +468,12 @@ button { font: inherit; }
   z-index:160;
 }
 .experience-settings > button { backdrop-filter:blur(14px); }
+body:has(.game-shell[data-side-quest]:not([data-side-quest="none"])) .experience-settings,
+body:has(.game-shell[data-side-quest]:not([data-side-quest="none"])) .debug-jump-menu,
+body.zoo-side-quest-open .experience-settings,
+body.zoo-side-quest-open .debug-jump-menu {
+  display:none !important;
+}
 .debug-jump-menu {
   position:fixed;
   z-index:240;

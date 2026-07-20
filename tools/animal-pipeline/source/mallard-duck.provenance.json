@@ -1,0 +1,18 @@
+{
+  "generatedSourceBlend": "tools/animal-pipeline/source/mallard-duck-source.blend",
+  "license": "Original-Project-Asset",
+  "referenceUse": "Anatomy, plumage and locomotion study only; no geometry, pixels, rig or animation copied.",
+  "review": {
+    "clayGate": "approved retained fixed-camera anatomical clay three-quarter, profile, face and webbed-foot contact renders",
+    "freshImportCount": 2,
+    "liveShowroomGate": "approved fresh Hero and Mobile imports in /debug/animals with exact authored clip contract and zero console warnings",
+    "texturedGate": "approved retained fixed-camera five-motion, face, webbed-foot and waterline renders"
+  },
+  "source": "tools/animal-pipeline/build_mallard_duck.py",
+  "speciesId": "mallard-duck",
+  "thirdPartyAssets": [],
+  "visualReferences": [
+    "https://www.allaboutbirds.org/guide/Mallard/overview",
+    "https://www.audubon.org/field-guide/bird/mallard"
+  ]
+}

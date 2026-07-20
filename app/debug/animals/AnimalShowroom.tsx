@@ -12,6 +12,7 @@ import {
   createBlueAndGoldMacaw,
   createGaryPolarBear,
   createGreenAracari,
+  createMallard,
   createRedPanda,
   createScarletIbis,
   createSeaLion,
@@ -37,6 +38,7 @@ type AnimalDefinition = {
 };
 
 const ANIMALS: AnimalDefinition[] = [
+  { label: "Central Park mallard", family: "Waterfowl", factory: createMallard },
   { label: "Gary", family: "Polar bear", factory: createGaryPolarBear },
   { label: "Sun conure", family: "Parrot", factory: createSunConure },
   { label: "Blue & gold", family: "Macaw", factory: createBlueAndGoldMacaw },

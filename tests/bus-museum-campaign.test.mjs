@@ -188,7 +188,7 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
   assert.match(game, /hud\.progress !== undefined/);
   assert.match(game, /cityBusWorld\.getWorldGripPositions\(busGripWorld\)/);
   assert.match(game, /camera\.worldToLocal\(busGripCamera\.left\)/);
-  assert.match(game, /sloth\.setVehiclePose\("cart", cityBusWorld\.steeringAmount/);
+  assert.match(game, /sloth\.setVehiclePose\(\s*"cart",\s*cityBusWorld\.steeringAmount/);
   assert.match(bus, /resolveStaticCollisions/);
   assert.match(bus, /resolveTrafficCollisions/);
   assert.match(bus, /circleObbContact/);
@@ -206,7 +206,7 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
   assert.match(bus, /collider\.kind === "barrier" \? 1\.5 : 3/);
   assert.match(bus, /collider\.kind === "barrier" \? 4\.5 : 9/);
   assert.match(game, /function scheduleMuseumPreload/);
-  assert.match(game, /new NaturalHistoryMuseumWorld\(museumPreloadScene/);
+  assert.match(game, /new NaturalHistoryMuseumWorld\(\s*museumPreloadScene/);
   assert.match(game, /renderer\.compile\(museumPreloadScene, preloadCamera\)/);
   assert.match(game, /Math\.min\(next\.pixelRatio, 1\.25\)/);
   assert.match(game, /composer && !museumRendering\(\)/);
@@ -227,7 +227,7 @@ test("the canonical first-person fur sampler becomes ready in every scene", asyn
   assert.match(rig, /viewmodelFur\.repeat\.set\(\.42, \.78\)/);
   assert.match(rig, /emissiveMap: viewmodelFur/);
   assert.match(checkpoints, /"bus-highway-continuation": "busmissedexit"/);
-  assert.match(game, /qaInput === "busmissedexit" \? "missed-exit"/);
+  assert.match(game, /qaInput === "busmissedexit"\s*\?\s*"missed-exit"/);
 });
 
 test("mobile shuttle controls expose both sequential gear shifts", async () => {
@@ -259,9 +259,9 @@ test("the zoo skateboard and AMNH six-scooter convoy provide fast travel", async
   assert.doesNotMatch(zoo, /zoo-skateboard-wayfinding-sign|RIDE ZOO SKATEBOARD · SPACE KICKFLIP|E TO RIDE · SPACE KICKFLIP/);
   assert.match(zoo, /triggerSkateboardKickflip/);
   assert.match(game, /travelSpeed = skateboarding \? 8\.8 : 2\.5/);
-  assert.match(museum, /for \(let index = 0; index < 6; index\+\+\)/);
-  assert.match(museum, /amnh-six-scooter-fast-travel-line-/);
-  assert.match(museum, /ONE RESERVED FOR GARY/);
+  assert.match(museum, /for \(let index = 0; index < scooterCapacity; index\+\+\)/);
+  assert.match(museum, /amnh-menagerie-scooter-/);
+  assert.match(museum, /WHOLE MENAGERIE/);
   assert.match(party, /rescued-sloth-friend-\$\{index \+ 1\}-ridden-electric-scooter/);
   assert.match(party, /formation === "scooter" \? catchingUp \? 10\.5 : 9\.1/);
   assert.match(party, /createPremiumScooterSlothFriend/);
@@ -294,10 +294,14 @@ test("shuttle boarding is a visible exterior interaction, never an invisible bod
   assert.match(zoo, /museum-shuttle-visible-metal-wheel-hub/);
   assert.match(zoo, /museum-shuttle-stop-dedicated-front-back-face/);
   assert.match(zoo, /kind: "BUS_BOARDING"/);
-  assert.match(zoo, /BOARD MUSEUM SHUTTLE WITH ALL FOUR FRIENDS/);
-  assert.match(game, /actionRequested && hint\?\.kind === "BUS_BOARDING"/);
-  assert.match(game, /rescuedParty\.allWithin\(zooWorld\.busBoardingPosition, 9\.5\)/);
-  assert.match(game, /Wait in the marked loading zone until all four rescued sloths reach the shuttle door/);
+  assert.match(zoo, /BOARD MUSEUM SHUTTLE WITH YOUR WHOLE MENAGERIE/);
+  assert.match(zoo, /RoundedBoxGeometry\(9\.4, \.055, 7\.2/);
+  assert.match(zoo, /boardingDistance <= 7\.5/);
+  assert.match(game, /const prompt = shuttleReady[\s\S]{0,220}RIDE ZOO SKATEBOARD/);
+  assert.match(game, /actionRequested && shuttleReady/);
+  assert.match(game, /shuttleBoardingRadiusFor\(totalFollowerCount\(\)\)/);
+  assert.match(game, /allFollowersWithin\(zooWorld\.busBoardingPosition, boardingRadius\)/);
+  assert.match(game, /broad yellow shuttle apron/);
   assert.doesNotMatch(game, /if \(zooWorld\.busBoardingReached\(player\)/);
 });
 
@@ -345,7 +349,7 @@ test("AMNH is a full exploration level with permanent halls, crowds, and Megathe
   assert.match(museum, /amnh-player-climbable-roosevelt-entrance-step/);
   assert.match(museum, /amnh-collision-matched-entrance-landing/);
   assert.match(museum, /if \(z >= 24\.45 && z <= 34\.65\)/);
-  assert.match(museum, /player\.y = this\.floorHeight\(player\.x, player\.z\) \+ 1\.48/);
+  assert.match(museum, /this\.resolveCompanion\(player, velocity, \.42\);[\s\S]{0,80}player\.y \+= 1\.48/);
   assert.match(museum, /context\.measureText\(text\)\.width <= maxWidth/);
   assert.match(museum, /amnh-textured-permanent-hall-wall-graphic-/);
   assert.match(museum, /amnh-interactive-collection-study-station/);
@@ -377,5 +381,5 @@ test("AMNH is a full exploration level with permanent halls, crowds, and Megathe
   assert.match(game, /museumWorld\.update\(gameTime, delta, player\)/);
   assert.match(game, /transitStage === "MUSEUM" && museumWorld/);
   assert.match(game, /function museumMissionReady\(\)/);
-  assert.match(game, /rescuedParty\.allWithin\(museumGatheringTarget, scooterRiding \? 11\.5 : 9\.5\)/);
+  assert.match(game, /allFollowersWithin\([\s\S]{0,120}scooterRiding \? 13\.5 : 11\.5/);
 });

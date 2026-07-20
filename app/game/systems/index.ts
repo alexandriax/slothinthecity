@@ -5,7 +5,9 @@ export {
   type AudioMix,
   type AudioScene,
   type FootstepSurface,
+  type MallardAudioCue,
   type TrainChimeKind,
+  type ZooQuestAudioCue,
 } from "./audio/PremiumAudioDirector";
 
 export {
