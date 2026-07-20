@@ -35,6 +35,10 @@ test("Reedline Rescue keeps one stable snag order and recruits the Central Park 
 
   const encounter = quest.duckPosition.clone();
   quest.update(0, 1 / 60, { player: encounter, locomotion: "water" });
+  assert.ok(quest.duckPosition.distanceTo(encounter) < .001, "mallard should begin on its authored swim path without a first-frame teleport");
+  assert.equal(quest.state, "ROAMING", "approaching must reveal the E prompt without silently starting the rescue");
+  assert.equal(quest.interactionHint(encounter)?.label, "HELP THE TANGLED DUCK");
+  assert.equal(quest.interact(encounter, 0)?.kind, "DUCK_CALLED");
   assert.equal(quest.state, "SNAG_1");
   assert.equal(quest.consumeEvent()?.kind, "DUCK_CALLED");
   for (let progress = 0; progress < 3; progress++) {
@@ -43,9 +47,38 @@ test("Reedline Rescue keeps one stable snag order and recruits the Central Park 
     assert.equal(event?.progress, progress + 1);
   }
   assert.equal(quest.state, "FREED");
-  quest.update(5, 1 / 60, { player: encounter, locomotion: "water" });
+  const passenger = {
+    position: new THREE.Vector3(12, 3.25, -8),
+    quaternion: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), .7),
+  };
+  quest.update(5, 1 / 60, { player: encounter, locomotion: "rowboat", rowboatPassenger: passenger });
   assert.equal(quest.state, "FOLLOWING");
   assert.equal(quest.isComplete, true);
+  quest.update(5.1, 1 / 60, { player: encounter, locomotion: "rowboat", rowboatPassenger: passenger });
+  assert.ok(quest.duckPosition.distanceTo(passenger.position) < .001, "recruited duck should ride at the authored passenger anchor");
+  assert.equal(quest.duck.root.userData.followMode, "rowboat");
+
+  let collisionProjections = 0;
+  quest.duck.root.rotation.set(.18, .7, -.12);
+  const beforePitch = Math.abs(quest.duck.root.rotation.x), beforeRoll = Math.abs(quest.duck.root.rotation.z);
+  const landPlayer = new THREE.Vector3(16, 1.48, -4);
+  quest.update(5.2, 1 / 60, {
+    player: landPlayer,
+    locomotion: "land",
+    floorYAt: () => 0,
+    resolveBody: () => { collisionProjections++; },
+  });
+  assert.equal(collisionProjections, 1, "land follower should be projected through the park obstacle resolver");
+  assert.ok(Math.abs(quest.duck.root.rotation.x) < beforePitch && Math.abs(quest.duck.root.rotation.z) < beforeRoll, "boat pitch and roll should settle when the duck returns to land");
+
+  const laterPassenger = {
+    position: new THREE.Vector3(-18, 2.9, 14),
+    quaternion: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -1.1),
+  };
+  quest.update(5.3, 1 / 60, { player: landPlayer, locomotion: "rowboat", rowboatPassenger: laterPassenger });
+  assert.ok(quest.duckPosition.distanceTo(laterPassenger.position) > 1, "boarding a later boat should animate instead of teleporting to the bench");
+  quest.update(6.1, 1 / 60, { player: landPlayer, locomotion: "rowboat", rowboatPassenger: laterPassenger });
+  assert.ok(quest.duckPosition.distanceTo(laterPassenger.position) < .001, "boarding transition should finish at the authored passenger anchor");
   quest.dispose();
   secondQuest.dispose();
 });

@@ -5,11 +5,14 @@ import test from "node:test";
 const readSource = path => readFile(new URL(path, import.meta.url), "utf8");
 
 test("every Bronx Zoo habitat quest hands its animal to the persistent menagerie", async () => {
-  const [logic, zoo, game, menagerie] = await Promise.all([
+  const [logic, zoo, game, menagerie, screen, audio, css] = await Promise.all([
     readSource("../app/game/zooSideQuestLogic.ts"),
     readSource("../app/game/world/BronxZooWorld.ts"),
     readSource("../app/game/SubwayGame.tsx"),
     readSource("../app/game/world/AnimalMenagerie.ts"),
+    readSource("../app/game/ZooSideQuestScreen.tsx"),
+    readSource("../app/game/systems/audio/PremiumAudioDirector.ts"),
+    readSource("../app/game/ZooSideQuestScreen.module.css"),
   ]);
 
   const questIds = [
@@ -37,6 +40,15 @@ test("every Bronx Zoo habitat quest hands its animal to the persistent menagerie
   assert.match(game, /zooWorld\.completeAnimalQuest\(questId\)/);
   assert.match(game, /animalMenagerie\.recruit\(id, spawn, floorY\)/);
   assert.match(game, /<ZooSideQuestScreen/);
+  assert.match(game, /audio=\{audio\}/);
+  assert.match(screen, /Listen to phrase/);
+  assert.match(screen, /playZooQuestCue\("bird-call"/);
+  assert.match(screen, /className=\{styles\.launchControls\}/);
+  assert.match(screen, /completionTimerRef\.current = window\.setTimeout\(onSolved, 420\)/);
+  assert.match(screen, /Math\.min\(2600, previous\.hold \+ 100\)/);
+  assert.doesNotMatch(css, /prairieLayout \.launchControls \{ display: none/);
+  assert.match(css, /z-index: 620/);
+  assert.match(audio, /playZooQuestCue\(cue: ZooQuestAudioCue/);
 });
 
 test("the lake duck, dynamic counts, scalable scooters, and collision-safe convoy persist across worlds", async () => {
@@ -54,9 +66,17 @@ test("the lake duck, dynamic counts, scalable scooters, and collision-safe convo
   assert.match(park, /new LakeDuckQuest/);
   assert.match(park, /CENTRAL_PARK_MALLARD_COMPANION_ID/);
   assert.match(park, /onEnterSubway\(duckRecruited \? \[CENTRAL_PARK_MALLARD_COMPANION_ID\] : \[\]\)/);
+  assert.match(park, /getWorldPassengerTransform/);
+  assert.match(park, /const duckInteractionActor = activeBoat\?\.root\.position \?\? player/);
+  assert.match(park, /duckActionLockedUntil/);
+  assert.match(park, /floorYAt: \(x, z\) => groundHeight\(x, z\) - 1\.48/);
+  assert.match(park, /resolveBody: resolveDuckCompanion/);
   assert.match(game, /totalFollowerCount/);
   assert.match(game, /friendCountLabel\(totalFollowerCount\(\)\)/);
   assert.match(game, /riderCountLabel\(totalFollowerCount\(\)\)/);
+  assert.match(game, /useState\(initialCompanionIds\.length\)/);
+  assert.match(game, /animalMenagerie\.reset\(player, player\.y - 1\.48, yaw\)/);
+  assert.match(game, /if \(!zooOverlayPaused\) gameTime \+= delta/);
   assert.match(museum, /const scooterCapacity = Math\.max\(1, Math\.floor\(riderCount\)\)/);
   assert.match(museum, /for \(let index = 0; index < scooterCapacity; index\+\+\)/);
   assert.match(navigation, /solveCompanionCollisions/);

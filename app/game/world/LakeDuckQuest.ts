@@ -14,7 +14,7 @@ export type LakeDuckQuestState =
   | "FREED"
   | "FOLLOWING";
 
-export type LakeDuckLocomotion = "water" | "land" | "flight";
+export type LakeDuckLocomotion = "water" | "land" | "flight" | "rowboat";
 
 export type LakeDuckQuestEvent = {
   kind: "DUCK_CALLED" | "REEDLINE_SNAG_RELEASED" | "DUCK_FREED" | "DUCK_RECRUITED";
@@ -35,6 +35,13 @@ export type LakeDuckUpdateContext = {
   locomotion?: LakeDuckLocomotion;
   /** Ground or deck support under a land-following mallard. */
   floorYAt?: (x: number, z: number) => number;
+  /** Project a land follower out of authored trees, signs, walls, and props. */
+  resolveBody?: (position: THREE.Vector3, velocity: THREE.Vector3, radius: number) => void;
+  /** Authored forward-bench pose while the player is rowing. */
+  rowboatPassenger?: {
+    position: THREE.Vector3;
+    quaternion: THREE.Quaternion;
+  } | null;
 };
 
 export type LakeDuckQuestOptions = {
@@ -51,6 +58,10 @@ type Snag = {
 };
 
 const TETHER_ANCHOR = new THREE.Vector3(68, THE_LAKE_SURFACE_Y + .065, -221);
+const ROAM_CENTER_X = 69;
+const ROAM_CENTER_Z = -222;
+const ROAM_X_RADIUS = 7.2;
+const ROAM_Z_RADIUS = 8.5;
 const SNAG_POSITIONS = [
   new THREE.Vector3(52, THE_LAKE_SURFACE_Y + .045, -202),
   new THREE.Vector3(47, THE_LAKE_SURFACE_Y + .045, -231),
@@ -115,6 +126,16 @@ export class LakeDuckQuest {
   private readonly looseCoil: THREE.Group;
   private readonly encounterRadius: number;
   private readonly previous = new THREE.Vector3();
+  private readonly tetherAnchor = TETHER_ANCHOR.clone();
+  private readonly freedFrom = new THREE.Vector3();
+  private readonly freedFromQuaternion = new THREE.Quaternion();
+  private readonly followTarget = new THREE.Vector3();
+  private readonly followVelocity = new THREE.Vector3();
+  private readonly targetQuaternion = new THREE.Quaternion();
+  private readonly passengerFrom = new THREE.Vector3();
+  private readonly passengerFromQuaternion = new THREE.Quaternion();
+  private passengerSeated = false;
+  private passengerBoardingStartedAt = 0;
   private stateValue: LakeDuckQuestState = "ROAMING";
   private releasedCount = 0;
   private stateStartedAt = 0;
@@ -125,14 +146,16 @@ export class LakeDuckQuest {
     this.root.userData.sideQuest = "reedline-rescue";
     this.root.userData.companionId = CENTRAL_PARK_MALLARD_COMPANION_ID;
     scene.add(this.root);
-    this.encounterRadius = options.encounterRadius ?? 8.5;
-    this.snagOrder = Object.freeze(seededOrder(options.sessionSeed ?? 0x4d414c4c));
+    this.encounterRadius = options.encounterRadius ?? 11.5;
+    this.snagOrder = Object.freeze(seededOrder(options.sessionSeed ?? Math.floor(Math.random() * 0xffffffff)));
     this.root.userData.stableSnagOrder = [...this.snagOrder];
 
     this.duck = createMallard(textures, quality);
     this.duck.root.name = "central-park-mallard-reedline-hero";
     this.duck.root.userData.logicalId = CENTRAL_PARK_MALLARD_COMPANION_ID;
-    this.duck.root.position.set(87, THE_LAKE_SURFACE_Y + .065, -222);
+    // Match the first procedural swim pose so the mallard never flashes at a
+    // distant construction position before its first update.
+    this.duck.root.position.set(ROAM_CENTER_X + ROAM_X_RADIUS, THE_LAKE_SURFACE_Y + .065, ROAM_CENTER_Z);
     this.previous.copy(this.duck.root.position);
     this.root.add(this.duck.root);
 
@@ -189,6 +212,7 @@ export class LakeDuckQuest {
   get progress() { return this.releasedCount; }
   get isComplete() { return this.stateValue === "FOLLOWING"; }
   get isFreed() { return this.stateValue === "FREED" || this.stateValue === "FOLLOWING"; }
+  get isRescueActive() { return this.stateValue.startsWith("SNAG_") || this.stateValue === "FREED"; }
   get activeSnagIndex() { return this.releasedCount < this.snagOrder.length ? this.snagOrder[this.releasedCount] : null; }
   get duckPosition() { return this.duck.root.position; }
   get currentTarget() {
@@ -201,7 +225,7 @@ export class LakeDuckQuest {
   interactionHint(player: THREE.Vector3): LakeDuckInteractionHint | null {
     if (this.disposed || this.stateValue === "FREED" || this.stateValue === "FOLLOWING") return null;
     if (this.stateValue === "ROAMING") {
-      if (Math.hypot(player.x - this.duck.root.position.x, player.z - this.duck.root.position.z) > this.encounterRadius + 1.5) return null;
+      if (Math.hypot(player.x - this.duck.root.position.x, player.z - this.duck.root.position.z) > this.encounterRadius) return null;
       return { label: "HELP THE TANGLED DUCK", target: this.duck.root.position.clone(), overridesVehicleExit: true };
     }
     const active = this.activeSnagIndex;
@@ -215,7 +239,7 @@ export class LakeDuckQuest {
   interact(player: THREE.Vector3, elapsed = this.stateStartedAt): LakeDuckQuestEvent | null {
     if (this.disposed || this.stateValue === "FREED" || this.stateValue === "FOLLOWING") return null;
     if (this.stateValue === "ROAMING") {
-      if (Math.hypot(player.x - this.duck.root.position.x, player.z - this.duck.root.position.z) > this.encounterRadius + 1.5) return null;
+      if (Math.hypot(player.x - this.duck.root.position.x, player.z - this.duck.root.position.z) > this.encounterRadius) return null;
       this.beginRescue(elapsed);
       return this.events.at(-1) ?? null;
     }
@@ -234,6 +258,8 @@ export class LakeDuckQuest {
       this.line.visible = false;
       this.looseCoil.visible = true;
       this.duck.root.userData.animationState = "short-flight";
+      this.freedFrom.copy(this.duck.root.position);
+      this.freedFromQuaternion.copy(this.duck.root.quaternion);
       const event: LakeDuckQuestEvent = { kind: "DUCK_FREED", progress: 3, message: "The last loop slips free. The mallard shakes out his wings and circles back to you." };
       this.events.push(event);
       return event;
@@ -249,7 +275,8 @@ export class LakeDuckQuest {
     if (this.stateValue !== "ROAMING") return;
     this.stateValue = "SNAG_1";
     this.stateStartedAt = elapsed;
-    this.duck.root.position.copy(TETHER_ANCHOR);
+    this.tetherAnchor.copy(this.duck.root.position);
+    this.looseCoil.position.copy(this.tetherAnchor).add(new THREE.Vector3(.7, .02, .55));
     this.duck.root.userData.animationState = "swim";
     this.updateLineGeometry();
     this.events.push({ kind: "DUCK_CALLED", progress: 0, message: "A mallard paddles close, trailing discarded line. Follow each taut strand and lift it from the lily pads." });
@@ -262,30 +289,30 @@ export class LakeDuckQuest {
     this.stateStartedAt = 0;
     this.line.visible = false;
     this.looseCoil.visible = false;
+    this.passengerSeated = false;
+    this.passengerBoardingStartedAt = 0;
     this.duck.root.position.set(player.x + 1.7, floorY, player.z + 2.6);
+    this.duck.root.rotation.set(0, 0, 0);
     this.previous.copy(this.duck.root.position);
     this.duck.root.userData.animationState = "swim";
   }
 
   update(elapsed: number, delta: number, context: LakeDuckUpdateContext) {
     if (this.disposed) return;
-    const player = context.player;
     if (this.stateValue === "ROAMING") {
-      const approachedBeforeMovement = Math.hypot(player.x - this.duck.root.position.x, player.z - this.duck.root.position.z) <= this.encounterRadius;
       const phase = elapsed * .22;
       this.previous.copy(this.duck.root.position);
       this.duck.root.position.set(
-        69 + Math.cos(phase) * (18 + Math.sin(phase * 2) * 2.4),
+        ROAM_CENTER_X + Math.cos(phase) * (ROAM_X_RADIUS + Math.sin(phase * 2) * 1.1),
         THE_LAKE_SURFACE_Y + .065 + Math.sin(elapsed * 2.1) * .008,
-        -222 + Math.sin(phase) * 23,
+        ROAM_CENTER_Z + Math.sin(phase) * ROAM_Z_RADIUS,
       );
       const moved = this.duck.root.position.clone().sub(this.previous);
       if (moved.lengthSq() > .000001) this.duck.root.rotation.y = Math.atan2(-moved.x, -moved.z);
       this.duck.root.userData.animationState = "swim";
-      if (approachedBeforeMovement || Math.hypot(player.x - this.duck.root.position.x, player.z - this.duck.root.position.z) <= this.encounterRadius) this.beginRescue(elapsed);
     } else if (this.stateValue.startsWith("SNAG_")) {
       this.previous.copy(this.duck.root.position);
-      this.duck.root.position.set(TETHER_ANCHOR.x + Math.sin(elapsed * .42) * 1.8, TETHER_ANCHOR.y + Math.sin(elapsed * 2.4) * .007, TETHER_ANCHOR.z + Math.cos(elapsed * .42) * 1.1);
+      this.duck.root.position.set(this.tetherAnchor.x + Math.sin(elapsed * .42) * 1.8, this.tetherAnchor.y + Math.sin(elapsed * 2.4) * .007, this.tetherAnchor.z + Math.cos(elapsed * .42) * 1.1);
       this.duck.root.rotation.y = -.35 + Math.sin(elapsed * .55) * .22;
       this.duck.root.userData.animationState = "swim";
       this.updateLineGeometry();
@@ -293,13 +320,23 @@ export class LakeDuckQuest {
       const sinceFreed = elapsed - this.stateStartedAt;
       const amount = THREE.MathUtils.clamp(sinceFreed / 1.65, 0, 1);
       this.previous.copy(this.duck.root.position);
-      const angle = amount * Math.PI * 2;
-      this.duck.root.position.set(TETHER_ANCHOR.x + Math.cos(angle) * 2.1, TETHER_ANCHOR.y + Math.sin(amount * Math.PI) * .65, TETHER_ANCHOR.z + Math.sin(angle) * 2.1);
-      this.duck.root.rotation.y = -angle - Math.PI / 2;
+      this.resolveFollowTarget(context, this.followTarget);
+      const eased = amount * amount * (3 - 2 * amount);
+      this.duck.root.position.lerpVectors(this.freedFrom, this.followTarget, eased);
+      this.duck.root.position.y += Math.sin(amount * Math.PI) * (context.rowboatPassenger ? 1.15 : .72);
+      if (context.rowboatPassenger) {
+        this.targetQuaternion.copy(context.rowboatPassenger.quaternion);
+        this.duck.root.quaternion.copy(this.freedFromQuaternion).slerp(this.targetQuaternion, eased);
+      } else {
+        const moved = this.duck.root.position.clone().sub(this.previous);
+        if (moved.lengthSq() > .00001) this.duck.root.rotation.y = Math.atan2(-moved.x, -moved.z);
+      }
       this.duck.root.userData.animationState = "short-flight";
       if (amount >= 1) {
         this.stateValue = "FOLLOWING";
         this.stateStartedAt = elapsed;
+        this.passengerSeated = Boolean(context.rowboatPassenger);
+        this.passengerBoardingStartedAt = elapsed - .72;
         this.events.push({ kind: "DUCK_RECRUITED", progress: 3, message: "Reedline Rescue complete — the freed mallard joins your menagerie." });
       }
     }
@@ -324,8 +361,26 @@ export class LakeDuckQuest {
   }
 
   private updateFollowing(elapsed: number, delta: number, context: LakeDuckUpdateContext) {
+    if (context.rowboatPassenger) {
+      if (!this.passengerSeated) {
+        this.passengerSeated = true;
+        this.passengerBoardingStartedAt = elapsed;
+        this.passengerFrom.copy(this.duck.root.position);
+        this.passengerFromQuaternion.copy(this.duck.root.quaternion);
+      }
+      const boarding = THREE.MathUtils.clamp((elapsed - this.passengerBoardingStartedAt) / .72, 0, 1);
+      const eased = boarding * boarding * (3 - 2 * boarding);
+      this.duck.root.position.lerpVectors(this.passengerFrom, context.rowboatPassenger.position, eased);
+      this.duck.root.position.y += Math.sin(boarding * Math.PI) * .46;
+      this.duck.root.quaternion.copy(this.passengerFromQuaternion).slerp(context.rowboatPassenger.quaternion, eased);
+      this.duck.root.userData.animationState = boarding < .82 ? "short-flight" : boarding < 1 ? "landing-settle" : "idle";
+      this.duck.root.userData.followingPlayer = true;
+      this.duck.root.userData.followMode = "rowboat";
+      return;
+    }
+    this.passengerSeated = false;
     const yaw = context.playerYaw ?? 0;
-    const locomotion = context.locomotion ?? "water";
+    const locomotion = context.locomotion === "rowboat" ? "water" : context.locomotion ?? "water";
     const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
     const right = new THREE.Vector3(-forward.z, 0, forward.x);
     const target = context.player.clone().addScaledVector(forward, -2.8).addScaledVector(right, 1.65);
@@ -335,11 +390,13 @@ export class LakeDuckQuest {
     const speed = mode === "flight" ? 6.8 : mode === "water" ? 3.8 : 2.55;
     const dx = target.x - this.duck.root.position.x, dz = target.z - this.duck.root.position.z;
     this.previous.copy(this.duck.root.position);
+    this.followVelocity.set(0, 0, 0);
     if (distance > .04) {
       const step = Math.min(distance, speed * delta * THREE.MathUtils.clamp(distance * .55, .72, 2.2));
-      this.duck.root.position.x += dx / distance * step;
-      this.duck.root.position.z += dz / distance * step;
+      this.followVelocity.set(dx / distance * step / Math.max(delta, .001), 0, dz / distance * step / Math.max(delta, .001));
+      this.duck.root.position.addScaledVector(this.followVelocity, delta);
     }
+    if (mode === "land") context.resolveBody?.(this.duck.root.position, this.followVelocity, .38);
     const support = mode === "water"
       ? THE_LAKE_SURFACE_Y + .065
       : (context.floorYAt?.(this.duck.root.position.x, this.duck.root.position.z) ?? context.player.y - 1.48) + (mode === "flight" ? 1.2 : 0);
@@ -350,10 +407,26 @@ export class LakeDuckQuest {
       const error = Math.atan2(Math.sin(desiredYaw - this.duck.root.rotation.y), Math.cos(desiredYaw - this.duck.root.rotation.y));
       this.duck.root.rotation.y += error * (1 - Math.exp(-delta * 7));
     }
+    const upright = 1 - Math.exp(-delta * 9);
+    this.duck.root.rotation.x += (0 - this.duck.root.rotation.x) * upright;
+    this.duck.root.rotation.z += (0 - this.duck.root.rotation.z) * upright;
     this.duck.root.userData.animationState = mode === "flight" ? "short-flight" : mode === "water" ? "swim" : distance > .18 ? "walk" : "idle";
     this.duck.root.userData.followingPlayer = true;
     this.duck.root.userData.followMode = mode;
     this.duck.root.position.y += mode === "water" ? Math.sin(elapsed * 2.4) * .005 : 0;
+  }
+
+  private resolveFollowTarget(context: LakeDuckUpdateContext, target: THREE.Vector3) {
+    if (context.rowboatPassenger) return target.copy(context.rowboatPassenger.position);
+    const yaw = context.playerYaw ?? 0;
+    const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+    const right = new THREE.Vector3(-forward.z, 0, forward.x);
+    target.copy(context.player).addScaledVector(forward, -2.8).addScaledVector(right, 1.65);
+    const locomotion = context.locomotion ?? "water";
+    target.y = locomotion === "water"
+      ? THE_LAKE_SURFACE_Y + .065
+      : context.floorYAt?.(target.x, target.z) ?? context.player.y - 1.48;
+    return target;
   }
 
   private updateLineGeometry() {

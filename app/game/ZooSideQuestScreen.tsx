@@ -38,6 +38,10 @@ import {
   type ZooSideQuestConfig,
   type ZooSideQuestId,
 } from "./zooSideQuestLogic";
+import type {
+  PremiumAudioDirector,
+  ZooQuestAudioCue,
+} from "./systems";
 
 export { ZOO_SIDE_QUEST_IDS, ZOO_SIDE_QUESTS } from "./zooSideQuestLogic";
 export type {
@@ -48,12 +52,14 @@ export type {
 
 export type ZooSideQuestScreenProps = {
   questId: ZooSideQuestId;
+  audio: PremiumAudioDirector;
   onComplete: (questId: ZooSideQuestId) => void;
   onCancel: () => void;
 };
 
 type MechanicProps<T extends ZooSideQuestConfig> = {
   config: T;
+  audio: PremiumAudioDirector;
   onSolved: () => void;
 };
 
@@ -63,7 +69,6 @@ const BIRD_NAMES = [
   "Scarlet ibis",
   "Green aracari",
 ] as const;
-const BIRD_GLYPHS = ["◉", "◆", "◇", "◌"] as const;
 const STRIPE_BAND_NAMES = ["Thorax", "Flank", "Haunch"] as const;
 
 function cssVars(values: Record<`--${string}`, string | number>) {
@@ -71,11 +76,38 @@ function cssVars(values: Record<`--${string}`, string | number>) {
 }
 
 function useQuestKeyboard(handler: (event: KeyboardEvent) => void) {
+  const handlerRef = useRef(handler);
   useEffect(() => {
-    const keyDown = (event: KeyboardEvent) => handler(event);
+    handlerRef.current = handler;
+  }, [handler]);
+  useEffect(() => {
+    const keyDown = (event: KeyboardEvent) => handlerRef.current(event);
     window.addEventListener("keydown", keyDown, true);
     return () => window.removeEventListener("keydown", keyDown, true);
-  }, [handler]);
+  }, []);
+}
+
+function useDelayedQuestCompletion(onSolved: () => void) {
+  const timerRef = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    },
+    [],
+  );
+  return useCallback((delay: number) => {
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(onSolved, delay);
+  }, [onSolved]);
+}
+
+function playQuestSound(
+  audio: PremiumAudioDirector,
+  cue: ZooQuestAudioCue,
+  variant = 0,
+) {
+  void audio.unlock();
+  audio.playZooQuestCue(cue, variant);
 }
 
 function ProgressDots({
@@ -127,88 +159,118 @@ function QuestStatus({
   );
 }
 
-function FourVoices({ config, onSolved }: MechanicProps<AviaryVoicesConfig>) {
+function FourVoices({ config, audio, onSolved }: MechanicProps<AviaryVoicesConfig>) {
   const [round, setRound] = useState(0);
   const [answerIndex, setAnswerIndex] = useState(0);
+  const [playbackIndex, setPlaybackIndex] = useState(-1);
   const [cue, setCue] = useState(-1);
   const [accepting, setAccepting] = useState(false);
-  const [replay, setReplay] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [started, setStarted] = useState(false);
   const [mistakes, setMistakes] = useState(0);
-  const [status, setStatus] = useState("Listen for the first phrase.");
+  const [status, setStatus] = useState(
+    "Ready when you are. Listen once, then echo the flock.",
+  );
   const phraseLength = config.roundLengths[round];
+  const timers = useRef<number[]>([]);
 
-  useEffect(() => {
-    const timers: number[] = [];
-    for (let index = 0; index < phraseLength; index++) {
-      timers.push(
-        window.setTimeout(
-          () => setCue(config.melody[index]),
-          380 + index * 560,
-        ),
-      );
-      timers.push(window.setTimeout(() => setCue(-1), 750 + index * 560));
-    }
-    timers.push(
-      window.setTimeout(
-        () => {
-          setAccepting(true);
-          setStatus("Your turn. Repeat the phrase.");
-        },
-        500 + phraseLength * 560,
-      ),
-    );
-    return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [config, phraseLength, replay]);
+  const clearTimers = useCallback(() => {
+    timers.current.forEach((timer) => window.clearTimeout(timer));
+    timers.current = [];
+  }, []);
+  useEffect(() => clearTimers, [clearTimers]);
 
-  const replayPhrase = useCallback(() => {
+  const playPhrase = useCallback(() => {
+    clearTimers();
+    void audio.unlock();
+    setStarted(true);
+    setPlaying(true);
     setAccepting(false);
     setAnswerIndex(0);
+    setPlaybackIndex(-1);
     setCue(-1);
-    setStatus(`Listen · ${phraseLength} calls`);
-    setReplay((value) => value + 1);
-  }, [phraseLength]);
+    setStatus(`Count in · then listen for ${phraseLength} distinct calls.`);
+    [0, 1, 2].forEach((count) => {
+      timers.current.push(
+        window.setTimeout(
+          () => audio.playZooQuestCue("count-in", count),
+          80 + count * 220,
+        ),
+      );
+    });
+    const phraseStartsAt = 830;
+    for (let index = 0; index < phraseLength; index++) {
+      const voice = config.melody[index];
+      const startsAt = phraseStartsAt + index * 610;
+      timers.current.push(
+        window.setTimeout(() => {
+          setPlaybackIndex(index);
+          setCue(voice);
+          setStatus(`${BIRD_NAMES[voice]} · call ${index + 1} of ${phraseLength}`);
+          audio.playZooQuestCue("bird-call", voice);
+        }, startsAt),
+      );
+      timers.current.push(
+        window.setTimeout(() => setCue(-1), startsAt + 390),
+      );
+    }
+    timers.current.push(
+      window.setTimeout(() => {
+        setCue(-1);
+        setPlaybackIndex(-1);
+        setPlaying(false);
+        setAccepting(true);
+        setStatus("Your turn · repeat the phrase from left to right.");
+      }, phraseStartsAt + phraseLength * 610),
+    );
+  }, [audio, clearTimers, config.melody, phraseLength]);
 
   const answer = useCallback(
     (voice: number) => {
-      if (!accepting) return;
+      if (!accepting || playing) return;
+      playQuestSound(audio, "bird-call", voice);
+      setCue(voice);
+      timers.current.push(window.setTimeout(() => setCue(-1), 330));
       if (config.melody[answerIndex] !== voice) {
         setAccepting(false);
         setMistakes((value) => value + 1);
+        playQuestSound(audio, "failure");
         setStatus(
-          `${BIRD_NAMES[voice]} answered out of turn. The flock will sing the same phrase again.`,
+          `${BIRD_NAMES[voice]} broke the phrase. Listen again—the melody will not change.`,
         );
-        window.setTimeout(replayPhrase, 620);
+        timers.current.push(window.setTimeout(playPhrase, 900));
         return;
       }
       const nextIndex = answerIndex + 1;
       setAnswerIndex(nextIndex);
-      setStatus(
-        `${BIRD_NAMES[voice]} matches · ${nextIndex} / ${phraseLength}`,
-      );
+      setStatus(`${BIRD_NAMES[voice]} matches · ${nextIndex} / ${phraseLength}`);
       if (nextIndex !== phraseLength) return;
       setAccepting(false);
       if (round === config.roundLengths.length - 1) {
-        setStatus("The whole aviary answers in harmony.");
-        onSolved();
+        setStatus("Four voices answer together—the canopy chorus is complete.");
+        [0, 1, 2, 3].forEach((bird, index) => {
+          timers.current.push(
+            window.setTimeout(
+              () => audio.playZooQuestCue("bird-call", bird),
+              index * 105,
+            ),
+          );
+        });
+        timers.current.push(window.setTimeout(onSolved, 620));
       } else {
-        setStatus("Phrase matched. The flock adds another pair of calls.");
-        window.setTimeout(() => {
-          setAnswerIndex(0);
-          setCue(-1);
-          setStatus("Listen for the longer phrase.");
-          setRound((value) => value + 1);
-        }, 720);
+        playQuestSound(audio, "success");
+        setStatus("Phrase matched. The flock adds two calls—listen for the longer pattern.");
+        timers.current.push(
+          window.setTimeout(() => {
+            setRound((value) => value + 1);
+            setAnswerIndex(0);
+            setStarted(false);
+            setStatus("Next round ready · press Listen when you are settled.");
+          }, 720),
+        );
       }
     },
-    [
-      accepting,
-      answerIndex,
-      config,
-      onSolved,
-      phraseLength,
-      replayPhrase,
-      round,
-    ],
+    [accepting, answerIndex, audio, config, onSolved, phraseLength, playPhrase, playing, round],
   );
 
   useQuestKeyboard((event) => {
@@ -217,69 +279,72 @@ function FourVoices({ config, onSolved }: MechanicProps<AviaryVoicesConfig>) {
       event.preventDefault();
       answer(Number(match[1]) - 1);
     }
-    if (event.code === "KeyR") {
+    if (event.code === "KeyR" && !playing) {
       event.preventDefault();
-      replayPhrase();
+      playPhrase();
     }
   });
 
   return (
     <div className={styles.voicesLayout}>
-      <div
-        className={styles.aviaryStage}
-        aria-label="Four illuminated bird perches"
-      >
+      <div className={styles.aviaryStage} aria-label="Four illuminated bird perches">
         <div className={styles.canopyGlow} />
-        {BIRD_NAMES.map((name, index) => (
-          <button
-            aria-label={`Voice ${index + 1}, ${name}`}
-            className={`${styles.birdPerch} ${cue === index ? styles.cued : ""} ${accepting ? styles.listening : ""}`}
-            disabled={!accepting}
-            key={name}
-            onClick={() => answer(index)}
-            style={cssVars({ "--perch-index": index })}
-            type="button"
-          >
-            <span>{BIRD_GLYPHS[index]}</span>
-            <i />
-            <strong>{index + 1}</strong>
-            <small>{name}</small>
-          </button>
-        ))}
+        <div className={styles.phraseRail} aria-label="Call playback timeline">
+          {Array.from({ length: phraseLength }, (_, index) => (
+            <i
+              className={
+                index === playbackIndex
+                  ? styles.playingCall
+                  : index < answerIndex
+                    ? styles.answeredCall
+                    : undefined
+              }
+              key={index}
+            />
+          ))}
+        </div>
+        <div className={styles.perchGrid}>
+          {BIRD_NAMES.map((name, index) => (
+            <button
+              aria-label={`Voice ${index + 1}, ${name}`}
+              className={`${styles.birdPerch} ${index ? styles[`bird${index + 1}`] : ""} ${cue === index ? styles.cued : ""} ${accepting ? styles.listening : ""}`}
+              disabled={!accepting}
+              key={name}
+              onClick={() => answer(index)}
+              type="button"
+            >
+              <span className={styles.birdPortrait} aria-hidden="true">
+                <i className={styles.birdTail} />
+                <i className={styles.birdBody}><b /><em /><u /></i>
+              </span>
+              <strong>{index + 1}</strong>
+              <small>{name}</small>
+            </button>
+          ))}
+        </div>
         <div className={styles.perchBranch} />
       </div>
       <aside className={styles.readoutPanel}>
         <span className={styles.panelLabel}>Chorus phrase</span>
         <strong>Round {round + 1} / 3</strong>
-        <ProgressDots
-          count={phraseLength}
-          current={answerIndex}
-          label="Calls repeated"
-        />
-        <p>The generated melody is fixed until you leave this quest.</p>
+        <ProgressDots count={phraseLength} current={answerIndex} label="Calls repeated" />
+        <p>{playing ? "Listening—watch and hear each species answer." : accepting ? "Your turn. Keys 1–4 match the four perches." : "The phrase remains fixed for this attempt."}</p>
         <button
-          className={styles.secondaryButton}
-          onClick={replayPhrase}
+          className={started ? styles.secondaryButton : styles.primaryButton}
+          disabled={playing}
+          onClick={playPhrase}
           type="button"
         >
-          Replay phrase <kbd>R</kbd>
+          {playing ? "Flock singing…" : started ? "Replay phrase" : "Listen to phrase"} <kbd>R</kbd>
         </button>
-        {mistakes > 0 && (
-          <small>
-            {mistakes} incorrect {mistakes === 1 ? "call" : "calls"} · no
-            progress lost between rounds
-          </small>
-        )}
+        {mistakes > 0 && <small>{mistakes} retry {mistakes === 1 ? "made" : "attempts"} · completed rounds stay safe</small>}
       </aside>
-      <QuestStatus tone={accepting ? "ready" : "normal"}>{status}</QuestStatus>
+      <QuestStatus tone={accepting ? "ready" : playing ? "normal" : "normal"}>{status}</QuestStatus>
     </div>
   );
 }
 
-function RideTheCurrent({
-  config,
-  onSolved,
-}: MechanicProps<SeaLionCurrentConfig>) {
+function RideTheCurrent({ config, audio, onSolved }: MechanicProps<SeaLionCurrentConfig>) {
   const [state, setState] = useState<SeaLionCurrentState>(() => ({
     position: { ...config.start },
     gateIndex: 0,
@@ -289,21 +354,34 @@ function RideTheCurrent({
     "Gate one is active. Read the first cross-current, then steer.",
   );
   const solvedRef = useRef(false);
+  const strokeLockedRef = useRef(false);
+  const strokeTimerRef = useRef<number | null>(null);
+  const [stroking, setStroking] = useState(false);
+  const completeAfter = useDelayedQuestCompletion(onSolved);
   const drift =
     config.currentPattern[state.turn % config.currentPattern.length] ?? 0;
 
   const steer = useCallback(
     (direction: CurrentDirection) => {
-      if (solvedRef.current) return;
+      if (solvedRef.current || strokeLockedRef.current) return;
+      strokeLockedRef.current = true;
+      setStroking(true);
+      playQuestSound(audio, "water", state.turn % 4);
+      if (strokeTimerRef.current !== null) window.clearTimeout(strokeTimerRef.current);
+      strokeTimerRef.current = window.setTimeout(() => {
+        strokeLockedRef.current = false;
+        setStroking(false);
+      }, 300);
       setState((previous) => {
         const next = advanceSeaLionCurrent(previous, config, direction);
         if (next.gateIndex > previous.gateIndex) {
+          playQuestSound(audio, "latch", next.gateIndex);
           if (next.gateIndex === config.gates.length) {
             solvedRef.current = true;
             setStatus(
               "All three gates ring out — the sea lion surfaces beside the buoy.",
             );
-            window.setTimeout(onSolved, 260);
+            completeAfter(260);
           } else
             setStatus(
               `Gate ${next.gateIndex} cleared. Gate ${next.gateIndex + 1} is live.`,
@@ -315,8 +393,12 @@ function RideTheCurrent({
         return next;
       });
     },
-    [config, drift, onSolved],
+    [audio, completeAfter, config, drift, state.turn],
   );
+
+  useEffect(() => () => {
+    if (strokeTimerRef.current !== null) window.clearTimeout(strokeTimerRef.current);
+  }, []);
 
   useQuestKeyboard((event) => {
     const direction =
@@ -338,7 +420,7 @@ function RideTheCurrent({
   return (
     <div className={styles.currentLayout}>
       <div
-        className={styles.poolGrid}
+        className={`${styles.poolGrid} ${stroking ? styles.stroking : ""}`}
         aria-label={`Enrichment buoy at column ${state.position.x + 1}, row ${state.position.y + 1}`}
       >
         <div className={styles.waterStripes} />
@@ -415,7 +497,7 @@ function RideTheCurrent({
   );
 }
 
-function CanopyRig({ config, onSolved }: MechanicProps<MonkeyCanopyConfig>) {
+function CanopyRig({ config, audio, onSolved }: MechanicProps<MonkeyCanopyConfig>) {
   const [tension, setTension] = useState(0);
   const [clock, setClock] = useState(0);
   const [latched, setLatched] = useState([false, false, false]);
@@ -423,6 +505,7 @@ function CanopyRig({ config, onSolved }: MechanicProps<MonkeyCanopyConfig>) {
     "Build line tension, then watch the first moving knot.",
   );
   const solvedRef = useRef(false);
+  const completeAfter = useDelayedQuestCompletion(onSolved);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -435,7 +518,8 @@ function CanopyRig({ config, onSolved }: MechanicProps<MonkeyCanopyConfig>) {
   const tapTension = useCallback(() => {
     setTension((value) => Math.min(100, value + 10.5));
     setStatus("Torque added. Hold the needle in the green rigging band.");
-  }, []);
+    playQuestSound(audio, "tension", Math.round(tension / 20));
+  }, [audio, tension]);
 
   const latch = useCallback(
     (anchor: number) => {
@@ -444,6 +528,7 @@ function CanopyRig({ config, onSolved }: MechanicProps<MonkeyCanopyConfig>) {
         (clock * config.anchorSpeeds[anchor] + config.anchorOffsets[anchor]) %
         1;
       if (tension < 38 || tension > 68) {
+        playQuestSound(audio, "failure");
         setStatus(
           tension < 38
             ? "The line is too slack to seat a knot."
@@ -452,6 +537,7 @@ function CanopyRig({ config, onSolved }: MechanicProps<MonkeyCanopyConfig>) {
         return;
       }
       if (!canopyAnchorReady(phase)) {
+        playQuestSound(audio, "failure");
         setStatus(
           `Anchor ${anchor + 1} missed the jaw. Track the knot back toward the center notch.`,
         );
@@ -461,15 +547,16 @@ function CanopyRig({ config, onSolved }: MechanicProps<MonkeyCanopyConfig>) {
         index === anchor ? true : value,
       );
       setLatched(next);
+      playQuestSound(audio, "latch", anchor);
       setStatus(
         `Anchor ${anchor + 1} secured. ${next.filter(Boolean).length} / 3 load paths stable.`,
       );
       if (next.every(Boolean)) {
         solvedRef.current = true;
-        window.setTimeout(onSolved, 360);
+        completeAfter(360);
       }
     },
-    [clock, config, latched, onSolved, tension],
+    [audio, clock, completeAfter, config, latched, tension],
   );
 
   useQuestKeyboard((event) => {
@@ -549,7 +636,7 @@ function CanopyRig({ config, onSolved }: MechanicProps<MonkeyCanopyConfig>) {
   );
 }
 
-function StripeScan({ config, onSolved }: MechanicProps<ZebraStripeConfig>) {
+function StripeScan({ config, audio, onSolved }: MechanicProps<ZebraStripeConfig>) {
   const [offsets, setOffsets] = useState(() => [...config.initialOffsets]);
   const [locked, setLocked] = useState([false, false, false]);
   const [selected, setSelected] = useState(0);
@@ -557,6 +644,7 @@ function StripeScan({ config, onSolved }: MechanicProps<ZebraStripeConfig>) {
     "Thorax band selected. Slide its live stripes onto the amber reference.",
   );
   const solvedRef = useRef(false);
+  const completeAfter = useDelayedQuestCompletion(onSolved);
 
   const move = useCallback(
     (amount: number, band = selected) => {
@@ -570,14 +658,16 @@ function StripeScan({ config, onSolved }: MechanicProps<ZebraStripeConfig>) {
       setStatus(
         `${STRIPE_BAND_NAMES[band]} sample shifted ${amount < 0 ? "left" : "right"}.`,
       );
+      playQuestSound(audio, "scan", band);
     },
-    [locked, selected],
+    [audio, locked, selected],
   );
 
   const lockBand = useCallback(
     (band = selected) => {
       setSelected(band);
       if (!stripeBandAligned(offsets[band], config.targetOffsets[band])) {
+        playQuestSound(audio, "failure");
         setStatus(
           `${STRIPE_BAND_NAMES[band]} does not match yet. Center the live black seam on the amber registration line.`,
         );
@@ -587,15 +677,16 @@ function StripeScan({ config, onSolved }: MechanicProps<ZebraStripeConfig>) {
         index === band ? true : value,
       );
       setLocked(next);
+      playQuestSound(audio, "latch", band);
       setStatus(
         `${STRIPE_BAND_NAMES[band]} identity locked · ${next.filter(Boolean).length} / 3`,
       );
       if (next.every(Boolean) && !solvedRef.current) {
         solvedRef.current = true;
-        window.setTimeout(onSolved, 360);
+        completeAfter(360);
       }
     },
-    [config, locked, offsets, onSolved, selected],
+    [audio, completeAfter, config, locked, offsets, selected],
   );
 
   useQuestKeyboard((event) => {
@@ -638,13 +729,17 @@ function StripeScan({ config, onSolved }: MechanicProps<ZebraStripeConfig>) {
                   ? "IDENTITY LOCKED"
                   : stripeBandAligned(offset, config.targetOffsets[index])
                     ? "MATCH"
-                    : "SCANNING"}
+                    : `${Math.abs(config.targetOffsets[index] - offset)} STEP${Math.abs(config.targetOffsets[index] - offset) === 1 ? "" : "S"} OFF`}
               </strong>
             </header>
             <div className={styles.stripeWindow}>
               <i
                 className={styles.referenceStripe}
                 style={{ left: `${50 + config.targetOffsets[index] * 5}%` }}
+              />
+              <i
+                className={styles.liveRegistration}
+                style={{ left: `${50 + offset * 5}%` }}
               />
               <b
                 className={styles.liveStripes}
@@ -682,6 +777,7 @@ function StripeScan({ config, onSolved }: MechanicProps<ZebraStripeConfig>) {
 
 function ScentOnTheWind({
   config,
+  audio,
   onSolved,
 }: MechanicProps<RedPandaScentConfig>) {
   const [directions, setDirections] = useState(() => [
@@ -691,6 +787,7 @@ function ScentOnTheWind({
     "The scent ribbon is waiting at the first vane.",
   );
   const solvedRef = useRef(false);
+  const completeAfter = useDelayedQuestCompletion(onSolved);
   const reach = scentTrailReach(directions, config.solution);
 
   const rotate = useCallback(
@@ -701,6 +798,9 @@ function ScentOnTheWind({
       );
       const nextReach = scentTrailReach(next, config.solution);
       setDirections(next);
+      playQuestSound(audio, "wind", index);
+      if (nextReach > reach) playQuestSound(audio, "success");
+      else if (nextReach < reach) playQuestSound(audio, "failure");
       setStatus(
         nextReach === config.solution.length
           ? "The ribbon reaches the high nest in one continuous stream."
@@ -712,10 +812,10 @@ function ScentOnTheWind({
       );
       if (nextReach === config.solution.length) {
         solvedRef.current = true;
-        window.setTimeout(onSolved, 440);
+        completeAfter(440);
       }
     },
-    [config, directions, onSolved, reach],
+    [audio, completeAfter, config, directions, reach],
   );
 
   useQuestKeyboard((event) => {
@@ -729,10 +829,16 @@ function ScentOnTheWind({
   return (
     <div className={styles.scentLayout}>
       <div className={styles.mountainCanopy}>
-        <div
-          className={styles.scentRibbon}
-          style={{ width: `${Math.max(5, (reach / 4) * 100)}%` }}
-        />
+        <svg className={styles.scentRibbon} viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          <path className={styles.scentGuide} d="M4 63 C14 63 14 58 18 58 S27 30 34 30 S45 58 55 58 S65 30 76 30 S88 16 96 16" />
+          <path
+            className={styles.scentFlow}
+            d="M4 63 C14 63 14 58 18 58 S27 30 34 30 S45 58 55 58 S65 30 76 30 S88 16 96 16"
+            pathLength="1"
+            style={{ strokeDashoffset: 1 - reach / 4 }}
+          />
+        </svg>
+        <div className={styles.scentParticles} style={cssVars({ "--scent-reach": reach })} />
         {directions.map((direction, index) => (
           <button
             className={`${styles.windVane} ${index < reach ? styles.scented : index === reach ? styles.leadingVane : ""}`}
@@ -773,13 +879,14 @@ function ScentOnTheWind({
   );
 }
 
-function SunTrail({ config, onSolved }: MechanicProps<TortoiseSunConfig>) {
+function SunTrail({ config, audio, onSolved }: MechanicProps<TortoiseSunConfig>) {
   const [angles, setAngles] = useState(() => [...config.initialAngles]);
   const [selected, setSelected] = useState(0);
   const [status, setStatus] = useState(
     "Mirror one selected. Find the first bright reflection.",
   );
   const solvedRef = useRef(false);
+  const completeAfter = useDelayedQuestCompletion(onSolved);
   const reach = sunTrailReach(angles, config.solution);
 
   const rotate = useCallback(
@@ -791,6 +898,9 @@ function SunTrail({ config, onSolved }: MechanicProps<TortoiseSunConfig>) {
       const nextReach = sunTrailReach(next, config.solution);
       setSelected(mirror);
       setAngles(next);
+      playQuestSound(audio, "move", mirror);
+      if (nextReach > reach) playQuestSound(audio, "sun", nextReach);
+      else if (nextReach < reach) playQuestSound(audio, "failure");
       setStatus(
         nextReach === 3
           ? "The warming stone floods with afternoon light."
@@ -802,10 +912,10 @@ function SunTrail({ config, onSolved }: MechanicProps<TortoiseSunConfig>) {
       );
       if (nextReach === 3) {
         solvedRef.current = true;
-        window.setTimeout(onSolved, 440);
+        completeAfter(440);
       }
     },
-    [angles, config, onSolved, reach, selected],
+    [angles, audio, completeAfter, config, reach, selected],
   );
 
   useQuestKeyboard((event) => {
@@ -865,13 +975,18 @@ function SunTrail({ config, onSolved }: MechanicProps<TortoiseSunConfig>) {
             </div>
           </div>
         ))}
-        {Array.from({ length: 4 }, (_, index) => (
-          <i
-            className={`${styles.lightBeam} ${index <= reach ? styles.beamLit : ""}`}
-            key={index}
-            style={cssVars({ "--beam-index": index })}
-          />
-        ))}
+        <svg className={styles.solarBeamPath} viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          {[[11, 16, 25, 53], [25, 53, 49, 38], [49, 38, 73, 53], [73, 53, 92, 80]].map((segment, index) => (
+            <line
+              className={index <= reach ? styles.beamLit : undefined}
+              key={index}
+              x1={segment[0]}
+              y1={segment[1]}
+              x2={segment[2]}
+              y2={segment[3]}
+            />
+          ))}
+        </svg>
         <div
           className={`${styles.warmingStone} ${reach === 3 ? styles.stoneWarm : ""}`}
         >
@@ -894,31 +1009,42 @@ function SunTrail({ config, onSolved }: MechanicProps<TortoiseSunConfig>) {
 
 function WetlandBalance({
   config,
+  audio,
   onSolved,
 }: MechanicProps<FlamingoWetlandConfig>) {
-  const [reading, setReading] = useState<WetlandReading>(() => ({
-    water: config.initialWater,
-    salinity: config.initialSalinity,
+  const [simulation, setSimulation] = useState<{ reading: WetlandReading; hold: number }>(() => ({
+    reading: { water: config.initialWater, salinity: config.initialSalinity },
+    hold: 0,
   }));
-  const [hold, setHold] = useState(0);
+  const { reading, hold } = simulation;
   const [status, setStatus] = useState(
     "The wetland is shallow and salty. Restore the habitat bands.",
   );
   const solvedRef = useRef(false);
+  const completionTimerRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (completionTimerRef.current !== null) {
+        window.clearTimeout(completionTimerRef.current);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     const interval = window.setInterval(() => {
-      setReading((previous) => {
+      setSimulation((previous) => {
         const next = {
-          water: clamp(previous.water + config.waterDrift, 0, 100),
-          salinity: clamp(previous.salinity + config.salinityDrift, 0, 100),
+          water: clamp(previous.reading.water + config.waterDrift, 0, 100),
+          salinity: clamp(previous.reading.salinity + config.salinityDrift, 0, 100),
         };
-        setHold((value) =>
-          wetlandReadingSafe(next)
-            ? Math.min(3000, value + 100)
-            : Math.max(0, value - 180),
-        );
-        return next;
+        return {
+          reading: next,
+          hold: wetlandReadingSafe(next)
+            ? Math.min(2600, previous.hold + 100)
+            : Math.max(0, previous.hold - 180),
+        };
       });
     }, 100);
     return () => window.clearInterval(interval);
@@ -930,12 +1056,15 @@ function WetlandBalance({
     setStatus(
       "Stable shallows confirmed. The flamingos step into the restored feeding shelf.",
     );
-    const timer = window.setTimeout(onSolved, 420);
-    return () => window.clearTimeout(timer);
+    completionTimerRef.current = window.setTimeout(onSolved, 420);
   }, [hold, onSolved]);
 
   const operate = useCallback((valve: WetlandValve) => {
-    setReading((previous) => operateWetlandValve(previous, valve));
+    setSimulation((previous) => ({
+      ...previous,
+      reading: operateWetlandValve(previous.reading, valve),
+    }));
+    playQuestSound(audio, "valve", valve === "intake" ? 0 : valve === "drain" ? 1 : 2);
     setStatus(
       valve === "intake"
         ? "Brackish intake opened: depth rises with a little salt."
@@ -943,7 +1072,7 @@ function WetlandBalance({
           ? "Drain opened: depth falls while minerals concentrate."
           : "Fresh flow opened: clean water dilutes the wetland.",
     );
-  }, []);
+  }, [audio]);
 
   useQuestKeyboard((event) => {
     const match = /^(?:Digit|Numpad)([1-3])$/.exec(event.code);
@@ -1033,6 +1162,7 @@ function WetlandBalance({
 
 function PrairieSeeding({
   config,
+  audio,
   onSolved,
 }: MechanicProps<BisonPrairieConfig>) {
   const [angle, setAngle] = useState(0);
@@ -1043,6 +1173,9 @@ function PrairieSeeding({
     y: number;
   } | null>(null);
   const [shots, setShots] = useState(0);
+  const [projectile, setProjectile] = useState<{ x: number; y: number } | null>(null);
+  const [launching, setLaunching] = useState(false);
+  const launchTimerRef = useRef<number | null>(null);
   const [status, setStatus] = useState(
     "Plot one marked. Move the projected reticle into its soil ring.",
   );
@@ -1050,40 +1183,56 @@ function PrairieSeeding({
   const preview = prairieLanding(angle, power, config.wind);
 
   const aim = useCallback(
-    (amount: number) => setAngle((value) => clamp(value + amount, -35, 35)),
-    [],
+    (amount: number) => {
+      setAngle((value) => clamp(value + amount, -35, 35));
+      playQuestSound(audio, "move", amount > 0 ? 2 : 1);
+    },
+    [audio],
   );
   const charge = useCallback(
-    (amount: number) => setPower((value) => clamp(value + amount, 24, 96)),
-    [],
+    (amount: number) => {
+      setPower((value) => clamp(value + amount, 24, 96));
+      playQuestSound(audio, "tension", amount > 0 ? 3 : 1);
+    },
+    [audio],
   );
   const launch = useCallback(() => {
-    if (solvedRef.current) return;
+    if (solvedRef.current || launching) return;
     const landing = prairieLanding(angle, power, config.wind),
       target = config.targets[targetIndex];
     const hit = prairieShotHits(landing, target);
-    setLastLanding(landing);
+    setLaunching(true);
+    setProjectile(landing);
     setShots((value) => value + 1);
-    if (!hit) {
-      const lateral = landing.x < target.x ? "left" : "right";
-      const range = landing.y < target.y ? "short" : "long";
-      setStatus(
-        `Seed pod landed ${range} and ${lateral}. Adjust the projected reticle and reload.`,
-      );
-      return;
-    }
-    const next = targetIndex + 1;
-    setTargetIndex(next);
-    setStatus(
-      next === config.targets.length
-        ? "Every bare plot blooms with prairie seed."
-        : `Plot ${targetIndex + 1} seeded. Plot ${next + 1} is now active.`,
-    );
-    if (next === config.targets.length) {
-      solvedRef.current = true;
-      window.setTimeout(onSolved, 460);
-    }
-  }, [angle, config, onSolved, power, targetIndex]);
+    setStatus("Seed pod away—read the arc and crosswind.");
+    playQuestSound(audio, "launch");
+    launchTimerRef.current = window.setTimeout(() => {
+      setProjectile(null);
+      setLaunching(false);
+      setLastLanding(landing);
+      playQuestSound(audio, "impact", hit ? 2 : 0);
+      if (!hit) {
+        const lateral = landing.x < target.x ? "left" : "right";
+        const range = landing.y < target.y ? "short" : "long";
+        setStatus(`Seed pod landed ${range} and ${lateral}. Correct the reticle and reload.`);
+        return;
+      }
+      const next = targetIndex + 1;
+      setTargetIndex(next);
+      playQuestSound(audio, "success");
+      setStatus(next === config.targets.length
+        ? "Every bare plot erupts with native prairie seed."
+        : `Plot ${targetIndex + 1} seeded. Plot ${next + 1} is now active.`);
+      if (next === config.targets.length) {
+        solvedRef.current = true;
+        launchTimerRef.current = window.setTimeout(onSolved, 650);
+      }
+    }, 680);
+  }, [angle, audio, config, launching, onSolved, power, targetIndex]);
+
+  useEffect(() => () => {
+    if (launchTimerRef.current !== null) window.clearTimeout(launchTimerRef.current);
+  }, []);
 
   useQuestKeyboard((event) => {
     if (event.code === "ArrowLeft" || event.code === "KeyA") {
@@ -1151,6 +1300,9 @@ function PrairieSeeding({
             ×
           </div>
         )}
+        {projectile && (
+          <div className={styles.seedProjectile} style={plotStyle(projectile)} aria-hidden="true"><i /></div>
+        )}
         <div
           className={styles.seedLauncher}
           style={cssVars({ "--launcher-angle": `${angle}deg` })}
@@ -1189,8 +1341,8 @@ function PrairieSeeding({
             Bleed −
           </button>
         </section>
-        <button className={styles.launchButton} onClick={launch} type="button">
-          Launch seed pod <kbd>Enter</kbd>
+        <button className={styles.launchButton} disabled={launching} onClick={launch} type="button">
+          {launching ? "Pod in flight…" : "Launch seed pod"} <kbd>Enter</kbd>
         </button>
         <small>
           {shots} {shots === 1 ? "pod" : "pods"} launched · plot{" "}
@@ -1206,38 +1358,51 @@ function PrairieSeeding({
 
 function QuestMechanic({
   config,
+  audio,
   onSolved,
 }: {
   config: ZooSideQuestConfig;
+  audio: PremiumAudioDirector;
   onSolved: () => void;
 }) {
   switch (config.questId) {
     case "aviary-voices":
-      return <FourVoices config={config} onSolved={onSolved} />;
+      return <FourVoices config={config} audio={audio} onSolved={onSolved} />;
     case "sea-lion-current":
-      return <RideTheCurrent config={config} onSolved={onSolved} />;
+      return <RideTheCurrent config={config} audio={audio} onSolved={onSolved} />;
     case "monkey-canopy-rig":
-      return <CanopyRig config={config} onSolved={onSolved} />;
+      return <CanopyRig config={config} audio={audio} onSolved={onSolved} />;
     case "zebra-stripe-scan":
-      return <StripeScan config={config} onSolved={onSolved} />;
+      return <StripeScan config={config} audio={audio} onSolved={onSolved} />;
     case "red-panda-scent-wind":
-      return <ScentOnTheWind config={config} onSolved={onSolved} />;
+      return <ScentOnTheWind config={config} audio={audio} onSolved={onSolved} />;
     case "tortoise-sun-trail":
-      return <SunTrail config={config} onSolved={onSolved} />;
+      return <SunTrail config={config} audio={audio} onSolved={onSolved} />;
     case "flamingo-wetland-balance":
-      return <WetlandBalance config={config} onSolved={onSolved} />;
+      return <WetlandBalance config={config} audio={audio} onSolved={onSolved} />;
     case "bison-prairie-seeding":
-      return <PrairieSeeding config={config} onSolved={onSolved} />;
+      return <PrairieSeeding config={config} audio={audio} onSolved={onSolved} />;
   }
+}
+
+const questSessionConfigs = new Map<ZooSideQuestId, ZooSideQuestConfig>();
+
+function sessionConfig(questId: ZooSideQuestId) {
+  const existing = questSessionConfigs.get(questId);
+  if (existing) return existing;
+  const created = createZooSideQuestConfig(questId);
+  questSessionConfigs.set(questId, created);
+  return created;
 }
 
 export function ZooSideQuestScreen({
   questId,
+  audio,
   onComplete,
   onCancel,
 }: ZooSideQuestScreenProps) {
   const metadata = ZOO_SIDE_QUESTS[questId];
-  const config = useMemo(() => createZooSideQuestConfig(questId), [questId]);
+  const config = useMemo(() => sessionConfig(questId), [questId]);
   const [completedQuest, setCompletedQuest] = useState<ZooSideQuestId | null>(
     null,
   );
@@ -1245,7 +1410,36 @@ export function ZooSideQuestScreen({
   const screenRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
-    screenRef.current?.focus();
+    document.body.classList.add("zoo-side-quest-open");
+    const previousFocus = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    const screen = screenRef.current;
+    screen?.focus();
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.code !== "Tab" || !screen) return;
+      const focusable = [...screen.querySelectorAll<HTMLElement>(
+        "button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex='-1'])",
+      )].filter((element) => element.offsetParent !== null);
+      if (!focusable.length) return;
+      const first = focusable[0], last = focusable.at(-1)!;
+      if (document.activeElement === screen) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+        return;
+      }
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault(); last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault(); first.focus();
+      }
+    };
+    window.addEventListener("keydown", trapFocus, true);
+    return () => {
+      window.removeEventListener("keydown", trapFocus, true);
+      document.body.classList.remove("zoo-side-quest-open");
+      previousFocus?.focus();
+    };
   }, [questId]);
   useEffect(() => {
     if (!completed) return;
@@ -1260,9 +1454,13 @@ export function ZooSideQuestScreen({
     onCancel();
   });
 
-  const solve = useCallback(() => setCompletedQuest(questId), [questId]);
+  const solve = useCallback(() => {
+    playQuestSound(audio, "success");
+    setCompletedQuest(questId);
+  }, [audio, questId]);
   return (
     <section
+      aria-describedby="zoo-side-quest-brief"
       aria-labelledby="zoo-side-quest-title"
       aria-modal="true"
       className={`${styles.screen} ${styles[metadata.theme]} ${completed ? styles.completed : ""}`}
@@ -1270,6 +1468,7 @@ export function ZooSideQuestScreen({
       ref={screenRef}
       role="dialog"
       tabIndex={-1}
+      onPointerDown={() => void audio.unlock()}
     >
       <div className={styles.atmosphere} />
       <div className={styles.grain} />
@@ -1284,12 +1483,12 @@ export function ZooSideQuestScreen({
         </button>
       </header>
       <main className={styles.mechanicShell}>
-        <QuestMechanic config={config} onSolved={solve} />
+        <QuestMechanic config={config} audio={audio} onSolved={solve} />
       </main>
       <aside className={styles.briefing}>
         <div>
           <span>Field brief</span>
-          <p>{metadata.instructions}</p>
+          <p id="zoo-side-quest-brief">{metadata.instructions}</p>
         </div>
         <div>
           <span>Controls</span>

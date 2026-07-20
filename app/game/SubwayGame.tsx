@@ -154,7 +154,7 @@ export function SubwayGame({
   const [transition, setTransition] = useState("");
   const [zooPhase, setZooPhase] = useState("OUTBOUND");
   const [ticketHeld, setTicketHeld] = useState(true);
-  const [followerCount, setFollowerCount] = useState(0);
+  const [followerCount, setFollowerCount] = useState(initialCompanionIds.length);
   const [garyFed, setGaryFed] = useState(false);
   const [returnLeg, setReturnLeg] = useState("OUTBOUND");
   const [vehicleSpeed, setVehicleSpeed] = useState(0);
@@ -759,6 +759,9 @@ export function SubwayGame({
         garyCompanion.setVisible(true);
         garyCompanion.reset(player, player.y - 1.48);
       }
+      if (animalMenagerie.isActive) {
+        animalMenagerie.reset(player, player.y - 1.48, yaw);
+      }
       if (!preserveAnnouncements) audio.cancelTransitAnnouncements();
       audio.setScene(
         station === "WEST_FARMS" ? "west-farms" : "subway-station",
@@ -1041,7 +1044,7 @@ export function SubwayGame({
       closeSideQuest();
       setZooPhase(zooWorld?.questState ?? "FIND_SLOTHS");
       showToast(
-        "The habitat setup stays exactly as you left it. Press E when you are ready to continue.",
+        "You step back safely. The habitat pattern stays fixed for this visit; press E when you are ready for a fresh attempt.",
         3600,
       );
     };
@@ -1804,10 +1807,11 @@ export function SubwayGame({
     let raf = 0;
     function frame(timestamp?: number) {
       raf = requestAnimationFrame(frame);
-      if (timestamp !== undefined) quality.reportFrame(timestamp);
+      const zooOverlayPaused = transitStage === "BRONX_ZOO" && Boolean(lockPickingRef.current || sideQuestRef.current);
+      if (timestamp !== undefined && !zooOverlayPaused) quality.reportFrame(timestamp);
       timer.update(timestamp);
       const delta = Math.min(timer.getDelta(), 0.05);
-      gameTime += delta;
+      if (!zooOverlayPaused) gameTime += delta;
       if (transitStage === "RIDING" && interiorWorld) {
         const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)),
           right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)),
@@ -3012,7 +3016,7 @@ export function SubwayGame({
       <div className="world-grade" />
       <div className="world-vignette" />
       <div className="grain" />
-      {transition && (
+      {transition && !lockPicking && !activeSideQuest && (
         <div className="world-transition" role="status">
           <span>Now entering</span>
           <strong>{transition}</strong>
@@ -3233,6 +3237,7 @@ export function SubwayGame({
       )}
       {activeSideQuest && (
         <ZooSideQuestScreen
+          audio={audio}
           questId={activeSideQuest}
           onCancel={() => cancelSideQuestRef.current()}
           onComplete={(questId) => completeSideQuestRef.current(questId)}

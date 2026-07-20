@@ -25,8 +25,15 @@ function promptKeyCode(promptKey: string) {
 }
 
 export function resolveTouchAction(prompt: string, promptKey: string, vehicle: TouchControlsProps["vehicle"]): TouchAction | null {
-  if (vehicle) return { code: "KeyE", label: "Exit" };
   const code = promptKeyCode(promptKey);
+  if (vehicle) {
+    const vehicleInteraction = code === "KeyE" && prompt && !prompt.includes("EXIT");
+    if (vehicleInteraction) {
+      const label = prompt.includes("DUCK") || prompt.includes("REEDLINE") || prompt.includes("SNAG") ? "Rescue" : "Use";
+      return { code: "KeyE", label };
+    }
+    return { code: "KeyE", label: "Exit" };
+  }
   if (!code) return null;
   const label = prompt.includes("SWIPE METROCARD") ? "Swipe"
     : prompt.includes("COLLECT METROCARD") ? "Card"
@@ -109,7 +116,7 @@ export function TouchControls({ arboreal, prompt, promptKey, showPause = false, 
     {expanded && <>
       <div className="touch-stick" aria-label="Movement joystick" onPointerDown={(event) => { try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch {} moveStick(event); }} onPointerMove={(event) => { if (typeof event.currentTarget.hasPointerCapture !== "function" || event.currentTarget.hasPointerCapture(event.pointerId)) moveStick(event); }} onPointerUp={stopStick} onPointerCancel={stopStick} onLostPointerCapture={stopStick}><span /></div>
       <div className="touch-look" aria-label="Look area" onPointerDown={(event) => { try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch {} lookPoint.current = { x: event.clientX, y: event.clientY }; }} onPointerMove={(event) => { if (typeof event.currentTarget.hasPointerCapture !== "function" || event.currentTarget.hasPointerCapture(event.pointerId)) moveLook(event); }} onPointerUp={() => { lookPoint.current = null; }} onPointerCancel={() => { lookPoint.current = null; }} onLostPointerCapture={() => { lookPoint.current = null; }}/>
-      {action && !dedicatedAction && <button className="touch-action" data-input-code={action.code} aria-label={vehicle ? `Exit ${vehicle === "cart" ? "field-services cart" : vehicle === "bus" ? "museum shuttle bus" : vehicle === "skateboard" ? "skateboard" : vehicle === "scooter" ? "electric scooter" : "rowboat"}` : prompt || action.label} onClick={() => { emitKey(action.code, true); emitKey(action.code, false); }}>{action.label}</button>}
+      {action && !dedicatedAction && <button className="touch-action" data-input-code={action.code} aria-label={vehicle && action.label === "Exit" ? `Exit ${vehicle === "cart" ? "field-services cart" : vehicle === "bus" ? "museum shuttle bus" : vehicle === "skateboard" ? "skateboard" : vehicle === "scooter" ? "electric scooter" : "rowboat"}` : prompt || action.label} onClick={() => { emitKey(action.code, true); emitKey(action.code, false); }}>{action.label}</button>}
       {(vehicle || arboreal) && <button className="touch-grip" aria-label={vehicle === "skateboard" ? "Kickflip" : vehicle ? `Hold ${vehicle} brake` : "Hold grip"} onPointerDown={(event) => { try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch {} setHeld(vehicle ? "Space" : "ShiftLeft", true); }} onPointerUp={() => setHeld(vehicle ? "Space" : "ShiftLeft", false)} onPointerCancel={() => setHeld(vehicle ? "Space" : "ShiftLeft", false)} onLostPointerCapture={() => setHeld(vehicle ? "Space" : "ShiftLeft", false)}>{vehicle === "skateboard" ? "Trick" : vehicle ? "Brake" : "Grip"}</button>}
       {vehicle === "bus" && <div className="touch-gears" aria-label="Shuttle gear controls"><button type="button" data-input-code="KeyR" aria-label="Shift shuttle gear up" onClick={() => { emitKey("KeyR", true); emitKey("KeyR", false); }}>Gear +</button><button type="button" data-input-code="KeyF" aria-label="Shift shuttle gear down" onClick={() => { emitKey("KeyF", true); emitKey("KeyF", false); }}>Gear −</button></div>}
       {arboreal && <button className="touch-down" aria-label="Descend from canopy" onClick={() => { emitKey("ControlLeft", true); emitKey("ControlLeft", false); }}>Down</button>}

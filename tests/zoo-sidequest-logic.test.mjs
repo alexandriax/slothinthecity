@@ -57,6 +57,13 @@ test("each randomized quest configuration is deterministic for a seed and valid 
   assert.deepEqual(voices.roundLengths, [3, 5, 7]);
   assert.equal(voices.melody.length, 7);
   assert.ok(voices.melody.every((voice, index) => index === 0 || voice !== voices.melody[index - 1]));
+
+  for (let seed = 0; seed < 60; seed++) {
+    const current = Logic.createZooSideQuestConfig("sea-lion-current", seeded(seed));
+    let state = { position: current.start, gateIndex: 0, turn: 0 };
+    for (const direction of current.solution) state = Logic.advanceSeaLionCurrent(state, current, direction);
+    assert.equal(state.gateIndex, current.gates.length, `sea-lion current seed ${seed} must retain a validated winning route`);
+  }
 });
 
 test("current, canopy, stripe, scent, and sun puzzle rules expose deterministic success feedback", () => {

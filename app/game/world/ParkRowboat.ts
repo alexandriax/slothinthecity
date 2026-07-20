@@ -459,6 +459,7 @@ export class ParkRowboat {
   readonly driverEntryPoint = new THREE.Object3D();
   readonly entryPoint = this.driverEntryPoint;
   readonly seatTransform = new THREE.Object3D();
+  readonly passengerTransform = new THREE.Object3D();
   readonly cameraTransform = new THREE.Object3D();
   readonly collisionBounds = new THREE.Box3(
     new THREE.Vector3(-.88, -.38, -2.65),
@@ -514,6 +515,14 @@ export class ParkRowboat {
     this.seatTransform.position.set(0, .61, .93);
     this.floatPivot.add(this.seatTransform);
 
+    // The forward bench is deliberately reserved for a small companion. The
+    // transform follows the same buoyancy pivot as the rower, so a passenger
+    // remains planted through yaw, oar strokes, chop, and hard braking.
+    this.passengerTransform.name = "forward-companion-seat-transform";
+    this.passengerTransform.position.set(0, .59, -1.04);
+    this.passengerTransform.rotation.y = 0;
+    this.floatPivot.add(this.passengerTransform);
+
     this.cameraTransform.name = "rower-camera-transform";
     this.cameraTransform.position.set(0, 1.34, .96);
     this.cameraTransform.rotation.x = -.045;
@@ -556,6 +565,12 @@ export class ParkRowboat {
   getWorldSeatTransform(position = new THREE.Vector3(), quaternion = new THREE.Quaternion()) {
     this.seatTransform.getWorldPosition(position);
     this.seatTransform.getWorldQuaternion(quaternion);
+    return { position, quaternion };
+  }
+
+  getWorldPassengerTransform(position = new THREE.Vector3(), quaternion = new THREE.Quaternion()) {
+    this.passengerTransform.getWorldPosition(position);
+    this.passengerTransform.getWorldQuaternion(quaternion);
     return { position, quaternion };
   }
 

@@ -131,6 +131,8 @@ export type SeaLionCurrentConfig = {
   start: CurrentGridPoint;
   gates: readonly CurrentGridPoint[];
   currentPattern: readonly (-1 | 0 | 1)[];
+  /** A generated, validated route used by QA to prove every current is winnable. */
+  solution: readonly CurrentDirection[];
 };
 export type SeaLionCurrentState = { position: CurrentGridPoint; gateIndex: number; turn: number };
 
@@ -207,13 +209,27 @@ export function createZooSideQuestConfig(id: ZooSideQuestId, random = Math.rando
       }
       return { questId: id, melody, roundLengths: [3, 5, 7] };
     }
-    case "sea-lion-current":
-      return {
-        questId: id,
-        start: { x: 3, y: 4 },
-        gates: [3, 2, 1].map(y => ({ x: randomInt(random, 1, 5), y })),
-        currentPattern: Array.from({ length: 12 }, () => randomInt(random, -1, 1) as -1 | 0 | 1),
-      };
+    case "sea-lion-current": {
+      const start = { x: 3, y: 4 };
+      const currentPattern = Array.from({ length: 12 }, () => randomInt(random, -1, 1) as -1 | 0 | 1);
+      const solution: CurrentDirection[] = [];
+      const gates: CurrentGridPoint[] = [];
+      let position = { ...start };
+      for (let gate = 0; gate < 3; gate++) {
+        const setup: CurrentDirection = random() < .5 ? "left" : "right";
+        for (const direction of [setup, "forward"] as const) {
+          const drift = currentPattern[solution.length] ?? 0;
+          const movement = direction === "left" ? -1 : direction === "right" ? 1 : 0;
+          position = {
+            x: clamp(position.x + movement + drift, 0, 6),
+            y: clamp(position.y + (direction === "forward" ? -1 : 0), 0, 4),
+          };
+          solution.push(direction);
+        }
+        gates.push({ ...position });
+      }
+      return { questId: id, start, gates, currentPattern, solution };
+    }
     case "monkey-canopy-rig":
       return {
         questId: id,
