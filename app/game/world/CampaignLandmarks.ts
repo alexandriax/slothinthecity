@@ -1,8 +1,6 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import type { GameTextures } from "../rendering/textures";
-import { createPremiumHuman, markPremiumCharactersDisposed } from "./PremiumCharacter";
-import { createAmbientHumanAgent, idleAuthoredHuman, updateAmbientHumanAgent, type AmbientHumanAgent } from "./characters/AmbientHumanMotion";
 
 export const BOW_BRIDGE_CENTER = new THREE.Vector3(-35, 0, -122);
 export const BOW_BRIDGE_LENGTH = 28;
@@ -18,12 +16,8 @@ export const BOW_BRIDGE_DECK_BASE_Y = -.68;
 // The first campaign waypoint lands on the clear east approach, where the
 // ticket quest can naturally continue down the nearby rowboat pier.
 export const BOW_BRIDGE_TARGET = new THREE.Vector3(-20.45, 0, -115.33);
-// The zoo target is the attendant on the public forecourt. The campus itself
-// spans roughly x=258..312 / z=-378..-338 and remains visibly complete behind
-// its closed conservation gate.
-export const ZOO_TARGET = new THREE.Vector3(282, 0, -341);
-// The subway is deliberately a landscaped walk southeast of the zoo, rather
-// than a prop attached to its entrance plaza.
+// The Bronx Zoo ticket recovered on the island points directly to transit.
+// This is the next park objective, reached by a continuous landscaped path.
 export const SUBWAY_TARGET = new THREE.Vector3(345, 0, -385);
 // GameClient transitions after the player is visibly partway down the stairs.
 // It is exported separately so the waypoint can remain at street level.
@@ -46,12 +40,10 @@ export type BowBridgeSurface = {
 
 export type CampaignLandmarks = {
   root: THREE.Group;
-  attendant: THREE.Group;
   bowBridge: THREE.Group;
   bowBridgeSurface: BowBridgeSurface;
   subwayEntrance: THREE.Group;
   subwayEntryTrigger: THREE.Vector3;
-  zooGate: THREE.Group;
   obstacles: CampaignObstacle[];
   update(elapsed: number, delta: number): void;
   dispose(): void;
@@ -134,28 +126,17 @@ function sidewalkWithStairOpeningGeometry() {
 }
 
 function addSouthboundParkPath(root: THREE.Group, textures: GameTextures, heightAt: (x: number, z: number) => number) {
-  const zooApproach = [
+  const subwayApproach = [
     BOW_BRIDGE_TARGET.clone(), new THREE.Vector3(-18, 0, -105), new THREE.Vector3(38, 0, -96), new THREE.Vector3(105, 0, -98),
     new THREE.Vector3(178, 0, -116), new THREE.Vector3(232, 0, -157), new THREE.Vector3(257, 0, -220), new THREE.Vector3(266, 0, -288),
-    // Stop at the beveled north edge of the authored zoo forecourt. The old
-    // single strip continued underneath the rounded plaza and exposed a
-    // gravel/paving overlap along the curb.
-    new THREE.Vector3(274.8, 0, -327.35),
-  ];
-  const subwayDeparture = [
-    // Resume at the east edge of the forecourt instead of drawing another
-    // surface beneath it. The plaza itself is the walkable connection.
-    new THREE.Vector3(304.25, 0, -349.7), new THREE.Vector3(315, 0, -360.5),
+    new THREE.Vector3(282, 0, -327), new THREE.Vector3(299, 0, -344), new THREE.Vector3(315, 0, -360.5),
     new THREE.Vector3(327, 0, -374), SUBWAY_TARGET.clone(),
   ];
   const material = new THREE.MeshStandardMaterial({ map: textures.gravel, bumpMap: textures.gravel, bumpScale: .075, color: "#a8997e", roughness: .98 });
-  const approach = new THREE.Mesh(parkPathGeometry(zooApproach, 4.4, heightAt), material);
-  approach.name = "bow-bridge-to-central-park-zoo-curb-safe-path";
+  const approach = new THREE.Mesh(parkPathGeometry(subwayApproach, 4.4, heightAt), material);
+  approach.name = "bow-bridge-to-fifth-avenue-subway-landscaped-path";
   approach.receiveShadow = true;
-  const departure = new THREE.Mesh(parkPathGeometry(subwayDeparture, 4.4, heightAt), material);
-  departure.name = "central-park-zoo-to-subway-curb-safe-path";
-  departure.receiveShadow = true;
-  root.add(approach, departure);
+  root.add(approach);
 }
 
 function addBowBridge(root: THREE.Group, textures: GameTextures, heightAt: (x: number, z: number) => number, ownedTextures: THREE.Texture[]) {
@@ -237,135 +218,6 @@ function texturedShrub(root: THREE.Group, textures: GameTextures, x: number, z: 
   root.add(shrub);
 }
 
-function addZoo(root: THREE.Group, textures: GameTextures, heightAt: (x: number, z: number) => number, ownedTextures: THREE.Texture[], quality: number) {
-  const gate = new THREE.Group(); gate.name = "central-park-zoo-exterior-campus"; gate.position.set(285, heightAt(285, -350), -350);
-  const high = quality > .7, brick = new THREE.MeshStandardMaterial({ map: textures.ground, bumpMap: textures.ground, bumpScale: .055, color: "#a48369", roughness: .9 });
-  const iron = new THREE.MeshStandardMaterial({ map: textures.stone, bumpMap: textures.stone, bumpScale: .01, color: "#242b27", metalness: .78, roughness: .32 });
-  const limestone = new THREE.MeshStandardMaterial({ map: textures.stone, bumpMap: textures.stone, bumpScale: .035, color: "#d8ceb6", roughness: .75 });
-  const copper = new THREE.MeshStandardMaterial({ map: textures.moss, bumpMap: textures.moss, bumpScale: .025, color: "#617b69", metalness: .46, roughness: .57 });
-  const paving = new THREE.MeshStandardMaterial({ map: textures.gravel, bumpMap: textures.gravel, bumpScale: .04, color: "#b8aa90", roughness: .92 });
-  const water = new THREE.MeshPhysicalMaterial({ map: textures.waterNormal, normalMap: textures.waterNormal, normalScale: new THREE.Vector2(.3, .3), color: "#508785", roughness: .22, transmission: .16, clearcoat: .75 });
-  const glass = new THREE.MeshPhysicalMaterial({ map: textures.stone, color: "#8eb4ae", roughness: .12, metalness: .08, transparent: true, opacity: .66, transmission: .18, clearcoat: .78 });
-  const zooTexture = signTexture("CENTRAL PARK ZOO", "WILDLIFE CONSERVATION · EAST 64TH", "#e5c46c");
-  const welcomeTexture = signTexture("SEA LION POOL", "CENTRAL GARDEN  ·  TROPIC ZONE", "#9fc96d");
-  const conservationTexture = signTexture("WILDLIFE CENTER", "TICKETS  ·  MEMBER SERVICES  ·  CONSERVATION", "#d6a760"); ownedTextures.push(zooTexture, welcomeTexture, conservationTexture);
-
-  const plaza = new THREE.Mesh(new RoundedBoxGeometry(38, .14, 27, 7, .22), paving); plaza.name = "central-park-zoo-public-forecourt"; plaza.position.set(0, -.035, 9); plaza.receiveShadow = true; gate.add(plaza);
-  const innerCourt = new THREE.Mesh(new RoundedBoxGeometry(52, .16, 39, 8, .28), paving); innerCourt.position.set(0, -.03, -20); innerCourt.receiveShadow = true; gate.add(innerCourt);
-
-  // A complete, layered campus skyline stays visible behind the closed gate.
-  const addBuilding = (name: string, x: number, z: number, width: number, height: number, depth: number, material: THREE.Material, roof: "hip" | "glass" | "flat") => {
-    const building = new THREE.Group(); building.name = name; building.position.set(x, 0, z);
-    const body = new THREE.Mesh(new RoundedBoxGeometry(width, height, depth, high ? 7 : 4, .16), material); body.position.y = height / 2; body.castShadow = body.receiveShadow = true; building.add(body);
-    const base = new THREE.Mesh(new RoundedBoxGeometry(width + .35, .38, depth + .35, 4, .06), limestone); base.position.y = .19; building.add(base);
-    const cornice = new THREE.Mesh(new RoundedBoxGeometry(width + .45, .35, depth + .45, 4, .07), limestone); cornice.position.y = height - .15; building.add(cornice);
-    const windowCount = Math.max(3, Math.floor(width / 2.7));
-    for (let index = 0; index < windowCount; index++) {
-      const window = new THREE.Mesh(new RoundedBoxGeometry(1.18, 1.8, .08, 4, .04), glass); window.position.set((index - (windowCount - 1) / 2) * (width - 2) / Math.max(1, windowCount - 1), height * .55, depth / 2 + .055); building.add(window);
-      const sill = new THREE.Mesh(new RoundedBoxGeometry(1.38, .12, .22, 3, .025), limestone); sill.position.set(window.position.x, height * .55 - .98, depth / 2 + .08); building.add(sill);
-    }
-    if (roof === "hip") { const roofMesh = new THREE.Mesh(new THREE.ConeGeometry(Math.max(width, depth) * .7, 2.3, 4), copper); roofMesh.position.y = height + 1.05; roofMesh.rotation.y = Math.PI / 4; roofMesh.scale.z = depth / width; building.add(roofMesh); }
-    else if (roof === "glass") {
-      for (const side of [-1, 1]) { const roofPane = new THREE.Mesh(new RoundedBoxGeometry(width * .72, .14, depth * .76, 3, .035), glass); roofPane.position.set(side * width * .19, height + 1.15, 0); roofPane.rotation.z = side * .31; building.add(roofPane); }
-      for (let rib = -2; rib <= 2; rib++) { const ribMesh = new THREE.Mesh(new RoundedBoxGeometry(.1, 2.5, depth * .82, 2, .02), iron); ribMesh.position.set(rib * width * .14, height + 1.05, 0); ribMesh.rotation.z = rib < 0 ? -.31 : .31; building.add(ribMesh); }
-    } else { const roofMesh = new THREE.Mesh(new RoundedBoxGeometry(width + .7, .48, depth + .7, 4, .09), copper); roofMesh.position.y = height + .18; building.add(roofMesh); }
-    gate.add(building); return building;
-  };
-  addBuilding("tropic-zone-glasshouse", -18.5, -24, 14, 8.4, 13, brick, "glass");
-  addBuilding("zoo-administration-pavilion", 18.5, -23, 15, 9.2, 12, brick, "hip");
-  addBuilding("sea-lion-support-building", 0, -37, 22, 7.2, 9, limestone, "flat");
-  if (high) { addBuilding("polar-circle-gallery", -24, -39, 11, 6.2, 9, brick, "hip"); addBuilding("conservation-education-wing", 25, -39, 12, 6.6, 9, brick, "flat"); }
-
-  // The landmark sea-lion pool is centered in the garden and visible through
-  // the entrance ironwork, but the public route remains intentionally closed.
-  const pool = new THREE.Group(); pool.name = "central-park-zoo-sea-lion-pool"; pool.position.set(0, 0, -17);
-  const basin = new THREE.Mesh(new THREE.CylinderGeometry(6.9, 7.25, 1.05, high ? 72 : 42), limestone); basin.scale.z = .68; basin.position.y = .35; basin.receiveShadow = true; pool.add(basin);
-  const poolWater = new THREE.Mesh(new THREE.CylinderGeometry(6.45, 6.45, .14, high ? 72 : 42), water); poolWater.scale.z = .68; poolWater.position.y = .84; pool.add(poolWater);
-  const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(1.55, high ? 2 : 1), new THREE.MeshStandardMaterial({ map: textures.stone, bumpMap: textures.stone, bumpScale: .06, color: "#858070", roughness: .88 })); rock.scale.set(1.6, .72, 1); rock.position.set(0, 1.12, 0); rock.castShadow = true; pool.add(rock);
-  for (const side of [-1, 1]) {
-    const seal = new THREE.Group(); seal.position.set(side * 1.2, 1.55, -.15 + side * .15); seal.rotation.z = side * -.22;
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(.34, 1.05, 10, high ? 22 : 14), new THREE.MeshStandardMaterial({ map: textures.stone, bumpMap: textures.stone, bumpScale: .025, color: "#4d5857", roughness: .48, metalness: .32 })); body.rotation.z = side * .58; seal.add(body);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(.4, high ? 24 : 16, 14), body.material); head.position.set(side * -.5, .54, 0); seal.add(head); pool.add(seal);
-  }
-  for (let jet = 0; jet < (high ? 8 : 4); jet++) { const angle = jet / (high ? 8 : 4) * Math.PI * 2, curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(Math.cos(angle) * 5.2, .92, Math.sin(angle) * 3.5), new THREE.Vector3(Math.cos(angle) * 3.2, 3.3, Math.sin(angle) * 2.1), new THREE.Vector3(Math.cos(angle) * 1.3, 1.2, Math.sin(angle) * .8)); pool.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 18, .025, 6, false), water)); }
-  gate.add(pool);
-
-  for (const side of [-1, 1]) {
-    const pillar = new THREE.Mesh(new RoundedBoxGeometry(2.1, 6.6, 2.1, 7, .18), brick); pillar.position.set(side * 7.2, 3.3, 0); pillar.castShadow = pillar.receiveShadow = true; gate.add(pillar);
-    for (const y of [.8, 2.25, 3.7, 5.15]) { const band = new THREE.Mesh(new RoundedBoxGeometry(2.2, .13, 2.2, 3, .04), limestone); band.position.set(side * 7.2, y, 0); gate.add(band); }
-    const cap = new THREE.Mesh(new RoundedBoxGeometry(2.45, .38, 2.45, 5, .1), limestone); cap.position.set(side * 7.2, 6.72, 0); gate.add(cap);
-    const sideWall = new THREE.Mesh(new RoundedBoxGeometry(10.6, 2.45, .85, 5, .11), brick); sideWall.position.set(side * 12.9, 1.23, .08); sideWall.castShadow = sideWall.receiveShadow = true; gate.add(sideWall);
-    const banner = new THREE.Mesh(new RoundedBoxGeometry(2.9, 1.65, .12, 4, .06), new THREE.MeshStandardMaterial({ map: welcomeTexture, roughness: .5 })); banner.position.set(side * 4.95, 3.75, -.53); gate.add(banner);
-  }
-  const header = new THREE.Mesh(new RoundedBoxGeometry(12.7, 1.48, .4, 7, .12), new THREE.MeshStandardMaterial({ map: zooTexture, roughness: .46 })); header.position.set(0, 5.73, 0); header.castShadow = true; gate.add(header);
-  const arch = new THREE.Mesh(new THREE.TorusGeometry(6.25, .14, 14, high ? 96 : 64, Math.PI), iron); arch.position.set(0, 3.62, -.04); gate.add(arch);
-  for (let index = -8; index <= 8; index++) { const bar = new THREE.Mesh(new THREE.CylinderGeometry(.052, .065, 4.05, 10), iron); bar.position.set(index * .68, 2.03, 0); gate.add(bar); const spear = new THREE.Mesh(new THREE.ConeGeometry(.1, .34, 9), iron); spear.position.set(index * .68, 4.22, 0); gate.add(spear); }
-  const fenceSpacing = high ? 1.05 : 1.55;
-  for (const side of [-1, 1]) {
-    for (let x = 18.4; x <= 31; x += fenceSpacing) { const post = new THREE.Mesh(new THREE.CylinderGeometry(.045, .058, 4.25, 9), iron); post.position.set(side * x, 2.13, 0); gate.add(post); const finial = new THREE.Mesh(new THREE.ConeGeometry(.09, .3, 8), iron); finial.position.set(side * x, 4.4, 0); gate.add(finial); }
-    for (let z = -1; z >= -50; z -= fenceSpacing) { const post = new THREE.Mesh(new THREE.CylinderGeometry(.045, .058, 4.25, 9), iron); post.position.set(side * 31, 2.13, z); gate.add(post); }
-    const frontRail = new THREE.Mesh(new RoundedBoxGeometry(13.2, .09, .09, 2, .025), iron); frontRail.position.set(side * 24.7, 3.42, 0); gate.add(frontRail);
-    const sideRail = new THREE.Mesh(new RoundedBoxGeometry(.09, .09, 50, 2, .025), iron); sideRail.position.set(side * 31, 3.42, -25); gate.add(sideRail);
-  }
-
-  for (const side of [-1, 1]) {
-    const kiosk = new THREE.Group(); kiosk.name = "central-park-zoo-ticket-kiosk"; kiosk.position.set(side * 10.4, 0, 5.1);
-    const body = new THREE.Mesh(new RoundedBoxGeometry(3.2, 3.55, 2.4, 6, .13), brick); body.position.y = 1.78; body.castShadow = body.receiveShadow = true; kiosk.add(body);
-    const window = new THREE.Mesh(new RoundedBoxGeometry(2.15, 1.25, .06, 5, .04), glass); window.position.set(0, 2.1, -1.23); kiosk.add(window);
-    const awning = new THREE.Mesh(new RoundedBoxGeometry(3.55, .2, 2.75, 4, .055), copper); awning.position.y = 3.66; kiosk.add(awning);
-    const kioskSign = new THREE.Mesh(new RoundedBoxGeometry(2.45, .62, .08, 4, .035), new THREE.MeshStandardMaterial({ map: conservationTexture, roughness: .5 })); kioskSign.position.set(0, 3.05, -1.25); kiosk.add(kioskSign); gate.add(kiosk);
-  }
-
-  const lampMaterial = new THREE.MeshStandardMaterial({ map: textures.stone, color: "#1d2722", metalness: .74, roughness: .32 });
-  for (const x of [-15, -7.5, 7.5, 15]) {
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(.07, .095, 4.5, 12), lampMaterial); post.position.set(x, 2.25, 13.5); gate.add(post);
-    const globe = new THREE.Mesh(new THREE.SphereGeometry(.25, 22, 14), new THREE.MeshPhysicalMaterial({ map: textures.stone, color: "#fff0c0", emissive: "#ffd47c", emissiveIntensity: 1.8, roughness: .18 })); globe.position.set(x, 4.65, 13.5); gate.add(globe);
-  }
-  for (const x of [-15.5, -5.2, 5.2, 15.5]) texturedShrub(gate, textures, x, 6.8 + Math.abs(x) * .15, .9 + Math.abs(x % 3) * .08, quality);
-
-  // The terrain varies across the entrance campus. Anchor each character to
-  // whichever is higher: the authored paving slab or the sampled terrain.
-  // The small clearance keeps shoes visible without making anyone float.
-  const groundedLocalY = (x: number, z: number, pavingTop: number) => Math.max(
-    pavingTop,
-    heightAt(gate.position.x + x, gate.position.z + z) - gate.position.y,
-  ) + .012;
-  const attendantResult = createPremiumHuman({
-    role: "attendant", quality, variant: 0, faceVariant: 14,
-    coat: "#315c43", trousers: "#21382d", skin: "#9c6c4e",
-    accessory: "radio", pose: "neutral", outfit: "zoo-uniform", zooNameTag: "Central Park Zoo",
-  });
-  const attendant = attendantResult.root; ownedTextures.push(...attendantResult.ownedTextures);
-  attendant.position.set(-3, groundedLocalY(-3, 9, .035), 9); attendant.rotation.y = Math.PI + .05;
-  attendant.userData.zooZone = "outside"; gate.add(attendant);
-
-  const walkingVisitors: THREE.Group[] = [];
-  const visitorData = [
-    { x: 4.4, z: 10.8, rotation: 2.72, coat: "#c5654e", trousers: "#315477", skin: "#79503d", accessory: "backpack", pose: "neutral", face: 15, outfit: "cotton-denim", zone: "outside" },
-    { x: -13.2, z: -8.6, rotation: .38, coat: "#52789c", trousers: "#34577a", skin: "#d0a27f", accessory: "tote", pose: "neutral", face: 16, outfit: "cotton-denim", zone: "inside" },
-    { x: 12.6, z: -11.3, rotation: -2.72, coat: "#9b5271", trousers: "#24252c", skin: "#8f6048", accessory: "backpack", pose: "neutral", face: 17, outfit: "silk-leggings", zone: "inside" },
-    { x: 1.8, z: -29.2, rotation: 2.94, coat: "#a95135", trousers: "#51493f", skin: "#b87f5f", accessory: "camera", pose: "neutral", face: 18, outfit: "knit-chinos", zone: "inside" },
-  ] as const;
-  visitorData.forEach((data, index) => {
-    const result = createPremiumHuman({
-      role: "visitor", quality, variant: index + 1, faceVariant: data.face,
-      coat: data.coat, trousers: data.trousers, skin: data.skin,
-      accessory: data.accessory, pose: data.pose, outfit: data.outfit,
-    });
-    const pavingTop = data.zone === "inside" ? .05 : .035;
-    result.root.position.set(data.x, groundedLocalY(data.x, data.z, pavingTop), data.z);
-    result.root.rotation.y = data.rotation;
-    result.root.name = data.zone === "inside" ? `central-park-zoo-inside-walker-${index}` : "central-park-zoo-outside-visitor";
-    result.root.userData.zooZone = data.zone;
-    gate.add(result.root); ownedTextures.push(...result.ownedTextures);
-    walkingVisitors.push(result.root);
-  });
-
-  const benchWood = new THREE.MeshStandardMaterial({ map: textures.bark, bumpMap: textures.bark, bumpScale: .025, color: "#795b43", roughness: .83 });
-  for (const side of [-1, 1]) { const bench = new THREE.Group(); bench.position.set(side * 14.5, .42, 18.5); bench.rotation.y = side * -.16; for (let slat = 0; slat < 5; slat++) { const board = new THREE.Mesh(new RoundedBoxGeometry(3.4, .11, .22, 3, .03), benchWood); board.position.set(0, slat < 3 ? slat * .15 : .5 + (slat - 3) * .2, slat < 3 ? (slat - 1) * .24 : .38); if (slat >= 3) board.rotation.x = -.15; bench.add(board); } for (const x of [-1.35, 1.35]) { const leg = new THREE.Mesh(new RoundedBoxGeometry(.1, .7, .1, 2, .02), iron); leg.position.set(x, -.18, 0); bench.add(leg); } gate.add(bench); }
-  root.add(gate); return { gate, attendant, walkingVisitors };
-}
-
 function addSubwayEntrance(root: THREE.Group, textures: GameTextures, heightAt: (x: number, z: number) => number, ownedTextures: THREE.Texture[], quality: number) {
   const entrance = new THREE.Group(); entrance.name = "5-av-59-st-full-stair-subway-entrance"; entrance.position.set(SUBWAY_TARGET.x, heightAt(SUBWAY_TARGET.x, SUBWAY_TARGET.z), SUBWAY_TARGET.z);
   entrance.userData.entryTrigger = SUBWAY_ENTRY_TRIGGER.clone(); entrance.userData.transitionAtMidDescent = true;
@@ -414,48 +266,19 @@ export function createCampaignLandmarks(scene: THREE.Scene, textures: GameTextur
   const ownedTextures: THREE.Texture[] = [], obstacles: CampaignObstacle[] = [];
   addSouthboundParkPath(root, textures, heightAt);
   const { bridge: bowBridge, surface: bowBridgeSurface } = addBowBridge(root, textures, heightAt, ownedTextures);
-  const { gate: zooGate, attendant, walkingVisitors } = addZoo(root, textures, heightAt, ownedTextures, quality);
-  const visitorAgents: AmbientHumanAgent[] = walkingVisitors.map((visitor, index) => {
-    const outside = visitor.userData.zooZone === "outside";
-    return createAmbientHumanAgent(visitor, {
-      // The one public-side visitor stays on the forecourt while the three
-      // interior guests use longer promenade routes beyond the gates.
-      axis: outside
-        ? new THREE.Vector3(1, 0, .12)
-        : new THREE.Vector3(index % 2 ? 1 : -.35, 0, index % 2 ? .25 : 1),
-      travel: outside ? 2.15 : 3.4 + index % 3 * .72,
-      speed: outside ? .72 : .78 + index % 2 * .12,
-      pauseSeconds: 1.8 + index % 3 * .62,
-      phase: index * 1.83,
-    });
-  });
   const subwayEntrance = addSubwayEntrance(root, textures, heightAt, ownedTextures, quality);
   bowBridge.updateMatrixWorld(true);
-  zooGate.updateMatrixWorld(true);
-  const zooWestPillar = zooGate.localToWorld(new THREE.Vector3(-7.2, 0, 0));
-  const zooEastPillar = zooGate.localToWorld(new THREE.Vector3(7.2, 0, 0));
-  const zooWestBooth = zooGate.localToWorld(new THREE.Vector3(-10.4, 0, 5.1));
-  const zooEastBooth = zooGate.localToWorld(new THREE.Vector3(10.4, 0, 5.1));
   for (const end of [-1, 1]) for (const side of [-1, 1]) {
     const abutment = bowBridge.localToWorld(new THREE.Vector3(end * (BOW_BRIDGE_LENGTH / 2 + .6), 0, side * (BOW_BRIDGE_WIDTH / 2 + .46)));
     obstacles.push({ id: `bow-bridge-abutment-${end}-${side}`, kind: "circle", x: abutment.x, z: abutment.z, radius: .68, minY: -5, maxY: 8 });
   }
   obstacles.push(
-    { id: "zoo-gate-west", kind: "circle", x: zooWestPillar.x, z: zooWestPillar.z, radius: 1.08, minY: -5, maxY: 8 },
-    { id: "zoo-gate-east", kind: "circle", x: zooEastPillar.x, z: zooEastPillar.z, radius: 1.08, minY: -5, maxY: 8 },
-    { id: "zoo-booth-west", kind: "circle", x: zooWestBooth.x, z: zooWestBooth.z, radius: 1.45, minY: -5, maxY: 5 },
-    { id: "zoo-booth-east", kind: "circle", x: zooEastBooth.x, z: zooEastBooth.z, radius: 1.45, minY: -5, maxY: 5 },
-    { id: "zoo-closed-interior-gate", kind: "aabb", minX: 278, maxX: 292, minZ: -350.7, maxZ: -349.3, minY: -5, maxY: 7 },
-    { id: "zoo-west-perimeter-fence", kind: "aabb", minX: 254, maxX: 278, minZ: -350.7, maxZ: -349.3, minY: -5, maxY: 7 },
-    { id: "zoo-east-perimeter-fence", kind: "aabb", minX: 292, maxX: 316, minZ: -350.7, maxZ: -349.3, minY: -5, maxY: 7 },
     { id: "subway-railing-west", kind: "aabb", minX: SUBWAY_TARGET.x - 3.55, maxX: SUBWAY_TARGET.x - 2.85, minZ: SUBWAY_TARGET.z - 10, maxZ: SUBWAY_TARGET.z + .7, minY: -5, maxY: 4 },
     { id: "subway-railing-east", kind: "aabb", minX: SUBWAY_TARGET.x + 2.85, maxX: SUBWAY_TARGET.x + 3.55, minZ: SUBWAY_TARGET.z - 10, maxZ: SUBWAY_TARGET.z + .7, minY: -5, maxY: 4 },
   );
-  return { root, attendant, bowBridge, bowBridgeSurface, subwayEntrance, subwayEntryTrigger: SUBWAY_ENTRY_TRIGGER.clone(), zooGate, obstacles, update(elapsed, delta) {
-    idleAuthoredHuman(attendant, delta);
-    visitorAgents.forEach(agent => updateAmbientHumanAgent(agent, elapsed, delta));
+  return { root, bowBridge, bowBridgeSurface, subwayEntrance, subwayEntryTrigger: SUBWAY_ENTRY_TRIGGER.clone(), obstacles, update() {
+    // Static park landmarks require no per-frame animation.
   }, dispose() {
-    markPremiumCharactersDisposed(root);
     scene.remove(root); root.traverse(object => { if (!(object instanceof THREE.Mesh)) return; object.geometry.dispose(); const materials = Array.isArray(object.material) ? object.material : [object.material]; materials.forEach(material => material.dispose()); }); ownedTextures.forEach(texture => texture.dispose());
   } };
 }

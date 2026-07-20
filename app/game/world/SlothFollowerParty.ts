@@ -379,7 +379,8 @@ export class SlothFollowerParty {
       second.velocity.addScaledVector(new THREE.Vector3(dx, 0, dz).normalize(), .08);
     }
     for (const follower of this.followers) {
-      let dx = follower.root.position.x - leader.x, dz = follower.root.position.z - leader.z, distance = Math.hypot(dx, dz), clearance = formation === "train" ? .68 : formation === "scooter" ? 1.72 : 1.15;
+      let dx = follower.root.position.x - leader.x, dz = follower.root.position.z - leader.z, distance = Math.hypot(dx, dz);
+      const clearance = formation === "train" ? .68 : formation === "scooter" ? 1.72 : 1.15;
       if (distance < clearance) {
         if (distance <= .001) { dx = Math.cos(follower.gaitPhase); dz = Math.sin(follower.gaitPhase); distance = 1; }
         const correction = (clearance - distance) / distance; follower.root.position.x += dx * correction; follower.root.position.z += dz * correction;

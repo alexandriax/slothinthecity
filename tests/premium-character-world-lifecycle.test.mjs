@@ -4,11 +4,6 @@ import test from "node:test";
 
 const WORLD_CASES = [
   {
-    file: "CampaignLandmarks.ts",
-    minimumHumans: 2,
-    markerBefore: "scene.remove(root)",
-  },
-  {
     file: "SubwayWorld.ts",
     minimumHumans: 1,
     markerBefore: "station.root.removeFromParent()",
@@ -59,7 +54,7 @@ test("all premium-human world integrations remain present", async () => {
   }
 
   const bronxZoo = await worldSource("BronxZooWorld.ts");
-  assert.match(bronxZoo, /bronx-zoo-extra-ticket-donor/);
+  assert.match(bronxZoo, /bronx-zoo-skateboard-donor/);
   assert.match(bronxZoo, /bronx-zoo-arrival-attendant/);
   assert.match(bronxZoo, /bronx-zoo-wandering-visitor-\$\{index \+ 1\}/);
   assert.match(bronxZoo, /guestData\.slice\(0, quality < \.58 \? 4 : quality < \.82 \? 6 : guestData\.length\)/);

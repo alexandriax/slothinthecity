@@ -24,7 +24,7 @@ export type PremiumHumanOptions = {
   /** Material profile controls the authored atlas response as well as color. */
   outfit?: PremiumHumanOutfit;
   /** Printed on an authored-uniform chest tag when present. */
-  zooNameTag?: "Central Park Zoo" | "Bronx Zoo";
+  zooNameTag?: "Bronx Zoo";
   /** Optional overrides keep the rig reusable in streamed worlds. */
   faceAtlasUrl?: string;
   clothingAtlasUrl?: string;
@@ -437,7 +437,7 @@ function createProceduralPremiumHuman(options: PremiumHumanOptions): PremiumChar
   const skin = new THREE.MeshPhysicalMaterial({ color: skinIntegration.tone, bumpMap: skinMap, bumpScale: .014, roughness: .76, clearcoat: .012, clearcoatRoughness: .92 }); skinIntegration.material = skin;
   const faceSkin = new THREE.MeshPhysicalMaterial({ map: faceAtlas, bumpMap: skinMap, bumpScale: .004, transparent: true, alphaTest: .015, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1, roughness: .72, clearcoat: .018, clearcoatRoughness: .9, side: THREE.FrontSide });
   const hair = texturedMaterial(hairMap, .91), leather = texturedMaterial(leatherMap, .72), metal = texturedMaterial(metalMap, .32, { metalness: .76, clearcoat: .22 }), trim = texturedMaterial(trimMap, .72);
-  const root = new THREE.Group(); root.name = options.role === "attendant" ? "central-park-zoo-attendant" : "central-park-zoo-visitor";
+  const root = new THREE.Group(); root.name = options.role === "attendant" ? "zoo-attendant" : "zoo-visitor";
   root.userData.role = options.role === "attendant" ? "zoo-attendant" : "zoo-visitor";
   root.userData.characterFidelity = high ? "premium-high" : "premium-mobile";
   root.userData.faceAtlas = faceAtlasUrl;
@@ -450,7 +450,7 @@ function createProceduralPremiumHuman(options: PremiumHumanOptions): PremiumChar
     ? "zoo-uniform"
     : wardrobeVariant % 3 === 0 ? "cotton-denim" : wardrobeVariant % 3 === 1 ? "silk-leggings" : "knit-chinos");
   root.userData.zooNameTag = options.zooNameTag;
-  if (options.role === "attendant") root.userData.dialogue = "There are no sloths here.";
+  if (options.role === "attendant") root.userData.dialogue = "Welcome to the Bronx Zoo.";
 
   // A profiled, slightly asymmetrical torso replaces the stacked-box outline.
   const build = identityVariant % 4;

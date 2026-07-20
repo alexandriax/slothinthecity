@@ -704,7 +704,113 @@ button { font: inherit; }
   .subway-shell .finale-screen .primary { min-width:210px; padding:12px 18px; }
 }
 
+/* Sloth-claw lock-picking encounter · lightweight full-screen overlay */
+.lockpick-screen {
+  --lock-brass:#c99b4c;
+  --lock-brass-dark:#6d4b20;
+  --lock-ink:#f5eedc;
+  --lock-green:#9dcc78;
+  --lock-red:#e66451;
+  position:absolute;
+  inset:0;
+  z-index:500;
+  display:grid;
+  grid-template-rows:auto 1fr auto;
+  min-height:100%;
+  overflow:auto;
+  color:var(--lock-ink);
+  background:
+    radial-gradient(circle at 50% 42%,rgba(179,132,61,.17),transparent 34%),
+    linear-gradient(135deg,#151c19,#060908 62%,#101612);
+  isolation:isolate;
+}
+.lockpick-screen:before {
+  content:"";
+  position:absolute;
+  inset:0;
+  z-index:-2;
+  opacity:.34;
+  background:repeating-linear-gradient(90deg,transparent 0 48px,rgba(255,255,255,.016) 49px 50px),repeating-linear-gradient(0deg,transparent 0 48px,rgba(255,255,255,.012) 49px 50px);
+}
+.lockpick-noise { position:absolute; inset:0; z-index:-1; pointer-events:none; opacity:.14; background:radial-gradient(circle at 20% 30%,#d7be87 0 1px,transparent 1.5px),radial-gradient(circle at 80% 65%,#d7be87 0 1px,transparent 1.5px); background-size:29px 31px,37px 41px; mix-blend-mode:soft-light; }
+.lockpick-header { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:clamp(18px,3vh,34px) clamp(20px,4vw,64px) 12px; border-bottom:1px solid rgba(224,199,143,.16); }
+.lockpick-header span,.lockpick-section-label span { display:block; color:#c8ae77; font:700 10px/1.2 Arial,sans-serif; letter-spacing:.22em; text-transform:uppercase; }
+.lockpick-header h2 { margin:7px 0 0; max-width:740px; font:500 clamp(25px,3.2vw,47px)/.98 Georgia,serif; letter-spacing:-.025em; }
+.lockpick-header button { flex:none; padding:10px 13px; border:1px solid rgba(236,220,184,.2); border-radius:4px; color:#d8cdb5; background:rgba(255,255,255,.035); font:700 10px Arial,sans-serif; letter-spacing:.12em; text-transform:uppercase; }
+.lockpick-header kbd,.lockpick-instructions kbd { margin-left:8px; padding:3px 6px; border:1px solid rgba(255,255,255,.22); border-bottom-color:rgba(255,255,255,.4); border-radius:3px; color:#fff8df; background:#151917; box-shadow:0 2px #050706; font:700 9px Arial,sans-serif; }
+.lockpick-workbench { display:grid; grid-template-columns:minmax(180px,240px) minmax(360px,1fr) minmax(180px,240px); align-items:center; gap:clamp(18px,3vw,54px); width:min(1260px,calc(100% - 48px)); margin:auto; padding:24px 0; }
+.lockpick-tension-panel,.lockpick-readout { padding:18px; border:1px solid rgba(221,190,127,.18); border-radius:6px; background:linear-gradient(145deg,rgba(255,255,255,.045),rgba(255,255,255,.012)); box-shadow:0 18px 46px rgba(0,0,0,.24); }
+.lockpick-section-label { display:flex; align-items:baseline; justify-content:space-between; gap:12px; padding-bottom:12px; border-bottom:1px solid rgba(255,255,255,.09); }
+.lockpick-section-label strong { color:#fff4d4; font:600 22px Georgia,serif; }
+.lockpick-gauge { --lock-tension:0%; position:relative; width:64px; height:min(34vh,290px); min-height:190px; margin:20px auto; overflow:visible; border:1px solid rgba(237,221,181,.3); border-radius:4px; background:linear-gradient(to top,rgba(210,78,60,.25) 0 40%,rgba(126,188,95,.25) 40% 60%,rgba(210,78,60,.28) 60%); box-shadow:inset 0 0 20px rgba(0,0,0,.65),0 0 0 5px rgba(255,255,255,.025); }
+.lockpick-gauge:before { content:"100"; position:absolute; right:calc(100% + 9px); top:-4px; color:#8d8e87; font:700 8px Arial,sans-serif; }
+.lockpick-gauge:after { content:"0"; position:absolute; right:calc(100% + 9px); bottom:-4px; color:#8d8e87; font:700 8px Arial,sans-serif; }
+.lockpick-safe-band { position:absolute; inset:auto -6px 40%; height:20%; border-top:1px solid var(--lock-green); border-bottom:1px solid var(--lock-green); box-shadow:0 0 16px rgba(157,204,120,.18); }
+.lockpick-threshold { position:absolute; left:calc(100% + 10px); color:#aeb69e; font:700 9px Arial,sans-serif; font-style:normal; }
+.lockpick-threshold.low { bottom:calc(40% - 5px); }.lockpick-threshold.high { bottom:calc(60% - 5px); }
+.lockpick-gauge-fill { position:absolute; inset:auto 0 0; height:var(--lock-tension); background:linear-gradient(0deg,#b4873e,#e5c879); box-shadow:0 0 20px rgba(229,200,121,.34); }
+.lockpick-gauge-needle { position:absolute; left:-9px; bottom:calc(var(--lock-tension) - 2px); width:80px; height:3px; border-radius:2px; background:#fff3c3; box-shadow:0 0 8px #ffe7a1; }
+.lockpick-tension-button { position:relative; display:flex; flex-direction:column; align-items:flex-start; width:100%; min-height:74px; padding:13px 12px 12px 72px; overflow:hidden; border:1px solid rgba(205,164,87,.4); border-radius:5px; color:#f7ead0; background:linear-gradient(145deg,rgba(166,116,46,.25),rgba(45,32,17,.38)); text-align:left; touch-action:manipulation; }
+.lockpick-tension-button:active { transform:translateY(1px); background:rgba(166,116,46,.4); }
+.lockpick-tension-button strong { font:700 12px Arial,sans-serif; letter-spacing:.08em; text-transform:uppercase; }.lockpick-tension-button small { margin-top:7px; color:#b9a98a; font:600 9px Arial,sans-serif; }
+.lockpick-tension-panel>p { margin:14px 0 0; color:#9e9f96; font:500 10px/1.55 Arial,sans-serif; }
+.lockpick-claw { position:absolute; display:block; width:54px; height:54px; }
+.lockpick-claw:before { content:""; position:absolute; left:8px; bottom:0; width:38px; height:30px; border-radius:50% 50% 38% 42%; background:linear-gradient(145deg,#6b5742,#2c241d); box-shadow:inset 0 0 0 2px rgba(225,201,157,.1); }
+.lockpick-claw i { position:absolute; bottom:23px; width:10px; height:29px; border:2px solid #ac9b7d; border-bottom:0; border-radius:70% 70% 20% 20%; background:linear-gradient(90deg,#5b4a39,#2c241c); transform-origin:bottom; }
+.lockpick-claw i:nth-child(1) { left:8px; transform:rotate(-24deg); }.lockpick-claw i:nth-child(2) { left:22px; height:34px; }.lockpick-claw i:nth-child(3) { right:7px; transform:rotate(24deg); }
+.tension-claw { left:7px; bottom:7px; transform:rotate(11deg); }
+.lockpick-lock { position:relative; display:flex; align-items:center; justify-content:center; min-height:min(61vh,590px); perspective:900px; }
+.lockpick-shackle { position:absolute; top:2%; left:50%; width:min(33vw,290px); height:min(31vh,260px); border:clamp(24px,3.2vw,46px) solid #6f7470; border-bottom:0; border-radius:50% 50% 0 0; transform:translateX(-50%); background:transparent; box-shadow:inset 9px 0 8px rgba(255,255,255,.12),9px 0 18px rgba(0,0,0,.32); }
+.lockpick-cylinder { position:relative; z-index:2; width:min(620px,92%); height:min(380px,44vh); min-height:320px; margin-top:17%; overflow:hidden; border:4px solid #755323; border-radius:18px 18px 42% 42% / 18px 18px 14% 14%; background:linear-gradient(110deg,#77521e,#d4aa5b 13%,#a6752d 48%,#e2bd6f 72%,#6e4b1c); box-shadow:inset 0 0 0 4px rgba(255,235,178,.16),inset 25px 0 35px rgba(255,237,183,.12),inset -25px 0 35px rgba(46,28,8,.34),0 35px 70px rgba(0,0,0,.5); transition:transform .55s ease,filter .3s ease; }
+.lockpick-cylinder.seized { filter:saturate(.62) hue-rotate(-17deg); animation:lock-seize .18s linear 2; }
+.lockpick-screen.unlocked .lockpick-cylinder { transform:rotateZ(7deg); box-shadow:0 0 80px rgba(169,218,125,.35),0 35px 70px rgba(0,0,0,.5); }
+.lockpick-screen.unlocked .lockpick-shackle { transform:translate(-50%,-18px) rotate(4deg); transition:transform .55s ease .2s; }
+.lockpick-shear-line { position:absolute; top:42%; left:6%; right:6%; z-index:8; height:3px; background:#3c2a12; box-shadow:0 -1px rgba(255,238,191,.72),0 2px rgba(49,30,8,.42); }
+.lockpick-shear-line span { position:absolute; right:0; bottom:8px; padding:3px 5px; border-radius:2px; color:#352208; background:rgba(238,202,126,.62); font:800 8px Arial,sans-serif; letter-spacing:.18em; text-transform:uppercase; }
+.lockpick-pin-row { position:absolute; inset:0 7% 18%; display:grid; grid-template-columns:repeat(6,1fr); gap:2.4%; align-items:stretch; }
+.lockpick-pin { position:relative; border:0; border-radius:5px; color:#3d290f; background:linear-gradient(90deg,transparent 17%,rgba(61,39,10,.12) 18% 82%,transparent 83%); touch-action:manipulation; transition:background .16s ease,box-shadow .16s ease; }
+.lockpick-pin:focus-visible { outline:2px solid #fff2b8; outline-offset:-2px; }
+.lockpick-pin-number { position:absolute; left:50%; bottom:-35px; width:30px; height:24px; padding-top:5px; border:1px solid rgba(52,31,8,.38); border-radius:4px; transform:translateX(-50%); background:rgba(255,238,185,.22); font:800 10px Arial,sans-serif; }
+.lockpick-pin-state { position:absolute; left:50%; bottom:-55px; min-width:42px; padding:3px 5px; border-radius:3px; transform:translateX(-50%); color:rgba(61,42,18,.66); font:900 7px Arial,sans-serif; letter-spacing:.12em; }
+.lockpick-driver,.lockpick-key-pin { position:absolute; left:50%; width:38%; min-width:20px; border:1px solid #4f3614; transform:translateX(-50%); background:linear-gradient(90deg,#6d4819,#f0ce82 45%,#8f6124); box-shadow:inset 3px 0 4px rgba(255,255,255,.18); transition:top .18s ease,height .18s ease,background .18s ease,box-shadow .18s ease; }
+/* At rest, the driver crosses the 42% shear line and its pin gap sits below it. */
+.lockpick-driver { top:5%; height:57%; border-radius:3px 3px 1px 1px; }.lockpick-key-pin { top:66%; height:30%; border-radius:1px 1px 8px 8px; }
+.lockpick-pin-gap { position:absolute; z-index:7; left:50%; top:62%; width:43%; height:4%; min-height:7px; transform:translateX(-50%); border-top:1px solid rgba(255,231,175,.28); border-bottom:1px solid rgba(54,34,10,.7); background:#3a260f; transition:top .18s ease,height .18s ease,box-shadow .18s ease,background .18s ease; }
+.lockpick-spring { position:absolute; left:50%; top:-3%; width:24%; height:12%; border:2px dotted rgba(61,39,11,.8); border-top:0; transform:translateX(-50%); }
+.pin-claw { left:50%; bottom:-26px; z-index:6; opacity:.32; transform:translateX(-50%) scale(.55); transition:opacity .15s,transform .15s; }
+.lockpick-pin:hover .pin-claw,.lockpick-pin:focus-visible .pin-claw { opacity:.84; transform:translateX(-50%) translateY(-10px) scale(.62); }
+.lockpick-pin.set { background:linear-gradient(90deg,transparent 9%,rgba(97,157,69,.25) 10% 90%,transparent 91%); box-shadow:inset 0 0 22px rgba(164,225,119,.24); }
+/* A set pin leaves the driver fully above the shear line and the key pin below it. */
+.lockpick-pin.set .lockpick-driver { top:4%; height:44%; border-color:#426b2e; background:linear-gradient(90deg,#315b29,#d5f3a8 45%,#5d8f42); box-shadow:inset 3px 0 4px rgba(255,255,255,.25),0 0 12px rgba(163,232,111,.5); }
+.lockpick-pin.set .lockpick-key-pin { top:54%; height:42%; border-color:#426b2e; background:linear-gradient(90deg,#315b29,#d5f3a8 45%,#5d8f42); box-shadow:inset 3px 0 4px rgba(255,255,255,.25),0 0 12px rgba(163,232,111,.42); }
+.lockpick-pin.set .lockpick-pin-gap { top:48%; height:6%; border-color:#b8ef91; background:#17230f; box-shadow:0 0 0 2px #98d96d,0 0 18px #8ecf62; }
+.lockpick-pin.set .lockpick-pin-number { color:#10200b; border-color:#d7ffba; background:#9bdd70; box-shadow:0 0 16px rgba(151,225,101,.78); }.lockpick-pin.set .lockpick-pin-state { color:#18310f; background:#b8ef91; }
+.lockpick-pin.jammed { animation:pin-jam .12s linear 3; }.lockpick-pin.jammed .lockpick-key-pin { top:63%; transform:translateX(-50%) rotate(3deg); filter:hue-rotate(-30deg) saturate(1.8); }.lockpick-pin.jammed .lockpick-pin-number { color:#fff0eb; border-color:#e66451; background:#6d241c; }.lockpick-pin.jammed .lockpick-pin-state { color:#fff0eb; background:#8a2f25; }
+.lockpick-plug { position:absolute; left:50%; bottom:5%; width:62%; height:16%; border:2px solid rgba(59,37,10,.55); border-radius:50%; transform:translateX(-50%); background:rgba(66,40,9,.24); box-shadow:inset 0 8px 15px rgba(29,17,4,.28); }.lockpick-plug span { position:absolute; top:50%; left:50%; width:28%; height:8px; border-radius:6px; transform:translate(-50%,-50%); background:#432d12; }
+.lockpick-readout ol { display:grid; gap:8px; margin:17px 0; padding:0; list-style:none; }.lockpick-readout li { display:grid; grid-template-columns:30px 1fr auto; align-items:center; gap:8px; color:#8f918a; font:700 9px Arial,sans-serif; letter-spacing:.1em; }.lockpick-readout li>span { color:#cdbb96; }.lockpick-readout li>i { height:2px; background:#4b5049; }.lockpick-readout li.set { color:#caffaa; }.lockpick-readout li.set>span,.lockpick-readout li.set>strong { color:#caffaa; }.lockpick-readout li.set>i { height:4px; background:var(--lock-green); box-shadow:0 0 12px var(--lock-green); }.lockpick-readout li.jammed { color:#ff8d7e; }.lockpick-readout li.jammed>i { background:var(--lock-red); }
+.lockpick-instructions { display:grid; gap:8px; padding:13px 0; border-top:1px solid rgba(255,255,255,.08); border-bottom:1px solid rgba(255,255,255,.08); }.lockpick-instructions p { margin:0; color:#b2aa98; font:600 9px Arial,sans-serif; }.lockpick-instructions kbd { display:inline-block; min-width:48px; margin:0 8px 0 0; text-align:center; }.lockpick-readout>small { display:block; margin-top:12px; color:#7f817b; font:600 8px/1.5 Arial,sans-serif; letter-spacing:.05em; }
+.lockpick-status { display:flex; align-items:center; justify-content:center; gap:12px; min-height:58px; padding:12px 24px max(12px,env(safe-area-inset-bottom)); border-top:1px solid rgba(224,199,143,.16); background:rgba(3,6,5,.64); }.lockpick-status>span { width:8px; height:8px; border-radius:50%; background:#88775a; box-shadow:0 0 10px #88775a; }.lockpick-status p { margin:0; color:#c7c0b1; font:600 11px/1.4 Arial,sans-serif; letter-spacing:.03em; }.lockpick-status.ready>span { background:var(--lock-green); box-shadow:0 0 12px var(--lock-green); }.lockpick-status.warning>span { background:var(--lock-red); box-shadow:0 0 12px var(--lock-red); }
+@keyframes pin-jam { 0%,100%{transform:translateX(0)} 50%{transform:translateX(3px)} }
+@keyframes lock-seize { 0%,100%{transform:translateX(0)} 50%{transform:translateX(2px)} }
+
+@media(max-width:800px) {
+  .lockpick-header { padding:16px 14px 10px; }.lockpick-header h2 { font-size:clamp(22px,7vw,34px); }.lockpick-header button { padding:8px; font-size:8px; }.lockpick-header button kbd { display:none; }
+  .lockpick-workbench { grid-template-columns:100px minmax(245px,1fr); gap:12px; width:calc(100% - 20px); padding:12px 0 16px; }
+  .lockpick-tension-panel { padding:10px; }.lockpick-section-label { display:block; }.lockpick-section-label strong { display:block; margin-top:4px; font-size:17px; }
+  .lockpick-gauge { width:42px; min-height:170px; height:29vh; margin:14px auto; }.lockpick-gauge-needle { left:-6px; width:54px; }.lockpick-threshold { left:calc(100% + 6px); font-size:7px; }
+  .lockpick-tension-button { min-height:58px; padding:9px 5px; align-items:center; text-align:center; }.lockpick-tension-button .lockpick-claw { display:none; }.lockpick-tension-button strong { font-size:9px; }.lockpick-tension-button small { margin-top:4px; font-size:7px; }.lockpick-tension-panel>p { display:none; }
+  .lockpick-readout { display:none; }.lockpick-lock { min-height:56vh; }.lockpick-shackle { width:52%; height:32%; border-width:26px; }.lockpick-cylinder { width:100%; min-height:270px; height:40vh; margin-top:18%; }
+  .lockpick-pin-row { left:4%; right:4%; gap:1%; }.lockpick-driver,.lockpick-key-pin { min-width:14px; }.lockpick-pin-number { bottom:-28px; width:24px; height:21px; padding-top:4px; }.lockpick-pin-state { bottom:-44px; min-width:30px; padding:2px; font-size:6px; }.pin-claw { display:none; }
+  .lockpick-status { min-height:54px; padding-inline:14px; }.lockpick-status p { font-size:9px; }
+}
+
+@media(max-height:520px) and (orientation:landscape) {
+  .lockpick-screen { grid-template-rows:auto 1fr auto; }.lockpick-header { padding-block:8px; }.lockpick-header h2 { margin-top:2px; font-size:20px; }.lockpick-header span { font-size:7px; }
+  .lockpick-workbench { grid-template-columns:105px minmax(330px,1fr) 150px; width:calc(100% - 28px); padding:6px 0; }.lockpick-tension-panel,.lockpick-readout { padding:8px; }.lockpick-gauge { min-height:115px; height:30vh; margin:8px auto; }.lockpick-lock { min-height:300px; }.lockpick-cylinder { min-height:230px; height:58vh; margin-top:12%; }.lockpick-shackle { height:45%; border-width:24px; }.lockpick-tension-panel>p,.lockpick-readout>small { display:none; }.lockpick-readout ol { gap:3px; margin:7px 0; }.lockpick-instructions { gap:3px; padding:6px 0; }.lockpick-status { min-height:36px; padding-block:6px; }
+}
+
 @media(prefers-reduced-motion:reduce) {
   .subway-shell .goal-wayfinder-arrow { transition:none; }
   .world-transition,.world-transition i:after { animation-duration:.01ms; }
+  .lockpick-cylinder,.lockpick-shackle,.lockpick-gauge-fill,.lockpick-gauge-needle,.lockpick-driver,.lockpick-key-pin { transition:none; }
 }

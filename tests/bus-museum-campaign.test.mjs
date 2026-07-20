@@ -240,12 +240,13 @@ test("mobile shuttle controls expose both sequential gear shifts", async () => {
   assert.match(touch, /emitKey\("KeyF", true\)/);
 });
 
-test("the zoo skateboard and AMNH five-scooter convoy provide fast travel", async () => {
-  const [mobility, zoo, museum, party, game, touch] = await Promise.all([
+test("the zoo skateboard and AMNH six-scooter convoy provide fast travel", async () => {
+  const [mobility, zoo, museum, party, gary, game, touch] = await Promise.all([
     readSource("../app/game/world/PersonalMobility.ts"),
     readSource("../app/game/world/BronxZooWorld.ts"),
     readSource("../app/game/world/NaturalHistoryMuseumWorld.ts"),
     readSource("../app/game/world/SlothFollowerParty.ts"),
+    readSource("../app/game/world/GaryCompanion.ts"),
     readSource("../app/game/SubwayGame.tsx"),
     readSource("../app/game/mobile/TouchControls.tsx"),
   ]);
@@ -258,8 +259,9 @@ test("the zoo skateboard and AMNH five-scooter convoy provide fast travel", asyn
   assert.doesNotMatch(zoo, /zoo-skateboard-wayfinding-sign|RIDE ZOO SKATEBOARD · SPACE KICKFLIP|E TO RIDE · SPACE KICKFLIP/);
   assert.match(zoo, /triggerSkateboardKickflip/);
   assert.match(game, /travelSpeed = skateboarding \? 8\.8 : 2\.5/);
-  assert.match(museum, /for \(let index = 0; index < 5; index\+\+\)/);
-  assert.match(museum, /amnh-five-scooter-fast-travel-line-/);
+  assert.match(museum, /for \(let index = 0; index < 6; index\+\+\)/);
+  assert.match(museum, /amnh-six-scooter-fast-travel-line-/);
+  assert.match(museum, /ONE RESERVED FOR GARY/);
   assert.match(party, /rescued-sloth-friend-\$\{index \+ 1\}-ridden-electric-scooter/);
   assert.match(party, /formation === "scooter" \? catchingUp \? 10\.5 : 9\.1/);
   assert.match(party, /createPremiumScooterSlothFriend/);
@@ -267,8 +269,11 @@ test("the zoo skateboard and AMNH five-scooter convoy provide fast travel", asyn
   assert.doesNotMatch(party, /this\.scooterMode \? 1\.2/);
   assert.match(party, /ride-electric-scooter-upright/);
   assert.match(game, /rescuedParty\.setScooterMode\(true\)/);
+  assert.match(gary, /fed-gary-sixth-ridden-electric-scooter/);
+  assert.match(gary, /gary-balanced-on-sixth-scooter/);
+  assert.match(game, /garyCompanion\.setScooterMode\(garyCompanion\.isFed\)/);
   assert.match(touch, /vehicle === "skateboard" \? "Trick"/);
-  for (const source of [mobility, zoo, museum, party, game, touch]) assert.doesNotMatch(source, /se[g]way/i);
+  for (const source of [mobility, zoo, museum, party, gary, game, touch]) assert.doesNotMatch(source, /se[g]way/i);
 });
 
 test("shuttle boarding is a visible exterior interaction, never an invisible body trigger", async () => {
@@ -296,14 +301,14 @@ test("shuttle boarding is a visible exterior interaction, never an invisible bod
   assert.doesNotMatch(game, /if \(zooWorld\.busBoardingReached\(player\)/);
 });
 
-test("Central Park Zoo approach and departure paths terminate at the forecourt curb", async () => {
+test("the island-ticket route continues directly from Bow Bridge to the Fifth Avenue subway", async () => {
   const landmarks = await readSource("../app/game/world/CampaignLandmarks.ts");
 
-  assert.match(landmarks, /bow-bridge-to-central-park-zoo-curb-safe-path/);
-  assert.match(landmarks, /central-park-zoo-to-subway-curb-safe-path/);
-  assert.match(landmarks, /new THREE\.Vector3\(274\.8, 0, -327\.35\)/);
-  assert.match(landmarks, /new THREE\.Vector3\(304\.25, 0, -349\.7\)/);
-  assert.doesNotMatch(landmarks, /bow-bridge-to-zoo-and-subway-landscaped-path/);
+  assert.match(landmarks, /bow-bridge-to-fifth-avenue-subway-landscaped-path/);
+  assert.match(landmarks, /new THREE\.Vector3\(282, 0, -327\)/);
+  assert.match(landmarks, /new THREE\.Vector3\(299, 0, -344\)/);
+  assert.match(landmarks, /SUBWAY_TARGET\.clone\(\)/);
+  assert.doesNotMatch(landmarks, /central-park-zoo|function addZoo/);
 });
 
 test("AMNH is a full exploration level with permanent halls, crowds, and Megatherium", async () => {

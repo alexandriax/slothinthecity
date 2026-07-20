@@ -18,10 +18,10 @@ test("character lab offers direct authored-human review without campaign travers
   assert.match(showroom, /HumanWalk/);
   assert.match(showroom, /result\.root\.visible = ready/);
   assert.match(showroom, /Legacy/);
-  assert.match(showroom, /\?debug=zoo/);
+  assert.match(showroom, /\?debug=bronx/);
   assert.match(showroom, /\?debug=station/);
   assert.match(showroom, /\?debug=train/);
-  assert.match(checkpoints, /zoo:\s*"zoo"/);
+  assert.doesNotMatch(checkpoints, /zoo:\s*"zoo"/);
   assert.match(checkpoints, /station:\s*"subwayplatform"/);
   assert.match(checkpoints, /train:\s*"trainride"/);
   assert.match(game, /get\("debug"\)\s*===\s*"characters"/);
