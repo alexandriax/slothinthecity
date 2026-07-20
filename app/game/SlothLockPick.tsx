@@ -143,7 +143,7 @@ export function SlothLockPick({ onCancel, onComplete }: SlothLockPickProps) {
       if (event.repeat) return;
       if (event.code === "Space") { event.preventDefault(); applyTension(); return; }
       if (event.code === "Escape") { event.preventDefault(); onCancel(); return; }
-      const match = /^(?:Digit|Numpad)([1-6])$/.exec(event.code);
+      const match = /^(?:Digit|Numpad)([1-6])$/.exec(event.code) ?? /^([1-6])$/.exec(event.key);
       if (match) { event.preventDefault(); testPin(Number(match[1]) - 1); }
     };
     window.addEventListener("keydown", keyDown, true);
@@ -195,7 +195,7 @@ export function SlothLockPick({ onCancel, onComplete }: SlothLockPickProps) {
       <aside className="lockpick-readout">
         <div className="lockpick-section-label"><span>Set pins</span><strong>{setCount} / {LOCK_PIN_COUNT}</strong></div>
         <ol>{pinStates.map((state, index) => <li className={state} key={index}><span>0{index + 1}</span><i/><strong>{state === "set" ? "SET" : state === "jammed" ? "JAMMED" : "TEST"}</strong></li>)}</ol>
-        <div className="lockpick-instructions"><p><kbd>Space</kbd> Tap tension</p><p><kbd>1–6</kbd> Test pins</p></div>
+        <div className="lockpick-instructions"><p><kbd>Space</kbd> Tap tension</p><p><kbd>Keyboard 1–6</kbd> Test pins</p></div>
         <small>Random order is fixed for this attempt · rescan after every green pin{falls ? ` · ${falls} reset${falls === 1 ? "" : "s"}` : ""}</small>
       </aside>
     </div>

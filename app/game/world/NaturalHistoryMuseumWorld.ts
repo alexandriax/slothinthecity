@@ -1192,7 +1192,7 @@ export class NaturalHistoryMuseumWorld {
   readonly spawnYaw = .12;
   // Four equally valid viewing zones surround the mount. The former single
   // north-side target made side and rear approaches look correct but fail the
-  // mission gate, particularly with the wider five-scooter convoy.
+  // mission gate, particularly with the wider six-scooter convoy.
   readonly megatheriumViewingTargets = [
     new THREE.Vector3(0, 1.48, -184.5),
     new THREE.Vector3(14.5, 1.48, -198),
@@ -1231,19 +1231,19 @@ export class NaturalHistoryMuseumWorld {
     addOfficialPermanentHallMoments(this.root, textures, this.ownedTextures, quality, this.circles);
     addSlothEvolutionGallery(this.root, textures, this.ownedTextures, bone, quality, this.circles);
     addMegatherium(this.root, this.ownedTextures, bone, this.circles);
-    for (let index = 0; index < 5; index++) {
+    for (let index = 0; index < 6; index++) {
       const scooter = createElectricScooter(index);
-      scooter.root.name = `amnh-five-scooter-fast-travel-line-${index + 1}`;
-      scooter.root.position.set(-21.1 + index * 1.55, 0, 47.5);
+      scooter.root.name = `amnh-six-scooter-fast-travel-line-${index + 1}`;
+      scooter.root.position.set(-21.85 + index * 1.5, 0, 47.5);
       scooter.root.rotation.y = index % 2 ? -.045 : .045;
       scooter.root.userData.interactable = true;
       scooter.root.userData.interactionKind = "amnh-electric-scooter";
       this.scooters.push(scooter); this.root.add(scooter.root);
     }
     this.scooterPrevious.copy(this.scooters[0].root.position);
-    const mobilityTexture = exhibitTexture("ELECTRIC SCOOTER CORRAL", "E TO RIDE · ALL FOUR FRIENDS RIDE TOGETHER", "#78c8ba"); this.ownedTextures.push(mobilityTexture);
+    const mobilityTexture = exhibitTexture("ELECTRIC SCOOTER CORRAL", "SIX SCOOTERS · ONE RESERVED FOR GARY", "#78c8ba"); this.ownedTextures.push(mobilityTexture);
     const mobilitySign = new THREE.Mesh(new RoundedBoxGeometry(6.8, 1.12, .16, 5, .05), new THREE.MeshBasicMaterial({ map: mobilityTexture, toneMapped: false }));
-    mobilitySign.name = "amnh-five-electric-scooters-group-fast-travel-sign"; mobilitySign.position.set(-23.4, 2.42, 45.1); this.root.add(mobilitySign);
+    mobilitySign.name = "amnh-six-electric-scooters-group-fast-travel-sign"; mobilitySign.position.set(-23.4, 2.42, 45.1); this.root.add(mobilitySign);
     const mobilityPostMaterial = new THREE.MeshStandardMaterial({ color: "#343a38", metalness: .66, roughness: .38 });
     for (const x of [-25.9, -20.9]) {
       const post = new THREE.Mesh(new THREE.CylinderGeometry(.055, .08, 1.9, 10), mobilityPostMaterial); post.name = "amnh-electric-scooter-corral-grounded-sign-post"; post.position.set(x, .95, 45.14); this.root.add(post);

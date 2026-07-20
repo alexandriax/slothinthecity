@@ -38,16 +38,18 @@ import { createSkateboard, rollPersonalMobility, type PersonalMobilityVehicle } 
 export type BronxZooQuestState = "ENTER_ZOO" | "FIND_SLOTHS" | "ESCORT_TO_BUS";
 
 export type BronxZooEvent = {
-  kind: "SKATEBOARD_OFFERED" | "LOCK_PICKING_STARTED" | "SLOTHS_RELEASED";
+  kind: "SKATEBOARD_OFFERED" | "LOCK_PICKING_STARTED" | "SLOTHS_RELEASED" | "GARY_HUNGRY" | "JAM_SANDWICH_VENDED" | "JAM_SANDWICH_RECOVERED" | "JAM_SANDWICH_MISSED" | "GARY_FED";
   message: string;
 };
 
 export type BronxZooInteractionHint = {
-  kind: "SKATEBOARD_DONOR" | "SLOTH_HABITAT" | "BUS_BOARDING";
+  kind: "SKATEBOARD_DONOR" | "SLOTH_HABITAT" | "BUS_BOARDING" | "SNACK_MACHINE" | "GARY_HABITAT" | "LOOSE_JAM_SANDWICH";
   label: string;
   target: THREE.Vector3;
   distance: number;
 };
+
+type GarySnackState = "NONE" | "CARRIED" | "AIRBORNE" | "LOOSE" | "EATEN";
 
 type CircleObstacle = { kind: "circle"; x: number; z: number; radius: number; enabled?: () => boolean };
 type BoxObstacle = { kind: "box"; minX: number; maxX: number; minZ: number; maxZ: number; enabled?: () => boolean };
@@ -159,6 +161,25 @@ function plaqueTexture() {
     context.font = "700 44px Helvetica, Arial, sans-serif";
     context.fillText("TOGYL", width / 2, 505);
   });
+}
+
+function createJamSandwich() {
+  const root = new THREE.Group();
+  root.name = "gary-quest-project-authored-jam-sandwich";
+  const bread = new THREE.MeshStandardMaterial({ color: "#e9c98d", roughness: .86 });
+  const crust = new THREE.MeshStandardMaterial({ color: "#9c6536", roughness: .9 });
+  const jam = new THREE.MeshPhysicalMaterial({ color: "#a71829", roughness: .38, clearcoat: .28, clearcoatRoughness: .4 });
+  const lower = new THREE.Mesh(new RoundedBoxGeometry(.48, .08, .42, 5, .045), bread);
+  lower.name = "jam-sandwich-lower-bread"; lower.position.y = .06;
+  const filling = new THREE.Mesh(new RoundedBoxGeometry(.43, .035, .37, 4, .025), jam);
+  filling.name = "jam-sandwich-visible-red-jam-filling"; filling.position.y = .12;
+  const upper = new THREE.Mesh(new RoundedBoxGeometry(.48, .08, .42, 5, .045), bread);
+  upper.name = "jam-sandwich-upper-bread"; upper.position.y = .18;
+  const crustBand = new THREE.Mesh(new RoundedBoxGeometry(.5, .025, .44, 4, .04), crust);
+  crustBand.name = "jam-sandwich-baked-crust-edge"; crustBand.position.y = .235;
+  root.add(lower, filling, upper, crustBand);
+  root.traverse(object => { if (object instanceof THREE.Mesh) object.castShadow = true; });
+  return root;
 }
 
 function setShadow<T extends THREE.Mesh>(mesh: T, cast = true, receive = false) {
@@ -763,6 +784,8 @@ export class BronxZooWorld {
   readonly skateboardDonorPosition = new THREE.Vector3(-8.5, 1.48, 6.2);
   readonly gatePosition = new THREE.Vector3(0, 1.48, -8);
   readonly slothHabitatPosition = new THREE.Vector3(0, 1.48, -128.6);
+  readonly garyHabitatCenter = new THREE.Vector3(43, 0, -51);
+  readonly garyViewingPosition = new THREE.Vector3(28.5, 1.48, -37.5);
   // Exterior of the visible open door. Boarding is an explicit interaction;
   // the player never needs to intersect the coach body to trigger it.
   readonly busBoardingPosition = new THREE.Vector3(17.05, 2.5, 22.48);
@@ -786,6 +809,14 @@ export class BronxZooWorld {
   private readonly keeperDoorLeaves: THREE.Group[] = [];
   private readonly keeperPadlock = new THREE.Group();
   private readonly sun = new THREE.DirectionalLight("#ffdda1", 2.6);
+  private readonly snackMachinePositions = [new THREE.Vector3(-13, 0, -69), new THREE.Vector3(14, 0, -107), new THREE.Vector3(-18, 0, -122)];
+  private readonly jamSandwich = createJamSandwich();
+  private readonly jamSandwichVelocity = new THREE.Vector3();
+  private readonly garyEvents: BronxZooEvent[] = [];
+  private garyRig: ZooAnimalRig | null = null;
+  private garySnackState: GarySnackState = "NONE";
+  private garyHungryAnnounced = false;
+  private garyFed = false;
   private readonly skateboard: PersonalMobilityVehicle;
   private readonly skateboardPrevious = new THREE.Vector3();
   private skateboardMounted = false;
@@ -874,6 +905,8 @@ export class BronxZooWorld {
     addCampusBuilding(this.root, materials, this.ownedTextures, "bronx-zoo-nature-trek-center", "NATURE TREK", 66, -129, 18, 7.2, 12, "#8f856c");
 
     this.addGuestAmenities(materials, textures, quality);
+    this.jamSandwich.visible = false;
+    this.root.add(this.jamSandwich);
     addLandscape(this.root, materials, textures, quality, this.obstacles);
     this.addPermanentCollisions();
 
@@ -932,6 +965,8 @@ export class BronxZooWorld {
   get questState() { return this.state; }
   get hasTicket() { return this.hasAdmissionTicket; }
   get friendsReleased() { return this.releasedFriends; }
+  get isGaryFed() { return this.garyFed; }
+  get hasJamSandwich() { return this.garySnackState === "CARRIED"; }
   get isSkateboardMounted() { return this.skateboardMounted; }
   get skateboardRideLift() { return this.skateboardLift; }
 
@@ -950,6 +985,27 @@ export class BronxZooWorld {
   interactionHint(player: THREE.Vector3): BronxZooInteractionHint | null {
     const donorDistance = this.distanceXZ(player, this.skateboardDonorPosition);
     if (donorDistance <= 2.6) return { kind: "SKATEBOARD_DONOR", label: "TALK TO VISITOR ABOUT THE SKATEBOARD", target: this.skateboardDonorPosition.clone(), distance: donorDistance };
+    if (this.garySnackState === "LOOSE") {
+      const looseDistance = this.distanceXZ(player, this.jamSandwich.position);
+      if (looseDistance <= 2.1) return { kind: "LOOSE_JAM_SANDWICH", label: "PICK UP THE JAM SANDWICH AND TRY AGAIN", target: this.jamSandwich.position.clone(), distance: looseDistance };
+    }
+    if (!this.garyFed && this.garySnackState === "NONE") {
+      let nearestMachineIndex = -1, machineDistance = Infinity;
+      this.snackMachinePositions.forEach((position, index) => {
+        const distance = this.distanceXZ(player, position);
+        if (distance < machineDistance) { machineDistance = distance; nearestMachineIndex = index; }
+      });
+      if (nearestMachineIndex >= 0 && machineDistance <= 2.4) return { kind: "SNACK_MACHINE", label: "VEND A JAM SANDWICH FOR GARY", target: this.snackMachinePositions[nearestMachineIndex].clone(), distance: machineDistance };
+    }
+    if (!this.garyFed) {
+      const garyDistance = this.distanceXZ(player, this.garyViewingPosition);
+      if (garyDistance <= 4.3) return {
+        kind: "GARY_HABITAT",
+        label: this.garySnackState === "CARRIED" ? "THROW THE JAM SANDWICH OVER GARY’S ENCLOSURE" : "GARY IS HUNGRY · FIND A SNACK MACHINE",
+        target: this.garyViewingPosition.clone(),
+        distance: garyDistance,
+      };
+    }
     const habitatDistance = this.distanceXZ(player, this.slothHabitatPosition);
     if (!this.releasedFriends && habitatDistance <= 3.2) return { kind: "SLOTH_HABITAT", label: "PICK THE SIX-PIN SLOTH HABITAT LOCK", target: this.slothHabitatPosition.clone(), distance: habitatDistance };
     const boardingDistance = this.distanceXZ(player, this.busBoardingPosition);
@@ -957,12 +1013,39 @@ export class BronxZooWorld {
     return null;
   }
 
-  interact(player: THREE.Vector3): BronxZooEvent | null {
+  interact(player: THREE.Vector3, yaw = 0): BronxZooEvent | null {
     const hint = this.interactionHint(player);
     if (!hint) return null;
     if (hint.kind === "SKATEBOARD_DONOR") return { kind: "SKATEBOARD_OFFERED", message: "“Oh, you can have my skateboard if you want. It’s over there.”" };
     if (hint.kind === "BUS_BOARDING") return null;
+    if (hint.kind === "SNACK_MACHINE") {
+      this.garySnackState = "CARRIED";
+      this.jamSandwich.visible = true;
+      return { kind: "JAM_SANDWICH_VENDED", message: "The machine vends a fresh jam sandwich. Bring it to hungry Gary at the polar bear enclosure." };
+    }
+    if (hint.kind === "LOOSE_JAM_SANDWICH") {
+      this.garySnackState = "CARRIED";
+      return { kind: "JAM_SANDWICH_RECOVERED", message: "You pick the sandwich back up. Face Gary’s enclosure and try the throw again." };
+    }
+    if (hint.kind === "GARY_HABITAT") {
+      if (this.garySnackState !== "CARRIED") return { kind: "GARY_HUNGRY", message: "Gary is hungry. One of the green snack machines can vend him a jam sandwich." };
+      const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+      this.jamSandwich.position.copy(player).addScaledVector(forward, .72);
+      this.jamSandwich.position.y -= .3;
+      this.jamSandwichVelocity.copy(forward).multiplyScalar(14.5).setY(4.35);
+      this.garySnackState = "AIRBORNE";
+      return null;
+    }
     return { kind: "LOCK_PICKING_STARTED", message: "Keep plug tension between 40% and 60%, then find the six pins in binding order." };
+  }
+
+  consumeGaryEvent() { return this.garyEvents.shift() ?? null; }
+
+  setGaryFed(fed = true) {
+    this.garyFed = fed;
+    this.garySnackState = fed ? "EATEN" : "NONE";
+    this.jamSandwich.visible = false;
+    if (this.garyRig) this.garyRig.root.visible = !fed;
   }
 
   completeLockPicking() {
@@ -1056,10 +1139,41 @@ export class BronxZooWorld {
     idleAuthoredHuman(this.skateboardDonor, delta);
     this.guestAgents.forEach(agent => updateAmbientHumanAgent(agent, elapsed, delta));
     this.animals.forEach(animal => animal.update(elapsed, delta));
+    if (player && !this.garyFed && !this.garyHungryAnnounced && this.distanceXZ(player, this.garyViewingPosition) <= 5.2) {
+      this.garyHungryAnnounced = true;
+      this.garyEvents.push({ kind: "GARY_HUNGRY", message: "Gary presses his nose toward the fence. He’s hungry — a nearby snack machine vends jam sandwiches." });
+    }
+    this.updateGarySandwich(delta, player);
     this.updateCaptiveSlothMotion(elapsed);
     if (player) {
       this.sun.position.set(player.x - 22, 38, player.z + 18);
       this.sun.target.position.set(player.x, 0, player.z);
+    }
+  }
+
+  private updateGarySandwich(delta: number, player?: THREE.Vector3) {
+    if (this.garySnackState === "CARRIED" && player) {
+      this.jamSandwich.visible = true;
+      this.jamSandwich.position.set(player.x + .38, player.y - .7, player.z - .16);
+      this.jamSandwich.rotation.set(.08, -.2, -.12);
+      return;
+    }
+    if (this.garySnackState !== "AIRBORNE") return;
+    this.jamSandwichVelocity.y -= 9.81 * delta;
+    this.jamSandwich.position.addScaledVector(this.jamSandwichVelocity, delta);
+    this.jamSandwich.rotation.x += delta * 4.4;
+    this.jamSandwich.rotation.z += delta * 3.2;
+    const floor = terrainHeight(this.jamSandwich.position.x, this.jamSandwich.position.z) + .12;
+    if (this.jamSandwich.position.y > floor || this.jamSandwichVelocity.y >= 0) return;
+    this.jamSandwich.position.y = floor;
+    this.jamSandwichVelocity.set(0, 0, 0);
+    const landedInside = this.distanceXZ(this.jamSandwich.position, this.garyHabitatCenter) <= 13.2;
+    if (landedInside) {
+      this.setGaryFed(true);
+      this.garyEvents.push({ kind: "GARY_FED", message: "Gary devours the jam sandwich, splattering red jam across his white coat. He’s climbing over the enclosure to join you!" });
+    } else {
+      this.garySnackState = "LOOSE";
+      this.garyEvents.push({ kind: "JAM_SANDWICH_MISSED", message: "The sandwich lands on your side of the enclosure. Pick it up and try the throw again." });
     }
   }
 
@@ -1329,7 +1443,12 @@ export class BronxZooWorld {
       rock.scale.y = .62;
       this.root.add(rock);
     }
-    placeAnimal(this.root, this.animals, createGaryPolarBear(textures, quality), 39, -48, -1.05, 0, { mode: "terrestrial", radius: 3.1, speed: .13, phase: .4 });
+    this.garyRig = createGaryPolarBear(textures, quality);
+    this.garyRig.root.position.set(39, terrainHeight(39, -48) - 1.05, -48);
+    this.garyRig.root.rotation.y = -1.05;
+    this.garyRig.root.userData.animationState = "idle";
+    this.root.add(this.garyRig.root);
+    this.animals.push(this.garyRig);
     const texture = plaqueTexture();
     this.ownedTextures.push(texture);
     const plaque = new THREE.Group();
@@ -1773,7 +1892,7 @@ export class BronxZooWorld {
       gradient.addColorStop(0, "#1f625b"); gradient.addColorStop(1, "#11342f");
       context.fillStyle = gradient; context.fillRect(0, 0, width, height);
       context.fillStyle = "#f2e4a3"; context.textAlign = "center"; context.font = "700 82px Helvetica, Arial, sans-serif";
-      context.fillText("REFILL", width / 2, 125); context.font = "600 40px Helvetica, Arial, sans-serif"; context.fillText("WATER · SNACKS", width / 2, 190);
+      context.fillText("SNACKS", width / 2, 125); context.font = "600 40px Helvetica, Arial, sans-serif"; context.fillText("JAM SANDWICHES · WATER", width / 2, 190);
       for (let row = 0; row < 4; row++) for (let column = 0; column < 3; column++) {
         context.fillStyle = ["#d8a448", "#8bb593", "#be6955"][column]; context.fillRect(105 + column * 190, 270 + row * 145, 110, 95);
       }
@@ -1781,11 +1900,14 @@ export class BronxZooWorld {
     });
     this.ownedTextures.push(vendingTexture);
     const vendingMaterial = new THREE.MeshStandardMaterial({ map: vendingTexture, color: "#ffffff", roughness: .5, metalness: .08 });
-    for (const [x, z, yaw] of [[-13, -69, -.15], [14, -107, .12], [-18, -122, -.1]] as const) {
+    for (const [index, [x, z, yaw]] of ([[-13, -69, -.15], [14, -107, .12], [-18, -122, -.1]] as const).entries()) {
       const station = new THREE.Group();
       station.name = "bronx-zoo-water-refill-and-snack-station";
       station.position.set(x, terrainHeight(x, z), z); station.rotation.y = yaw;
+      station.userData.interactable = true;
+      station.userData.interactionKind = "gary-jam-sandwich-vending";
       const cabinet = new THREE.Mesh(new RoundedBoxGeometry(1.25, 2.35, .82, 5, .08), vendingMaterial);
+      cabinet.name = `bronx-zoo-jam-sandwich-vending-machine-${index + 1}`;
       cabinet.position.y = 1.18; station.add(cabinet);
       const payment = new THREE.Mesh(new RoundedBoxGeometry(.2, .34, .04, 3, .025), materials.iron);
       payment.position.set(.39, 1.35, .44); station.add(payment);

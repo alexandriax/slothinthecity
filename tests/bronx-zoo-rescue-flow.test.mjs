@@ -58,6 +58,9 @@ test("the sloth keeper door launches a full-screen randomized six-pin tension lo
   assert.match(lock, /lockpick-pin-gap/);
   assert.match(lock, /aria-pressed=\{state === "set"\}/);
   assert.match(lock, /Random order is fixed for this attempt/);
+  assert.match(lock, /\^\(\?:Digit\|Numpad\)\(\[1-6\]\)\$/);
+  assert.match(lock, /exec\(event\.code\) \?\? .*exec\(event\.key\)/);
+  assert.match(lock, /Keyboard 1–6/);
   assert.match(lock, /role="dialog" aria-modal="true"/);
   assert.match(lock, /Space · \+9%/);
   assert.match(lock, /Below 40%, set pins fall\. Above 60%, the plug locks and tested pins jam\./);
@@ -94,6 +97,36 @@ test("Gary's polar-bear habitat carries the exact TOGYL support plaque", async (
   assert.match(zoo, /context\.font = "700 44px Helvetica, Arial, sans-serif"/);
   assert.match(zoo, /gary-polar-bear-togyl-support-plaque/);
   assert.match(zoo, /createGaryPolarBear\(textures, quality\)/);
+});
+
+test("Gary's optional jam-sandwich quest supports throwing, retry pickup, climbing, persistence, and a sixth scooter", async () => {
+  const [zoo, gary, game, museum, checkpoints] = await Promise.all([
+    readSource("../app/game/world/BronxZooWorld.ts"),
+    readSource("../app/game/world/GaryCompanion.ts"),
+    readSource("../app/game/SubwayGame.tsx"),
+    readSource("../app/game/world/NaturalHistoryMuseumWorld.ts"),
+    readSource("../app/game/debugCheckpoints.ts"),
+  ]);
+
+  assert.match(zoo, /gary-quest-project-authored-jam-sandwich/);
+  assert.match(zoo, /bronx-zoo-jam-sandwich-vending-machine-/);
+  assert.match(zoo, /VEND A JAM SANDWICH FOR GARY/);
+  assert.match(zoo, /THROW THE JAM SANDWICH OVER GARY’S ENCLOSURE/);
+  assert.match(zoo, /JAM_SANDWICH_MISSED/);
+  assert.match(zoo, /PICK UP THE JAM SANDWICH AND TRY AGAIN/);
+  assert.match(zoo, /landedInside = this\.distanceXZ\(this\.jamSandwich\.position, this\.garyHabitatCenter\) <= 13\.2/);
+  assert.match(zoo, /kind: "GARY_FED"/);
+  assert.match(gary, /gary-persistent-red-jam-splotches/);
+  assert.match(gary, /authored-bear-climb-over-enclosure/);
+  assert.match(gary, /this\.animal\.root\.userData\.animationState = "forage"/);
+  assert.match(gary, /this\.animal\.root\.userData\.animationState = "walk"/);
+  assert.match(gary, /Scene-owned Gary state/);
+  assert.match(game, /garyCompanion\.feed\(gameTime/);
+  assert.match(game, /garyCompanion\.update\(gameTime/);
+  assert.match(game, /data-gary-fed=/);
+  assert.match(museum, /for \(let index = 0; index < 6; index\+\+\)/);
+  assert.match(checkpoints, /"bronx-gary-fed": "bronxgaryfed"/);
+  assert.match(checkpoints, /"museum-gary-scooter": "museumgaryscooter"/);
 });
 
 test("zoo species use the project atlas and enclosure-safe multi-state motion", async () => {
