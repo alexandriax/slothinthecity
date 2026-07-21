@@ -56,6 +56,7 @@ test("live zoo equipment exposes the same species controls on keyboard and touch
   assert.match(game, /fieldStatus=\{hud\.fieldStatus\}/);
   assert.match(touch, /aria-label="Live habitat equipment controls"/);
   assert.match(touch, /className="touch-field-readout" aria-live="polite"/);
+  assert.match(touch, /touch-field-buttons count-\$\{Math\.min\(fieldControls\.length, 4\)\}/);
   assert.match(touch, /emitKey\(control\.code, true\); emitKey\(control\.code, false\)/);
-  for (const code of ["KeyE", "KeyA", "KeyD", "Digit1", "Digit2", "Digit3"]) assert.match(zoo, new RegExp(`code: "${code}"`));
+  for (const code of ["KeyE", "KeyA", "KeyW", "KeyS", "KeyD", "Digit1", "Digit2", "Digit3"]) assert.match(zoo, new RegExp(`code: "${code}"`));
 });

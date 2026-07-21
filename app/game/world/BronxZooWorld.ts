@@ -6,7 +6,9 @@ import {
   ZOO_SIDE_QUESTS,
   createZooSideQuestConfig,
   operateWetlandValve,
+  prairieLanding,
   wetlandReadingSafe,
+  type PrairieTarget,
   type WetlandReading,
   type WetlandValve,
   type ZooSideQuestConfig,
@@ -85,10 +87,14 @@ type ActiveHabitatOperation = {
 
 type HabitatCalibration =
   | { kind: "passive" }
+  | { feedback: number; harmonic: number; kind: "bird-harmonic"; target: number }
+  | { current: -1 | 0 | 1; feedback: number; kind: "current-trim"; target: -1 | 0 | 1; trim: -1 | 0 | 1 }
   | { feedback: number; kind: "rope-tension"; target: number; tension: number }
+  | { feedback: number; kind: "stripe-alignment"; offset: number; target: number }
   | { direction: number; feedback: number; kind: "scent-vane"; target: number }
   | { angle: number; feedback: number; kind: "solar-mirror"; target: number }
-  | { drift: WetlandReading; feedback: number; kind: "wetland-balance"; lastValve: WetlandValve | null; reading: WetlandReading };
+  | { drift: WetlandReading; feedback: number; kind: "wetland-balance"; lastValve: WetlandValve | null; reading: WetlandReading }
+  | { angle: number; feedback: number; kind: "seed-launcher"; power: number; target: PrairieTarget; wind: number };
 
 export type HabitatFieldControlOption = {
   ariaLabel: string;
@@ -2280,6 +2286,29 @@ export class BronxZooWorld {
     const calibration = this.activeHabitatOperation?.calibration;
     if (!calibration || calibration.kind === "passive") return null;
     const ready = this.habitatCalibrationReady(calibration);
+    if (calibration.kind === "bird-harmonic") return {
+      hint: "Tune the acoustic horn until the live perch answers in resonance",
+      options: [
+        { ariaLabel: "Tune the aviary acoustic horn down one harmonic", code: "KeyA", label: "Tone −" },
+        { ariaLabel: "Tune the aviary acoustic horn up one harmonic", code: "KeyD", label: "Tone +" },
+      ],
+      ready,
+      status: `HARMONIC ${calibration.harmonic + 1} / 4 · ${ready ? "PERCH RESONANCE" : "TUNE TO THE LIVE CALL"}`,
+    };
+    if (calibration.kind === "current-trim") {
+      const current = calibration.current < 0 ? "← PORT" : calibration.current > 0 ? "STARBOARD →" : "SLACK";
+      const trim = calibration.trim < 0 ? "PORT" : calibration.trim > 0 ? "STARBOARD" : "CENTER";
+      return {
+        hint: "Counter the cross-current with the dock jets while following the buoy",
+        options: [
+          { ariaLabel: "Trim the sea lion current jet to port", code: "KeyA", label: "Port" },
+          { ariaLabel: "Center the sea lion current jet", code: "KeyW", label: "Center" },
+          { ariaLabel: "Trim the sea lion current jet to starboard", code: "KeyD", label: "Starboard" },
+        ],
+        ready,
+        status: `CURRENT ${current} · TRIM ${trim} · ${ready ? "BUOY LANE LOCKED" : "COUNTER THE DRIFT"}`,
+      };
+    }
     if (calibration.kind === "rope-tension") {
       const low = Math.round((calibration.target - .11) * 100);
       const high = Math.round((calibration.target + .11) * 100);
@@ -2288,6 +2317,19 @@ export class BronxZooWorld {
         options: [{ ariaLabel: "Pulse the monkey canopy tension wheel", code: "KeyE", label: "Pulse" }],
         ready,
         status: `TENSION ${Math.round(calibration.tension * 100)}% · SAFE ${low}–${high}%`,
+      };
+    }
+    if (calibration.kind === "stripe-alignment") {
+      const difference = calibration.target - calibration.offset;
+      const direction = difference < 0 ? "LEFT" : "RIGHT";
+      return {
+        hint: "Slide the live profile band onto the amber stripe reference",
+        options: [
+          { ariaLabel: "Slide the zebra profile scanner left", code: "KeyA", label: "Scan −" },
+          { ariaLabel: "Slide the zebra profile scanner right", code: "KeyD", label: "Scan +" },
+        ],
+        ready,
+        status: ready ? "STRIPE PROFILE ALIGNED" : `PROFILE ${Math.abs(difference)} STEP${Math.abs(difference) === 1 ? "" : "S"} ${direction}`,
       };
     }
     if (calibration.kind === "scent-vane") return {
@@ -2308,7 +2350,7 @@ export class BronxZooWorld {
       ready,
       status: `MIRROR ${calibration.angle + 1} / 6 · ${ready ? "BEAM LOCKED" : "AIM AT THE WARMING STONE"}`,
     };
-    return {
+    if (calibration.kind === "wetland-balance") return {
       hint: "Balance both live wetland readings with the three physical flows",
       options: [
         { ariaLabel: "Open the flamingo wetland intake", code: "Digit1", label: "Intake" },
@@ -2317,6 +2359,19 @@ export class BronxZooWorld {
       ],
       ready,
       status: `WATER ${Math.round(calibration.reading.water)} · SALT ${Math.round(calibration.reading.salinity)} · ${ready ? "HABITAT BAND" : "BALANCE 46–59 / 42–57"}`,
+    };
+    return {
+      hint: "Match the surveyed bearing and spring charge before releasing the native seed arc",
+      options: [
+        { ariaLabel: "Aim the bison prairie seed launcher left", code: "KeyA", label: "Aim −" },
+        { ariaLabel: "Aim the bison prairie seed launcher right", code: "KeyD", label: "Aim +" },
+        { ariaLabel: "Add spring charge to the bison prairie seed launcher", code: "KeyW", label: "Charge" },
+        { ariaLabel: "Bleed spring charge from the bison prairie seed launcher", code: "KeyS", label: "Bleed" },
+      ],
+      ready,
+      status: ready
+        ? `AIM ${calibration.angle}° · SPRING ${calibration.power}% · PLOT LOCKED`
+        : `AIM ${calibration.angle}→${calibration.target.solutionAngle}° · SPRING ${calibration.power}→${calibration.target.solutionPower}% · ADJUST ARC`,
     };
   }
   get activeHabitatResponseTarget() {
@@ -2419,19 +2474,40 @@ export class BronxZooWorld {
 
   private habitatCalibrationReady(calibration: HabitatCalibration) {
     if (calibration.kind === "passive") return true;
+    if (calibration.kind === "bird-harmonic") return calibration.harmonic === calibration.target;
+    if (calibration.kind === "current-trim") return calibration.trim === calibration.target;
     if (calibration.kind === "rope-tension") return Math.abs(calibration.tension - calibration.target) <= .11;
+    if (calibration.kind === "stripe-alignment") return calibration.offset === calibration.target;
     if (calibration.kind === "scent-vane") return calibration.direction === calibration.target;
     if (calibration.kind === "solar-mirror") return calibration.angle === calibration.target;
-    return wetlandReadingSafe(calibration.reading);
+    if (calibration.kind === "wetland-balance") return wetlandReadingSafe(calibration.reading);
+    const landing = prairieLanding(calibration.angle, calibration.power, calibration.wind);
+    return Math.hypot(landing.x - calibration.target.x, landing.y - calibration.target.y) <= calibration.target.radius;
   }
 
   private createHabitatCalibration(station: HabitatQuestStation): HabitatCalibration {
     const stationIndex = this.activeAnimalQuest?.order[this.activeAnimalQuest.step] ?? 0;
     const config = this.activeAnimalQuestConfig;
+    if (station.kind === "bird-perch" && config?.questId === "aviary-voices") {
+      const target = config.melody[(stationIndex * 2) % config.melody.length];
+      return { feedback: 0, harmonic: (target + stationIndex % 3 + 1) % 4, kind: "bird-harmonic", target };
+    }
+    if (station.kind === "buoy-dock" && config?.questId === "sea-lion-current") {
+      const current = config.currentPattern[stationIndex % config.currentPattern.length];
+      const target = -current as -1 | 0 | 1;
+      const trim = (target === -1 ? 0 : target === 0 ? 1 : -1) as -1 | 0 | 1;
+      return { current, feedback: 0, kind: "current-trim", target, trim };
+    }
     if (station.kind === "rope-anchor" && config?.questId === "monkey-canopy-rig") {
       const target = .47 + config.anchorOffsets[stationIndex % config.anchorOffsets.length] * .1;
       return { feedback: 0, kind: "rope-tension", target, tension: Math.max(.12, target - .31) };
     }
+    if (station.kind === "stripe-scanner" && config?.questId === "zebra-stripe-scan") return {
+      feedback: 0,
+      kind: "stripe-alignment",
+      offset: config.initialOffsets[stationIndex % config.initialOffsets.length],
+      target: config.targetOffsets[stationIndex % config.targetOffsets.length],
+    };
     if (station.kind === "scent-vane" && config?.questId === "red-panda-scent-wind") return {
       direction: config.initialDirections[stationIndex % config.initialDirections.length],
       feedback: 0,
@@ -2454,15 +2530,45 @@ export class BronxZooWorld {
         salinity: THREE.MathUtils.clamp(config.initialSalinity - stationIndex * 1.3, 0, 100),
       },
     };
+    if (station.kind === "seed-plot" && config?.questId === "bison-prairie-seeding") {
+      const target = config.targets[stationIndex % config.targets.length];
+      return {
+        angle: THREE.MathUtils.clamp(target.solutionAngle + (stationIndex % 2 ? 15 : -15), -45, 45),
+        feedback: 0,
+        kind: "seed-launcher",
+        power: THREE.MathUtils.clamp(target.solutionPower + (stationIndex % 2 ? -12 : 12), 36, 88),
+        target,
+        wind: config.wind,
+      };
+    }
     return { kind: "passive" };
   }
 
   handleHabitatControl(code: string) {
     const calibration = this.activeHabitatOperation?.calibration;
     if (!calibration || calibration.kind === "passive") return false;
+    if (calibration.kind === "bird-harmonic") {
+      if (code !== "KeyA" && code !== "KeyD") return false;
+      calibration.harmonic = THREE.MathUtils.euclideanModulo(calibration.harmonic + (code === "KeyD" ? 1 : -1), 4);
+      calibration.feedback = 1;
+      return true;
+    }
+    if (calibration.kind === "current-trim") {
+      const trim = code === "KeyA" ? -1 : code === "KeyW" ? 0 : code === "KeyD" ? 1 : null;
+      if (trim === null) return false;
+      calibration.trim = trim;
+      calibration.feedback = 1;
+      return true;
+    }
     if (calibration.kind === "rope-tension") {
       if (code !== "KeyE") return false;
       calibration.tension = THREE.MathUtils.clamp(calibration.tension + .19, 0, 1);
+      calibration.feedback = 1;
+      return true;
+    }
+    if (calibration.kind === "stripe-alignment") {
+      if (code !== "KeyA" && code !== "KeyD") return false;
+      calibration.offset = THREE.MathUtils.clamp(calibration.offset + (code === "KeyD" ? 1 : -1), -6, 6);
       calibration.feedback = 1;
       return true;
     }
@@ -2478,10 +2584,17 @@ export class BronxZooWorld {
       calibration.feedback = 1;
       return true;
     }
-    const valve = code === "Digit1" ? "intake" : code === "Digit2" ? "fresh" : code === "Digit3" ? "drain" : null;
-    if (!valve) return false;
-    calibration.reading = operateWetlandValve(calibration.reading, valve);
-    calibration.lastValve = valve;
+    if (calibration.kind === "wetland-balance") {
+      const valve = code === "Digit1" ? "intake" : code === "Digit2" ? "fresh" : code === "Digit3" ? "drain" : null;
+      if (!valve) return false;
+      calibration.reading = operateWetlandValve(calibration.reading, valve);
+      calibration.lastValve = valve;
+      calibration.feedback = 1;
+      return true;
+    }
+    if (code === "KeyA" || code === "KeyD") calibration.angle = THREE.MathUtils.clamp(calibration.angle + (code === "KeyD" ? 5 : -5), -45, 45);
+    else if (code === "KeyW" || code === "KeyS") calibration.power = THREE.MathUtils.clamp(calibration.power + (code === "KeyW" ? 4 : -4), 36, 88);
+    else return false;
     calibration.feedback = 1;
     return true;
   }
@@ -2807,7 +2920,7 @@ export class BronxZooWorld {
       visual.progressMaterial.opacity = operating ? .42 + progress * .48 : 0;
       visual.progressHalo.scale.setScalar(.42 + progress * .58);
       visual.progressHalo.rotation.z = elapsed * .72;
-      visual.mechanism.position.y = 0;
+      visual.mechanism.position.set(0, 0, 0);
       visual.mechanism.rotation.set(0, 0, 0);
       visual.response.root.visible = operating;
       if (visual.response.link) visual.response.link.visible = operating;
@@ -2821,9 +2934,18 @@ export class BronxZooWorld {
           visual.response.root.position.y += Math.sin(responseProgress * Math.PI) * 1.05;
           visual.response.root.scale.setScalar(1 + Math.sin(elapsed * 7.4) * .07);
           visual.response.root.rotation.y += Math.sin(elapsed * .9) * .08;
+          const harmonic = calibration?.kind === "bird-harmonic" ? calibration.harmonic : 0;
+          visual.response.root.children.forEach(child => {
+            if (child.name === "aviary-live-call-wave") child.scale.setScalar(.84 + harmonic * .08 + Math.sin(elapsed * 7.4 + child.position.z * 4) * .045);
+          });
         } else if (visual.kind === "buoy-dock") {
           visual.response.root.position.y += Math.sin(elapsed * 4.2) * .09;
           visual.response.root.rotation.y += elapsed * .42;
+          if (calibration?.kind === "current-trim") {
+            const travel = visual.response.root.userData.responseTravelDirection as [number, number];
+            visual.response.root.position.x += -travel[1] * calibration.trim * .62;
+            visual.response.root.position.z += travel[0] * calibration.trim * .62;
+          }
         } else if (visual.kind === "rope-anchor") {
           visual.response.root.position.y += Math.sin(responseProgress * Math.PI) * .5;
           visual.response.root.rotation.z = Math.sin(elapsed * 6.1) * .045;
@@ -2833,6 +2955,11 @@ export class BronxZooWorld {
             visual.response.root.position.copy(zebra.root.position);
             visual.response.root.position.y += 1.28 + Math.sin(elapsed * 2.2) * .06;
             visual.response.root.rotation.y = zebra.root.rotation.y;
+            if (calibration?.kind === "stripe-alignment") {
+              const displacement = (calibration.offset - calibration.target) * .13;
+              visual.response.root.position.x += Math.cos(visual.response.root.rotation.y) * displacement;
+              visual.response.root.position.z -= Math.sin(visual.response.root.rotation.y) * displacement;
+            }
             visual.response.root.userData.liveAnimalTarget = zebra.root.name;
           }
         } else if (visual.kind === "scent-vane") {
@@ -2876,9 +3003,22 @@ export class BronxZooWorld {
           visual.mechanism.rotation.y = calibration?.kind === "solar-mirror" ? calibration.angle * Math.PI / 3 : motion * Math.PI * .72;
           visual.mechanism.rotation.x = -.16 + pulse;
         }
-        else if (visual.kind === "buoy-dock") visual.mechanism.position.y = Math.sin(elapsed * 4.8) * .08 * motion;
-        else if (visual.kind === "stripe-scanner") visual.mechanism.rotation.y = Math.sin(elapsed * 2.5) * .18 * motion;
-        else if (visual.kind === "bird-perch") visual.mechanism.rotation.x = Math.sin(elapsed * 5.4) * .07 * motion;
+        else if (visual.kind === "buoy-dock") {
+          visual.mechanism.position.y = Math.sin(elapsed * 4.8) * .08 * motion;
+          visual.mechanism.rotation.z = calibration?.kind === "current-trim" ? calibration.trim * .22 + pulse : 0;
+        }
+        else if (visual.kind === "stripe-scanner") {
+          visual.mechanism.position.x = calibration?.kind === "stripe-alignment" ? (calibration.offset - calibration.target) * .045 : 0;
+          visual.mechanism.rotation.y = pulse;
+        }
+        else if (visual.kind === "bird-perch") {
+          visual.mechanism.rotation.y = calibration?.kind === "bird-harmonic" ? calibration.harmonic * Math.PI / 2 : 0;
+          visual.mechanism.rotation.x = pulse;
+        }
+        else if (visual.kind === "seed-plot" && calibration?.kind === "seed-launcher") {
+          visual.mechanism.rotation.z = THREE.MathUtils.degToRad(-calibration.angle) * .38;
+          visual.mechanism.rotation.x = (calibration.power - 60) / 180 + pulse;
+        }
         else visual.mechanism.rotation.z = Math.sin(elapsed * 7.2) * .06 * motion;
       }
     });

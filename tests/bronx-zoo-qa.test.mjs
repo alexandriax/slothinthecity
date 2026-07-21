@@ -53,6 +53,39 @@ function textureSet(THREE) {
   };
 }
 
+function calibrateActiveHabitat(world) {
+  for (let step = 0; step < 80 && !world.activeSideQuestProgress?.calibrated; step++) {
+    const status = world.activeSideQuestProgress?.control?.status ?? "";
+    if (status.startsWith("HARMONIC ")) world.handleHabitatControl("KeyD");
+    else if (status.startsWith("CURRENT ")) {
+      world.handleHabitatControl(status.includes("← PORT") ? "KeyD" : status.includes("STARBOARD →") ? "KeyA" : "KeyW");
+    } else if (status.startsWith("TENSION ")) world.handleHabitatControl("KeyE");
+    else if (status.startsWith("PROFILE ")) world.handleHabitatControl(status.endsWith("LEFT") ? "KeyA" : "KeyD");
+    else if (status.startsWith("VANE ") || status.startsWith("MIRROR ")) world.handleHabitatControl("KeyD");
+    else if (status.startsWith("WATER ")) {
+      const readings = status.match(/WATER (\d+) · SALT (\d+)/);
+      assert.ok(readings, "the wetland station should publish both physical readings");
+      const water = Number(readings[1]), salinity = Number(readings[2]);
+      const code = salinity > 57
+        ? "Digit2"
+        : water < 46
+          ? "Digit1"
+          : water > 59
+            ? "Digit3"
+            : salinity < 42
+              ? water > 52 ? "Digit3" : "Digit1"
+              : "Digit2";
+      world.handleHabitatControl(code);
+    } else if (status.startsWith("AIM ")) {
+      const survey = status.match(/AIM (-?\d+)→(-?\d+)° · SPRING (\d+)→(\d+)%/);
+      assert.ok(survey, "the seed launcher should publish its live survey bearing and spring charge");
+      const angle = Number(survey[1]), targetAngle = Number(survey[2]), power = Number(survey[3]), targetPower = Number(survey[4]);
+      world.handleHabitatControl(angle < targetAngle ? "KeyD" : angle > targetAngle ? "KeyA" : power < targetPower ? "KeyW" : "KeyS");
+    } else assert.fail(`Unknown habitat calibration status: ${status}`);
+  }
+  assert.equal(world.activeSideQuestProgress?.calibrated, true, "the authored field controls should always have a recoverable solution");
+}
+
 test("visitor paths use terrain-following drainage edges instead of detached box kerbs", async () => {
   const [source, { BronxZooWorld, THREE }] = await Promise.all([
     readSource("../app/game/world/BronxZooWorld.ts"),
@@ -202,6 +235,7 @@ test("habitat research requires live first-person focus, preserves zoo animals, 
     assert.equal(world.activeSideQuestProgress?.operation, 0);
     assert.equal(world.activeSideQuestProgress?.operationActive, true);
     assert.ok(world.activeHabitatResponseTarget, "operating a station should produce a physical response inside the enclosure");
+    calibrateActiveHabitat(world);
 
     const responseStart = world.activeHabitatResponseTarget.clone();
     let result;
@@ -238,13 +272,17 @@ test("habitat research requires live first-person focus, preserves zoo animals, 
   world.dispose();
 });
 
-test("monkey, red panda, tortoise, and flamingo fieldwork require distinct live equipment controls", async () => {
+test("all eight habitat routes require distinct live equipment controls", async () => {
   const { BronxZooWorld, THREE } = await loadBronxZooHarness();
   const scenarios = [
+    { center: [-43, -51], codes: ["KeyA", "KeyD"], kind: "bird-harmonic", quest: "aviary-voices" },
+    { center: [0, -76], codes: ["KeyA", "KeyW", "KeyD"], kind: "current-trim", quest: "sea-lion-current" },
     { center: [-43, -101], codes: ["KeyE"], kind: "rope-tension", quest: "monkey-canopy-rig" },
+    { center: [43, -101], codes: ["KeyA", "KeyD"], kind: "stripe-alignment", quest: "zebra-stripe-scan" },
     { center: [-36, -132], codes: ["KeyA", "KeyD"], kind: "scent-vane", quest: "red-panda-scent-wind" },
     { center: [36, -132], codes: ["KeyA", "KeyD"], kind: "solar-mirror", quest: "tortoise-sun-trail" },
     { center: [-71, -55], codes: ["Digit1", "Digit2", "Digit3"], kind: "wetland-balance", quest: "flamingo-wetland-balance" },
+    { center: [72, -105], codes: ["KeyA", "KeyD", "KeyW", "KeyS"], kind: "seed-launcher", quest: "bison-prairie-seeding" },
   ];
 
   for (const [index, scenario] of scenarios.entries()) {
@@ -264,27 +302,7 @@ test("monkey, red panda, tortoise, and flamingo fieldwork require distinct live 
     }
     assert.equal(world.activeSideQuestProgress.operation, 0, `${scenario.quest} must not advance from camera tracking alone`);
 
-    for (let controlStep = 0; controlStep < 60 && !world.activeSideQuestProgress.calibrated; controlStep++) {
-      if (scenario.kind === "rope-tension") world.handleHabitatControl("KeyE");
-      else if (scenario.kind === "scent-vane" || scenario.kind === "solar-mirror") world.handleHabitatControl("KeyD");
-      else {
-        const status = world.activeSideQuestProgress.control.status;
-        const readings = status.match(/WATER (\d+) · SALT (\d+)/);
-        assert.ok(readings, "the wetland station should publish both physical readings");
-        const water = Number(readings[1]), salinity = Number(readings[2]);
-        const code = salinity > 57
-          ? "Digit2"
-          : water < 46
-            ? "Digit1"
-            : water > 59
-              ? "Digit3"
-              : salinity < 42
-                ? water > 52 ? "Digit3" : "Digit1"
-                : "Digit2";
-        world.handleHabitatControl(code);
-      }
-    }
-    assert.equal(world.activeSideQuestProgress.calibrated, true, `${scenario.quest} controls should reach a recoverable authored solution`);
+    calibrateActiveHabitat(world);
 
     const liveTarget = world.activeHabitatResponseTarget;
     const trackingDirection = liveTarget.clone().sub(player);
@@ -323,7 +341,12 @@ test("zebra scanning follows a live animal and tortoise mirrors illuminate physi
   ].filter(Boolean);
   assert.equal(zebraRoots.length, 2);
   const nearestZebraStart = Math.min(...zebraRoots.map(zebra => Math.hypot(zebra.position.x - zebraTargetStart.x, zebra.position.z - zebraTargetStart.z)));
-  assert.ok(nearestZebraStart < .05, "the profile band should originate on a live zebra, not an independent enclosure path");
+  assert.ok(nearestZebraStart > .05 && nearestZebraStart < .8, "the open profile band should be visibly misaligned but remain attached to a live zebra");
+  calibrateActiveHabitat(zebraWorld);
+  zebraWorld.update(1 / 60, 1 / 60, zebraPlayer, zebraCenterYaw);
+  const alignedZebraTarget = zebraWorld.activeHabitatResponseTarget.clone();
+  const alignedZebraDistance = Math.min(...zebraRoots.map(zebra => Math.hypot(zebra.position.x - alignedZebraTarget.x, zebra.position.z - alignedZebraTarget.z)));
+  assert.ok(alignedZebraDistance < .05, "the physical scanner controls should center the profile band on the live zebra");
   let activeScanResponse;
   zebraWorld.root.traverse(object => {
     if (object.visible && object.userData.embeddedHabitatResponse && object.userData.responseKind === "stripe-scanner") activeScanResponse = object;
@@ -503,6 +526,7 @@ test("sea-lion enrichment follows the moving buoy rather than a generic pool-cen
   }
   assert.equal(world.consumeHabitatEvent(), null, "staring at the pool center must not complete a moving-buoy observation");
   assert.ok((world.activeSideQuestProgress?.operation ?? 0) < .92);
+  calibrateActiveHabitat(world);
 
   let completion;
   for (let frame = 0; frame < 420 && !completion; frame++) {

@@ -153,6 +153,8 @@ button { font: inherit; }
 .touch-field-readout { position:absolute; right:0; bottom:calc(100% + 7px); width:max-content; max-width:min(260px,calc(100vw - 118px)); box-sizing:border-box; padding:7px 10px; overflow:hidden; border:1px solid rgba(var(--transit-accent-rgb,217,239,139),.28); border-radius:3px; background:rgba(5,14,10,.76); color:rgba(242,240,223,.82); box-shadow:0 8px 22px rgba(0,0,0,.24); backdrop-filter:blur(11px); font-size:7px; font-weight:800; letter-spacing:.08em; line-height:1.25; text-overflow:ellipsis; text-transform:uppercase; white-space:nowrap; }
 .touch-field-buttons { display:flex; align-items:end; gap:7px; }
 .touch-field-controls button { min-width:62px; height:44px; padding:0 10px; border:1px solid rgba(var(--transit-accent-rgb,217,239,139),.48); border-radius:4px; background:linear-gradient(155deg,rgba(12,24,19,.88),rgba(5,11,9,.78)); color:var(--transit-accent,var(--acid)); box-shadow:0 10px 24px rgba(0,0,0,.28),inset 0 1px rgba(255,255,255,.04); backdrop-filter:blur(12px); font-size:8px; font-weight:850; letter-spacing:.08em; text-transform:uppercase; }
+.touch-field-buttons.count-4 { gap:5px; }
+.touch-field-buttons.count-4 button { width:52px; min-width:52px; padding:0 4px; font-size:6.5px; }
 .touch-field-controls button:active { border-color:rgba(255,230,139,.82); background:rgba(44,57,36,.92); transform:translateY(1px); }
 
 @media(max-width:760px){
