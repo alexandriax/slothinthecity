@@ -200,7 +200,7 @@ export function EducationalCallouts({
             <strong>{activeFact.teaser}</strong>
           </div>
           <button type="button" onClick={openModal} aria-label={`Learn more: ${activeFact.title}`}>
-            <kbd>I</kbd> Learn more
+            <kbd>i</kbd> Learn more
           </button>
         </div>
       )}
@@ -215,7 +215,7 @@ export function EducationalCallouts({
         >
           <span aria-hidden="true">i</span>
           <b>Learn</b>
-          <kbd>I</kbd>
+          <kbd>i</kbd>
         </button>
       )}
 

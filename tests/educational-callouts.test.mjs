@@ -54,6 +54,7 @@ test("education modal releases and restores look control with keyboard and butto
   ]);
 
   assert.match(component, /event\.code !== "KeyI"/);
+  assert.equal([...component.matchAll(/<kbd>i<\/kbd>/g)].length, 2);
   assert.match(component, /Field Guide · \{EDUCATION_CONTEXT_LABELS\[context\]\}/);
   assert.doesNotMatch(component, /field note/i);
   assert.match(component, /aria-haspopup="dialog"/);
@@ -88,4 +89,5 @@ test("mobile hides teaser text until Learn is tapped while desktop keeps a short
   assert.match(css, /@media\(max-width:900px\), \(pointer:coarse\)[\s\S]{0,160}\.education-callout\{display:none\}/);
   assert.match(css, /\.education-callout~\.education-launch\{display:flex\}/);
   assert.match(css, /\.education-modal-backdrop/);
+  assert.match(css, /\.education-callout kbd,\.education-launch kbd \{[^}]*text-transform:lowercase/);
 });
