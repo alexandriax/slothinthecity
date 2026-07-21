@@ -115,6 +115,50 @@ button { font: inherit; }
 .field-note { position:absolute; right:5vw; bottom:8vh; width:280px; padding:24px; border-top:1px solid rgba(255,255,255,.2); color:rgba(242,240,223,.58); font-family:Georgia,serif; font-size:13px; line-height:1.6; }
 .toast { position:absolute; z-index:35; left:50%; top:21%; transform:translateX(-50%); width:max-content; max-width:min(680px,calc(100vw - 32px)); padding:13px 20px; color:var(--acid); background:linear-gradient(110deg,rgba(5,14,10,.9),rgba(5,14,10,.62)); border:1px solid rgba(217,239,139,.22); border-top-color:var(--acid); border-radius:2px; backdrop-filter:blur(14px); box-shadow:0 18px 48px rgba(0,0,0,.28); font-family:Georgia,serif; line-height:1.45; text-align:center; animation:floatIn .35s ease both; }
 @keyframes floatIn{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}
+
+/* Contextual learning stays outside the mission HUD. Desktop gets one short
+   field note; compact layouts expose only the Learn control until it is tapped. */
+.education-layer { --education-accent:var(--acid); position:absolute; inset:0; z-index:37; pointer-events:none; text-shadow:none; }
+.education-layer[data-education-open="true"] { z-index:300; }
+.subway-shell .education-layer { --education-accent:var(--transit-accent); }
+.education-callout { position:absolute; top:max(106px,calc(env(safe-area-inset-top) + 86px)); right:max(24px,env(safe-area-inset-right)); width:min(372px,calc(100vw - 48px)); min-height:82px; display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:14px; padding:13px 13px 13px 16px; pointer-events:auto; overflow:hidden; border:1px solid rgba(233,240,215,.15); border-left:3px solid var(--education-accent); border-radius:3px; background:linear-gradient(116deg,rgba(5,15,11,.94),rgba(5,15,11,.78)); box-shadow:0 18px 48px rgba(0,0,0,.32); backdrop-filter:blur(17px) saturate(1.14); animation:educationSlide .35s ease both; }
+.education-callout:after { content:""; position:absolute; left:0; bottom:0; width:42%; height:1px; background:linear-gradient(90deg,var(--education-accent),transparent); opacity:.7; }
+.education-callout>div { min-width:0; }
+.education-callout span { display:block; margin-bottom:6px; overflow:hidden; color:rgba(242,240,223,.5); font-size:7px; font-weight:800; letter-spacing:.2em; text-overflow:ellipsis; text-transform:uppercase; white-space:nowrap; }
+.education-callout strong { display:block; color:rgba(247,244,230,.92); font-family:Georgia,serif; font-size:13px; font-weight:400; line-height:1.4; }
+.education-callout button { align-self:stretch; width:90px; cursor:pointer; border:1px solid color-mix(in srgb,var(--education-accent) 42%,transparent); border-radius:2px; background:color-mix(in srgb,var(--education-accent) 8%,rgba(7,15,12,.78)); color:var(--education-accent); font-size:7px; font-weight:800; letter-spacing:.1em; line-height:1.35; text-transform:uppercase; }
+.education-callout button:hover,.education-callout button:focus-visible { border-color:var(--education-accent); outline:none; background:color-mix(in srgb,var(--education-accent) 15%,rgba(7,15,12,.84)); }
+.education-callout kbd,.education-launch kbd { display:inline-grid; place-items:center; min-width:19px; height:19px; margin-right:3px; border:1px solid color-mix(in srgb,var(--education-accent) 48%,transparent); border-radius:2px; color:var(--education-accent); font-family:inherit; font-size:8px; }
+.education-launch { position:absolute; top:50%; right:max(24px,env(safe-area-inset-right)); width:86px; height:38px; display:flex; align-items:center; justify-content:center; gap:6px; cursor:pointer; pointer-events:auto; border:1px solid rgba(233,240,215,.16); border-right:2px solid var(--education-accent); border-radius:3px; background:rgba(5,15,11,.72); box-shadow:0 12px 32px rgba(0,0,0,.25); backdrop-filter:blur(12px); color:rgba(242,240,223,.78); font-size:7px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; transform:translateY(-50%); }
+.education-launch>span { display:none; }
+.education-launch kbd { margin:0; }
+.education-launch:hover,.education-launch:focus-visible { border-color:color-mix(in srgb,var(--education-accent) 62%,transparent); color:#fff; outline:none; }
+.education-callout~.education-launch { display:none; }
+@keyframes educationSlide { from{opacity:0;transform:translateX(12px)} to{opacity:1;transform:translateX(0)} }
+
+.education-modal-backdrop { position:fixed; inset:0; z-index:90; display:grid; place-items:center; padding:max(18px,env(safe-area-inset-top)) max(18px,env(safe-area-inset-right)) max(18px,env(safe-area-inset-bottom)) max(18px,env(safe-area-inset-left)); pointer-events:auto; background:radial-gradient(circle at 62% 24%,color-mix(in srgb,var(--education-accent) 9%,transparent),transparent 34%),rgba(2,7,5,.8); backdrop-filter:blur(10px) saturate(.72); animation:educationFade .18s ease both; }
+.education-modal { position:relative; width:min(680px,100%); max-height:min(760px,calc(100dvh - 36px)); display:grid; grid-template-rows:auto minmax(0,1fr) auto; overflow:hidden; border:1px solid rgba(238,241,224,.2); border-top:3px solid var(--education-accent); border-radius:3px; background:linear-gradient(145deg,rgba(7,20,15,.985),rgba(3,10,8,.985)); box-shadow:0 34px 100px rgba(0,0,0,.62),inset 0 1px rgba(255,255,255,.04); color:#f4f1e5; }
+.education-modal header { min-height:68px; display:flex; align-items:center; justify-content:space-between; gap:22px; padding:13px 14px 13px 22px; border-bottom:1px solid rgba(239,242,226,.11); background:rgba(255,255,255,.018); }
+.education-modal header>div>span { display:block; color:var(--education-accent); font-size:8px; font-weight:850; letter-spacing:.2em; text-transform:uppercase; }
+.education-modal header small { display:block; margin-top:6px; color:rgba(244,241,229,.43); font-size:8px; letter-spacing:.08em; }
+.education-close { min-width:88px; height:40px; display:flex; align-items:center; justify-content:center; gap:10px; cursor:pointer; border:1px solid rgba(239,242,226,.14); border-radius:2px; background:rgba(255,255,255,.025); color:rgba(244,241,229,.72); }
+.education-close>span { color:var(--education-accent); font-size:21px; font-weight:300; line-height:1; }
+.education-close kbd { padding:3px 5px; border:1px solid rgba(239,242,226,.2); border-radius:2px; font-family:inherit; font-size:7px; letter-spacing:.08em; text-transform:uppercase; }
+.education-close:hover,.education-close:focus-visible { border-color:color-mix(in srgb,var(--education-accent) 52%,transparent); color:#fff; outline:none; }
+.education-modal-body { position:relative; min-height:0; padding:clamp(36px,6vh,64px) clamp(28px,7vw,72px) clamp(32px,5vh,50px); overflow:auto; }
+.education-index { position:absolute; top:16px; right:clamp(24px,5vw,48px); color:color-mix(in srgb,var(--education-accent) 10%,transparent); font-family:Georgia,serif; font-size:clamp(82px,17vw,148px); line-height:.8; pointer-events:none; }
+.education-kicker { position:relative; margin:0 0 15px!important; color:var(--education-accent)!important; font-size:9px!important; font-weight:850; letter-spacing:.24em; text-transform:uppercase; }
+.education-modal h2 { position:relative; max-width:520px; margin:0 0 22px; color:#f7f3e8; font-family:Georgia,serif; font-size:clamp(35px,6vw,57px); font-weight:400; letter-spacing:-.035em; line-height:.98; }
+.education-modal-body>p:not(.education-kicker) { position:relative; max-width:565px; margin:0; color:rgba(244,241,229,.72); font-family:Georgia,serif; font-size:clamp(15px,2vw,18px); line-height:1.72; }
+.education-modal-body>a { position:relative; width:min(390px,100%); min-height:58px; display:flex; align-items:center; justify-content:space-between; gap:16px; margin-top:30px; padding:11px 14px 11px 16px; border:1px solid color-mix(in srgb,var(--education-accent) 36%,transparent); border-left:3px solid var(--education-accent); border-radius:2px; color:#f4f1e5; text-decoration:none; font-size:9px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
+.education-modal-body>a span { min-width:0; overflow:hidden; color:var(--education-accent); font-size:8px; font-weight:650; letter-spacing:.03em; text-align:right; text-overflow:ellipsis; text-transform:none; white-space:nowrap; }
+.education-modal-body>a:hover,.education-modal-body>a:focus-visible { background:color-mix(in srgb,var(--education-accent) 8%,transparent); border-color:var(--education-accent); outline:none; }
+.education-modal footer { min-height:66px; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 14px; border-top:1px solid rgba(239,242,226,.11); }
+.education-modal footer button { min-width:130px; height:42px; cursor:pointer; border:0; background:transparent; color:rgba(244,241,229,.58); font-size:8px; font-weight:800; letter-spacing:.13em; text-transform:uppercase; }
+.education-modal footer button:last-child { border:1px solid color-mix(in srgb,var(--education-accent) 38%,transparent); color:var(--education-accent); }
+.education-modal footer button:hover,.education-modal footer button:focus-visible { color:#fff; outline:1px solid color-mix(in srgb,var(--education-accent) 48%,transparent); outline-offset:-1px; }
+@keyframes educationFade { from{opacity:0} to{opacity:1} }
+
 .mobile-hud { display:none; position:absolute; z-index:22; top:max(8px,env(safe-area-inset-top)); left:max(10px,env(safe-area-inset-left)); right:max(10px,env(safe-area-inset-right)); pointer-events:none; color:var(--ink); text-shadow:0 2px 8px #000; transform:translateZ(0); }
 .mobile-telemetry { height:48px; display:grid; grid-template-columns:68px minmax(0,1fr) 68px; align-items:center; gap:8px; padding:6px 96px 6px 9px; overflow:hidden; border:1px solid rgba(233,240,215,.14); border-left:2px solid rgba(217,239,139,.72); border-radius:4px; background:linear-gradient(110deg,rgba(7,18,14,.82),rgba(7,18,14,.56)); box-shadow:0 10px 30px rgba(0,0,0,.2),inset 0 1px rgba(255,255,255,.035); backdrop-filter:blur(12px) saturate(1.12); }
 .mobile-objective,.mobile-threat { min-width:0; display:grid; align-content:center; }
@@ -169,6 +213,25 @@ button { font: inherit; }
 }
 @media(max-width:900px), (pointer:coarse){
   .desktop-hud{display:none}.mobile-hud{display:block}.touch-ui{display:block}.mouse-resume{display:none}
+  .education-callout{display:none}
+  .education-callout~.education-launch{display:flex}
+  .education-launch{top:52%;right:max(10px,env(safe-area-inset-right));width:58px;height:44px;display:flex;flex-direction:column;gap:2px;border-right-width:3px;background:rgba(5,15,11,.82);transform:translateY(-50%)}
+  .education-launch>span{width:19px;height:19px;display:grid;place-items:center;border:1px solid color-mix(in srgb,var(--education-accent) 55%,transparent);border-radius:50%;color:var(--education-accent);font-family:Georgia,serif;font-size:13px;font-weight:700;line-height:1;text-transform:none}
+  .education-launch b{font-size:6px;letter-spacing:.12em}
+  .education-launch kbd{display:none}
+  .education-modal-backdrop{align-items:end;padding:10px max(10px,env(safe-area-inset-right)) max(10px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left));background:rgba(2,7,5,.72)}
+  .education-modal{width:100%;max-height:calc(100dvh - max(20px,env(safe-area-inset-top)));border-radius:4px 4px 2px 2px}
+  .education-modal header{min-height:58px;padding:9px 9px 9px 15px;gap:10px}
+  .education-modal header>div>span{font-size:7px;letter-spacing:.14em}
+  .education-modal header small{margin-top:4px;font-size:7px}
+  .education-close{min-width:68px;height:38px;gap:7px}
+  .education-modal-body{padding:32px 22px 28px}
+  .education-index{top:12px;right:20px;font-size:84px}
+  .education-modal h2{max-width:84%;margin-bottom:17px;font-size:clamp(32px,10vw,46px)}
+  .education-modal-body>p:not(.education-kicker){font-size:14px;line-height:1.58}
+  .education-modal-body>a{min-height:52px;margin-top:22px;font-size:8px}
+  .education-modal footer{min-height:58px;padding:8px}
+  .education-modal footer button{min-width:112px;height:40px;font-size:7px}
   .goal-wayfinder{top:max(64px,calc(env(safe-area-inset-top) + 56px));width:min(232px,calc(100vw - 124px));min-width:0;max-width:calc(100vw - 124px);height:32px;padding:3px 10px 3px 5px;gap:7px}.goal-wayfinder-arrow{width:24px;height:24px}.goal-wayfinder-arrow i{width:9px;height:13px}
   .toast{top:max(103px,calc(env(safe-area-inset-top) + 95px)); max-width:calc(100vw - 24px); padding:7px 11px; border-radius:999px; font-family:inherit; font-size:10px; line-height:1.25; box-shadow:0 10px 26px rgba(0,0,0,.22)}
   .game-shell[data-buds="3"] .toast{top:max(103px,calc(env(safe-area-inset-top) + 95px))}
@@ -183,6 +246,12 @@ button { font: inherit; }
 .game-shell[data-touch-capable="true"] .desktop-hud{display:none}
 .game-shell[data-touch-capable="true"] .mobile-hud,.game-shell[data-touch-capable="true"] .touch-ui{display:block}
 .game-shell[data-touch-capable="true"] .mouse-resume{display:none}
+.game-shell[data-touch-capable="true"] .education-callout{display:none}
+.game-shell[data-touch-capable="true"] .education-callout~.education-launch{display:flex}
+.game-shell[data-touch-capable="true"] .education-launch{top:52%;right:max(10px,env(safe-area-inset-right));width:58px;height:44px;display:flex;flex-direction:column;gap:2px;border-right-width:3px;background:rgba(5,15,11,.82);transform:translateY(-50%)}
+.game-shell[data-touch-capable="true"] .education-launch>span{width:19px;height:19px;display:grid;place-items:center;border:1px solid color-mix(in srgb,var(--education-accent) 55%,transparent);border-radius:50%;color:var(--education-accent);font-family:Georgia,serif;font-size:13px;font-weight:700;line-height:1;text-transform:none}
+.game-shell[data-touch-capable="true"] .education-launch b{font-size:6px;letter-spacing:.12em}
+.game-shell[data-touch-capable="true"] .education-launch kbd{display:none}
 @media(max-height:500px) and (orientation:landscape){
   .mobile-hud{top:max(5px,env(safe-area-inset-top));left:max(8px,env(safe-area-inset-left));right:max(8px,env(safe-area-inset-right))}
   .mobile-telemetry{height:40px;padding:4px 92px 4px 8px;grid-template-columns:62px minmax(0,1fr) 62px;gap:6px}.mobile-motion{top:45px;padding:5px 8px}

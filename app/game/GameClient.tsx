@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
 import * as THREE from "three";
+import { EducationalCallouts } from "./EducationalCallouts";
 import { GoalWayfinder } from "./GoalWayfinder";
 import { DebugJumpMenu } from "./mobile/DebugJumpMenu";
 import { MobileHud } from "./mobile/MobileHud";
@@ -19,6 +20,7 @@ import { createParkUtilityCart, type ParkUtilityCart } from "./world/ParkUtility
 import { CENTRAL_PARK_MALLARD_COMPANION_ID, LakeDuckQuest } from "./world/LakeDuckQuest";
 import { CENTRAL_PARK_SQUIRREL_COMPANION_ID, ParkSquirrelQuest } from "./world/ParkSquirrelQuest";
 import { addCentralParkLighting, buildRealisticWorld, LAKE_SOUTHEAST_CART_TARGET, START, terrainY, type BranchRoute, type ClimbableTree } from "./world/RealisticWorld";
+import { educationContextForParkStage } from "./educationFacts";
 
 type Phase = "intro" | "playing" | "paused" | "complete";
 type ParkStage = "FORAGE" | "BOW_BRIDGE" | "LAKE_TICKET" | "SUBWAY_ENTRANCE";
@@ -45,6 +47,7 @@ function exitPointerLockSafely() {
 
 function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirector; onEnterSubway: (companions: readonly string[]) => void; quality: AdaptiveQualityManager }) {
   const mount = useRef<HTMLDivElement>(null), phaseRef = useRef<Phase>("intro"), collected = useRef(new Set<number>()), scentRef = useRef(false), toastTimerRef = useRef<number | null>(null);
+  const educationOpenRef = useRef(false);
   const cartMotorStateRef = useRef({ driving: false, speed: 0 });
   const [phase, setPhaseState] = useState<Phase>("intro"), [ready, setReady] = useState(false), [exiting, setExiting] = useState(false);
   const [scent, setScent] = useState(false), [toast, setToast] = useState("");
@@ -63,6 +66,9 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
     setToast(message);
     toastTimerRef.current = window.setTimeout(() => { setToast(""); toastTimerRef.current = null; }, duration);
+  }, []);
+  const setEducationOpen = useCallback((open: boolean) => {
+    educationOpenRef.current = open;
   }, []);
 
   useEffect(() => {
@@ -167,6 +173,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
       return collectedBud;
     };
     const keyDown = (event: KeyboardEvent) => {
+      if (educationOpenRef.current) return;
       if (event.code === "KeyP" && !event.repeat) {
         if (phaseRef.current === "playing") { setPhase("paused"); exitPointerLockSafely(); }
         else if (phaseRef.current === "paused") { setPhase("playing"); requestLock(); }
@@ -415,6 +422,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
     function frame(timestamp?: number) {
       raf = requestAnimationFrame(frame);
       if (document.hidden) { timer.update(timestamp); return; }
+      if (educationOpenRef.current) { timer.update(timestamp); return; }
       if (timestamp !== undefined) quality.reportFrame(timestamp); timer.update(timestamp); const delta = Math.min(timer.getDelta(), .05);
       if (phaseRef.current === "playing") {
         gameTime += delta;
@@ -1115,6 +1123,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
     {phase !== "intro" && <div className={`crosshair ${hud.promptKey === "E" ? "targeted" : hud.promptKey === "CTRL" ? "drop-targeted" : ""}`}/>}
     {phase !== "intro" && <div className="sr-only" role="status" aria-live="assertive" aria-atomic="true">{hud.hawkPhase === "DIVING" ? "Hawk diving. Find cover." : hud.hawkPhase === "SNATCHED" ? "The hawk caught you." : hud.motion === "PATH BLOCKED" ? "Path blocked. Choose another route." : ""}</div>}
     <div className={`scent-overlay ${scent ? "on" : ""}`}/>{toast && <div className="toast" role="status" aria-live="polite">{toast}</div>}
+    <EducationalCallouts active={phase === "playing"} context={educationContextForParkStage(hud.parkStage)} onOpenChange={setEducationOpen}/>
     {phase === "playing" && pointerLockAvailable && !mouseCaptured && <button className="mouse-resume" onClick={safeLock}><span>Mouse free</span>Click to look</button>}
     {(phase === "intro" || exiting) && <section className={`screen intro-screen ${exiting ? "exiting" : ""}`}>
       <Image className="intro-art" src="/game/splash-city.webp" alt="" aria-hidden="true" fill priority sizes="100vw" unoptimized/>

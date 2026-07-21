@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
+import { EducationalCallouts } from "./EducationalCallouts";
 import { GoalWayfinder } from "./GoalWayfinder";
 import { AdaptiveRenderPipeline } from "./rendering/AdaptiveRenderPipeline";
 import { SlothLockPick } from "./SlothLockPick";
@@ -59,6 +60,7 @@ import {
   friendCountLabel,
   riderCountLabel,
 } from "./campaign/companionCopy";
+import { educationContextForTransitStage } from "./educationFacts";
 
 type TransitStage =
   | "FIFTH_AV"
@@ -180,6 +182,7 @@ export function SubwayGame({
     [toast, setToast] = useState(
       "Walk down to the mezzanine and collect a MetroCard before entering the platform",
     );
+  const educationOpenRef = useRef(false);
   const [transition, setTransition] = useState("");
   const [zooPhase, setZooPhase] = useState("OUTBOUND");
   const [ticketHeld, setTicketHeld] = useState(true);
@@ -233,6 +236,9 @@ export function SubwayGame({
       setToast("");
       toastTimer.current = null;
     }, duration);
+  }, []);
+  const setEducationOpen = useCallback((open: boolean) => {
+    educationOpenRef.current = open;
   }, []);
 
   useEffect(() => {
@@ -487,6 +493,7 @@ export function SubwayGame({
       pitch = THREE.MathUtils.clamp(pitch - detail.dy * 0.005, -1.2, 1.12);
     };
     const keyDown = (event: KeyboardEvent) => {
+      if (educationOpenRef.current) return;
       if (lockPickingRef.current) return;
       if (!event.repeat && transitStage === "BRONX_ZOO" && zooWorld?.handleHabitatControl(event.code)) {
         event.preventDefault();
@@ -1946,13 +1953,14 @@ export function SubwayGame({
       raf = requestAnimationFrame(frame);
       if (document.hidden) { timer.update(timestamp); return; }
       const zooOverlayPaused = transitStage === "BRONX_ZOO" && lockPickingRef.current;
-      if (timestamp !== undefined && !zooOverlayPaused) quality.reportFrame(timestamp);
+      const gameOverlayPaused = zooOverlayPaused || educationOpenRef.current;
+      if (timestamp !== undefined && !gameOverlayPaused) quality.reportFrame(timestamp);
       timer.update(timestamp);
       const delta = Math.min(timer.getDelta(), 0.05);
-      if (!zooOverlayPaused) gameTime += delta;
-      // Lock picking is the sole modal zoo mechanic. Habitat research remains
-      // spatial and keeps the zoo, crowds, animals, audio, and wayfinding live.
-      if (zooOverlayPaused) {
+      if (!gameOverlayPaused) gameTime += delta;
+      // Modal activities preserve the last rendered world and pause simulation.
+      // Habitat research remains spatial and otherwise keeps the zoo live.
+      if (gameOverlayPaused) {
         if (!lockBackdropRendered) {
           renderFrame();
           lockBackdropRendered = true;
@@ -3401,6 +3409,11 @@ export function SubwayGame({
           {toast}
         </div>
       )}
+      <EducationalCallouts
+        active={stage !== "COMPLETE" && !lockPicking}
+        context={educationContextForTransitStage(stage, hud.objective)}
+        onOpenChange={setEducationOpen}
+      />
       {stage !== "COMPLETE" &&
         pointerLockAvailable &&
         !mouseCaptured &&
