@@ -4,6 +4,8 @@
 
 **[Play Sloth in the City](https://www.slothinthecity.com/)**
 
+> **Built with ChatGPT Codex.** ChatGPT Codex was used to build this entire app, from code and gameplay through asset production. Codex used Computer Use to coordinate sound effects, generate and refine Blender models, and repeatedly play, inspect, and self-QA the experience.
+
 Sloth in the City is a cinematic, first-person browser adventure built with Three.js and Next.js. You play as a displaced sloth making a slow, improbable journey across New York City: forage and climb through Central Park, cross The Lake, navigate the subway, find your friends at the Bronx Zoo, and lead the growing group home through the American Museum of Natural History.
 
 The game is designed to run directly in a modern browser on desktop or touch devices. No account, API key, database, or other external service is required for local development.
