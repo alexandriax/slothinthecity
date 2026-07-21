@@ -5,8 +5,7 @@ import * as THREE from "three";
 import { GoalWayfinder } from "./GoalWayfinder";
 import { AdaptiveRenderPipeline } from "./rendering/AdaptiveRenderPipeline";
 import { SlothLockPick } from "./SlothLockPick";
-import { ZooSideQuestScreen } from "./ZooSideQuestScreen";
-import type { ZooSideQuestId } from "./zooSideQuestLogic";
+import { ZOO_SIDE_QUESTS, type ZooSideQuestId } from "./zooSideQuestLogic";
 import { ShuttleMinimap } from "./ShuttleMinimap";
 import { MobileHud } from "./mobile/MobileHud";
 import { TouchControls } from "./mobile/TouchControls";
@@ -112,6 +111,17 @@ const QA_ZOO_SIDE_QUESTS: Partial<Record<string, { questId: ZooSideQuestId; posi
   bronxquestbison: { questId: "bison-prairie-seeding", position: [62, -97], yaw: -1.1 },
 };
 
+const IN_WORLD_QUEST_CUES = {
+  "aviary-voices": "bird-call",
+  "sea-lion-current": "water",
+  "monkey-canopy-rig": "latch",
+  "zebra-stripe-scan": "scan",
+  "red-panda-scent-wind": "wind",
+  "tortoise-sun-trail": "sun",
+  "flamingo-wetland-balance": "valve",
+  "bison-prairie-seeding": "launch",
+} as const;
+
 function hasTouchInput() {
   return (
     typeof window !== "undefined" &&
@@ -174,15 +184,7 @@ export function SubwayGame({
   const lockPickingRef = useRef(false),
     completeLockPickRef = useRef<() => void>(() => undefined),
     cancelLockPickRef = useRef<() => void>(() => undefined);
-  const [activeSideQuest, setActiveSideQuest] = useState<ZooSideQuestId | null>(
-    null,
-  );
   const initialCompanionIdsRef = useRef(initialCompanionIds);
-  const sideQuestRef = useRef<ZooSideQuestId | null>(null),
-    completeSideQuestRef = useRef<(questId: ZooSideQuestId) => void>(
-      () => undefined,
-    ),
-    cancelSideQuestRef = useRef<() => void>(() => undefined);
   const [touchCapable, setTouchCapable] = useState(false),
     toastTimer = useRef<number | null>(null);
   const [mouseCaptured, setMouseCaptured] = useState(false);
@@ -459,7 +461,7 @@ export function SubwayGame({
       pitch = THREE.MathUtils.clamp(pitch - detail.dy * 0.005, -1.2, 1.12);
     };
     const keyDown = (event: KeyboardEvent) => {
-      if (lockPickingRef.current || sideQuestRef.current) return;
+      if (lockPickingRef.current) return;
       keys.add(event.code);
       if (event.code === "KeyE" && !event.repeat) actionRequested = true;
       if (event.code === "KeyR" && !event.repeat) shiftUpRequested = true;
@@ -998,16 +1000,9 @@ export function SubwayGame({
         4200,
       );
     };
-    const closeSideQuest = () => {
-      sideQuestRef.current = null;
-      setActiveSideQuest(null);
-      keys.clear();
-      velocity.set(0, 0, 0);
-      actionRequested = false;
-    };
-    completeSideQuestRef.current = (questId) => {
-      if (sideQuestRef.current !== questId || !zooWorld) return;
-      const recruited = zooWorld.completeAnimalQuest(questId);
+    const recruitHabitatQuestAnimals = (questId: ZooSideQuestId) => {
+      if (!zooWorld) return [];
+      const recruited = ZOO_SIDE_QUESTS[questId].recruitedSpecies;
       const floorY = zooWorld.floorHeight(player.x, player.z);
       recruited.forEach((id, index) => {
         const spawn = player
@@ -1021,23 +1016,10 @@ export function SubwayGame({
           );
         animalMenagerie.recruit(id, spawn, floorY);
       });
-      closeSideQuest();
       publishFollowerCount();
       setZooPhase(zooWorld.questState);
       audio.playQuestComplete();
-      showToast(
-        `${recruited.length === 1 ? "A new animal joins" : `${recruited.length} new animals join`} your menagerie. Optional habitat quests remain open across the zoo.`,
-        6200,
-      );
-    };
-    cancelSideQuestRef.current = () => {
-      if (!sideQuestRef.current) return;
-      closeSideQuest();
-      setZooPhase(zooWorld?.questState ?? "FIND_SLOTHS");
-      showToast(
-        "You step back safely. The habitat pattern stays fixed for this visit; press E when you are ready for a fresh attempt.",
-        3600,
-      );
+      return recruited;
     };
     function startBusDrive(
       startProgress = 0,
@@ -1075,6 +1057,9 @@ export function SubwayGame({
         startProgress,
         reviewSpawn,
       );
+      void preloadAuthoredZooAnimals([
+        { species: "whiskers-cat", quality: quality.getSnapshot().profile.foliageDensity },
+      ]).catch(() => undefined);
       busFailureAt = null;
       setBusIntegrity(Math.round(cityBusWorld.integrity * 100));
       setBusGear(cityBusWorld.gearDisplay);
@@ -1222,8 +1207,8 @@ export function SubwayGame({
           : "American Museum of Natural History",
       );
       showToast(
-        "Bring every friend through the museum and find Megatherium americanum, the giant ground sloth, in the Fossil Mammal Halls.",
-        7200,
+        "Bring every friend through the museum and find Megatherium americanum. A tan and white resident cat named Whiskers has left a brass pawprint trail from the rotunda.",
+        8200,
       );
       museumWorld.nearestMegatheriumViewingTarget(
         player,
@@ -1254,6 +1239,7 @@ export function SubwayGame({
         !museumCompletionArmed ||
         !museumWorld ||
         transitStage !== "MUSEUM" ||
+        (museumWorld.isWhiskersQuestActive && !museumWorld.isWhiskersQuestComplete) ||
         !museumWorld.megatheriumNearby(player)
       )
         return false;
@@ -1600,11 +1586,13 @@ export function SubwayGame({
         reviewWorld.update(0, 0, player);
         reflectZooReviewState(reviewWorld);
         if (qaZooSideQuest) {
-          sideQuestRef.current = qaZooSideQuest.questId;
-          window.setTimeout(() => {
-            setActiveSideQuest(qaZooSideQuest.questId);
-            setZooPhase(`SIDE_QUEST_${qaZooSideQuest.questId.toUpperCase()}`);
-          }, 0);
+          const event = reviewWorld.interact(player, yaw);
+          if (event?.kind === "ANIMAL_QUEST_STARTED") {
+            player.copy(reviewWorld.objectiveTarget);
+            player.y = reviewWorld.floorHeight(player.x, player.z) + 1.48;
+            setZooPhase(`IN_WORLD_QUEST_${qaZooSideQuest.questId.toUpperCase()}`);
+            showToast(event.message, 5200);
+          }
         }
         if (qaInput !== "bronxentry") clearReviewToast();
       }
@@ -1623,6 +1611,7 @@ export function SubwayGame({
         "busfailure",
         "busarrival",
         "museumentry",
+        "museumwhiskers",
         "museumscooters",
         "museumgaryscooter",
         "museumrotunda",
@@ -1682,6 +1671,7 @@ export function SubwayGame({
       } else {
         const reviewMuseum = enterMuseum(
           qaInput === "museumentry" ||
+            qaInput === "museumwhiskers" ||
             qaInput === "museumscooters" ||
             qaInput === "museumgaryscooter"
             ? "entry"
@@ -1693,6 +1683,10 @@ export function SubwayGame({
                   ? "african"
                   : "megatherium",
         );
+        if (qaInput === "museumwhiskers" && reviewMuseum) {
+          player.set(-7, reviewMuseum.floorHeight(-7, 20) + 1.48, 20);
+          yaw = 0;
+        }
         if (
           (qaInput === "museumscooters" || qaInput === "museumgaryscooter") &&
           reviewMuseum
@@ -1797,27 +1791,25 @@ export function SubwayGame({
     }
 
     let raf = 0;
-    let overlayBackdropRendered = false;
+    let lockBackdropRendered = false;
     function frame(timestamp?: number) {
       raf = requestAnimationFrame(frame);
       if (document.hidden) { timer.update(timestamp); return; }
-      const zooOverlayPaused = transitStage === "BRONX_ZOO" && Boolean(lockPickingRef.current || sideQuestRef.current);
+      const zooOverlayPaused = transitStage === "BRONX_ZOO" && lockPickingRef.current;
       if (timestamp !== undefined && !zooOverlayPaused) quality.reportFrame(timestamp);
       timer.update(timestamp);
       const delta = Math.min(timer.getDelta(), 0.05);
       if (!zooOverlayPaused) gameTime += delta;
-      // Full-screen zoo mechanics are DOM-driven and keep their own timers.
-      // Render the opaque 3D backdrop once, then release the GPU/scene update
-      // budget until the mechanic closes so touch input and gauges remain
-      // responsive even with the complete zoo and menagerie still resident.
+      // Lock picking is the sole modal zoo mechanic. Habitat research remains
+      // spatial and keeps the zoo, crowds, animals, audio, and wayfinding live.
       if (zooOverlayPaused) {
-        if (!overlayBackdropRendered) {
+        if (!lockBackdropRendered) {
           renderFrame();
-          overlayBackdropRendered = true;
+          lockBackdropRendered = true;
         }
         return;
       }
-      overlayBackdropRendered = false;
+      lockBackdropRendered = false;
       if (transitStage === "RIDING" && interiorWorld) {
         const forward = movementForward.set(-Math.sin(yaw), 0, -Math.cos(yaw)),
           right = movementRight.set(Math.cos(yaw), 0, -Math.sin(yaw)),
@@ -2224,7 +2216,7 @@ export function SubwayGame({
           });
         }
       } else if (transitStage === "BRONX_ZOO" && zooWorld) {
-        if (lockPickingRef.current || sideQuestRef.current) {
+        if (lockPickingRef.current) {
           velocity.set(0, 0, 0);
           actionRequested = false;
           trickRequested = false;
@@ -2360,22 +2352,25 @@ export function SubwayGame({
                   document.exitPointerLock();
                 } catch {}
               }
-            } else if (event.kind === "ANIMAL_QUEST_STARTED" && event.questId) {
-              sideQuestRef.current = event.questId;
-              setActiveSideQuest(event.questId);
-              setZooPhase(`SIDE_QUEST_${event.questId.toUpperCase()}`);
-              keys.clear();
-              velocity.set(0, 0, 0);
-              if (document.pointerLockElement) {
-                try {
-                  document.exitPointerLock();
-                } catch {}
+            } else if (event.questId && event.kind.startsWith("ANIMAL_QUEST_")) {
+              audio.playZooQuestCue(
+                event.kind === "ANIMAL_QUEST_COMPLETED" ? "success" : IN_WORLD_QUEST_CUES[event.questId],
+                (event.step ?? 1) - 1,
+              );
+              if (event.kind === "ANIMAL_QUEST_COMPLETED") {
+                const recruited = recruitHabitatQuestAnimals(event.questId);
+                showToast(
+                  `${event.message} ${recruited.length === 1 ? "A new animal joins" : `${recruited.length} new animals join`} your menagerie.`,
+                  7200,
+                );
+              } else {
+                setZooPhase(`IN_WORLD_QUEST_${event.questId.toUpperCase()}`);
+                showToast(event.message, event.kind === "ANIMAL_QUEST_STARTED" ? 5600 : 4400);
               }
             } else showToast(event.message, 5000);
           }
         }
-        if (!lockPickingRef.current && !sideQuestRef.current)
-          setZooPhase(zooWorld.questState);
+        if (!lockPickingRef.current && !zooWorld.activeSideQuestId) setZooPhase(zooWorld.questState);
         setTicketHeld(zooWorld.hasTicket);
         actionRequested = false;
         camera.position.copy(player);
@@ -2385,9 +2380,13 @@ export function SubwayGame({
           lastHud = gameTime;
           const quest = zooWorld.questState,
             released = zooWorld.friendsReleased,
+            activeHabitatQuest = zooWorld.activeSideQuestId,
+            habitatProgress = zooWorld.activeSideQuestProgress,
             count = totalFollowerCount(),
             status = skateboarding
               ? "SKATEBOARD · SPACE KICKFLIP"
+              : activeHabitatQuest && habitatProgress
+                ? `IN-WORLD HABITAT WORK · ${habitatProgress.current} / ${habitatProgress.total} · STREAK ${zooWorld.researchStreak}`
               : quest === "ENTER_ZOO"
                 ? count
                   ? companionStatus(count)
@@ -2413,7 +2412,9 @@ export function SubwayGame({
                   : "ZOO EXPLORATION",
             objective,
             objectiveShort:
-              quest === "ENTER_ZOO"
+              activeHabitatQuest
+                ? "HABITAT WORK"
+                : quest === "ENTER_ZOO"
                 ? "ENTER ZOO"
                 : quest === "FIND_SLOTHS"
                   ? "PICK LOCK"
@@ -2426,7 +2427,9 @@ export function SubwayGame({
             status,
             value: `${Math.round(distance)}M`,
             waypoint:
-              quest === "ENTER_ZOO"
+              activeHabitatQuest
+                ? "Active habitat research station"
+                : quest === "ENTER_ZOO"
                 ? "Asia Gate"
                 : quest === "FIND_SLOTHS"
                   ? "Sloth conservation habitat"
@@ -2643,7 +2646,8 @@ export function SubwayGame({
             velocity.lengthSq() > 0.02
               ? Math.atan2(-velocity.x, -velocity.z)
               : yaw,
-          scooterNear = museumWorld.scooterDockNearby(player);
+          scooterNear = museumWorld.scooterDockNearby(player),
+          whiskersHint = museumWorld.whiskersInteractionHint(player);
         if (actionRequested && scooterRiding) {
           scooterRiding = false;
           museumWorld.setScooterConvoyActive(false, player, movementYaw);
@@ -2657,6 +2661,13 @@ export function SubwayGame({
             "The scooter convoy is parked. Walk back up and press E to ride again.",
             3000,
           );
+        } else if (actionRequested && whiskersHint) {
+          const event = museumWorld.interactWhiskers(player, gameTime);
+          if (event) {
+            audio.playUiConfirm();
+            if (event.kind === "WHISKERS_FOUND") audio.playQuestComplete();
+            showToast(event.message, event.kind === "WHISKERS_FOUND" ? 6800 : 5200);
+          }
         } else if (actionRequested && scooterNear) {
           scooterRiding = true;
           museumWorld.setScooterConvoyActive(true, player, movementYaw);
@@ -2703,10 +2714,10 @@ export function SubwayGame({
           lastFootstep = gameTime;
           audio.playFootstep("stone", Math.min(1, velocity.length() / 2.55));
         }
-        const target = museumWorld.nearestMegatheriumViewingTarget(
-            player,
-            museumGatheringTarget,
-          ),
+        const pursuingWhiskers = museumWorld.isWhiskersQuestActive,
+          target = pursuingWhiskers
+            ? museumWorld.whiskersObjectiveTarget
+            : museumWorld.nearestMegatheriumViewingTarget(player, museumGatheringTarget),
           targetX = target.x - player.x,
           targetZ = target.z - player.z,
           distance = Math.hypot(targetX, targetZ),
@@ -2734,7 +2745,10 @@ export function SubwayGame({
           lastHud = gameTime;
           const count = totalFollowerCount(),
             gathering = museumWorld.megatheriumNearby(player, 13),
-            prompt = gathering
+            whiskersProgress = museumWorld.whiskersProgress,
+            prompt = whiskersHint
+              ? whiskersHint.label
+              : gathering
               ? `GATHER ${friendCountLabel(count).toUpperCase()} AT THE EXHIBIT`
               : scooterRiding
                 ? "STEP OFF ELECTRIC SCOOTER CONVOY"
@@ -2752,10 +2766,12 @@ export function SubwayGame({
               : moving
                 ? "WALKING"
                 : "MUSEUM EXPLORATION",
-            objective: `Find Megatherium and bring ${friendCountLabel(count)} to the giant ground sloth`,
-            objectiveShort: "MEGATHERIUM",
+            objective: pursuingWhiskers
+              ? museumWorld.whiskersObjectiveLabel
+              : `Find Megatherium and bring ${friendCountLabel(count)} to the giant ground sloth`,
+            objectiveShort: pursuingWhiskers ? "WHISKERS" : "MEGATHERIUM",
             prompt,
-            promptKey: gathering ? "" : scooterRiding || scooterNear ? "E" : "",
+            promptKey: whiskersHint ? "E" : gathering ? "" : scooterRiding || scooterNear ? "E" : "",
             station:
               player.z > 20
                 ? "AMNH · CENTRAL PARK WEST ENTRANCE"
@@ -2766,11 +2782,13 @@ export function SubwayGame({
                     : "AMNH · FOSSIL MAMMAL HALLS · FLOOR 4",
             status: scooterRiding
               ? `${riderCountLabel(count).toUpperCase()} · ELECTRIC SCOOTER CONVOY`
+              : pursuingWhiskers
+                ? `WHISKERS TRAIL · ${whiskersProgress.current} / ${whiskersProgress.total}`
               : gathering
                 ? "MEGATHERIUM FOUND · MENAGERIE GATHERING"
                 : companionStatus(count),
             value: `${Math.round(distance)}M`,
-            waypoint: "Megatherium · Giant Ground Sloth",
+            waypoint: pursuingWhiskers ? "Whiskers · brass pawprint trail" : "Megatherium · Giant Ground Sloth",
             wayfinding: true,
           });
         }
@@ -2919,9 +2937,6 @@ export function SubwayGame({
       lockPickingRef.current = false;
       completeLockPickRef.current = () => undefined;
       cancelLockPickRef.current = () => undefined;
-      sideQuestRef.current = null;
-      completeSideQuestRef.current = () => undefined;
-      cancelSideQuestRef.current = () => undefined;
       cancelAnimationFrame(raf);
       cancelMuseumPreload();
       audio.cancelTransitAnnouncements();
@@ -2976,7 +2991,7 @@ export function SubwayGame({
       data-motion={hud.motion}
       data-mobility-mode={mobilityMode ?? "on-foot"}
       data-lock-picking={lockPicking ? "true" : "false"}
-      data-side-quest={activeSideQuest ?? "none"}
+      data-side-quest="in-world"
       data-buds={garyFed ? "6" : "5"}
       data-gary-fed={garyFed ? "true" : "false"}
       data-bus-integrity={busIntegrity}
@@ -3026,14 +3041,14 @@ export function SubwayGame({
       <div className="world-grade" />
       <div className="world-vignette" />
       <div className="grain" />
-      {transition && !lockPicking && !activeSideQuest && (
+      {transition && !lockPicking && (
         <div className="world-transition" role="status">
           <span>Now entering</span>
           <strong>{transition}</strong>
           <i />
         </div>
       )}
-      {stage !== "COMPLETE" && !lockPicking && !activeSideQuest && (
+      {stage !== "COMPLETE" && !lockPicking && (
         <div className="hud desktop-hud">
           <section className="mission">
             <div className="eyebrow">Current objective</div>
@@ -3147,7 +3162,7 @@ export function SubwayGame({
           </div>
         </div>
       )}
-      {stage !== "COMPLETE" && !lockPicking && !activeSideQuest && (
+      {stage !== "COMPLETE" && !lockPicking && (
         <MobileHud
           alert={
             stage === "RIDING" || stage === "BUS_DRIVE" || Boolean(mobilityMode)
@@ -3166,7 +3181,7 @@ export function SubwayGame({
           swimming={false}
         />
       )}
-      {stage !== "COMPLETE" && !lockPicking && !activeSideQuest && (
+      {stage !== "COMPLETE" && !lockPicking && (
         <GoalWayfinder
           active={hud.wayfinding}
           bearing={hud.bearing}
@@ -3207,10 +3222,10 @@ export function SubwayGame({
       {stage !== "COMPLETE" &&
         stage !== "BUS_DRIVE" &&
         !lockPicking &&
-        !activeSideQuest && (
+        (
         <div className={`crosshair ${hud.prompt ? "targeted" : ""}`} />
       )}{" "}
-      {toast && stage !== "COMPLETE" && !lockPicking && !activeSideQuest && (
+      {toast && stage !== "COMPLETE" && !lockPicking && (
         <div className="toast" role="status" aria-live="polite">
           {toast}
         </div>
@@ -3219,7 +3234,7 @@ export function SubwayGame({
         pointerLockAvailable &&
         !mouseCaptured &&
         !lockPicking &&
-        !activeSideQuest && (
+        (
           <button
             className="mouse-resume"
             type="button"
@@ -3230,7 +3245,7 @@ export function SubwayGame({
             <span>Mouse free</span>Click to look
           </button>
         )}
-      {stage !== "COMPLETE" && !lockPicking && !activeSideQuest && (
+      {stage !== "COMPLETE" && !lockPicking && (
         <TouchControls
           arboreal={false}
           prompt={hud.prompt}
@@ -3243,14 +3258,6 @@ export function SubwayGame({
         <SlothLockPick
           onCancel={() => cancelLockPickRef.current()}
           onComplete={() => completeLockPickRef.current()}
-        />
-      )}
-      {activeSideQuest && (
-        <ZooSideQuestScreen
-          audio={audio}
-          questId={activeSideQuest}
-          onCancel={() => cancelSideQuestRef.current()}
-          onComplete={(questId) => completeSideQuestRef.current(questId)}
         />
       )}
       {stage === "COMPLETE" && (

@@ -450,6 +450,93 @@
           "width": 2048
         }
       ]
+    },
+    {
+      "id": "whiskers-cat",
+      "commonName": "Tan and white domestic cat",
+      "sourceFacing": "-z",
+      "targetHeightMeters": 0.68,
+      "groundOffsetMeters": 0,
+      "license": "Project-original",
+      "source": {
+        "blendBytes": 3261272,
+        "blendFile": "tools/animal-pipeline/source/whiskers-cat-source.blend",
+        "blendSha256": "ed50832c687dfa77fcdbfd908ccb47fa0db1b6d600fb46f4799acf71325f248b",
+        "generator": "tools/animal-pipeline/build_whiskers_cat.py",
+        "method": "Original fused feline axial loft, watertight anatomical limbs, ears and tail, consolidated face details, project-authored skinning, clips, UVs, and deterministic short-fur PBR maps.",
+        "referenceUse": "visual-reference-only"
+      },
+      "lod0": {
+        "bytes": 4262148,
+        "file": "whiskers-cat-lod0.glb",
+        "materials": 7,
+        "meshes": 7,
+        "sha256": "f5cf8cbb13833d9a6d7d95816d80628e07c645ded66c10a56697d7a250478b4a",
+        "triangles": 12864,
+        "vertices": 8327
+      },
+      "lod2": {
+        "bytes": 4225500,
+        "file": "whiskers-cat-lod2.glb",
+        "materials": 7,
+        "meshes": 7,
+        "sha256": "34240d4965059f0db18fb9c65e0a61a309e95df12d6a12d362c2866114f26ed1",
+        "triangles": 3986,
+        "vertices": 3099
+      },
+      "clips": {
+        "idle": [
+          "CatIdle"
+        ],
+        "walk": [
+          "CatWalk"
+        ],
+        "pounce": [
+          "CatPounce"
+        ]
+      },
+      "textures": [
+        {
+          "bytes": 5307066,
+          "embedded": true,
+          "embeddedImage": "whiskers-cat-albedo",
+          "height": 2048,
+          "kind": "albedo",
+          "sha256": "e983f0ac8d828318660bfdb74e70f0efb9e1ee39a26616a518d146869a6d0af1",
+          "sourceFile": "tools/animal-pipeline/source/whiskers-cat-albedo.png",
+          "width": 2048
+        },
+        {
+          "bytes": 10381772,
+          "embedded": true,
+          "embeddedImage": "whiskers-cat-normal",
+          "height": 2048,
+          "kind": "normal",
+          "sha256": "96e211acc73d2ccf7d64cde8d6f29c09771097940b82990a4451d98ff28fba32",
+          "sourceFile": "tools/animal-pipeline/source/whiskers-cat-normal.png",
+          "width": 2048
+        },
+        {
+          "bytes": 3169828,
+          "embedded": true,
+          "embeddedImage": "whiskers-cat-roughness",
+          "height": 2048,
+          "kind": "roughness",
+          "sha256": "b0929409470985ad228fa1dd4f18c7a9ce1b58069caae9a722f4b6cf7c6583cd",
+          "sourceFile": "tools/animal-pipeline/source/whiskers-cat-roughness.png",
+          "width": 2048
+        },
+        {
+          "bytes": 5668911,
+          "embedded": true,
+          "embeddedImage": "whiskers-cat-white-albedo",
+          "height": 2048,
+          "kind": "albedo",
+          "sha256": "4015259b6f6bfeb2e0570224136c3d1a34ede88164aaecb3516c6dbff4078950",
+          "sourceFile": "tools/animal-pipeline/source/whiskers-cat-white-albedo.png",
+          "width": 2048
+        }
+      ]
     }
   ]
 }

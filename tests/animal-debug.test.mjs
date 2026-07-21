@@ -14,7 +14,7 @@ test("animal lab exposes every zoo rig with geometry, material, LOD, and motion 
   for (const creator of [
     "createGaryPolarBear", "createSunConure", "createBlueAndGoldMacaw", "createScarletIbis",
     "createGreenAracari", "createSpiderMonkey", "createSeaLion", "createRedPanda", "createZebra",
-    "createAldabraTortoise", "createAmericanFlamingo", "createAmericanBison",
+    "createAldabraTortoise", "createAmericanFlamingo", "createAmericanBison", "createWhiskersCat",
   ]) assert.match(showroom, new RegExp(creator));
   assert.match(showroom, /measureZooAnimalGeometry\(rig\.root\)/);
   assert.match(showroom, /Hero · ultra/);

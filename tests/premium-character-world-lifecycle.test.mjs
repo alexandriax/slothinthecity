@@ -57,6 +57,6 @@ test("all premium-human world integrations remain present", async () => {
   assert.match(bronxZoo, /bronx-zoo-skateboard-donor/);
   assert.match(bronxZoo, /bronx-zoo-arrival-attendant/);
   assert.match(bronxZoo, /bronx-zoo-wandering-visitor-\$\{index \+ 1\}/);
-  assert.match(bronxZoo, /guestData\.slice\(0, quality < \.58 \? 4 : quality < \.82 \? 6 : guestData\.length\)/);
+  assert.match(bronxZoo, /guestData\.slice\(0, quality < \.58 \? 6 : quality < \.82 \? 9 : guestData\.length\)/);
   assert.match(bronxZoo, /this\.guestAgents\.push\(createAmbientHumanAgent\(result\.root/);
 });

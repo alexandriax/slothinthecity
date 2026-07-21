@@ -532,7 +532,9 @@ export function createSunConure(textures: GameTextures, quality: number) {
     tail: "#258168",
   }, 1.08);
   bird.root.name = "sun-conure-hero-bird";
-  bird.root.userData.commonName = "Sun conure";
+  bird.root.userData.commonName = "Mango · Sun conure";
+  bird.root.userData.displayName = "Mango";
+  bird.root.userData.logicalId = "mango-sun-conure";
   return authorZooAnimalRig(bird, {
     species: "sun-conure",
     quality,
@@ -562,6 +564,23 @@ export function createMallard(_textures: GameTextures, quality: number): ZooAnim
 }
 
 export const createMallardDuck = createMallard;
+
+/** Project-authored tan-and-white museum cat used by the Whiskers trail. */
+export function createWhiskersCat(_textures: GameTextures, quality: number): ZooAnimalRig {
+  const root = new THREE.Group();
+  root.name = "amnh-whiskers-tan-and-white-museum-cat";
+  root.userData.species = "whiskers-cat";
+  root.userData.commonName = "Whiskers · Tan and white museum cat";
+  root.userData.displayName = "Whiskers";
+  root.userData.logicalId = "amnh-whiskers";
+  root.userData.animationStates = ["idle", "walk", "pounce"];
+  return authorZooAnimalRig({ root, update() {} }, {
+    species: "whiskers-cat",
+    quality,
+    defaultMotion: "idle",
+    phaseOffset: .23,
+  }) as ZooAnimalRig;
+}
 
 export function createBlueAndGoldMacaw(textures: GameTextures, quality: number) {
   return createPerchedBird(textures, quality, "blue-and-gold-macaw", {

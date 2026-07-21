@@ -12,6 +12,10 @@ export type AmbientHumanAgent = {
   phase: number;
   previous: THREE.Vector3;
   initialized: boolean;
+  route?: THREE.CatmullRomCurve3;
+  routeLength: number;
+  closedRoute: boolean;
+  lookAround: number;
 };
 
 export type AmbientHumanAgentOptions = {
@@ -21,6 +25,11 @@ export type AmbientHumanAgentOptions = {
   walkSeconds?: number;
   pauseSeconds?: number;
   phase?: number;
+  /** World-space waypoints create a smooth promenade loop instead of a patrol line. */
+  waypoints?: readonly THREE.Vector3[];
+  closedRoute?: boolean;
+  /** Small head-and-shoulder orientation changes during deliberate pauses. */
+  lookAround?: number;
 };
 
 /**
@@ -38,17 +47,26 @@ export function createAmbientHumanAgent(
   axis.normalize();
   const travel = options.travel ?? 1.8;
   const speed = options.speed ?? .82;
+  const closedRoute = options.closedRoute ?? true;
+  const route = options.waypoints && options.waypoints.length >= 3
+    ? new THREE.CatmullRomCurve3(options.waypoints.map(point => point.clone()), closedRoute, "catmullrom", .42)
+    : undefined;
+  const routeLength = route?.getLength() ?? 0;
   return {
     root,
     origin: root.position.clone(),
     axis,
     travel,
     speed,
-    walkSeconds: options.walkSeconds ?? Math.max(1.6, travel / speed),
+    walkSeconds: options.walkSeconds ?? Math.max(1.6, route ? routeLength / speed : travel / speed),
     pauseSeconds: options.pauseSeconds ?? 2.6,
     phase: options.phase ?? 0,
     previous: root.position.clone(),
     initialized: false,
+    route,
+    routeLength,
+    closedRoute,
+    lookAround: options.lookAround ?? .18,
   };
 }
 
@@ -71,22 +89,29 @@ export function updateAmbientHumanAgent(agent: AmbientHumanAgent, elapsed: numbe
     direction = -1;
   }
 
-  // Ease only the route position. Clip speed is derived from measured motion,
-  // so the gait naturally settles before each full stop.
-  const eased = amount * amount * (3 - 2 * amount);
-  agent.root.position.copy(agent.origin).addScaledVector(agent.axis, eased * agent.travel);
+  // Closed promenade routes retain pace through bends and pause at a real
+  // overlook. Legacy two-point patrols keep eased endpoints for compatibility.
+  const facing = agent.axis.clone().multiplyScalar(direction);
+  if (agent.route) {
+    const routeAmount = agent.closedRoute ? THREE.MathUtils.euclideanModulo(amount, 1) : amount;
+    agent.route.getPointAt(routeAmount, agent.root.position);
+    agent.route.getTangentAt(Math.min(.9999, routeAmount), facing).setY(0).normalize();
+  } else {
+    const eased = amount * amount * (3 - 2 * amount);
+    agent.root.position.copy(agent.origin).addScaledVector(agent.axis, eased * agent.travel);
+  }
   if (!agent.initialized) {
     // Establish the phase position before deriving velocity. This prevents a
     // visible origin-to-route teleport and a one-frame maximum-speed walk pose.
     agent.previous.copy(agent.root.position);
     agent.initialized = true;
   }
-  if (moving) {
-    const facing = agent.axis.clone().multiplyScalar(direction);
+  if (moving || agent.route) {
     // Authored humans face local -Z at the host level. Aim that axis along
     // the route velocity; the former +Z formula made every pedestrian play a
     // forward walk while visually travelling backward.
-    const targetYaw = Math.atan2(-facing.x, -facing.z);
+    const pauseLook = moving ? 0 : Math.sin((elapsed + agent.phase) * .62) * agent.lookAround;
+    const targetYaw = Math.atan2(-facing.x, -facing.z) + pauseLook;
     const yawDelta = Math.atan2(
       Math.sin(targetYaw - agent.root.rotation.y),
       Math.cos(targetYaw - agent.root.rotation.y),

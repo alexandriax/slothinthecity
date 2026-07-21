@@ -35,17 +35,28 @@ import {
 } from "./ZooAnimals";
 import { markAuthoredZooAnimalsDisposed } from "./animals/AuthoredZooAnimalAssets";
 import { createSkateboard, rollPersonalMobility, type PersonalMobilityVehicle } from "./PersonalMobility";
+import {
+  IN_WORLD_ZOO_QUESTS,
+  activeQuestObjective,
+  activeQuestStation,
+  createInWorldZooQuestOrder,
+  habitatQuestAt,
+  type ActiveInWorldZooQuest,
+  type HabitatQuestStationKind,
+} from "./InWorldZooQuests";
 
 export type BronxZooQuestState = "ENTER_ZOO" | "FIND_SLOTHS" | "ESCORT_TO_BUS";
 
 export type BronxZooEvent = {
-  kind: "SKATEBOARD_OFFERED" | "LOCK_PICKING_STARTED" | "SLOTHS_RELEASED" | "GARY_HUNGRY" | "JAM_SANDWICH_VENDED" | "JAM_SANDWICH_RECOVERED" | "JAM_SANDWICH_MISSED" | "GARY_FED" | "ANIMAL_QUEST_STARTED";
+  kind: "SKATEBOARD_OFFERED" | "LOCK_PICKING_STARTED" | "SLOTHS_RELEASED" | "GARY_HUNGRY" | "JAM_SANDWICH_VENDED" | "JAM_SANDWICH_RECOVERED" | "JAM_SANDWICH_MISSED" | "GARY_FED" | "ANIMAL_QUEST_STARTED" | "ANIMAL_QUEST_ADVANCED" | "ANIMAL_QUEST_COMPLETED";
   message: string;
   questId?: ZooSideQuestId;
+  step?: number;
+  stepCount?: number;
 };
 
 export type BronxZooInteractionHint = {
-  kind: "SKATEBOARD_DONOR" | "SLOTH_HABITAT" | "BUS_BOARDING" | "SNACK_MACHINE" | "GARY_HABITAT" | "LOOSE_JAM_SANDWICH" | "ANIMAL_QUEST";
+  kind: "SKATEBOARD_DONOR" | "SLOTH_HABITAT" | "BUS_BOARDING" | "SNACK_MACHINE" | "GARY_HABITAT" | "LOOSE_JAM_SANDWICH" | "ANIMAL_QUEST" | "ANIMAL_QUEST_STEP";
   label: string;
   target: THREE.Vector3;
   distance: number;
@@ -66,17 +77,6 @@ type OrientedBoxObstacle = {
   enabled?: () => boolean;
 };
 type Obstacle = CircleObstacle | BoxObstacle | OrientedBoxObstacle;
-
-const ANIMAL_QUEST_ANCHORS: Record<ZooSideQuestId, { target: THREE.Vector3; prompt: string }> = {
-  "aviary-voices": { target: new THREE.Vector3(-29.5, 1.48, -39), prompt: "JOIN THE WORLD OF BIRDS CANOPY CHORUS" },
-  "sea-lion-current": { target: new THREE.Vector3(0, 1.48, -63), prompt: "STEER THE SEA LION ENRICHMENT CURRENT" },
-  "monkey-canopy-rig": { target: new THREE.Vector3(-24, 1.48, -98), prompt: "STABILIZE THE MONKEY CANOPY RIG" },
-  "zebra-stripe-scan": { target: new THREE.Vector3(26, 1.48, -98), prompt: "CALIBRATE THE ZEBRA STRIPE SCANNER" },
-  "red-panda-scent-wind": { target: new THREE.Vector3(-25.5, 1.48, -123), prompt: "ROUTE THE RED PANDA SCENT TRAIL" },
-  "tortoise-sun-trail": { target: new THREE.Vector3(25.5, 1.48, -123), prompt: "AIM THE TORTOISE WARMING MIRRORS" },
-  "flamingo-wetland-balance": { target: new THREE.Vector3(-62, 1.48, -47), prompt: "BALANCE THE FLAMINGO WETLAND" },
-  "bison-prairie-seeding": { target: new THREE.Vector3(62, 1.48, -97), prompt: "RESEED THE BISON PRAIRIE" },
-};
 
 const ANIMAL_QUEST_SOURCE_ROOTS: Record<ZooSideQuestId, readonly string[]> = {
   "aviary-voices": ["sun-conure-hero-bird", "blue-and-gold-macaw-bird", "scarlet-ibis-bird", "green-aracari-bird"],
@@ -842,6 +842,184 @@ function addMuseumShuttleBus(root: THREE.Group, materials: ZooMaterials, ownedTe
   shuttle.traverse(object => { if (object instanceof THREE.Mesh) setShadow(object, quality > .6, true); });
 }
 
+type HabitatQuestStationVisual = {
+  indicator: THREE.MeshStandardMaterial;
+  root: THREE.Group;
+};
+
+function addHabitatQuestStationTop(group: THREE.Group, kind: HabitatQuestStationKind, materials: ZooMaterials, quality: number) {
+  const dark = new THREE.MeshStandardMaterial({ color: "#26322d", roughness: .52, metalness: .42 });
+  const accent = new THREE.MeshStandardMaterial({ color: "#d2aa48", roughness: .5, metalness: .3 });
+  if (kind === "bird-perch") {
+    const callHorn = new THREE.Mesh(new THREE.CylinderGeometry(.24, .11, .48, quality > .72 ? 18 : 12), accent);
+    callHorn.rotation.z = Math.PI / 2; callHorn.position.set(0, 1.42, 0); callHorn.name = "in-world-aviary-acoustic-response-horn"; group.add(callHorn);
+  } else if (kind === "buoy-dock") {
+    const cradle = new THREE.Mesh(new THREE.TorusGeometry(.34, .075, 10, quality > .72 ? 28 : 18), dark);
+    cradle.rotation.x = Math.PI / 2; cradle.position.y = 1.35; cradle.name = "in-world-sea-lion-floating-buoy-cradle"; group.add(cradle);
+    const buoy = new THREE.Mesh(new THREE.SphereGeometry(.21, quality > .72 ? 20 : 14, 10), accent);
+    buoy.position.y = 1.35; buoy.name = "sea-lion-enrichment-buoy"; group.add(buoy);
+  } else if (kind === "rope-anchor") {
+    const wheel = new THREE.Mesh(new THREE.TorusGeometry(.3, .055, 10, 26), accent);
+    wheel.rotation.y = Math.PI / 2; wheel.position.y = 1.37; wheel.name = "monkey-rig-hand-tension-wheel"; group.add(wheel);
+    for (let spoke = 0; spoke < 4; spoke++) {
+      const bar = new THREE.Mesh(new RoundedBoxGeometry(.56, .045, .045, 2, .012), dark);
+      bar.position.y = 1.37; bar.rotation.z = spoke * Math.PI / 4; group.add(bar);
+    }
+  } else if (kind === "stripe-scanner") {
+    const scanner = new THREE.Mesh(new RoundedBoxGeometry(.62, .5, .18, 5, .05), dark);
+    scanner.position.y = 1.43; scanner.name = "zebra-live-stripe-scanner-head"; group.add(scanner);
+    for (const x of [-.18, 0, .18]) {
+      const lens = new THREE.Mesh(new RoundedBoxGeometry(.08, .3, .035, 3, .02), accent);
+      lens.position.set(x, 1.43, .105); group.add(lens);
+    }
+  } else if (kind === "scent-vane") {
+    const vane = new THREE.Mesh(new THREE.ConeGeometry(.22, .62, 4), accent);
+    vane.rotation.z = -Math.PI / 2; vane.position.y = 1.5; vane.name = "red-panda-canopy-scent-vane"; group.add(vane);
+  } else if (kind === "solar-mirror") {
+    const mirror = new THREE.Mesh(new THREE.CircleGeometry(.34, quality > .72 ? 28 : 18), new THREE.MeshPhysicalMaterial({ color: "#d8e4dc", metalness: .72, roughness: .12, clearcoat: .8 }));
+    mirror.position.set(0, 1.48, .08); mirror.rotation.x = -.22; mirror.name = "tortoise-tilting-warming-mirror"; group.add(mirror);
+  } else if (kind === "wetland-valve") {
+    const valve = new THREE.Mesh(new THREE.TorusGeometry(.3, .05, 10, 28), accent);
+    valve.position.set(0, 1.38, .08); valve.name = "flamingo-wetland-flow-valve"; group.add(valve);
+    for (let spoke = 0; spoke < 3; spoke++) {
+      const bar = new THREE.Mesh(new RoundedBoxGeometry(.56, .04, .04, 2, .012), dark);
+      bar.position.set(0, 1.38, .08); bar.rotation.z = spoke * Math.PI / 3; group.add(bar);
+    }
+  } else {
+    const hopper = new THREE.Mesh(new THREE.CylinderGeometry(.24, .38, .48, quality > .72 ? 16 : 11), materials.wood);
+    hopper.position.y = 1.38; hopper.name = "bison-native-prairie-seed-hopper"; group.add(hopper);
+    for (let seed = 0; seed < 5; seed++) {
+      const pod = new THREE.Mesh(new THREE.SphereGeometry(.045, 8, 6), accent);
+      pod.position.set((seed - 2) * .075, 1.68 + Math.abs(seed - 2) * -.02, .02); group.add(pod);
+    }
+  }
+}
+
+function addInWorldHabitatQuestStations(root: THREE.Group, materials: ZooMaterials, quality: number, obstacles: Obstacle[]) {
+  const visuals = new Map<string, HabitatQuestStationVisual>();
+  const stationGroup = new THREE.Group();
+  stationGroup.name = "bronx-zoo-physical-in-world-habitat-quest-equipment";
+  for (const definition of Object.values(IN_WORLD_ZOO_QUESTS)) {
+    definition.stations.forEach((station, index) => {
+      const stationRoot = new THREE.Group();
+      stationRoot.name = `habitat-quest-station-${definition.id}-${station.id}`;
+      stationRoot.position.set(station.position[0], terrainHeight(station.position[0], station.position[1]), station.position[1]);
+      stationRoot.rotation.y = Math.atan2(definition.center[0] - station.position[0], definition.center[1] - station.position[1]);
+      stationRoot.userData.questId = definition.id;
+      stationRoot.userData.stationId = station.id;
+      stationRoot.userData.embeddedWorldInteraction = true;
+      const foot = new THREE.Mesh(new RoundedBoxGeometry(.82, .18, .72, 4, .055), materials.stone);
+      foot.position.y = .09; foot.receiveShadow = true; stationRoot.add(foot);
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(.07, .1, 1.15, quality > .72 ? 12 : 8), materials.iron);
+      post.position.y = .72; post.castShadow = true; stationRoot.add(post);
+      addHabitatQuestStationTop(stationRoot, station.kind, materials, quality);
+      const indicator = new THREE.MeshStandardMaterial({ color: "#c8af65", emissive: "#7a5d18", emissiveIntensity: .12, roughness: .3, metalness: .18 });
+      const beacon = new THREE.Mesh(new THREE.SphereGeometry(.105, quality > .72 ? 16 : 10, 8), indicator);
+      beacon.name = `habitat-research-beacon-${index + 1}`; beacon.position.set(.33, 1.78, .04); stationRoot.add(beacon);
+      stationRoot.traverse(object => { if (object instanceof THREE.Mesh) object.castShadow = quality > .66; });
+      stationGroup.add(stationRoot);
+      obstacles.push({ kind: "circle", x: station.position[0], z: station.position[1], radius: .5 });
+      visuals.set(`${definition.id}:${station.id}`, { indicator, root: stationRoot });
+    });
+  }
+  root.add(stationGroup);
+  return visuals;
+}
+
+function addZooArrivalDistrictBackdrop(root: THREE.Group, materials: ZooMaterials, textures: GameTextures, ownedTextures: THREE.Texture[], quality: number) {
+  const district = new THREE.Group();
+  district.name = "bronx-zoo-layered-arrival-district-behind-museum-shuttle";
+  const asphalt = new THREE.MeshStandardMaterial({ color: "#454a49", map: textures.gravel, bumpMap: textures.gravel, bumpScale: .018, roughness: .96 });
+  const sidewalkMaterial = new THREE.MeshStandardMaterial({ color: "#aaa697", map: textures.stone, bumpMap: textures.stone, bumpScale: .025, roughness: .91 });
+  const brick = new THREE.MeshStandardMaterial({ color: "#845d49", map: textures.stone, roughness: .88 });
+  const limestone = new THREE.MeshStandardMaterial({ color: "#c3b9a4", map: textures.stone, roughness: .86 });
+  const windowMaterial = new THREE.MeshStandardMaterial({ color: "#182729", emissive: "#836b42", emissiveIntensity: .16, roughness: .44, metalness: .12 });
+  const arrivalRoad = new THREE.Mesh(new RoundedBoxGeometry(25, .16, 118, 4, .05), asphalt);
+  arrivalRoad.name = "bronx-zoo-continuous-southern-boulevard-arrival-road"; arrivalRoad.position.set(18, .94, 73); arrivalRoad.receiveShadow = true; district.add(arrivalRoad);
+  for (const x of [5.3, 30.7]) {
+    const sidewalk = new THREE.Mesh(new RoundedBoxGeometry(4.2, .2, 118, 4, .05), sidewalkMaterial);
+    sidewalk.name = "bronx-zoo-arrival-road-continuous-sidewalk"; sidewalk.position.set(x, 1.03, 73); sidewalk.receiveShadow = true; district.add(sidewalk);
+  }
+  const centerLineMaterial = new THREE.MeshStandardMaterial({ color: "#e2c861", emissive: "#5f4b0b", emissiveIntensity: .08, roughness: .72 });
+  for (let dash = 0; dash < 13; dash++) {
+    const line = new THREE.Mesh(new RoundedBoxGeometry(.12, .025, 4.8, 2, .01), centerLineMaterial);
+    line.name = "southern-boulevard-arrival-centerline"; line.position.set(18, 1.035, 19 + dash * 8.7); district.add(line);
+  }
+  for (let stripe = 0; stripe < 8; stripe++) {
+    const crossing = new THREE.Mesh(new RoundedBoxGeometry(1.65, .03, 6.4, 2, .01), limestone);
+    crossing.name = "bronx-zoo-shuttle-stop-raised-visibility-crosswalk"; crossing.position.set(7.2 + stripe * 3.1, 1.05, 39.2); district.add(crossing);
+  }
+
+  // Layered, full-volume blocks close the north sightline. Their setbacks and
+  // rooflines read as the real Bronx neighborhood beyond the landscaped zoo
+  // campus instead of one theatrical wall at the player boundary.
+  const blockData = [
+    [-40, 75, 32, 45, 25, brick], [-6, 92, 24, 31, 29, limestone], [47, 79, 30, 42, 26, brick],
+    [-58, 126, 38, 38, 32, limestone], [1, 134, 34, 58, 28, brick], [58, 126, 41, 42, 31, limestone],
+  ] as const;
+  blockData.forEach(([x, z, width, height, depth, surface], blockIndex) => {
+    const building = new THREE.Mesh(new RoundedBoxGeometry(width, height, depth, 4, .18), surface);
+    building.name = "bronx-neighborhood-authored-arrival-horizon-building"; building.position.set(x, 1 + height * .5, z); building.castShadow = quality > .78; building.receiveShadow = true; district.add(building);
+    const cornice = new THREE.Mesh(new RoundedBoxGeometry(width + .7, .48, depth + .7, 3, .06), materials.iron);
+    cornice.name = "bronx-neighborhood-stepped-roof-cornice"; cornice.position.set(x, 1.2 + height, z); district.add(cornice);
+    const facadeSide = x < 10 ? 1 : -1;
+    for (let floor = 0; floor < 4; floor++) for (let bay = 0; bay < 4; bay++) {
+      const window = new THREE.Mesh(new RoundedBoxGeometry(.12, 2.25, 2.4, 3, .035), windowMaterial);
+      window.name = "bronx-neighborhood-recessed-window-bay";
+      window.position.set(x + facadeSide * (width * .5 + .08), 4.2 + floor * 4.15, z - depth * .31 + bay * depth * .2);
+      district.add(window);
+    }
+    if (blockIndex % 2 === 0) {
+      const tank = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.8, 2.7, 16), materials.wood);
+      tank.name = "bronx-neighborhood-rooftop-water-tank"; tank.position.set(x + width * .16, height + 2.7, z - depth * .14); district.add(tank);
+    }
+  });
+
+  const visitorCenter = new THREE.Group();
+  visitorCenter.name = "bronx-zoo-southern-boulevard-visitor-services-pavilion"; visitorCenter.position.set(-18, 1.02, 52);
+  const visitorBody = new THREE.Mesh(new RoundedBoxGeometry(27, 7.2, 10, 5, .18), brick); visitorBody.position.y = 3.6; visitorCenter.add(visitorBody);
+  const visitorCanopy = new THREE.Mesh(new RoundedBoxGeometry(29, .38, 5.6, 5, .09), materials.iron); visitorCanopy.position.set(0, 5.8, -6.5); visitorCenter.add(visitorCanopy);
+  for (const x of [-11, -5.5, 0, 5.5, 11]) {
+    const glazing = new THREE.Mesh(new RoundedBoxGeometry(4.6, 3.3, .12, 4, .04), windowMaterial); glazing.position.set(x, 2.7, -5.02); visitorCenter.add(glazing);
+    const support = new THREE.Mesh(new THREE.CylinderGeometry(.07, .1, 5.6, 10), materials.iron); support.position.set(x, 2.8, -7.4); visitorCenter.add(support);
+  }
+  district.add(visitorCenter);
+
+  const contextSignTexture = signTexture("BRONX ZOO ARRIVAL", "SOUTHERN BOULEVARD · SHUTTLES · VISITOR SERVICES", "#f0d36a");
+  ownedTextures.push(contextSignTexture);
+  const districtSign = new THREE.Mesh(new RoundedBoxGeometry(10.8, 2.6, .25, 5, .07), new THREE.MeshBasicMaterial({ map: contextSignTexture, toneMapped: false }));
+  districtSign.name = "bronx-zoo-arrival-district-wayfinding-sign"; districtSign.position.set(-18, 7.8, 45.7); district.add(districtSign);
+
+  const treeTrunk = new THREE.CylinderGeometry(.22, .36, 6.2, quality > .72 ? 11 : 8);
+  const treeCrown = new THREE.IcosahedronGeometry(2.9, quality > .72 ? 2 : 1);
+  const arrivalTrees = quality < .58 ? 18 : quality < .82 ? 28 : 40;
+  const random = seeded(2041908), dummy = new THREE.Object3D();
+  const trunks = new THREE.InstancedMesh(treeTrunk, materials.bark, arrivalTrees);
+  trunks.name = "bronx-zoo-layered-arrival-buffer-tree-trunks";
+  const crowns = new THREE.InstancedMesh(treeCrown, materials.leaf, arrivalTrees * 2);
+  crowns.name = "bronx-zoo-layered-arrival-buffer-tree-canopy";
+  for (let index = 0; index < arrivalTrees; index++) {
+    const side = index % 2 ? -1 : 1;
+    const x = side > 0 ? 36 + random() * 43 : -35 - random() * 43;
+    const z = 42 + random() * 89;
+    dummy.position.set(x, 4.1, z); dummy.rotation.set(0, random() * Math.PI, 0); dummy.scale.set(1, .92 + random() * .22, 1); dummy.updateMatrix(); trunks.setMatrixAt(index, dummy.matrix);
+    for (let layer = 0; layer < 2; layer++) {
+      dummy.position.set(x + (random() - .5) * 2.7, 7.5 + layer * 1.35 + random(), z + (random() - .5) * 2.4);
+      const scale = .8 + random() * .48; dummy.scale.set(scale, scale * .78, scale); dummy.updateMatrix(); crowns.setMatrixAt(index * 2 + layer, dummy.matrix);
+    }
+  }
+  trunks.instanceMatrix.needsUpdate = crowns.instanceMatrix.needsUpdate = true;
+  trunks.castShadow = quality > .7; crowns.castShadow = quality > .82; district.add(trunks, crowns);
+
+  for (let carIndex = 0; carIndex < 4; carIndex++) {
+    const car = new THREE.Group(); car.name = "bronx-zoo-arrival-context-parked-city-vehicle"; car.position.set(carIndex % 2 ? 11 : 25, 1.36, 59 + carIndex * 13); car.rotation.y = carIndex % 2 ? Math.PI : 0;
+    const body = new THREE.Mesh(new RoundedBoxGeometry(2.05, .72, 4.4, 6, .18), new THREE.MeshPhysicalMaterial({ color: ["#516c78", "#7e4e45", "#d1c3a8", "#3e5548"][carIndex], roughness: .53, clearcoat: .34 })); body.position.y = .62; car.add(body);
+    const cabin = new THREE.Mesh(new RoundedBoxGeometry(1.72, .72, 2.15, 6, .16), windowMaterial); cabin.position.set(0, 1.16, .12); car.add(cabin);
+    district.add(car);
+  }
+  root.add(district);
+}
+
 export class BronxZooWorld {
   readonly root = new THREE.Group();
   readonly spawn = new THREE.Vector3(0, 2.5, 25.5);
@@ -882,6 +1060,10 @@ export class BronxZooWorld {
   private readonly jamSandwichVelocity = new THREE.Vector3();
   private readonly garyEvents: BronxZooEvent[] = [];
   private readonly completedAnimalQuests = new Set<ZooSideQuestId>();
+  private readonly questStationVisuals: Map<string, HabitatQuestStationVisual>;
+  private readonly sessionSeed: number;
+  private activeAnimalQuest: ActiveInWorldZooQuest | null = null;
+  private habitatResearchStreak = 0;
   private garyRig: ZooAnimalRig | null = null;
   private garySnackState: GarySnackState = "NONE";
   private garyHungryAnnounced = false;
@@ -895,7 +1077,8 @@ export class BronxZooWorld {
   private releasedFriends = false;
   private state: BronxZooQuestState = "ENTER_ZOO";
 
-  constructor(scene: THREE.Scene, textures: GameTextures, quality = 1) {
+  constructor(scene: THREE.Scene, textures: GameTextures, quality = 1, sessionSeed = Math.floor(Math.random() * 0x7fffffff)) {
+    this.sessionSeed = sessionSeed;
     this.root.name = "bronx-zoo-rescue-level";
     scene.add(this.root);
     const high = quality > .72;
@@ -945,6 +1128,7 @@ export class BronxZooWorld {
     addStationExit(this.root, materials, textures, this.ownedTextures, quality);
     addArrivalFountain(this.root, materials, quality);
     addMuseumShuttleBus(this.root, materials, this.ownedTextures, quality);
+    addZooArrivalDistrictBackdrop(this.root, materials, textures, this.ownedTextures, quality);
     this.skateboard = createSkateboard();
     this.skateboard.root.position.copy(this.skateboardPosition);
     this.skateboard.root.rotation.y = -.16;
@@ -973,6 +1157,7 @@ export class BronxZooWorld {
     addCampusBuilding(this.root, materials, this.ownedTextures, "bronx-zoo-dancing-crane-cafe", "DANCING CRANE CAFE", -66, -128, 18, 7, 12, "#a48462");
     addCampusBuilding(this.root, materials, this.ownedTextures, "bronx-zoo-nature-trek-center", "NATURE TREK", 66, -129, 18, 7.2, 12, "#8f856c");
 
+    this.questStationVisuals = addInWorldHabitatQuestStations(this.root, materials, quality, this.obstacles);
     this.addGuestAmenities(materials, textures, quality);
     this.jamSandwich.visible = false;
     this.root.add(this.jamSandwich);
@@ -1013,20 +1198,34 @@ export class BronxZooWorld {
       [-28, -112, .5, 22, 15, "#82704d", "#393033", "#d29a73", "knit-chinos"],
       [29, -119, -2.3, 27, 17, "#6d5481", "#242a35", "#634536", "silk-leggings"],
       [7, -89, 2.9, 29, 20, "#8c6354", "#3d4c50", "#bb8060", "cotton-denim"],
+      [-48, -37, 1.1, 33, 14, "#3d7180", "#493d35", "#583c31", "knit-chinos"],
+      [48, -89, -1.7, 36, 13, "#b07842", "#2d3340", "#d2a17a", "cotton-denim"],
+      [-9, -108, .2, 41, 19, "#607b52", "#302b36", "#906049", "silk-leggings"],
+      [13, -54, -2.8, 44, 10, "#8b4d50", "#4a463e", "#724c39", "knit-chinos"],
+      [4, -139, 3.05, 47, 12, "#4f667f", "#292d30", "#c18a68", "cotton-denim"],
     ] as const;
-    guestData.slice(0, quality < .58 ? 4 : quality < .82 ? 6 : guestData.length).forEach((data, index) => {
+    guestData.slice(0, quality < .58 ? 6 : quality < .82 ? 9 : guestData.length).forEach((data, index) => {
       const result = makeVisitor(data[3], data[4], data[5], data[6], data[7], data[8], index % 3 === 1 ? "camera" : index % 3 === 2 ? "tote" : "backpack");
       result.root.name = `bronx-zoo-wandering-visitor-${index + 1}`;
       result.root.position.set(data[0], terrainHeight(data[0], data[1]), data[1]);
       result.root.rotation.y = data[2];
       this.root.add(result.root);
       this.ownedTextures.push(...result.ownedTextures);
+      const axis = new THREE.Vector3(index % 2 ? -1 : .25, 0, index % 2 ? .18 : 1).normalize();
+      const right = new THREE.Vector3(-axis.z, 0, axis.x);
+      const origin = result.root.position.clone(), routeLength = 4.4 + index % 4 * .75, routeWidth = .9 + index % 3 * .35;
       this.guestAgents.push(createAmbientHumanAgent(result.root, {
-        axis: new THREE.Vector3(index % 2 ? -1 : .25, 0, index % 2 ? .18 : 1),
-        travel: 2.3 + index * .22,
+        axis,
+        waypoints: [
+          origin,
+          origin.clone().addScaledVector(axis, routeLength * .48).addScaledVector(right, routeWidth * .2),
+          origin.clone().addScaledVector(axis, routeLength).addScaledVector(right, routeWidth),
+          origin.clone().addScaledVector(axis, routeLength * .34).addScaledVector(right, routeWidth * 1.35),
+        ],
         speed: .72 + index * .025,
         pauseSeconds: 2.5 + index * .37,
         phase: index * 2.1,
+        lookAround: .13 + index % 4 * .035,
       }));
     });
   }
@@ -1039,14 +1238,22 @@ export class BronxZooWorld {
   get isSkateboardMounted() { return this.skateboardMounted; }
   get skateboardRideLift() { return this.skateboardLift; }
   get completedSideQuestIds() { return [...this.completedAnimalQuests]; }
+  get activeSideQuestId() { return this.activeAnimalQuest?.id ?? null; }
+  get activeSideQuestProgress() {
+    if (!this.activeAnimalQuest) return null;
+    return { current: this.activeAnimalQuest.step + 1, total: this.activeAnimalQuest.order.length };
+  }
+  get researchStreak() { return this.habitatResearchStreak; }
 
   get objectiveTarget() {
+    if (this.activeAnimalQuest) return activeQuestObjective(this.activeAnimalQuest).position;
     if (this.state === "ENTER_ZOO") return this.gatePosition.clone();
     if (this.state === "FIND_SLOTHS") return this.slothHabitatPosition.clone();
     return this.busBoardingPosition.clone();
   }
 
   get objectiveLabel() {
+    if (this.activeAnimalQuest) return activeQuestObjective(this.activeAnimalQuest).objective;
     if (this.state === "ENTER_ZOO") return "Enter the Bronx Zoo with your island ticket";
     if (this.state === "FIND_SLOTHS") return "Find the sloth habitat and pick its keeper lock";
     return "Bring your friends to the zoo shuttle bus";
@@ -1076,14 +1283,21 @@ export class BronxZooWorld {
         distance: garyDistance,
       };
     }
-    let closestAnimalQuest: BronxZooInteractionHint | null = null;
-    for (const [questId, anchor] of Object.entries(ANIMAL_QUEST_ANCHORS) as Array<[ZooSideQuestId, (typeof ANIMAL_QUEST_ANCHORS)[ZooSideQuestId]]>) {
-      if (this.completedAnimalQuests.has(questId)) continue;
-      const distance = this.distanceXZ(player, anchor.target);
-      if (distance > 4.6 || closestAnimalQuest && distance >= closestAnimalQuest.distance) continue;
-      closestAnimalQuest = { kind: "ANIMAL_QUEST", questId, label: anchor.prompt, target: anchor.target.clone(), distance };
+    if (this.activeAnimalQuest) {
+      const station = activeQuestStation(this.activeAnimalQuest);
+      const target = new THREE.Vector3(station.position[0], 1.48, station.position[1]);
+      const distance = this.distanceXZ(player, target);
+      if (distance <= 2.75) return { kind: "ANIMAL_QUEST_STEP", questId: this.activeAnimalQuest.id, label: station.action, target, distance };
+    } else {
+      const nearbyHabitat = habitatQuestAt(player, this.completedAnimalQuests);
+      if (nearbyHabitat) return {
+        kind: "ANIMAL_QUEST",
+        questId: nearbyHabitat.definition.id,
+        label: nearbyHabitat.definition.startPrompt,
+        target: player.clone(),
+        distance: 0,
+      };
     }
-    if (closestAnimalQuest) return closestAnimalQuest;
     const habitatDistance = this.distanceXZ(player, this.slothHabitatPosition);
     if (!this.releasedFriends && habitatDistance <= 3.2) return { kind: "SLOTH_HABITAT", label: "PICK THE SIX-PIN SLOTH HABITAT LOCK", target: this.slothHabitatPosition.clone(), distance: habitatDistance };
     const boardingDistance = this.distanceXZ(player, this.busBoardingPosition);
@@ -1116,7 +1330,41 @@ export class BronxZooWorld {
     }
     if (hint.kind === "ANIMAL_QUEST" && hint.questId) {
       const quest = ZOO_SIDE_QUESTS[hint.questId];
-      return { kind: "ANIMAL_QUEST_STARTED", questId: hint.questId, message: `${quest.title}: ${quest.objective}` };
+      this.activeAnimalQuest = { id: hint.questId, order: createInWorldZooQuestOrder(hint.questId, this.sessionSeed), step: 0 };
+      const route = activeQuestObjective(this.activeAnimalQuest);
+      return {
+        kind: "ANIMAL_QUEST_STARTED",
+        questId: hint.questId,
+        step: 1,
+        stepCount: this.activeAnimalQuest.order.length,
+        message: `${quest.title} is now live in the habitat. ${route.objective} Follow the glowing research beacon.`,
+      };
+    }
+    if (hint.kind === "ANIMAL_QUEST_STEP" && hint.questId && this.activeAnimalQuest?.id === hint.questId) {
+      const station = activeQuestStation(this.activeAnimalQuest);
+      const completedStep = this.activeAnimalQuest.step + 1;
+      const stepCount = this.activeAnimalQuest.order.length;
+      if (completedStep >= stepCount) {
+        this.activeAnimalQuest = null;
+        this.habitatResearchStreak++;
+        this.completeAnimalQuest(hint.questId);
+        return {
+          kind: "ANIMAL_QUEST_COMPLETED",
+          questId: hint.questId,
+          step: stepCount,
+          stepCount,
+          message: `${station.confirmation} ${ZOO_SIDE_QUESTS[hint.questId].title} complete · research streak ${this.habitatResearchStreak}.`,
+        };
+      }
+      this.activeAnimalQuest.step++;
+      const next = activeQuestObjective(this.activeAnimalQuest);
+      return {
+        kind: "ANIMAL_QUEST_ADVANCED",
+        questId: hint.questId,
+        step: completedStep,
+        stepCount,
+        message: `${station.confirmation} Next: ${next.objective}`,
+      };
     }
     return { kind: "LOCK_PICKING_STARTED", message: "Keep plug tension between 40% and 60%, then find the six pins in binding order." };
   }
@@ -1243,6 +1491,7 @@ export class BronxZooWorld {
     idleAuthoredHuman(this.attendant, delta);
     idleAuthoredHuman(this.skateboardDonor, delta);
     this.guestAgents.forEach(agent => updateAmbientHumanAgent(agent, elapsed, delta));
+    this.updateHabitatQuestStations(elapsed);
     this.animals.forEach(animal => animal.update(elapsed, delta));
     this.completedAnimalQuests.forEach(questId => {
       ANIMAL_QUEST_SOURCE_ROOTS[questId].forEach(name => {
@@ -1260,6 +1509,20 @@ export class BronxZooWorld {
       this.sun.position.set(player.x - 22, 38, player.z + 18);
       this.sun.target.position.set(player.x, 0, player.z);
     }
+  }
+
+  private updateHabitatQuestStations(elapsed: number) {
+    const activeStation = this.activeAnimalQuest ? activeQuestStation(this.activeAnimalQuest) : null;
+    const activeKey = this.activeAnimalQuest && activeStation ? `${this.activeAnimalQuest.id}:${activeStation.id}` : "";
+    this.questStationVisuals.forEach((visual, key) => {
+      const questId = key.slice(0, key.lastIndexOf(":")) as ZooSideQuestId;
+      const completed = this.completedAnimalQuests.has(questId);
+      const active = key === activeKey;
+      visual.indicator.color.set(completed ? "#8fd49a" : active ? "#ffe27b" : "#9d936f");
+      visual.indicator.emissive.set(completed ? "#3d9c57" : active ? "#f0a72b" : "#493b18");
+      visual.indicator.emissiveIntensity = completed ? .7 : active ? 1.75 + Math.sin(elapsed * 5.2) * .42 : .1;
+      visual.root.userData.questStationState = completed ? "complete" : active ? "active" : "available";
+    });
   }
 
   private updateGarySandwich(delta: number, player?: THREE.Vector3) {
@@ -1538,7 +1801,7 @@ export class BronxZooWorld {
         aracari.update(elapsed + 3.4, delta);
       },
     });
-    addHabitatLabel(this.root, this.ownedTextures, materials, "WORLD OF BIRDS", "SUN CONURE · MACAW · SCARLET IBIS · GREEN ARACARI", -31, -39, -.74, this.obstacles);
+    addHabitatLabel(this.root, this.ownedTextures, materials, "WORLD OF BIRDS · MANGO", "MANGO · SUN CONURE · Thanks to generous support by v1nmon", -31, -39, -.74, this.obstacles);
   }
 
   private addGaryHabitat(materials: ZooMaterials, textures: GameTextures, quality: number) {

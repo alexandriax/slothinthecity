@@ -38,8 +38,8 @@ export type ZooSideQuestMetadata = {
 export const ZOO_SIDE_QUESTS: Record<ZooSideQuestId, ZooSideQuestMetadata> = {
   "aviary-voices": {
     id: "aviary-voices",
-    eyebrow: "World of Birds · Canopy chorus",
-    title: "Four Voices",
+    eyebrow: "World of Birds · Mango's canopy chorus",
+    title: "Mango's Four Voices",
     objective: "Echo the flock’s calls through three growing phrases.",
     instructions: "Watch the four perches. When the cue lamps go dark, repeat the phrase in order. A wrong call replays the same phrase; the melody never changes during this attempt.",
     keyboard: "Keys 1–4 answer · R replays",

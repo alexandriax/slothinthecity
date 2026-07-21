@@ -30,6 +30,13 @@ test("Reedline Rescue keeps one stable snag order and recruits the Central Park 
   const quest = new LakeDuckQuest(scene, {}, 1, { sessionSeed: 90125 });
   const secondQuest = new LakeDuckQuest(new THREE.Scene(), {}, 1, { sessionSeed: 90125 });
   assert.deepEqual(quest.snagOrder, secondQuest.snagOrder);
+  assert.deepEqual(
+    quest.snagPositions.map(position => position.toArray()),
+    secondQuest.snagPositions.map(position => position.toArray()),
+    "a session seed should pin a repeatable three-stop lake route",
+  );
+  assert.equal(quest.snagPositions.length, 3);
+  assert.equal(new Set(quest.snagPositions.map(position => `${position.x}:${position.z}`)).size, 3);
   assert.deepEqual([...quest.snagOrder].toSorted(), [0, 1, 2]);
   assert.equal(quest.companionId, "central-park-mallard");
 
@@ -45,6 +52,7 @@ test("Reedline Rescue keeps one stable snag order and recruits the Central Park 
     const target = quest.currentTarget.clone();
     const event = quest.interact(target, progress + 1);
     assert.equal(event?.progress, progress + 1);
+    assert.ok(event?.flowBonus >= progress + 1, "maintaining rescue flow should reward continuous lake traversal");
   }
   assert.equal(quest.state, "FREED");
   const passenger = {
@@ -54,6 +62,7 @@ test("Reedline Rescue keeps one stable snag order and recruits the Central Park 
   quest.update(5, 1 / 60, { player: encounter, locomotion: "rowboat", rowboatPassenger: passenger });
   assert.equal(quest.state, "FOLLOWING");
   assert.equal(quest.isComplete, true);
+  assert.ok(quest.flowBonus >= 3);
   quest.update(5.1, 1 / 60, { player: encounter, locomotion: "rowboat", rowboatPassenger: passenger });
   assert.ok(quest.duckPosition.distanceTo(passenger.position) < .001, "recruited duck should ride at the authored passenger anchor");
   assert.equal(quest.duck.root.userData.followMode, "rowboat");

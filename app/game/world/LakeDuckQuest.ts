@@ -20,6 +20,7 @@ export type LakeDuckQuestEvent = {
   kind: "DUCK_CALLED" | "REEDLINE_SNAG_RELEASED" | "DUCK_FREED" | "DUCK_RECRUITED";
   message: string;
   progress: number;
+  flowBonus?: number;
 };
 
 export type LakeDuckInteractionHint = {
@@ -54,6 +55,8 @@ type Snag = {
   root: THREE.Group;
   position: THREE.Vector3;
   ring: THREE.Mesh<THREE.TorusGeometry, THREE.MeshBasicMaterial>;
+  discardedFloat: THREE.Mesh;
+  restoration: THREE.Group;
   released: boolean;
 };
 
@@ -62,25 +65,39 @@ const ROAM_CENTER_X = 69;
 const ROAM_CENTER_Z = -222;
 const ROAM_X_RADIUS = 7.2;
 const ROAM_Z_RADIUS = 8.5;
-const SNAG_POSITIONS = [
+const SNAG_POSITION_POOL = [
   new THREE.Vector3(52, THE_LAKE_SURFACE_Y + .045, -202),
   new THREE.Vector3(47, THE_LAKE_SURFACE_Y + .045, -231),
   new THREE.Vector3(66, THE_LAKE_SURFACE_Y + .045, -252),
+  new THREE.Vector3(76, THE_LAKE_SURFACE_Y + .045, -242),
+  new THREE.Vector3(43, THE_LAKE_SURFACE_Y + .045, -216),
+  new THREE.Vector3(73, THE_LAKE_SURFACE_Y + .045, -208),
 ] as const;
 
-function seededOrder(seed: number) {
-  const order = [0, 1, 2];
+function seededRandom(seed: number) {
   let value = seed >>> 0;
-  const random = () => {
+  return () => {
     value = Math.imul(value ^ value >>> 15, 1 | value);
     value ^= value + Math.imul(value ^ value >>> 7, 61 | value);
     return ((value ^ value >>> 14) >>> 0) / 4294967296;
   };
+}
+
+function shuffledIndices(length: number, random: () => number) {
+  const order = Array.from({ length }, (_, index) => index);
   for (let index = order.length - 1; index > 0; index--) {
     const swap = Math.floor(random() * (index + 1));
     [order[index], order[swap]] = [order[swap], order[index]];
   }
   return order;
+}
+
+function seededLayout(seed: number) {
+  const positions = shuffledIndices(SNAG_POSITION_POOL.length, seededRandom(seed ^ 0x9e3779b9))
+    .slice(0, 3)
+    .map(index => SNAG_POSITION_POOL[index].clone());
+  const order = shuffledIndices(3, seededRandom(seed ^ 0x85ebca6b));
+  return { positions, order };
 }
 
 function lilyPadGeometry() {
@@ -120,6 +137,7 @@ export class LakeDuckQuest {
   readonly companionId = CENTRAL_PARK_MALLARD_COMPANION_ID;
   readonly duck: ZooAnimalRig;
   readonly snagOrder: readonly number[];
+  readonly snagPositions: readonly THREE.Vector3[];
   private readonly snags: Snag[] = [];
   private readonly events: LakeDuckQuestEvent[] = [];
   private readonly line: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>;
@@ -127,6 +145,7 @@ export class LakeDuckQuest {
   private readonly encounterRadius: number;
   private readonly previous = new THREE.Vector3();
   private readonly tetherAnchor = TETHER_ANCHOR.clone();
+  private readonly tetherDestination = TETHER_ANCHOR.clone();
   private readonly freedFrom = new THREE.Vector3();
   private readonly freedFromQuaternion = new THREE.Quaternion();
   private readonly followTarget = new THREE.Vector3();
@@ -139,6 +158,8 @@ export class LakeDuckQuest {
   private stateValue: LakeDuckQuestState = "ROAMING";
   private releasedCount = 0;
   private stateStartedAt = 0;
+  private lastReleaseAt = 0;
+  private flowBonusValue = 0;
   private disposed = false;
 
   constructor(scene: THREE.Scene, textures: GameTextures, quality = 1, options: LakeDuckQuestOptions = {}) {
@@ -147,8 +168,11 @@ export class LakeDuckQuest {
     this.root.userData.companionId = CENTRAL_PARK_MALLARD_COMPANION_ID;
     scene.add(this.root);
     this.encounterRadius = options.encounterRadius ?? 11.5;
-    this.snagOrder = Object.freeze(seededOrder(options.sessionSeed ?? Math.floor(Math.random() * 0xffffffff)));
+    const layout = seededLayout(options.sessionSeed ?? Math.floor(Math.random() * 0xffffffff));
+    this.snagOrder = Object.freeze(layout.order);
+    this.snagPositions = Object.freeze(layout.positions);
     this.root.userData.stableSnagOrder = [...this.snagOrder];
+    this.root.userData.routeSignature = this.snagPositions.map(position => `${position.x}:${position.z}`).join("|");
 
     this.duck = createMallard(textures, quality);
     this.duck.root.name = "central-park-mallard-reedline-hero";
@@ -160,7 +184,7 @@ export class LakeDuckQuest {
     this.root.add(this.duck.root);
 
     const padGeometry = lilyPadGeometry();
-    SNAG_POSITIONS.forEach((position, index) => {
+    this.snagPositions.forEach((position, index) => {
       const snagRoot = new THREE.Group();
       snagRoot.name = `reedline-lily-snag-${index + 1}`;
       snagRoot.position.copy(position);
@@ -177,9 +201,30 @@ export class LakeDuckQuest {
       ring.rotation.x = Math.PI / 2;
       ring.position.y = .025;
       ring.renderOrder = 16;
-      snagRoot.add(pad, float, ring);
+      const restoration = new THREE.Group();
+      restoration.name = "restored-lily-blossoms-and-clear-water";
+      restoration.visible = false;
+      for (let blossomIndex = 0; blossomIndex < 3; blossomIndex++) {
+        const blossom = new THREE.Mesh(
+          new THREE.SphereGeometry(.13 - blossomIndex * .012, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2),
+          new THREE.MeshStandardMaterial({ color: blossomIndex === 1 ? "#f7bfd7" : "#f4e8cf", roughness: .76, emissive: "#a65879", emissiveIntensity: .08 }),
+        );
+        blossom.name = "habitat-restoration-water-lily";
+        blossom.position.set(-.38 + blossomIndex * .36, .07, .22 - Math.abs(blossomIndex - 1) * .16);
+        blossom.rotation.x = Math.PI;
+        restoration.add(blossom);
+      }
+      const recoveryHalo = new THREE.Mesh(
+        new THREE.RingGeometry(.72, .78, 48),
+        new THREE.MeshBasicMaterial({ color: "#82d8b4", transparent: true, opacity: .32, side: THREE.DoubleSide, depthWrite: false }),
+      );
+      recoveryHalo.name = "restored-water-clarity-halo";
+      recoveryHalo.rotation.x = -Math.PI / 2;
+      recoveryHalo.position.y = .018;
+      restoration.add(recoveryHalo);
+      snagRoot.add(pad, float, ring, restoration);
       this.root.add(snagRoot);
-      this.snags.push({ root: snagRoot, position: position.clone(), ring, released: false });
+      this.snags.push({ root: snagRoot, position: position.clone(), ring, discardedFloat: float, restoration, released: false });
     });
     padGeometry.dispose();
 
@@ -213,6 +258,7 @@ export class LakeDuckQuest {
   get isComplete() { return this.stateValue === "FOLLOWING"; }
   get isFreed() { return this.stateValue === "FREED" || this.stateValue === "FOLLOWING"; }
   get isRescueActive() { return this.stateValue.startsWith("SNAG_") || this.stateValue === "FREED"; }
+  get flowBonus() { return this.flowBonusValue; }
   get activeSnagIndex() { return this.releasedCount < this.snagOrder.length ? this.snagOrder[this.releasedCount] : null; }
   get duckPosition() { return this.duck.root.position; }
   get currentTarget() {
@@ -251,7 +297,12 @@ export class LakeDuckQuest {
     snag.ring.visible = true;
     snag.ring.material.color.set("#7fe49a");
     snag.ring.material.opacity = .9;
+    snag.discardedFloat.visible = false;
+    snag.restoration.visible = true;
     this.releasedCount++;
+    const releaseWindow = this.lastReleaseAt ? elapsed - this.lastReleaseAt : elapsed - this.stateStartedAt;
+    if (releaseWindow <= 24) this.flowBonusValue += Math.max(1, 5 - Math.floor(releaseWindow / 6));
+    this.lastReleaseAt = elapsed;
     this.stateStartedAt = elapsed;
     if (this.releasedCount >= this.snagOrder.length) {
       this.stateValue = "FREED";
@@ -260,13 +311,14 @@ export class LakeDuckQuest {
       this.duck.root.userData.animationState = "short-flight";
       this.freedFrom.copy(this.duck.root.position);
       this.freedFromQuaternion.copy(this.duck.root.quaternion);
-      const event: LakeDuckQuestEvent = { kind: "DUCK_FREED", progress: 3, message: "The last loop slips free. The mallard shakes out his wings and circles back to you." };
+      const event: LakeDuckQuestEvent = { kind: "DUCK_FREED", progress: 3, flowBonus: this.flowBonusValue, message: `The last loop slips free. Three lilies bloom in the cleared water${this.flowBonusValue ? ` · restoration flow +${this.flowBonusValue}` : ""}.` };
       this.events.push(event);
       return event;
     }
     this.stateValue = `SNAG_${this.releasedCount + 1}` as LakeDuckQuestState;
+    this.setTetherDestination(this.activeSnagIndex);
     this.updateLineGeometry();
-    const event: LakeDuckQuestEvent = { kind: "REEDLINE_SNAG_RELEASED", progress: this.releasedCount, message: `Reedline snag ${this.releasedCount} of 3 released. Follow the taut line to the next lily pad.` };
+    const event: LakeDuckQuestEvent = { kind: "REEDLINE_SNAG_RELEASED", progress: this.releasedCount, flowBonus: this.flowBonusValue, message: `Water lilies return at snag ${this.releasedCount} of 3. Keep pace with the mallard to the next strand${this.flowBonusValue ? ` · flow +${this.flowBonusValue}` : ""}.` };
     this.events.push(event);
     return event;
   }
@@ -275,11 +327,14 @@ export class LakeDuckQuest {
     if (this.stateValue !== "ROAMING") return;
     this.stateValue = "SNAG_1";
     this.stateStartedAt = elapsed;
+    this.lastReleaseAt = 0;
+    this.flowBonusValue = 0;
     this.tetherAnchor.copy(this.duck.root.position);
+    this.setTetherDestination(this.activeSnagIndex);
     this.looseCoil.position.copy(this.tetherAnchor).add(new THREE.Vector3(.7, .02, .55));
     this.duck.root.userData.animationState = "swim";
     this.updateLineGeometry();
-    this.events.push({ kind: "DUCK_CALLED", progress: 0, message: "A mallard paddles close, trailing discarded line. Follow each taut strand and lift it from the lily pads." });
+    this.events.push({ kind: "DUCK_CALLED", progress: 0, message: "A mallard paddles close, trailing discarded line. Keep pace as he leads you across the lake; each freed strand restores the lily bed." });
   }
 
   setRecruited(player: THREE.Vector3, floorY = THE_LAKE_SURFACE_Y + .065) {
@@ -312,8 +367,14 @@ export class LakeDuckQuest {
       this.duck.root.userData.animationState = "swim";
     } else if (this.stateValue.startsWith("SNAG_")) {
       this.previous.copy(this.duck.root.position);
+      this.tetherAnchor.lerp(this.tetherDestination, 1 - Math.exp(-delta * .34));
       this.duck.root.position.set(this.tetherAnchor.x + Math.sin(elapsed * .42) * 1.8, this.tetherAnchor.y + Math.sin(elapsed * 2.4) * .007, this.tetherAnchor.z + Math.cos(elapsed * .42) * 1.1);
-      this.duck.root.rotation.y = -.35 + Math.sin(elapsed * .55) * .22;
+      const movement = this.duck.root.position.clone().sub(this.previous);
+      if (movement.lengthSq() > .00001) {
+        const yaw = Math.atan2(-movement.x, -movement.z);
+        const error = Math.atan2(Math.sin(yaw - this.duck.root.rotation.y), Math.cos(yaw - this.duck.root.rotation.y));
+        this.duck.root.rotation.y += error * (1 - Math.exp(-delta * 6));
+      }
       this.duck.root.userData.animationState = "swim";
       this.updateLineGeometry();
     } else if (this.stateValue === "FREED") {
@@ -354,6 +415,7 @@ export class LakeDuckQuest {
         snag.ring.material.color.set("#7fe49a");
         snag.ring.material.opacity = Math.max(0, snag.ring.material.opacity - delta * .34);
         snag.ring.scale.lerp(new THREE.Vector3(1, 1, 1), 1 - Math.exp(-delta * 5));
+        snag.restoration.rotation.y += delta * .08;
       }
       snag.root.position.y = snag.position.y + Math.sin(elapsed * 1.35 + index * 1.7) * .012;
     });
@@ -427,6 +489,16 @@ export class LakeDuckQuest {
       ? THE_LAKE_SURFACE_Y + .065
       : context.floorYAt?.(target.x, target.z) ?? context.player.y - 1.48;
     return target;
+  }
+
+  private setTetherDestination(activeIndex: number | null) {
+    if (activeIndex === null) return;
+    const target = this.snags[activeIndex].position;
+    const approach = new THREE.Vector3(this.tetherAnchor.x - target.x, 0, this.tetherAnchor.z - target.z);
+    if (approach.lengthSq() < .01) approach.set(1, 0, 1);
+    approach.normalize().multiplyScalar(3.4);
+    this.tetherDestination.copy(target).add(approach);
+    this.tetherDestination.y = THE_LAKE_SURFACE_Y + .065;
   }
 
   private updateLineGeometry() {

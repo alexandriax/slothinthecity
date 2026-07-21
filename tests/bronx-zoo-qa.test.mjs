@@ -107,12 +107,30 @@ test("Gary's follower footprint clears his authored shoulders and hips", async (
   assert.match(source, /this\.scooterMode \? 1\.2 : 1\.35/);
 });
 
-test("full-screen zoo mechanics stop hidden world rendering and keep extreme targets in-frame", async () => {
-  const [game, screen] = await Promise.all([
+test("habitat research stays in the live zoo and starts across each enclosure edge", async () => {
+  const [game, quests, zoo, { BronxZooWorld, THREE }] = await Promise.all([
     readSource("../app/game/SubwayGame.tsx"),
-    readSource("../app/game/ZooSideQuestScreen.tsx"),
+    readSource("../app/game/world/InWorldZooQuests.ts"),
+    readSource("../app/game/world/BronxZooWorld.ts"),
+    loadBronxZooHarness(),
   ]);
-  assert.match(game, /if \(zooOverlayPaused\) \{[\s\S]{0,220}overlayBackdropRendered = true;[\s\S]{0,80}return;/);
-  assert.match(screen, /clamp\(50 \+ point\.x \* 6\.2, 12, 88\)/);
-  assert.match(screen, /clamp\(96 - point\.y \* 7, 10, 88\)/);
+  assert.doesNotMatch(game, /ZooSideQuestScreen/);
+  assert.match(game, /data-side-quest="in-world"/);
+  assert.match(game, /zooOverlayPaused = transitStage === "BRONX_ZOO" && lockPickingRef\.current/);
+  assert.match(game, /event\.kind\.startsWith\("ANIMAL_QUEST_"\)/);
+  assert.match(quests, /covers the whole visitor edge of its enclosure/);
+  assert.match(quests, /createInWorldZooQuestOrder/);
+  assert.match(zoo, /bronx-zoo-physical-in-world-habitat-quest-equipment/);
+  assert.match(zoo, /habitatResearchStreak\+\+/);
+
+  const world = new BronxZooWorld(new THREE.Scene(), textureSet(THREE), .22, 73021);
+  const anywhereAlongAviaryEdge = new THREE.Vector3(-56, 1.48, -51);
+  const hint = world.interactionHint(anywhereAlongAviaryEdge);
+  assert.equal(hint?.kind, "ANIMAL_QUEST");
+  assert.equal(hint?.questId, "aviary-voices");
+  const started = world.interact(anywhereAlongAviaryEdge);
+  assert.equal(started?.kind, "ANIMAL_QUEST_STARTED");
+  assert.equal(world.activeSideQuestProgress?.total, 3);
+  assert.ok(world.objectiveTarget.distanceTo(anywhereAlongAviaryEdge) > 2, "the first task should point at physical habitat equipment, not an overlay");
+  world.dispose();
 });

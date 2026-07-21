@@ -68,7 +68,7 @@ test("the sloth keeper door launches a full-screen randomized six-pin tension lo
   assert.match(game, /lockPicking\s*&&\s*\(\s*<SlothLockPick/);
   assert.match(game, /zooWorld\.completeLockPicking\(\)/);
   const zooFrameStart = game.indexOf('transitStage === "BRONX_ZOO"');
-  const lockPauseStart = game.indexOf("if (lockPickingRef.current || sideQuestRef.current)", zooFrameStart);
+  const lockPauseStart = game.indexOf("if (lockPickingRef.current)", zooFrameStart);
   const pausedWorldBranch = game.slice(lockPauseStart, game.indexOf("const forward", lockPauseStart));
   assert.match(pausedWorldBranch, /Preserve the last rendered zoo frame/);
   assert.doesNotMatch(pausedWorldBranch, /zooWorld\.update|sloth\.animate|renderFrame/);
@@ -184,8 +184,9 @@ test("the expansive zoo includes the sun conure, companion birds, monkeys, and a
     assert.match(animals, new RegExp(`export function ${creator}`));
   }
   assert.match(animals, /sun-conure-hero-bird/);
-  assert.match(animals, /commonName = "Sun conure"/);
-  assert.match(zoo, /SUN CONURE · MACAW · SCARLET IBIS · GREEN ARACARI/);
+  assert.match(animals, /commonName = "Mango · Sun conure"/);
+  assert.match(zoo, /WORLD OF BIRDS · MANGO/);
+  assert.match(zoo, /MANGO · SUN CONURE · Thanks to generous support by v1nmon/);
   assert.match(zoo, /MONKEY FOREST/);
   assert.match(zoo, /spider-monkey-load-bearing-contact-branch/);
   assert.match(zoo, /spider-monkey-authored-contact-support-rig/);

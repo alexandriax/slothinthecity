@@ -261,12 +261,120 @@ function addSubwayEntrance(root: THREE.Group, textures: GameTextures, heightAt: 
   root.add(entrance); return entrance;
 }
 
+function addFifthAvenueStreetscape(root: THREE.Group, textures: GameTextures, ownedTextures: THREE.Texture[], quality: number): CampaignObstacle[] {
+  const district = new THREE.Group();
+  district.name = "fifth-avenue-59-street-complete-urban-edge";
+  district.position.set(SUBWAY_TARGET.x, 0, SUBWAY_TARGET.z);
+  const asphalt = new THREE.MeshStandardMaterial({ map: textures.gravel, bumpMap: textures.gravel, bumpScale: .014, color: "#44494a", roughness: .97 });
+  const concrete = new THREE.MeshStandardMaterial({ map: textures.stone, bumpMap: textures.stone, bumpScale: .022, color: "#afa99c", roughness: .9 });
+  const limestone = new THREE.MeshStandardMaterial({ map: textures.stone, color: "#c4b9a5", roughness: .85 });
+  const brownstone = new THREE.MeshStandardMaterial({ map: textures.stone, color: "#806057", roughness: .88 });
+  const metal = new THREE.MeshStandardMaterial({ color: "#26302e", roughness: .38, metalness: .72 });
+  const glass = new THREE.MeshStandardMaterial({ color: "#1d2d32", emissive: "#765a32", emissiveIntensity: .2, roughness: .34, metalness: .12 });
+
+  // Fifth Avenue runs north/south on the park edge; 59th Street crosses the
+  // entrance. Long continuations, real curb bands and marked junctions keep
+  // every camera angle grounded in a district rather than a lone stair prop.
+  const fifth = new THREE.Mesh(new RoundedBoxGeometry(31, .18, 220, 4, .05), asphalt);
+  fifth.name = "fifth-avenue-continuous-roadway"; fifth.position.set(25, -.05, -25); fifth.receiveShadow = true; district.add(fifth);
+  const fiftyNinth = new THREE.Mesh(new RoundedBoxGeometry(126, .18, 24, 4, .05), asphalt);
+  fiftyNinth.name = "west-59-street-continuous-cross-street"; fiftyNinth.position.set(35, -.045, 32); fiftyNinth.receiveShadow = true; district.add(fiftyNinth);
+  for (const x of [7.2, 42.8]) {
+    const sidewalk = new THREE.Mesh(new RoundedBoxGeometry(5.2, .28, 220, 4, .06), concrete);
+    sidewalk.name = "fifth-avenue-granite-sidewalk"; sidewalk.position.set(x, .08, -25); sidewalk.receiveShadow = true; district.add(sidewalk);
+  }
+  for (const z of [17.2, 46.8]) {
+    const sidewalk = new THREE.Mesh(new RoundedBoxGeometry(126, .28, 5.2, 4, .06), concrete);
+    sidewalk.name = "west-59-street-granite-sidewalk"; sidewalk.position.set(35, .08, z); sidewalk.receiveShadow = true; district.add(sidewalk);
+  }
+  const lanePaint = new THREE.MeshStandardMaterial({ color: "#e3d8a4", emissive: "#514715", emissiveIntensity: .08, roughness: .74 });
+  for (let index = 0; index < 22; index++) {
+    const dash = new THREE.Mesh(new RoundedBoxGeometry(.12, .025, 4.8, 2, .01), lanePaint);
+    dash.name = "fifth-avenue-painted-lane-dash"; dash.position.set(25, .055, -126 + index * 9.6); district.add(dash);
+  }
+  for (let stripe = 0; stripe < 10; stripe++) {
+    const crossing = new THREE.Mesh(new RoundedBoxGeometry(1.55, .028, 20, 2, .01), limestone);
+    crossing.name = "fifth-avenue-59-street-zebra-crossing"; crossing.position.set(9.5 + stripe * 3.1, .058, 28.6); district.add(crossing);
+  }
+
+  const buildingData = [
+    [62, -96, 33, 55, 31, brownstone], [66, -48, 39, 72, 37, limestone], [64, 2, 35, 48, 33, brownstone],
+    [70, 61, 43, 66, 42, limestone], [65, 116, 36, 52, 35, brownstone],
+  ] as const;
+  buildingData.forEach(([x, z, width, height, depth, facadeMaterial], index) => {
+    const building = new THREE.Mesh(new RoundedBoxGeometry(width, height, depth, 4, .18), facadeMaterial);
+    building.name = index === 3 ? "fifth-avenue-landmark-hotel-inspired-corner" : "fifth-avenue-premium-residential-streetwall";
+    building.position.set(x, height * .5, z); building.castShadow = quality > .8; building.receiveShadow = true; district.add(building);
+    const base = new THREE.Mesh(new RoundedBoxGeometry(width + .35, 4.2, depth + .3, 4, .08), index % 2 ? brownstone : limestone);
+    base.name = "fifth-avenue-articulated-storefront-base"; base.position.set(x, 2.1, z); district.add(base);
+    const cornice = new THREE.Mesh(new RoundedBoxGeometry(width + .8, .52, depth + .8, 3, .06), metal);
+    cornice.name = "fifth-avenue-stepped-cornice"; cornice.position.set(x, height + .12, z); district.add(cornice);
+    for (let floor = 0; floor < 6; floor++) for (let bay = 0; bay < 4; bay++) {
+      const window = new THREE.Mesh(new RoundedBoxGeometry(.14, 2.7, 3.4, 3, .04), glass);
+      window.name = "fifth-avenue-recessed-window"; window.position.set(x - width * .5 - .08, 5.4 + floor * 5.4, z - depth * .31 + bay * depth * .2); district.add(window);
+    }
+    if (index % 2 === 0) {
+      const roof = new THREE.Mesh(new THREE.CylinderGeometry(1.45, 1.8, 2.5, 16), new THREE.MeshStandardMaterial({ color: "#4d3b2e", roughness: .95 }));
+      roof.name = "fifth-avenue-rooftop-water-tank"; roof.position.set(x, height + 1.5, z + depth * .16); district.add(roof);
+    }
+  });
+
+  const plazaTexture = signTexture("FIFTH AVENUE", "CENTRAL PARK · GRAND ARMY PLAZA · 59 STREET", "#f1d16b");
+  ownedTextures.push(plazaTexture);
+  const districtBlade = new THREE.Mesh(new RoundedBoxGeometry(6.7, 1.55, .18, 5, .05), new THREE.MeshBasicMaterial({ map: plazaTexture, toneMapped: false }));
+  districtBlade.name = "fifth-avenue-central-park-context-blade"; districtBlade.position.set(7, 3.4, 14); district.add(districtBlade);
+  for (const x of [4.4, 9.6]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(.06, .09, 3.25, 10), metal); post.position.set(x, 1.7, 14); district.add(post);
+  }
+
+  const curbProps: CampaignObstacle[] = [];
+  for (let lamp = 0; lamp < 10; lamp++) {
+    const z = -112 + lamp * 24;
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(.055, .085, 4.6, 10), metal); post.name = "fifth-avenue-park-edge-lamppost"; post.position.set(5.7, 2.3, z); district.add(post);
+    const light = new THREE.Mesh(new THREE.SphereGeometry(.19, 14, 9), new THREE.MeshStandardMaterial({ color: "#fff0c2", emissive: "#f0bd58", emissiveIntensity: 1.5, roughness: .22 })); light.position.set(5.7, 4.68, z); district.add(light);
+    curbProps.push({ id: `fifth-avenue-lamp-${lamp}`, kind: "circle", x: SUBWAY_TARGET.x + 5.7, z: SUBWAY_TARGET.z + z, radius: .16, minY: -1, maxY: 6 });
+  }
+  for (let tree = 0; tree < 20; tree++) {
+    const z = -136 + tree * 15.4;
+    const x = -7.5 - tree % 3 * 4.2;
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.2, .33, 5.8, quality > .72 ? 11 : 8), new THREE.MeshStandardMaterial({ map: textures.bark, color: "#6a523d", roughness: .97 }));
+    trunk.name = "fifth-avenue-central-park-edge-tree"; trunk.position.set(x, 2.9, z); district.add(trunk);
+    for (let crownIndex = 0; crownIndex < 3; crownIndex++) {
+      const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(2.8, quality > .72 ? 2 : 1), new THREE.MeshStandardMaterial({ map: textures.foliage, color: ["#41613d", "#4f7146", "#38563a"][crownIndex], roughness: .94 }));
+      crown.position.set(x + (crownIndex - 1) * 1.8, 6.6 + crownIndex % 2, z + (crownIndex - 1) * .8); district.add(crown);
+    }
+    const understory = new THREE.Mesh(new THREE.IcosahedronGeometry(1.25 + tree % 3 * .18, quality > .72 ? 2 : 1), new THREE.MeshStandardMaterial({ map: textures.foliage, color: tree % 2 ? "#315538" : "#476b3e", roughness: .98 }));
+    understory.name = "fifth-avenue-layered-park-understory";
+    understory.position.set(x + (tree % 2 ? 2.3 : -2), 1.1, z + 4.5);
+    understory.scale.set(1.65, .8, 1.3);
+    district.add(understory);
+  }
+
+  const carColors = ["#e0bb27", "#4e6b7a", "#1f2222", "#a8a7a1", "#7f463e", "#d1b72b"];
+  for (let carIndex = 0; carIndex < carColors.length; carIndex++) {
+    const car = new THREE.Group(); car.name = carIndex % 3 === 0 ? "fifth-avenue-yellow-taxi" : "fifth-avenue-context-traffic";
+    car.position.set(19 + carIndex % 2 * 12, .48, -88 + carIndex * 29); car.rotation.y = carIndex % 2 ? Math.PI : 0;
+    const body = new THREE.Mesh(new RoundedBoxGeometry(2, .68, 4.35, 6, .17), new THREE.MeshPhysicalMaterial({ color: carColors[carIndex], roughness: .5, clearcoat: .4 })); body.position.y = .6; car.add(body);
+    const cabin = new THREE.Mesh(new RoundedBoxGeometry(1.68, .67, 2.05, 6, .15), glass); cabin.position.set(0, 1.13, .05); car.add(cabin);
+    district.add(car);
+  }
+  const newsstand = new THREE.Group(); newsstand.name = "fifth-avenue-park-edge-newsstand"; newsstand.position.set(9.4, .2, -18);
+  const kiosk = new THREE.Mesh(new RoundedBoxGeometry(3.7, 2.7, 2.3, 5, .12), metal); kiosk.position.y = 1.35; newsstand.add(kiosk);
+  const awning = new THREE.Mesh(new RoundedBoxGeometry(4.2, .2, 3, 4, .06), new THREE.MeshStandardMaterial({ color: "#274d3c", roughness: .72 })); awning.position.y = 2.75; newsstand.add(awning); district.add(newsstand);
+  curbProps.push({ id: "fifth-avenue-newsstand", kind: "aabb", minX: SUBWAY_TARGET.x + 7.2, maxX: SUBWAY_TARGET.x + 11.6, minZ: SUBWAY_TARGET.z - 19.5, maxZ: SUBWAY_TARGET.z - 16.5, minY: -1, maxY: 4 });
+
+  district.traverse(object => { if (object instanceof THREE.Mesh) object.castShadow ||= quality > .86; });
+  root.add(district);
+  return curbProps;
+}
+
 export function createCampaignLandmarks(scene: THREE.Scene, textures: GameTextures, heightAt: (x: number, z: number) => number, quality = inferredLandmarkQuality()): CampaignLandmarks {
   const root = new THREE.Group(); root.name = "central-park-south-campaign-landmarks"; scene.add(root);
   const ownedTextures: THREE.Texture[] = [], obstacles: CampaignObstacle[] = [];
   addSouthboundParkPath(root, textures, heightAt);
   const { bridge: bowBridge, surface: bowBridgeSurface } = addBowBridge(root, textures, heightAt, ownedTextures);
   const subwayEntrance = addSubwayEntrance(root, textures, heightAt, ownedTextures, quality);
+  obstacles.push(...addFifthAvenueStreetscape(root, textures, ownedTextures, quality));
   bowBridge.updateMatrixWorld(true);
   for (const end of [-1, 1]) for (const side of [-1, 1]) {
     const abutment = bowBridge.localToWorld(new THREE.Vector3(end * (BOW_BRIDGE_LENGTH / 2 + .6), 0, side * (BOW_BRIDGE_WIDTH / 2 + .46)));

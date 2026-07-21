@@ -15,6 +15,10 @@ test("ambient humans have explicit walk and pause windows with idle during a sto
   assert.match(source, /Math\.atan2\(-facing\.x, -facing\.z\)/);
   assert.match(source, /yawDelta \* \(1 - Math\.exp\(-delta \* 7\)\)/);
   assert.match(source, /prepareAuthoredHumanLocomotion\(root\)/);
+  assert.match(source, /new THREE\.CatmullRomCurve3/);
+  assert.match(source, /closedRoute/);
+  assert.match(source, /lookAround/);
+  assert.match(source, /agent\.route\.getTangentAt/);
 });
 
 test("station and Bronx Zoo worlds advance authored walker state every frame", async () => {

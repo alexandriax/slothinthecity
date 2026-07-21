@@ -18,6 +18,7 @@ import {
   createSeaLion,
   createSpiderMonkey,
   createSunConure,
+  createWhiskersCat,
   createZebra,
   measureZooAnimalGeometry,
   type ZooAnimalGeometryMetrics,
@@ -38,9 +39,10 @@ type AnimalDefinition = {
 };
 
 const ANIMALS: AnimalDefinition[] = [
+  { label: "Whiskers", family: "Tan & white domestic cat", factory: createWhiskersCat },
   { label: "Central Park mallard", family: "Waterfowl", factory: createMallard },
   { label: "Gary", family: "Polar bear", factory: createGaryPolarBear },
-  { label: "Sun conure", family: "Parrot", factory: createSunConure },
+  { label: "Mango", family: "Sun conure", factory: createSunConure },
   { label: "Blue & gold", family: "Macaw", factory: createBlueAndGoldMacaw },
   { label: "Scarlet ibis", family: "Wading bird", factory: createScarletIbis },
   { label: "Green aracari", family: "Toucan", factory: createGreenAracari },

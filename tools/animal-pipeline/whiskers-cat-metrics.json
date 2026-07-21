@@ -1,0 +1,131 @@
+{
+  "clips": [
+    "CatIdle",
+    "CatWalk",
+    "CatPounce"
+  ],
+  "dimensionsMeters": {
+    "height": 1.19,
+    "length": 2.133,
+    "width": 0.901
+  },
+  "lod0": {
+    "animations": [
+      "CatIdle",
+      "CatPounce",
+      "CatWalk"
+    ],
+    "bones": 21,
+    "bytes": 4262148,
+    "embeddedImages": 4,
+    "file": "whiskers-cat-lod0.glb",
+    "materials": 7,
+    "meshes": 7,
+    "sha256": "f5cf8cbb13833d9a6d7d95816d80628e07c645ded66c10a56697d7a250478b4a",
+    "skins": 1,
+    "triangles": 12864,
+    "vertices": 8327
+  },
+  "lod2": {
+    "animations": [
+      "CatIdle",
+      "CatPounce",
+      "CatWalk"
+    ],
+    "bones": 21,
+    "bytes": 4225500,
+    "embeddedImages": 4,
+    "file": "whiskers-cat-lod2.glb",
+    "materials": 7,
+    "meshes": 7,
+    "sha256": "34240d4965059f0db18fb9c65e0a61a309e95df12d6a12d362c2866114f26ed1",
+    "skins": 1,
+    "triangles": 3986,
+    "vertices": 3099
+  },
+  "maps": {
+    "albedo": {
+      "bytes": 5307066,
+      "embeddedImageName": "whiskers-cat-albedo",
+      "height": 2048,
+      "kind": "albedo",
+      "runtimeMimeType": "image/png",
+      "sha256": "e983f0ac8d828318660bfdb74e70f0efb9e1ee39a26616a518d146869a6d0af1",
+      "sourceFile": "tools/animal-pipeline/source/whiskers-cat-albedo.png",
+      "width": 2048
+    },
+    "normal": {
+      "bytes": 10381772,
+      "embeddedImageName": "whiskers-cat-normal",
+      "height": 2048,
+      "kind": "normal",
+      "runtimeMimeType": "image/png",
+      "sha256": "96e211acc73d2ccf7d64cde8d6f29c09771097940b82990a4451d98ff28fba32",
+      "sourceFile": "tools/animal-pipeline/source/whiskers-cat-normal.png",
+      "width": 2048
+    },
+    "roughness": {
+      "bytes": 3169828,
+      "embeddedImageName": "whiskers-cat-roughness",
+      "height": 2048,
+      "kind": "roughness",
+      "runtimeMimeType": "image/png",
+      "sha256": "b0929409470985ad228fa1dd4f18c7a9ce1b58069caae9a722f4b6cf7c6583cd",
+      "sourceFile": "tools/animal-pipeline/source/whiskers-cat-roughness.png",
+      "width": 2048
+    },
+    "whiteAlbedo": {
+      "bytes": 5668911,
+      "embeddedImageName": "whiskers-cat-white-albedo",
+      "height": 2048,
+      "kind": "albedo",
+      "runtimeMimeType": "image/png",
+      "sha256": "4015259b6f6bfeb2e0570224136c3d1a34ede88164aaecb3516c6dbff4078950",
+      "sourceFile": "tools/animal-pipeline/source/whiskers-cat-white-albedo.png",
+      "width": 2048
+    }
+  },
+  "previews": {
+    "CatIdle": "tools/animal-pipeline/review/whiskers-cat/whiskers-cat-CatIdle.png",
+    "CatPounce": "tools/animal-pipeline/review/whiskers-cat/whiskers-cat-CatPounce.png",
+    "CatWalk": "tools/animal-pipeline/review/whiskers-cat/whiskers-cat-CatWalk.png",
+    "ClayFaceCloseup": "tools/animal-pipeline/review/whiskers-cat/whiskers-cat-clay-face-closeup.png",
+    "ClayPawContact": "tools/animal-pipeline/review/whiskers-cat/whiskers-cat-clay-paw-contact.png",
+    "ClayProfile": "tools/animal-pipeline/review/whiskers-cat/whiskers-cat-clay-profile.png",
+    "ClayThreeQuarter": "tools/animal-pipeline/review/whiskers-cat/whiskers-cat-clay-three-quarter.png",
+    "FaceCloseup": "tools/animal-pipeline/review/whiskers-cat/whiskers-cat-face-closeup.png",
+    "FreshImportCatIdle": "tools/animal-pipeline/review/whiskers-cat/whiskers-cat-fresh-import-CatIdle.png",
+    "FreshImportCatPounce": "tools/animal-pipeline/review/whiskers-cat/whiskers-cat-fresh-import-CatPounce.png",
+    "FreshImportCatWalk": "tools/animal-pipeline/review/whiskers-cat/whiskers-cat-fresh-import-CatWalk.png",
+    "FreshImportPawContact": "tools/animal-pipeline/review/whiskers-cat/whiskers-cat-fresh-import-paw-contact.png",
+    "PawContact": "tools/animal-pipeline/review/whiskers-cat/whiskers-cat-paw-contact.png"
+  },
+  "skeleton": {
+    "bones": [
+      "Root",
+      "Spine",
+      "Chest",
+      "Neck",
+      "Head",
+      "Muzzle",
+      "ForeUpper.L",
+      "ForeLower.L",
+      "ForePaw.L",
+      "ForeUpper.R",
+      "ForeLower.R",
+      "ForePaw.R",
+      "TailBase",
+      "TailMid",
+      "TailTip",
+      "HindUpper.L",
+      "HindLower.L",
+      "HindPaw.L",
+      "HindUpper.R",
+      "HindLower.R",
+      "HindPaw.R"
+    ],
+    "maxInfluences": 4,
+    "name": "WhiskersCatRig"
+  },
+  "speciesId": "whiskers-cat"
+}

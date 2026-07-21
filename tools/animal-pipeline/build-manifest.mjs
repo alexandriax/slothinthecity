@@ -64,6 +64,17 @@ const reviewedSpecies = [
     clips: { idle: ["DuckIdle"], walk: ["DuckWaddle"], swim: ["DuckSwim"], "short-flight": ["DuckShortFlight"], "landing-settle": ["DuckLandingSettle"] },
   },
   {
+    id: "whiskers-cat",
+    approved: true,
+    asset: "tools/animal-pipeline/source/whiskers-cat.asset.json",
+    blend: "tools/animal-pipeline/source/whiskers-cat-source.blend",
+    commonName: "Tan and white domestic cat",
+    sourceFacing: "-z",
+    targetHeightMeters: .68,
+    method: "Original fused feline axial loft, watertight anatomical limbs, ears and tail, consolidated face details, project-authored skinning, clips, UVs, and deterministic short-fur PBR maps.",
+    clips: { idle: ["CatIdle"], walk: ["CatWalk"], pounce: ["CatPounce"] },
+  },
+  {
     id: "plains-zebra",
     approved: false,
     asset: "tools/animal-pipeline/source/plains-zebra.asset.json",
