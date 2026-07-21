@@ -158,12 +158,17 @@ test("mobile canopy descent cannot recatch the released branch or stick at the t
     readFile(new URL("../app/game/mobile/TouchControls.tsx", import.meta.url), "utf8"),
   ]);
 
-  assert.match(game, /catchFallingBranch\(previousY, descentIgnoreRouteId\)/);
-  assert.doesNotMatch(game, /controlledDescent \? descentIgnoreRouteId : -1/);
+  assert.match(game, /const caughtBranch = !controlledDescent && catchFallingBranch\(previousY, descentIgnoreRouteId\)/);
+  assert.match(game, /groundDescentRequested = true/);
+  assert.match(game, /qaInput === "grounddescent"/);
+  assert.match(game, /controlledDescent = true; dropVelocity = -2\.4/);
+  assert.match(game, /resolveGroundCollisions\(false\)/);
   assert.match(game, /backHeld && !forwardHeld && climbHeight <= 1\.485/);
   assert.match(game, /trunkBaseDescentSeconds >= \.18/);
-  assert.match(touch, /className="touch-down" data-input-code="ControlLeft"/);
-  assert.match(touch, /aria-label="Descend safely toward ground" onPointerDown=/);
+  assert.match(touch, /PARK_GROUND_DESCENT_REQUEST_EVENT = "sloth-park-ground-descent-requested"/);
+  assert.match(touch, /className="touch-down" data-input-code="GroundDescent"/);
+  assert.match(touch, /aria-label="Descend safely all the way to ground" onClick=/);
+  assert.match(touch, /document\.dispatchEvent\(new Event\(PARK_GROUND_DESCENT_REQUEST_EVENT\)\)/);
 });
 
 test("cart and rowboat expose live grip transforms that remain camera-relative during free-look", () => {

@@ -2,6 +2,7 @@ export const DEBUG_SCENE_CHECKPOINTS = {
   park: "park",
   mobile: "park",
   canopy: "autobranch",
+  descent: "grounddescent",
   bridge: "bowbridge",
   boat: "rowboat",
   island: "ticketisland",

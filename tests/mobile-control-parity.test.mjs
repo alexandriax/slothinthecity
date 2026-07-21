@@ -34,7 +34,7 @@ test("mobile park controls preserve scent, braking, descending, pausing, and int
   assert.match(touch, /emitKey\("KeyC", true\)/);
   assert.match(touch, /setHeld\(vehicle \? "Space" : "ShiftLeft", true\)/);
   assert.match(touch, /yieldingToTanner \? "Yield"/);
-  assert.match(touch, /emitKey\("ControlLeft", true\)/);
+  assert.match(touch, /document\.dispatchEvent\(new Event\(PARK_GROUND_DESCENT_REQUEST_EVENT\)\)/);
   assert.match(touch, /showPause && <button className="touch-pause"/);
   assert.match(touch, /emitKey\("KeyP", true\)/);
   assert.match(touch, /vehicle === "bus" && <div className="touch-gears"/);

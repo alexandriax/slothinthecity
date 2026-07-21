@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { GoalWayfinder } from "./GoalWayfinder";
 import { DebugJumpMenu } from "./mobile/DebugJumpMenu";
 import { MobileHud } from "./mobile/MobileHud";
-import { TouchControls } from "./mobile/TouchControls";
+import { PARK_GROUND_DESCENT_REQUEST_EVENT, TouchControls } from "./mobile/TouchControls";
 import { createSlothRig, layoutCanonicalSlothViewmodel } from "./player/SlothRig";
 import { AdaptiveRenderPipeline } from "./rendering/AdaptiveRenderPipeline";
 import { loadGameTextures } from "./rendering/textures";
@@ -114,7 +114,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
     layoutSloth(); camera.add(sloth.root); scene.add(camera);
     let yaw = -.35, pitch = -.04, energy = 100, alert = 5, lastHud = 0, gameTime = 0, dragging = false, lastTouchX = 0, lastTouchY = 0;
     let blockedBy: "" | "TREE" | "LANDMARK" = "", climbingTree: ClimbableTree | null = null, climbAngle = 0, climbHeight = 1.48, trunkBaseDescentSeconds = 0;
-    let branchRoute: BranchRoute | null = null, branchProgress = 0, branchForwardSign: 1 | -1 = 1, actionRequested = false, dropRequested = false, gripHintUntil = 0, dropVelocity = 0, controlledDescent = false, descentIgnoreRouteId = -1, qaPrepared = false, qaStage = 0, caughtUntil = 0, queuedZapRockDirection: -1 | 0 | 1 = 0;
+    let branchRoute: BranchRoute | null = null, branchProgress = 0, branchForwardSign: 1 | -1 = 1, actionRequested = false, dropRequested = false, groundDescentRequested = false, gripHintUntil = 0, dropVelocity = 0, controlledDescent = false, descentIgnoreRouteId = -1, qaPrepared = false, qaStage = 0, caughtUntil = 0, queuedZapRockDirection: -1 | 0 | 1 = 0;
     let transfer: { from: THREE.Vector3; to: THREE.Vector3; route: BranchRoute; progress: number; forwardSign: 1 | -1; started: number; duration: number; kind: "REACH" | "DROP" } | null = null;
     let swimming = false, wasSwimming = false, hawkPhase: HawkPhase = "PATROL", hawkEvent: HawkEvent | null = null, hawkPasses = 0, nextHawkPassAt = 8, recoveryUntil = 0;
     let parkStage: ParkStage = "FORAGE", ticketCollected = false, duckRecruited = false, squirrelRecruited = false, drivingCart = false, activeBoat: ParkRowboat | null = null, vehicleLookYaw = 0, cartWasBlocked = false, boatWasBlocked = false, subwayTransitionStarted = false, duckInteractionGraceUntil = 0, duckActionLockedUntil = 0;
@@ -151,6 +151,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
     const pointerUp = () => { dragging = false; };
     const mouse = (event: MouseEvent) => { if (document.pointerLockElement === renderer.domElement && phaseRef.current === "playing") applyLook(event.movementX, event.movementY, .0018, .00155); };
     const touchLook = (event: Event) => { const detail = (event as CustomEvent<{ dx: number; dy: number }>).detail; if (detail) applyLook(detail.dx, detail.dy, .006, .005); };
+    const requestGroundDescent = () => { groundDescentRequested = true; };
     const collectNearby = () => {
       let collectedBud = false;
       world.buds.forEach((bud, index) => {
@@ -183,6 +184,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
     renderer.domElement.addEventListener("pointerdown", pointer); renderer.domElement.addEventListener("pointermove", pointerMove); renderer.domElement.addEventListener("pointerup", pointerUp);
     document.addEventListener("mousemove", mouse); document.addEventListener("keydown", keyDown); document.addEventListener("keyup", keyUp);
     document.addEventListener("sloth-look", touchLook);
+    document.addEventListener(PARK_GROUND_DESCENT_REQUEST_EVENT, requestGroundDescent);
     document.addEventListener(DEBUG_LOOK_REQUEST_EVENT, requestLock);
     document.addEventListener("pointerlockchange", pointerLockChanged); window.addEventListener("blur", releaseInput);
     const applyRenderBudget = () => {
@@ -415,7 +417,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
       if (phaseRef.current === "playing") {
         gameTime += delta;
         campaign.update(gameTime, delta);
-        if (!qaPrepared && (["autoclimb", "autobranch", "autotransfer", "autodrop", "autoflow", "cart", "treecollision", "watercollision", "swim", "shoreclimb", "energy", "rest", "hawk", "bridgewalk", "bowbridge", "rowboat", "ticketisland", "ticket", "lakeduck", "duckpassenger", "duckfollowing", "squirrelquest", "squirrelacorn", "squirrelrocking", "squirrelfollowing", "subwayentrance"].includes(qaInput ?? ""))) {
+        if (!qaPrepared && (["autoclimb", "autobranch", "autotransfer", "autodrop", "autoflow", "grounddescent", "cart", "treecollision", "watercollision", "swim", "shoreclimb", "energy", "rest", "hawk", "bridgewalk", "bowbridge", "rowboat", "ticketisland", "ticket", "lakeduck", "duckpassenger", "duckfollowing", "squirrelquest", "squirrelacorn", "squirrelrocking", "squirrelfollowing", "subwayentrance"].includes(qaInput ?? ""))) {
           const testTree = nearestTree(player);
           if (qaInput === "autoflow") {
             const flowRoute = world.canopyCorridors[0]?.routeIds[0] !== undefined ? world.branches[world.canopyCorridors[0].routeIds[0]] : undefined;
@@ -425,6 +427,9 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
           } else if (qaInput === "autodrop") {
             const dropRoute = world.branches.find((route) => route.belowRouteIds.length > 0);
             if (dropRoute) { branchRoute = dropRoute; branchProgress = .5; branchPose(dropRoute, branchProgress, player); qaPrepared = true; qaStage = 1; }
+          } else if (qaInput === "grounddescent") {
+            const descentRoute = world.branches.find((route) => route.start.y > terrainY(route.start.x, route.start.z) + 4.5);
+            if (descentRoute) { branchRoute = descentRoute; branchProgress = .52; branchPose(descentRoute, branchProgress, player); qaPrepared = true; alert = 5; nextHawkPassAt = Number.POSITIVE_INFINITY; }
           } else if (qaInput === "autotransfer") {
             const transferRoute = world.branches.find((route) => route.crossTreeRouteIds.length > 0);
             if (transferRoute) { branchRoute = transferRoute; branchProgress = .62; branchPose(transferRoute, branchProgress, player); keys.add("KeyW"); qaPrepared = true; qaStage = 1; }
@@ -629,6 +634,20 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
           actionRequested = false;
         }
 
+        if (groundDescentRequested) {
+          groundDescentRequested = false;
+          const canReturnToGround = !controlledDescent && Boolean(climbingTree || branchRoute || transfer || dropVelocity < 0);
+          if (canReturnToGround) {
+            descentIgnoreRouteId = branchRoute?.id ?? transfer?.route.id ?? -1;
+            transfer = null; branchRoute = null; climbingTree = null; trunkBaseDescentSeconds = 0;
+            // Mobile Down is a committed route to the ground, not another
+            // lower-branch hop. Keep a secure lowering pose and suppress all
+            // canopy recapture until the feet reach a valid support surface.
+            controlledDescent = true; dropVelocity = -2.4; velocity.set(0, 0, 0);
+            showToast("Lowering all the way to solid ground", 1800);
+          }
+        }
+
         if (dropRequested && transfer) {
           descentIgnoreRouteId = branchRoute?.id ?? transfer.route.id; transfer = null; branchRoute = null; climbingTree = null;
           // Ctrl/Space is an intentional release, not a slow rappel. Enter
@@ -772,13 +791,14 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
           const overWater = isSwimmableWater(player.x, player.z), supportY = overWater ? waterSurfaceY + .58 : groundHeight(player.x, player.z);
           if (dropVelocity !== 0 || player.y > supportY + .04) {
             const previousY = player.y;
-            if (controlledDescent) dropVelocity = gripping ? -.72 : -1.15;
+            if (controlledDescent) dropVelocity = gripping ? -1.25 : -2.4;
             else dropVelocity -= 6.2 * delta;
             player.y += dropVelocity * delta; velocity.multiplyScalar(.9);
-            // Always exclude the branch the player intentionally released.
-            // Conditioning this on controlledDescent let a normal mobile Down
-            // tap recapture the same route on the next frame indefinitely.
-            if (!catchFallingBranch(previousY, descentIgnoreRouteId) && player.y <= supportY) { player.y = supportY; dropVelocity = 0; controlledDescent = false; descentIgnoreRouteId = -1; swimming = overWater; }
+            // A committed mobile descent must pass every branch. Ordinary
+            // releases can still catch a different route below for expressive
+            // canopy traversal, but Down guarantees a final ground landing.
+            const caughtBranch = !controlledDescent && catchFallingBranch(previousY, descentIgnoreRouteId);
+            if (!caughtBranch && player.y <= supportY) { player.y = supportY; dropVelocity = 0; controlledDescent = false; descentIgnoreRouteId = -1; swimming = overWater; resolveGroundCollisions(false); }
           } else {
             if (forwardHeld) wish.add(forward); if (backHeld) wish.sub(forward); if (rightHeld) wish.add(right); if (leftHeld) wish.sub(right);
             moving = wish.lengthSq() > 0; swimming = overWater;
@@ -1035,7 +1055,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
     frame();
     return () => {
       disposed = true; cartMotorState.driving = false; cartMotorState.speed = 0; audio.setCartMotor(false); cancelAnimationFrame(raf); renderer.domElement.removeEventListener("pointerdown", pointer); renderer.domElement.removeEventListener("pointermove", pointerMove); renderer.domElement.removeEventListener("pointerup", pointerUp);
-      document.removeEventListener("mousemove", mouse); document.removeEventListener("keydown", keyDown); document.removeEventListener("keyup", keyUp); document.removeEventListener("sloth-look", touchLook); document.removeEventListener(DEBUG_LOOK_REQUEST_EVENT, requestLock); document.removeEventListener("pointerlockchange", pointerLockChanged); window.removeEventListener("blur", releaseInput); removeEventListener("resize", resize);
+      document.removeEventListener("mousemove", mouse); document.removeEventListener("keydown", keyDown); document.removeEventListener("keyup", keyUp); document.removeEventListener("sloth-look", touchLook); document.removeEventListener(PARK_GROUND_DESCENT_REQUEST_EVENT, requestGroundDescent); document.removeEventListener(DEBUG_LOOK_REQUEST_EVENT, requestLock); document.removeEventListener("pointerlockchange", pointerLockChanged); window.removeEventListener("blur", releaseInput); removeEventListener("resize", resize);
       unsubscribeQuality(); duckQuest.dispose(); squirrelQuest.dispose(); carts.forEach(candidate => candidate.dispose()); rowboats.forEach(boat => boat.dispose()); campaign.dispose(); markerGeometry.dispose(); actionMarkerMaterial.dispose(); dropMarkerMaterial.dispose(); timer.dispose(); renderPipeline.dispose(); renderer.dispose(); if (host.contains(renderer.domElement)) host.removeChild(renderer.domElement);
     };
   }, [audio, onEnterSubway, quality, setPhase, showToast]);
@@ -1063,7 +1083,10 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
   }, [audio, ready, exiting, resetViewportScroll, safeLock, setPhase, showToast]);
   const resume = () => { setPhase("playing"); safeLock(); };
   useEffect(() => {
-    const frame = requestAnimationFrame(() => setTouchCapable(hasTouchInput() || debugSceneName(location.search) === "mobile"));
+    const frame = requestAnimationFrame(() => {
+      const reviewScene = debugSceneName(location.search);
+      setTouchCapable(hasTouchInput() || reviewScene === "mobile" || reviewScene === "descent");
+    });
     return () => cancelAnimationFrame(frame);
   }, []);
   useEffect(() => {

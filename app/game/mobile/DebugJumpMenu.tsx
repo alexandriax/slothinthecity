@@ -7,6 +7,7 @@ const DEBUG_DESTINATIONS: Array<{ scene: DebugSceneName; label: string; detail: 
   { scene: "park", label: "Ramble start", detail: "Foraging trail" },
   { scene: "mobile", label: "Mobile start", detail: "Touch-control review" },
   { scene: "canopy", label: "Canopy", detail: "Branch traversal" },
+  { scene: "descent", label: "Canopy descent", detail: "One-tap mobile return to ground" },
   { scene: "bridge", label: "Bow Bridge", detail: "Lake checkpoint" },
   { scene: "boat", label: "Rowboat", detail: "On The Lake" },
   { scene: "island", label: "Ticket island", detail: "Zoo-ticket quest" },
