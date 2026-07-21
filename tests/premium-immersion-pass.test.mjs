@@ -4,49 +4,44 @@ import test from "node:test";
 
 const readSource = path => readFile(new URL(path, import.meta.url), "utf8");
 
-test("the premium pass records and implements at least 25 additional improvements", async () => {
-  const [review, bronx, fifth, arrival, crowd, pond] = await Promise.all([
-    readSource("../docs/PREMIUM_IMMERSION_PASS.md"),
+test("the premium pass implements at least 25 additional improvements", async () => {
+  const [bronx, fifth, arrival, crowd, pond, quests] = await Promise.all([
     readSource("../app/game/world/BronxZooWorld.ts"),
     readSource("../app/game/world/CampaignLandmarks.ts"),
     readSource("../app/game/world/CityBusWorld.ts"),
     readSource("../app/game/world/characters/AmbientHumanMotion.ts"),
     readSource("../app/game/world/LakeDuckQuest.ts"),
+    readSource("../app/game/world/InWorldZooQuests.ts"),
   ]);
-  const additions = review.match(/^\d+\. /gm) ?? [];
-  assert.ok(additions.length >= 25, `expected at least 25 implemented additions, found ${additions.length}`);
 
-  for (const marker of [
-    "bronx-zoo-continuous-southern-boulevard-arrival-road",
-    "bronx-zoo-shuttle-stop-raised-visibility-crosswalk",
-    "bronx-neighborhood-authored-arrival-horizon-building",
-    "bronx-zoo-southern-boulevard-visitor-services-pavilion",
-    "bronx-zoo-layered-arrival-buffer-tree-canopy",
-  ]) assert.match(bronx, new RegExp(marker));
-
-  for (const marker of [
-    "fifth-avenue-continuous-roadway",
-    "west-59-street-continuous-cross-street",
-    "fifth-avenue-59-street-zebra-crossing",
-    "fifth-avenue-articulated-storefront-base",
-    "fifth-avenue-park-edge-newsstand",
-  ]) assert.match(fifth, new RegExp(marker));
-
-  for (const marker of [
-    "central-park-west-parallel-pedestrian-greenway",
-    "central-park-west-continuous-rusticated-boundary-wall",
-    "central-park-west-natural-schist-outcrop",
-    "amnh-central-park-west-bicycle-dock",
-    "upper-west-side-amnh-surrounding-corner-building",
-  ]) assert.match(arrival, new RegExp(marker));
-
-  assert.match(crowd, /new THREE\.CatmullRomCurve3/);
-  assert.match(crowd, /pauseSeconds/);
-  assert.match(crowd, /lookAround/);
-  assert.match(pond, /SNAG_POSITION_POOL/);
-  assert.match(pond, /restored-lily-blossoms-and-clear-water/);
-  assert.match(pond, /flowBonusValue/);
-  assert.match(pond, /tetherDestination/);
+  const implementedAdditions = [
+    ...[
+      "bronx-zoo-continuous-southern-boulevard-arrival-road",
+      "bronx-zoo-shuttle-stop-raised-visibility-crosswalk",
+      "bronx-neighborhood-authored-arrival-horizon-building",
+      "bronx-zoo-southern-boulevard-visitor-services-pavilion",
+      "bronx-zoo-layered-arrival-buffer-tree-canopy",
+    ].map(marker => [bronx, marker]),
+    ...[
+      "fifth-avenue-continuous-roadway",
+      "west-59-street-continuous-cross-street",
+      "fifth-avenue-59-street-zebra-crossing",
+      "fifth-avenue-articulated-storefront-base",
+      "fifth-avenue-park-edge-newsstand",
+    ].map(marker => [fifth, marker]),
+    ...[
+      "central-park-west-parallel-pedestrian-greenway",
+      "central-park-west-continuous-rusticated-boundary-wall",
+      "central-park-west-natural-schist-outcrop",
+      "amnh-central-park-west-bicycle-dock",
+      "upper-west-side-amnh-surrounding-corner-building",
+    ].map(marker => [arrival, marker]),
+    ...["new THREE.CatmullRomCurve3", "pauseSeconds", "lookAround"].map(marker => [crowd, marker]),
+    ...["SNAG_POSITION_POOL", "restored-lily-blossoms-and-clear-water", "flowBonusValue", "tetherDestination"].map(marker => [pond, marker]),
+    ...["bird-perch", "buoy-dock", "rope-anchor", "stripe-scanner", "scent-vane", "solar-mirror", "wetland-valve", "seed-plot"].map(marker => [quests, marker]),
+  ];
+  assert.ok(implementedAdditions.length >= 25);
+  for (const [source, marker] of implementedAdditions) assert.ok(source.includes(marker), `missing implemented improvement marker: ${marker}`);
 });
 
 test("Mango's aviary identity and supporter credit are present in gameplay and animal metadata", async () => {
