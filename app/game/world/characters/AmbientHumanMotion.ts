@@ -196,10 +196,11 @@ export function updateAmbientHumanAgent(agent: AmbientHumanAgent, elapsed: numbe
   const distance = agent.previous.distanceTo(agent.root.position);
   const actualSpeed = distance / Math.max(delta, .001);
   const walking = moving && distance > .00008;
-  agent.root.userData.ambientHumanMotionState = walking ? "walking" : "idle";
-  agent.root.userData.ambientHumanActivity = walking
+  const activity = walking
     ? "walking"
     : agent.pauseActivities[stopIndex % agent.pauseActivities.length] ?? "observing";
+  agent.root.userData.ambientHumanMotionState = walking ? "walking" : "idle";
+  agent.root.userData.ambientHumanActivity = activity;
   agent.root.userData.ambientHumanStopIndex = stopIndex;
   agent.root.userData.ambientHumanDwellSeconds = agent.pauseDurations[stopIndex % agent.pauseDurations.length] ?? pauseSeconds;
   if (attentionTarget) agent.root.userData.ambientHumanAttentionTarget = attentionTarget.toArray();
@@ -209,6 +210,7 @@ export function updateAmbientHumanAgent(agent: AmbientHumanAgent, elapsed: numbe
     delta,
     walking ? "walk" : "idle",
     THREE.MathUtils.clamp(actualSpeed / Math.max(agent.speed, .01), .55, 1.35),
+    activity,
   );
   agent.previous.copy(agent.root.position);
 }

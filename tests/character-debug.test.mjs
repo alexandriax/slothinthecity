@@ -92,7 +92,7 @@ test("authored pipeline rejects primitive face and body remnants", async () => {
   assert.match(runtime, /host\.visible = true/);
   assert.match(runtime, /authoredHumanStatus = "authored-load-failed"/);
   assert.match(runtime, /captureStationaryGestureBones/);
-  assert.match(runtime, /applyStationaryGesture\(state, motion\)/);
+  assert.match(runtime, /applyStationaryGesture\(state, motion, activity\)/);
   assert.match(runtime, /function addAuthoredAccessory/);
   assert.match(runtime, /stable-authored-root/);
   assert.match(runtime, /authored-human-accessory-\$\{kind\}/);

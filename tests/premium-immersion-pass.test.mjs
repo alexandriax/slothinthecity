@@ -97,7 +97,7 @@ test("Whiskers is a project-original, spatial museum quest with a variable galle
   assert.match(museum, /function whiskersRoute\(seed: number\)/);
   assert.match(museum, /if \(distance > 5\.2\) return null/);
   assert.match(museum, /beginWhiskersTrail\(elapsed: number\)/);
-  assert.match(museum, /new THREE\.CatmullRomCurve3/);
+  assert.match(museum, /planMuseumCompanionPath\(from, to, this\.boxes, this\.circles, \.28\)/);
   assert.match(museum, /whiskers-brass-pawprint-waypoint/);
   assert.match(museum, /forwardGalleryVariants/);
   assert.match(museum, /const travelDelta = Number\.isFinite\(delta\) \? Math\.max\(0, delta\) : 0/);
@@ -105,7 +105,7 @@ test("Whiskers is a project-original, spatial museum quest with a variable galle
   assert.match(museum, /sampleWhiskersTravel\(this\.whiskersTravelProgress, this\.whiskers\.root\.position\)/);
   assert.match(museum, /if \(!Number\.isFinite\(this\.whiskersTravelProgress\)\) this\.whiskersTravelProgress = 0/);
   assert.match(museum, /playerDistance < 7\.5 : playerDistance > 11\.5/);
-  assert.match(museum, /if \(this\.whiskersTravelCurve\) return this\.whiskers\.root\.position\.clone\(\)/);
+  assert.match(museum, /if \(this\.whiskersTravelActive\) return this\.whiskers\.root\.position\.clone\(\)/);
   assert.match(museum, /whiskers-fresh-route-paw/);
   assert.match(museum, /this\.resolveCompanion\(this\.whiskers\.root\.position, this\.whiskersResolveVelocity, \.28\)/);
   assert.match(museum, /WHISKERS_FOUND/);

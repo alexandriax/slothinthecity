@@ -379,6 +379,9 @@ function addAuthoredAccessory(instance: THREE.Group, options: PremiumHumanOption
     connector.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
     return connector;
   };
+  instance.updateMatrixWorld(true);
+  const bones: THREE.Bone[] = [];
+  instance.traverse(object => { if (object instanceof THREE.Bone) bones.push(object); });
   if (kind === "backpack") {
     const dark = darkMaterial(), textile = textileMaterial();
     const body = add(new THREE.Mesh(new RoundedBoxGeometry(height * .22, height * .29, height * .095, 4, height * .024), textile));
@@ -387,13 +390,29 @@ function addAuthoredAccessory(instance: THREE.Group, options: PremiumHumanOption
     flap.position.set(0, bounds.min.y + height * .65, bounds.min.z - height * .095);
   } else if (kind === "camera") {
     const dark = darkMaterial(), metal = metalMaterial();
+    const chest = findBone(bones, "Chest");
+    const chestCenter = chest
+      ? instance.worldToLocal(chest.getWorldPosition(new THREE.Vector3()))
+      : new THREE.Vector3(0, bounds.min.y + height * .7, 0);
+    const bodyY = bounds.min.y + height * .755;
+    const bodyZ = chestCenter.z + height * .064;
     const body = add(new THREE.Mesh(new RoundedBoxGeometry(height * .12, height * .078, height * .046, 4, height * .01), dark));
-    body.position.set(0, bounds.min.y + height * .79, bounds.max.z + height * .022);
+    body.name = "authored-camera-body-resting-against-chest";
+    body.position.set(chestCenter.x, bodyY, bodyZ);
     const lens = add(new THREE.Mesh(new THREE.CylinderGeometry(height * .026, height * .03, height * .036, 18), metal));
-    lens.rotation.x = Math.PI / 2; lens.position.set(0, body.position.y, bounds.max.z + height * .06);
-    const strapZ = bounds.max.z + height * .008;
-    addConnector(new THREE.Vector3(-height * .075, bounds.min.y + height * .86, strapZ), new THREE.Vector3(-height * .052, bounds.min.y + height * .83, strapZ), height * .006, dark);
-    addConnector(new THREE.Vector3(height * .075, bounds.min.y + height * .86, strapZ), new THREE.Vector3(height * .052, bounds.min.y + height * .83, strapZ), height * .006, dark);
+    lens.name = "authored-camera-lens-seated-in-body";
+    lens.rotation.x = Math.PI / 2; lens.position.set(chestCenter.x, bodyY, bodyZ + height * .041);
+    const strapTopY = bounds.min.y + height * .845, strapTopZ = chestCenter.z + height * .022;
+    for (const side of [-1, 1]) {
+      const strap = addConnector(
+        new THREE.Vector3(chestCenter.x + side * height * .052, bodyY + height * .036, bodyZ - height * .008),
+        new THREE.Vector3(chestCenter.x + side * height * .092, strapTopY, strapTopZ),
+        height * .0035,
+        dark,
+      );
+      strap.name = "authored-camera-full-neck-strap";
+    }
+    group.userData.authoredHumanAccessorySupport = "neck-strap-and-chest-contact";
   } else if (kind === "tote") {
     const dark = darkMaterial(), textile = textileMaterial(options.trousers);
     const side = options.variant % 2 ? -1 : 1;
@@ -421,8 +440,6 @@ function addAuthoredAccessory(instance: THREE.Group, options: PremiumHumanOption
   }
   instance.add(group);
   instance.updateMatrixWorld(true);
-  const bones: THREE.Bone[] = [];
-  instance.traverse(object => { if (object instanceof THREE.Bone) bones.push(object); });
   let anchor: THREE.Bone | undefined;
   if (kind === "tote") {
     const center = new THREE.Box3().setFromObject(group).getCenter(new THREE.Vector3());
@@ -467,8 +484,8 @@ function poseSkeleton(instance: THREE.Group, pose: PremiumHumanOptions["pose"]) 
     applyArmPose(bones, "L", .18, -.78, -1.05, .18);
     applyArmPose(bones, "R", -.18, -.78, -1.05, -.18);
   } else if (selected === "photographing") {
-    applyArmPose(bones, "L", .2, -1.08, -1.22, .26);
-    applyArmPose(bones, "R", -.2, -1.08, -1.22, -.26);
+    applyArmPose(bones, "L", .18, -.7, -.96, .22);
+    applyArmPose(bones, "R", -.18, -.7, -.96, -.22);
   } else if (selected === "waving") {
     applyArmPose(bones, "R", -1.05, -.22, -1.28, -.16);
   } else if (selected === "seated") {
@@ -497,17 +514,22 @@ function captureStationaryGestureBones(instance: THREE.Group) {
   return captured;
 }
 
-function applyStationaryGesture(state: HydrationState, motion: AuthoredHumanMotion) {
+function applyStationaryGesture(state: HydrationState, motion: AuthoredHumanMotion, activity: string) {
   const pose = state.stationaryPose;
   if (motion !== "idle" || !pose || pose === "neutral" || pose === "seated" || !state.gestureBones?.length) return;
   state.gestureBones.forEach(({ bone, neutral }) => bone.quaternion.copy(neutral));
   const bones = state.gestureBones.map(item => item.bone);
   if (pose === "checking-map") {
+    if (activity !== "checking-route") return;
     applyArmPose(bones, "L", .18, -.78, -1.05, .18);
     applyArmPose(bones, "R", -.18, -.78, -1.05, -.18);
   } else if (pose === "photographing") {
-    applyArmPose(bones, "L", .2, -1.08, -1.22, .26);
-    applyArmPose(bones, "R", -.2, -1.08, -1.22, -.26);
+    if (activity !== "photographing") return;
+    // Cradle the strapped camera at sternum height. The former face-height
+    // crossing pose magnified every digit and left both hands far above the
+    // camera body, producing the fan of finger spikes seen in close QA.
+    applyArmPose(bones, "L", .18, -.7, -.96, .22);
+    applyArmPose(bones, "R", -.18, -.7, -.96, -.22);
   } else if (pose === "waving") {
     applyArmPose(bones, "R", -1.05, -.22, -1.28, -.16);
   }
@@ -821,6 +843,7 @@ export function updateAuthoredHumanMotion(
   delta: number,
   motion: AuthoredHumanMotion,
   speed = 1,
+  activity = "observing",
 ) {
   const state = hydrationStates.get(host);
   const hydrated = state?.hydrated;
@@ -842,7 +865,7 @@ export function updateAuthoredHumanMotion(
   const settleSeconds = motion === "walk" ? .1 : .18;
   if (state.motion.clipName && state.motion.clipName !== clip.name && state.motion.requestedSeconds < settleSeconds) {
     state.motion.mixer.update(Math.min(Math.max(delta, 0), .08));
-    applyStationaryGesture(state, motion);
+    applyStationaryGesture(state, motion, activity);
     return;
   }
   if (state.motion.clipName !== clip.name) {
@@ -856,7 +879,7 @@ export function updateAuthoredHumanMotion(
   }
   state.motion.mixer.timeScale = THREE.MathUtils.clamp(speed, .45, 1.65);
   state.motion.mixer.update(Math.min(Math.max(delta, 0), .08));
-  applyStationaryGesture(state, motion);
+  applyStationaryGesture(state, motion, activity);
 }
 
 /**
