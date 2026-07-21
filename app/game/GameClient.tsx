@@ -114,7 +114,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
     layoutSloth(); camera.add(sloth.root); scene.add(camera);
     let yaw = -.35, pitch = -.04, energy = 100, alert = 5, lastHud = 0, gameTime = 0, dragging = false, lastTouchX = 0, lastTouchY = 0;
     let blockedBy: "" | "TREE" | "LANDMARK" = "", climbingTree: ClimbableTree | null = null, climbAngle = 0, climbHeight = 1.48;
-    let branchRoute: BranchRoute | null = null, branchProgress = 0, branchForwardSign: 1 | -1 = 1, actionRequested = false, dropRequested = false, gripHintUntil = 0, dropVelocity = 0, controlledDescent = false, descentIgnoreRouteId = -1, qaPrepared = false, qaStage = 0, caughtUntil = 0;
+    let branchRoute: BranchRoute | null = null, branchProgress = 0, branchForwardSign: 1 | -1 = 1, actionRequested = false, dropRequested = false, gripHintUntil = 0, dropVelocity = 0, controlledDescent = false, descentIgnoreRouteId = -1, qaPrepared = false, qaStage = 0, caughtUntil = 0, queuedZapRockDirection: -1 | 0 | 1 = 0;
     let transfer: { from: THREE.Vector3; to: THREE.Vector3; route: BranchRoute; progress: number; forwardSign: 1 | -1; started: number; duration: number; kind: "REACH" | "DROP" } | null = null;
     let swimming = false, wasSwimming = false, hawkPhase: HawkPhase = "PATROL", hawkEvent: HawkEvent | null = null, hawkPasses = 0, nextHawkPassAt = 8, recoveryUntil = 0;
     let parkStage: ParkStage = "FORAGE", ticketCollected = false, duckRecruited = false, squirrelRecruited = false, drivingCart = false, activeBoat: ParkRowboat | null = null, vehicleLookYaw = 0, cartWasBlocked = false, boatWasBlocked = false, subwayTransitionStarted = false, duckInteractionGraceUntil = 0, duckActionLockedUntil = 0;
@@ -170,13 +170,15 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
         return;
       }
       keys.add(event.code);
+      if (!event.repeat && (event.code === "KeyW" || event.code === "ArrowUp")) queuedZapRockDirection = 1;
+      if (!event.repeat && (event.code === "KeyS" || event.code === "ArrowDown")) queuedZapRockDirection = -1;
       if (event.code === "KeyE" && !event.repeat && gameTime >= duckActionLockedUntil) actionRequested = true;
       if ((event.code === "ControlLeft" || event.code === "ControlRight" || event.code === "Space" || event.code === "KeyQ") && !event.repeat) { event.preventDefault(); dropRequested = true; }
       if (event.code === "KeyC") { scentRef.current = !scentRef.current; setScent(scentRef.current); }
       if (event.code === "KeyM") audio.toggleMuted();
     };
     const keyUp = (event: KeyboardEvent) => keys.delete(event.code);
-    const releaseInput = () => { if (automatedQa) return; keys.clear(); velocity.set(0, 0, 0); };
+    const releaseInput = () => { if (automatedQa) return; keys.clear(); queuedZapRockDirection = 0; velocity.set(0, 0, 0); };
     const pointerLockChanged = () => { const captured = document.pointerLockElement === renderer.domElement; setMouseCaptured(captured); if (!captured) releaseInput(); };
     renderer.domElement.addEventListener("pointerdown", pointer); renderer.domElement.addEventListener("pointermove", pointerMove); renderer.domElement.addEventListener("pointerup", pointerUp);
     document.addEventListener("mousemove", mouse); document.addEventListener("keydown", keyDown); document.addEventListener("keyup", keyUp);
@@ -413,7 +415,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
       if (phaseRef.current === "playing") {
         gameTime += delta;
         campaign.update(gameTime, delta);
-        if (!qaPrepared && (["autoclimb", "autobranch", "autotransfer", "autodrop", "autoflow", "cart", "treecollision", "watercollision", "swim", "shoreclimb", "energy", "rest", "hawk", "bridgewalk", "bowbridge", "rowboat", "ticketisland", "ticket", "lakeduck", "duckpassenger", "duckfollowing", "squirrelquest", "squirrelacorn", "squirrelfollowing", "subwayentrance"].includes(qaInput ?? ""))) {
+        if (!qaPrepared && (["autoclimb", "autobranch", "autotransfer", "autodrop", "autoflow", "cart", "treecollision", "watercollision", "swim", "shoreclimb", "energy", "rest", "hawk", "bridgewalk", "bowbridge", "rowboat", "ticketisland", "ticket", "lakeduck", "duckpassenger", "duckfollowing", "squirrelquest", "squirrelacorn", "squirrelrocking", "squirrelfollowing", "subwayentrance"].includes(qaInput ?? ""))) {
           const testTree = nearestTree(player);
           if (qaInput === "autoflow") {
             const flowRoute = world.canopyCorridors[0]?.routeIds[0] !== undefined ? world.branches[world.canopyCorridors[0].routeIds[0]] : undefined;
@@ -443,7 +445,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
             energy = 72; keys.add("KeyW"); qaPrepared = true;
           } else if (qaInput === "rest") {
             energy = 38; qaPrepared = true;
-          } else if (["squirrelquest", "squirrelacorn", "squirrelfollowing"].includes(qaInput ?? "")) {
+          } else if (["squirrelquest", "squirrelacorn", "squirrelrocking", "squirrelfollowing"].includes(qaInput ?? "")) {
             alert = 5; nextHawkPassAt = Number.POSITIVE_INFINITY;
             if (qaInput === "squirrelquest") {
               const outward = squirrelQuest.squirrel.root.position.clone().sub(squirrelQuest.treePosition).setY(0).normalize();
@@ -453,7 +455,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
               const squirrelDirection = squirrelQuest.squirrel.root.position.clone().add(new THREE.Vector3(0, .32, 0)).sub(player);
               yaw = Math.atan2(-squirrelDirection.x, -squirrelDirection.z);
               pitch = Math.atan2(squirrelDirection.y, Math.hypot(squirrelDirection.x, squirrelDirection.z));
-            } else if (qaInput === "squirrelacorn") {
+            } else if (qaInput === "squirrelacorn" || qaInput === "squirrelrocking") {
               squirrelQuest.interact(squirrelQuest.squirrel.root.position);
               branchRoute = squirrelQuest.branch;
               const reviewPose = new THREE.Vector3();
@@ -467,6 +469,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
               const acornDirection = squirrelQuest.acornPosition.clone().sub(player);
               yaw = Math.atan2(-acornDirection.x, -acornDirection.z);
               pitch = Math.atan2(acornDirection.y, Math.hypot(acornDirection.x, acornDirection.z));
+              if (qaInput === "squirrelrocking") squirrelQuest.interact(player);
             } else {
               squirrelRecruited = true;
               player.copy(squirrelQuest.treePosition).add(new THREE.Vector3(5.2, 1.48, 3.4));
@@ -539,7 +542,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
         const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)), right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)), wish = new THREE.Vector3();
         const forwardHeld = keys.has("KeyW") || keys.has("ArrowUp"), backHeld = keys.has("KeyS") || keys.has("ArrowDown"), leftHeld = keys.has("KeyA") || keys.has("ArrowLeft"), rightHeld = keys.has("KeyD") || keys.has("ArrowRight");
         const gripping = keys.has("ShiftLeft") || keys.has("ShiftRight");
-        let moving = false, cartNearby = false, nearbyCart: ParkUtilityCart | null = null, nearbyBoat: ParkRowboat | null = null, groundTreeTarget: ClimbableTree | null = null, branchTarget: { route: BranchRoute; amount: number; point: THREE.Vector3; score: number } | null = null, lowerTarget: { route: BranchRoute; amount: number; point: THREE.Vector3; score: number } | null = null, traversalSpeed = 0;
+        let moving = false, cartNearby = false, nearbyCart: ParkUtilityCart | null = null, nearbyBoat: ParkRowboat | null = null, groundTreeTarget: ClimbableTree | null = null, branchTarget: { route: BranchRoute; amount: number; point: THREE.Vector3; score: number } | null = null, lowerTarget: { route: BranchRoute; amount: number; point: THREE.Vector3; score: number } | null = null, traversalSpeed = 0, zapRockDirection: -1 | 0 | 1 = 0;
 
         if (!drivingCart && !activeBoat && !climbingTree && !branchRoute && !transfer && !controlledDescent && !swimming) for (const candidate of carts) {
           candidate.getWorldEntryPosition(cartEntry);
@@ -711,9 +714,11 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
             if (dropRoute) { branchRoute = dropRoute; branchProgress = .56; branchPose(branchRoute, branchProgress, player); }
           }
           const branchInput = (forwardHeld ? 1 : 0) - (backHeld ? 1 : 0), signedBranchInput = branchInput * branchForwardSign, length = branchRoute.start.distanceTo(branchRoute.end);
+          const rockingZapBranch = squirrelQuest.isRockingAcorn && branchRoute.id === squirrelQuest.branch.id && player.distanceTo(squirrelQuest.acornPosition) <= 2.15;
+          if (rockingZapBranch) zapRockDirection = queuedZapRockDirection || (branchInput > 0 ? 1 : branchInput < 0 ? -1 : 0);
           const branchSpeed = (branchRoute.corridorId ? THREE.MathUtils.lerp(.9, 1.8, energy / 100) : THREE.MathUtils.lerp(.62, 1.14, energy / 100)) * (gripping ? .58 : 1);
-          branchProgress = THREE.MathUtils.clamp(branchProgress + signedBranchInput * branchSpeed * delta / Math.max(length, .1), 0, 1);
-          branchPose(branchRoute, branchProgress, player); moving = branchInput !== 0; traversalSpeed = moving ? branchSpeed : 0;
+          if (!rockingZapBranch) branchProgress = THREE.MathUtils.clamp(branchProgress + signedBranchInput * branchSpeed * delta / Math.max(length, .1), 0, 1);
+          branchPose(branchRoute, branchProgress, player); moving = !rockingZapBranch && branchInput !== 0; traversalSpeed = moving ? branchSpeed : 0;
           if (branchRoute.corridorId && moving && !leftHeld && !rightHeld) {
             const directionSign = signedBranchInput >= 0 ? 1 : -1;
             const desiredYaw = Math.atan2(-(branchRoute.end.x - branchRoute.start.x) * directionSign, -(branchRoute.end.z - branchRoute.start.z) * directionSign);
@@ -859,9 +864,12 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
           player,
           playerYaw: yaw,
           playerArboreal: Boolean(climbingTree || branchRoute || transfer || controlledDescent),
+          onFavoriteBranch: branchRoute?.id === squirrelQuest.branch.id,
+          branchRockDirection: zapRockDirection,
           floorYAt: (x, z) => groundHeight(x, z) - 1.48,
           resolveBody: resolveDuckCompanion,
         });
+        queuedZapRockDirection = 0;
         let duckEvent = duckQuest.consumeEvent();
         while (duckEvent) {
           if (duckEvent.kind === "DUCK_RECRUITED") { duckRecruited = true; audio.playMallardCue("landing"); audio.playQuestComplete(); }
@@ -949,6 +957,12 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
           else if (!prompt && cartNearby) { prompt = "DRIVE FIELD-SERVICES CART"; promptKey = "E"; }
           if (duckInteraction) { prompt = duckInteraction.label; promptKey = "E"; }
           else if (squirrelInteraction) { prompt = squirrelInteraction.label; promptKey = "E"; }
+          else if (squirrelQuest.state === "LOOSENING_ACORN") { prompt = squirrelQuest.instruction; promptKey = hasTouchInput() ? "↕" : "W / S"; }
+          else if (squirrelQuest.state === "ACORN_FALLING" || squirrelQuest.state === "REUNITING") {
+            const stillInCanopy = Boolean(branchRoute || climbingTree || transfer || controlledDescent);
+            prompt = stillInCanopy ? "DESCEND TO ZAP AT THE ROOTS" : "STAY NEAR ZAP WHILE HE RECLAIMS THE ACORN";
+            promptKey = stillInCanopy ? "CTRL" : "";
+          }
           else if (activeBoat && duckQuest.isMannersActive) { prompt = duckQuest.instruction; promptKey = duckQuest.state === "WAITING_FOR_YIELD" || duckQuest.state === "CROSSING" ? "SPACE" : ""; }
           else if (squirrelQuest.state === "SEEKING_ACORN" && branchRoute?.id === squirrelQuest.branch.id) {
             const acornDistance = player.distanceTo(squirrelQuest.acornPosition);
@@ -972,7 +986,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
           const goalBearing = THREE.MathUtils.radToDeg(Math.atan2(goalSide, goalAhead));
           const motion: MotionState = activeBoat ? "ROWING" : drivingCart ? "DRIVING" : hawkEvent?.kind === "SNATCH" ? "SNATCHED" : hawkEvent?.kind === "DIVE" ? "HAWK DIVE" : gameTime < caughtUntil ? "CAUGHT" : transfer ? (transfer.kind === "DROP" ? "LOWERING" : "REACHING") : branchRoute ? "ON BRANCH" : climbingTree ? "CLIMBING" : controlledDescent ? "DESCENDING" : swimming ? "SWIMMING" : blockedBy ? "PATH BLOCKED" : "ON GROUND";
           const vehicleSpeed = activeBoat?.speedMetersPerSecond ?? (drivingCart ? cart.speedMetersPerSecond : 0);
-          const hint = activeBoat ? `${Math.round(Math.abs(vehicleSpeed) * 3.6)} km/h · W / S row · A / D steer · Space brake · ${duckInteraction ? "E greet Tanner" : "E exit"}` : drivingCart ? `${Math.round(Math.abs(vehicleSpeed) * 3.6)} km/h · W / S drive · A / D steer · Space brake · E exit` : hawkEvent?.kind === "SNATCH" ? "Recoverable snatch · the hawk will drop you beneath nearby cover" : hawkEvent?.kind === "DIVE" ? "Break its line of sight: reach canopy or enter the water" : gameTime < caughtUntil ? "Lower branch caught · grip secure" : transfer ? (transfer.kind === "DROP" ? "Lowering to the highlighted branch" : "Reaching hand-over-hand") : branchRoute ? (branchRoute.corridorId ? "Hold W for continuous tree-to-tree travel · look or steer at junctions" : "W / S crawl · endpoint branches auto-grab · Ctrl or Space descends") : climbingTree ? (energy < 18 ? "Rest in place to recover energy · Ctrl descends" : "W / S climb · E enters a branch · Ctrl descends") : controlledDescent ? "A safe descent is active · Shift slows the lowering motion" : swimming ? (energy < 20 ? "Rest on the surface to recover · swimming never stops completely" : "Slower strokes · water cools hawk awareness · rest to recover energy") : blockedBy === "TREE" ? "Solid trunk · face its marker and press E to climb" : blockedBy === "LANDMARK" ? "Solid park structure · use or steer around it" : gameTime < gripHintUntil ? "Move within arm’s reach of a marked trunk, then press E" : energy < 20 ? (moving ? "Low energy slows you, but never freezes movement" : "Resting — energy recovering quickly") : moving ? "Walking drains energy · stop to recover or forage a bud" : "Resting restores energy · tender buds restore 30";
+          const hint = activeBoat ? `${Math.round(Math.abs(vehicleSpeed) * 3.6)} km/h · W / S row · A / D steer · Space brake · ${duckInteraction ? "E greet Tanner" : "E exit"}` : drivingCart ? `${Math.round(Math.abs(vehicleSpeed) * 3.6)} km/h · W / S drive · A / D steer · Space brake · E exit` : hawkEvent?.kind === "SNATCH" ? "Recoverable snatch · the hawk will drop you beneath nearby cover" : hawkEvent?.kind === "DIVE" ? "Break its line of sight: reach canopy or enter the water" : gameTime < caughtUntil ? "Lower branch caught · grip secure" : transfer ? (transfer.kind === "DROP" ? "Lowering to the highlighted branch" : "Reaching hand-over-hand") : squirrelQuest.isRockingAcorn ? hasTouchInput() ? "Alternate the move stick forward and back · each change flexes the branch" : "Alternate W and S · each clean direction change flexes the living branch" : branchRoute ? (branchRoute.corridorId ? "Hold W for continuous tree-to-tree travel · look or steer at junctions" : "W / S crawl · endpoint branches auto-grab · Ctrl or Space descends") : climbingTree ? (energy < 18 ? "Rest in place to recover energy · Ctrl descends" : "W / S climb · E enters a branch · Ctrl descends") : controlledDescent ? "A safe descent is active · Shift slows the lowering motion" : swimming ? (energy < 20 ? "Rest on the surface to recover · swimming never stops completely" : "Slower strokes · water cools hawk awareness · rest to recover energy") : blockedBy === "TREE" ? "Solid trunk · face its marker and press E to climb" : blockedBy === "LANDMARK" ? "Solid park structure · use or steer around it" : gameTime < gripHintUntil ? "Move within arm’s reach of a marked trunk, then press E" : energy < 20 ? (moving ? "Low energy slows you, but never freezes movement" : "Resting — energy recovering quickly") : moving ? "Walking drains energy · stop to recover or forage a bud" : "Resting restores energy · tender buds restore 30";
           const threat = hawkPhase === "SNATCHED" ? "SNATCHED · RECOVERING" : hawkPhase === "DIVING" ? "DIVE PASS INBOUND" : hawkPhase === "RECOVERING" ? "DISORIENTED · SAFE" : drivingCart ? "CART ROOF COVER" : activeBoat || swimming ? "WATER SHELTER" : alert >= 85 ? "DANGER · FIND COVER" : hawkPhase === "WATCHING" ? "HAWK WATCHING" : "PATROL DISTANT";
           const campaignCopy = parkStage === "FORAGE"
             ? { objective: "Forage five buds across trail and canopy", short: "FORAGE", detail: `${Math.min(collected.current.size, 5)} / 5 tender buds foraged`, value: `${Math.min(collected.current.size, 5)} / 5`, label: "Bow Bridge" }
@@ -981,11 +995,13 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
               : parkStage === "LAKE_TICKET"
                 ? { objective: "Recover your Bronx Zoo ticket from the island in The Lake", short: "ISLAND", detail: ticketCollected ? "Zoo admission secured" : "Zoo ticket awaiting recovery", value: `${Math.round(goalDistance)} M`, label: "Bronx Zoo ticket" }
                 : { objective: "Descend into the 5 Av / 59 St subway for the Bronx Zoo", short: "SUBWAY", detail: ticketCollected ? "Zoo admission secured" : "Zoo ticket awaiting recovery", value: `${Math.round(goalDistance)} M`, label: "5 Av / 59 St stairs" };
-          const localQuestCopy = squirrelInteraction || squirrelQuest.state === "SEEKING_ACORN" || squirrelQuest.state === "ACORN_FALLING" || squirrelQuest.state === "REUNITING"
+          const localQuestCopy = squirrelInteraction || squirrelQuest.state === "SEEKING_ACORN" || squirrelQuest.state === "LOOSENING_ACORN" || squirrelQuest.state === "ACORN_FALLING" || squirrelQuest.state === "REUNITING"
             ? squirrelQuest.state === "AVAILABLE"
               ? { objective: "Find out what Zap is watching", short: "ZAP", detail: "Optional park story · no global waypoint", value: "NEARBY", label: "Zap · favorite acorn" }
               : squirrelQuest.state === "SEEKING_ACORN"
                 ? { objective: "Help Zap recover his favorite acorn", short: "ZAP", detail: "Climb the trunk · follow the real branch · dislodge the acorn", value: "ACORN", label: "Zap · favorite acorn" }
+                : squirrelQuest.state === "LOOSENING_ACORN"
+                  ? { objective: "Rock Zap's branch until the acorn loosens", short: "ZAP", detail: hasTouchInput() ? "Stay on the living limb · move the stick forward and back" : "Stay on the living limb · alternate W and S", value: `${squirrelQuest.rockProgress}%`, label: "Zap · favorite acorn" }
                 : { objective: "Stay with Zap while he retrieves his acorn", short: "ZAP", detail: squirrelQuest.instruction, value: "REUNITING", label: "Zap · favorite acorn" }
             : duckInteraction || duckQuest.isMannersActive
               ? duckQuest.state === "ROAMING"

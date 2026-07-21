@@ -13,6 +13,7 @@ export const DEBUG_SCENE_CHECKPOINTS = {
   squirrel: "squirrelquest",
   "squirrel-quest": "squirrelquest",
   "squirrel-acorn": "squirrelacorn",
+  "squirrel-rocking": "squirrelrocking",
   "squirrel-following": "squirrelfollowing",
   zap: "squirrelquest",
   subway: "subway",

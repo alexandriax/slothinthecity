@@ -6,9 +6,9 @@ import { markAuthoredZooAnimalDisposed } from "./animals/AuthoredZooAnimalAssets
 
 export const CENTRAL_PARK_SQUIRREL_COMPANION_ID = "central-park-squirrel" as const;
 
-export type ParkSquirrelQuestState = "AVAILABLE" | "SEEKING_ACORN" | "ACORN_FALLING" | "REUNITING" | "FOLLOWING";
+export type ParkSquirrelQuestState = "AVAILABLE" | "SEEKING_ACORN" | "LOOSENING_ACORN" | "ACORN_FALLING" | "REUNITING" | "FOLLOWING";
 export type ParkSquirrelQuestEvent = {
-  kind: "ZAP_NOTICED" | "ACORN_DISLODGED" | "ACORN_LANDED" | "ZAP_RECRUITED";
+  kind: "ZAP_NOTICED" | "BRANCH_GRIPPED" | "ACORN_DISLODGED" | "ACORN_LANDED" | "ZAP_RECRUITED";
   message: string;
 };
 export type ParkSquirrelInteractionHint = { label: string; target: THREE.Vector3 };
@@ -16,6 +16,8 @@ export type ParkSquirrelUpdateContext = {
   player: THREE.Vector3;
   playerYaw?: number;
   playerArboreal?: boolean;
+  onFavoriteBranch?: boolean;
+  branchRockDirection?: -1 | 0 | 1;
   floorYAt: (x: number, z: number) => number;
   resolveBody?: (position: THREE.Vector3, velocity: THREE.Vector3, radius: number) => void;
 };
@@ -67,6 +69,8 @@ export class ParkSquirrelQuest {
   readonly branch: BranchRoute;
   readonly acorn = new THREE.Group();
   readonly acornLight = new THREE.PointLight("#f2c67e", 0, 2.35, 2);
+  readonly discoveryKey = new THREE.PointLight("#f1c98c", 2.35, 7.4, 2);
+  readonly branchFlex = new THREE.Group();
   readonly acornPosition = new THREE.Vector3();
   readonly treePosition = new THREE.Vector3();
   private readonly events: ParkSquirrelQuestEvent[] = [];
@@ -74,10 +78,14 @@ export class ParkSquirrelQuest {
   private readonly velocity = new THREE.Vector3();
   private readonly followTarget = new THREE.Vector3();
   private readonly acornLanding = new THREE.Vector3();
+  private readonly branchSide = new THREE.Vector3();
   private stateValue: ParkSquirrelQuestState = "AVAILABLE";
   private fallVelocity = 0;
   private bounceCount = 0;
   private reunionPause = 0;
+  private rockProgressValue = 0;
+  private lastRockDirection: -1 | 0 | 1 = 0;
+  private rockImpulse = 0;
   private disposed = false;
 
   constructor(scene: THREE.Scene, textures: GameTextures, world: RealisticWorld, quality = 1) {
@@ -92,12 +100,12 @@ export class ParkSquirrelQuest {
     this.treePosition.set(this.tree.x, this.tree.baseY, this.tree.z);
     this.acornPosition.lerpVectors(this.branch.start, this.branch.end, .72);
     const branchDirection = this.branch.end.clone().sub(this.branch.start).setY(0).normalize();
-    const branchSide = new THREE.Vector3(-branchDirection.z, 0, branchDirection.x);
+    this.branchSide.set(-branchDirection.z, 0, branchDirection.x);
     // Seat the shell against the upper shoulder of the limb instead of on its
     // centerline. From the climb approach the silhouette now reads beside the
     // branch while remaining physically wedged against its bark.
-    this.acornPosition.addScaledVector(branchSide, .18);
-    this.acornPosition.y += this.branch.radius + .12;
+    this.acornPosition.addScaledVector(this.branchSide, .22);
+    this.acornPosition.y += this.branch.radius + .13;
 
     this.squirrel = createEasternGraySquirrel(textures, quality);
     this.squirrel.root.name = "zap-eastern-gray-squirrel-quest-hero";
@@ -105,35 +113,39 @@ export class ParkSquirrelQuest {
     this.squirrel.root.userData.questRole = "favorite-acorn-owner-and-companion";
     this.squirrel.root.userData.logicalId = CENTRAL_PARK_SQUIRREL_COMPANION_ID;
     const outward = new THREE.Vector3(this.branch.end.x - this.tree.x, 0, this.branch.end.z - this.tree.z).normalize();
+    const rootSide = new THREE.Vector3(-outward.z, 0, outward.x);
     this.squirrel.root.position.set(
-      this.tree.x + outward.x * (this.tree.radius + .78),
+      this.tree.x + outward.x * (this.tree.radius + .96) + rootSide.x * .62,
       this.tree.baseY + .02,
-      this.tree.z + outward.z * (this.tree.radius + .78),
+      this.tree.z + outward.z * (this.tree.radius + .96) + rootSide.z * .62,
     );
     this.squirrel.root.rotation.y = Math.atan2(-(this.acornPosition.x - this.squirrel.root.position.x), -(this.acornPosition.z - this.squirrel.root.position.z));
     this.squirrel.root.userData.animationState = "forage";
     this.previous.copy(this.squirrel.root.position);
     this.root.add(this.squirrel.root);
+    this.discoveryKey.name = "zap-natural-root-stage-dappled-key-light";
+    this.discoveryKey.position.copy(this.squirrel.root.position).add(new THREE.Vector3(-.8, 2.5, 1.1));
+    this.root.add(this.discoveryKey);
 
     const shell = new THREE.Mesh(
-      new THREE.SphereGeometry(.16, 20, 14),
-      new THREE.MeshStandardMaterial({ color: "#80512c", emissive: "#241307", emissiveIntensity: .14, roughness: .79, metalness: 0 }),
+      new THREE.SphereGeometry(.105, 22, 16),
+      new THREE.MeshStandardMaterial({ color: "#98663a", emissive: "#3a1d0c", emissiveIntensity: .22, roughness: .79, metalness: 0 }),
     );
     shell.name = "zap-favorite-acorn-shell";
     shell.scale.set(.84, 1.25, .84);
     const cap = new THREE.Mesh(
-      new THREE.SphereGeometry(.125, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2),
-      new THREE.MeshStandardMaterial({ color: "#49311f", roughness: .96 }),
+      new THREE.SphereGeometry(.082, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.MeshStandardMaterial({ color: "#5c3b22", roughness: .96 }),
     );
     cap.name = "zap-favorite-acorn-textured-cap";
-    cap.position.y = .115;
+    cap.position.y = .078;
     cap.scale.set(1.04, .58, 1.04);
     const stem = new THREE.Mesh(
-      new THREE.CylinderGeometry(.018, .024, .14, 8),
+      new THREE.CylinderGeometry(.011, .014, .085, 8),
       new THREE.MeshStandardMaterial({ color: "#3b2a1d", roughness: 1 }),
     );
     stem.name = "zap-favorite-acorn-stem";
-    stem.position.set(.025, .225, 0);
+    stem.position.set(.014, .145, 0);
     stem.rotation.z = -.22;
     this.acorn.name = "zap-favorite-acorn-lod0-prop";
     this.acorn.add(shell, cap, stem);
@@ -143,6 +155,30 @@ export class ParkSquirrelQuest {
     this.acornLight.name = "zap-favorite-acorn-warm-canopy-glint";
     this.acornLight.position.copy(this.acornPosition).add(new THREE.Vector3(0, .12, 0));
     this.root.add(this.acorn, this.acornLight);
+
+    // The acorn sits in a project-authored fork of fine twigs.
+    // This gives the player a readable contact point from the traversal line
+    // and provides a physical element that can flex instead of making E feel
+    // like an abstract pickup button.
+    this.branchFlex.name = "zap-favorite-acorn-physical-flexing-twig-cradle";
+    this.branchFlex.position.copy(this.acornPosition);
+    const twigMaterial = new THREE.MeshStandardMaterial({ color: "#795238", roughness: .97 });
+    const branchAxis = this.branch.end.clone().sub(this.branch.start).normalize();
+    const up = new THREE.Vector3(0, 1, 0);
+    const twigDirections = [
+      branchAxis.clone().multiplyScalar(.8).addScaledVector(this.branchSide, .34).addScaledVector(up, .22),
+      branchAxis.clone().multiplyScalar(-.58).addScaledVector(this.branchSide, -.46).addScaledVector(up, .32),
+      branchAxis.clone().multiplyScalar(.42).addScaledVector(this.branchSide, -.52).addScaledVector(up, .46),
+    ];
+    twigDirections.forEach(direction => {
+      const length = direction.length();
+      const twig = new THREE.Mesh(new THREE.CylinderGeometry(.025, .042, length, 8), twigMaterial);
+      twig.name = "zap-acorn-cradle-flexing-natural-twig";
+      twig.position.copy(direction).multiplyScalar(.5);
+      twig.quaternion.setFromUnitVectors(up, direction.clone().normalize());
+      this.branchFlex.add(twig);
+    });
+    this.root.add(this.branchFlex);
 
     // A few broken cup fragments at the roots hint at Zap's habit without a
     // quest beacon or explanatory sign.
@@ -163,10 +199,13 @@ export class ParkSquirrelQuest {
   }
 
   get state() { return this.stateValue; }
-  get isActive() { return this.stateValue === "SEEKING_ACORN" || this.stateValue === "ACORN_FALLING" || this.stateValue === "REUNITING"; }
+  get isActive() { return this.stateValue === "SEEKING_ACORN" || this.stateValue === "LOOSENING_ACORN" || this.stateValue === "ACORN_FALLING" || this.stateValue === "REUNITING"; }
   get isComplete() { return this.stateValue === "FOLLOWING"; }
+  get isRockingAcorn() { return this.stateValue === "LOOSENING_ACORN"; }
+  get rockProgress() { return Math.round(this.rockProgressValue / 4 * 100); }
   get instruction() {
     if (this.stateValue === "SEEKING_ACORN") return "CLIMB ZAP'S TREE · REACH THE FAVORITE ACORN";
+    if (this.stateValue === "LOOSENING_ACORN") return `ROCK THE LIVING BRANCH · ALTERNATE FORWARD / BACK · ${this.rockProgress}%`;
     if (this.stateValue === "ACORN_FALLING") return "THE ACORN IS FALLING";
     if (this.stateValue === "REUNITING") return "ZAP IS RETRIEVING HIS ACORN";
     return "";
@@ -181,7 +220,7 @@ export class ParkSquirrelQuest {
       return { label: "NOTICE WHAT ZAP IS WATCHING", target: this.squirrel.root.position.clone().add(new THREE.Vector3(0, .32, 0)) };
     }
     if (this.stateValue === "SEEKING_ACORN" && player.distanceTo(this.acorn.position) <= ACORN_REACH) {
-      return { label: "DISLODGE ZAP'S FAVORITE ACORN", target: this.acorn.position.clone() };
+      return { label: "GRIP THE BRANCH BESIDE ZAP'S ACORN", target: this.acorn.position.clone() };
     }
     return null;
   }
@@ -199,11 +238,11 @@ export class ParkSquirrelQuest {
       this.events.push(event);
       return event;
     }
-    this.stateValue = "ACORN_FALLING";
-    this.fallVelocity = .35;
-    this.bounceCount = 0;
-    this.acornLanding.set(this.acorn.position.x + .55, this.tree.baseY + .17, this.acorn.position.z + .34);
-    const event: ParkSquirrelQuestEvent = { kind: "ACORN_DISLODGED", message: "The branch flexes. Zap's acorn rattles loose and drops through the leaves." };
+    this.stateValue = "LOOSENING_ACORN";
+    this.rockProgressValue = 0;
+    this.lastRockDirection = 0;
+    this.rockImpulse = 0;
+    const event: ParkSquirrelQuestEvent = { kind: "BRANCH_GRIPPED", message: "Your claws settle beside the acorn. Alternate W and S to rock the living branch until the twig fork releases it." };
     this.events.push(event);
     return event;
   }
@@ -211,6 +250,7 @@ export class ParkSquirrelQuest {
   setRecruited(player: THREE.Vector3, floorY: number) {
     this.stateValue = "FOLLOWING";
     this.acorn.visible = false;
+    this.branchFlex.visible = false;
     this.squirrel.root.position.set(player.x + 1.35, floorY + .02, player.z + 2.1);
     this.squirrel.root.userData.animationState = "walk";
     this.previous.copy(this.squirrel.root.position);
@@ -225,13 +265,52 @@ export class ParkSquirrelQuest {
       this.squirrel.root.rotation.y += error * (1 - Math.exp(-delta * 4));
       this.squirrel.root.userData.animationState = this.stateValue === "AVAILABLE" ? "forage" : "idle";
       this.acorn.rotation.z = -.22 + Math.sin(elapsed * 1.8) * .012;
-    } else if (this.stateValue === "ACORN_FALLING") this.updateFalling(delta, context);
+    } else if (this.stateValue === "LOOSENING_ACORN") this.updateLoosening(elapsed, delta, context);
+    else if (this.stateValue === "ACORN_FALLING") this.updateFalling(delta, context);
     else if (this.stateValue === "REUNITING") this.updateReunion(delta, context);
     else this.updateFollowing(delta, context);
     const acornFocused = this.acorn.visible && this.stateValue !== "AVAILABLE" && this.stateValue !== "FOLLOWING";
     this.acornLight.position.copy(this.acorn.position).add(new THREE.Vector3(0, .12, 0));
     this.acornLight.intensity = acornFocused ? 3.2 + Math.sin(elapsed * 2.7) * .45 : 0;
+    const rootStoryVisible = this.stateValue === "AVAILABLE" || this.stateValue === "SEEKING_ACORN";
+    this.discoveryKey.intensity += ((rootStoryVisible ? 2.35 : this.stateValue === "LOOSENING_ACORN" ? 1.05 : 0) - this.discoveryKey.intensity) * (1 - Math.exp(-delta * 4));
     this.squirrel.update(elapsed, delta);
+  }
+
+  private updateLoosening(elapsed: number, delta: number, context: ParkSquirrelUpdateContext) {
+    if (!context.onFavoriteBranch || context.player.distanceTo(this.acornPosition) > 2.3) {
+      this.stateValue = "SEEKING_ACORN";
+      this.rockProgressValue = 0;
+      this.lastRockDirection = 0;
+      this.rockImpulse = 0;
+      this.branchFlex.rotation.set(0, 0, 0);
+      this.acorn.position.copy(this.acornPosition);
+      return;
+    }
+    const direction = context.branchRockDirection ?? 0;
+    if (direction !== 0 && direction !== this.lastRockDirection) {
+      this.lastRockDirection = direction;
+      this.rockProgressValue = Math.min(4, this.rockProgressValue + 1);
+      this.rockImpulse = direction;
+    }
+    this.rockImpulse *= Math.exp(-delta * 4.2);
+    const flex = this.rockImpulse * .095 + Math.sin(elapsed * 9.5) * .006 * this.rockProgressValue;
+    this.branchFlex.rotation.z += (flex - this.branchFlex.rotation.z) * (1 - Math.exp(-delta * 12));
+    this.branchFlex.rotation.x = Math.sin(elapsed * 7.1) * .012 * this.rockProgressValue;
+    this.acorn.position.copy(this.acornPosition).addScaledVector(this.branchSide, flex * 1.25);
+    this.acorn.position.y = this.acornPosition.y + Math.abs(flex) * .18;
+    this.acorn.rotation.x += direction * delta * 2.2;
+    this.acorn.rotation.z = -.22 + flex * 2.4;
+    if (this.rockProgressValue >= 4) this.beginAcornFall();
+  }
+
+  private beginAcornFall() {
+    this.stateValue = "ACORN_FALLING";
+    this.fallVelocity = .35;
+    this.bounceCount = 0;
+    this.branchFlex.visible = false;
+    this.acornLanding.set(this.acorn.position.x + .55, this.tree.baseY + .17, this.acorn.position.z + .34);
+    this.events.push({ kind: "ACORN_DISLODGED", message: "The living branch flexes through the final rock. Zap's acorn rattles free and drops through the leaves." });
   }
 
   private updateFalling(delta: number, context: ParkSquirrelUpdateContext) {
