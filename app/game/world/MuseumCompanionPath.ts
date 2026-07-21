@@ -10,6 +10,16 @@ const DEFAULT_BOUNDS: MuseumNavigationBounds = {
   maxZ: 20,
 };
 
+/** Shortest floor distance to a solid rectangular exhibit footprint. */
+export function museumNavigationDistanceToBox(
+  point: MuseumNavigationPoint,
+  box: MuseumNavigationBox,
+) {
+  const dx = Math.max(box.minX - point.x, 0, point.x - box.maxX);
+  const dz = Math.max(box.minZ - point.z, 0, point.z - box.maxZ);
+  return Math.hypot(dx, dz);
+}
+
 function pointInsideBounds(point: MuseumNavigationPoint, bounds: MuseumNavigationBounds, clearance: number) {
   return point.x >= bounds.minX + clearance
     && point.x <= bounds.maxX - clearance

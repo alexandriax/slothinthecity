@@ -345,7 +345,8 @@ test("all four followers can reach Megatherium from every side on foot or scoote
   assert.match(museum, /skeleton\.rotation\.y = -\.34 \+ Math\.PI \/ 2/);
   assert.match(museum, /megatherium-americanum-grounded-exhibit-sign/);
   assert.match(museum, /megatherium-exhibit-sign-grounded-support-post/);
-  assert.match(game, /function museumMissionReady\(\)[\s\S]{0,600}museumWorld\.nearestMegatheriumViewingTarget[\s\S]{0,220}allFollowersWithin\([\s\S]{0,120}scooterRiding \? 13\.5 : 11\.5/);
+  assert.match(game, /function museumMissionReady\(\)[\s\S]{0,600}museumWorld\.megatheriumNearby\(player\)[\s\S]{0,220}allFollowersWithin\([\s\S]{0,120}museumWorld\.megatheriumGatheringTarget[\s\S]{0,120}museumWorld\.megatheriumGatheringRadius/);
+  assert.doesNotMatch(game.slice(game.indexOf("function museumMissionReady()"), game.indexOf("function completeMission()")), /isWhiskersQuestActive|isWhiskersQuestComplete/);
   assert.match(game, /if \(museumMissionReady\(\)\) \{\s*completeMission\(\);\s*renderFrame\(\);\s*return;\s*\}/);
   assert.match(game, /<h2>Your friends found a giant ancestor\.<\/h2>/);
 });

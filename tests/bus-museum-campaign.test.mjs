@@ -245,8 +245,8 @@ test("the Whiskers review checkpoints cover discovery, active trail, and embodie
   assert.match(game, /if \(qaInput === "museumwhiskerstrust"\) reviewMuseum\.stageWhiskersTrustMoment\(\)/);
   assert.match(game, /if \(qaInput === "museumwhiskerstrust"\) yaw \+= innerWidth <= 600 \? \.4 : \.58/);
   assert.match(game, /lastHud = Number\.NEGATIVE_INFINITY/);
-  assert.match(game, /whiskersStoryVisible = pursuingWhiskers \|\| Boolean\(whiskersHint\)/);
-  assert.match(game, /wayfinding: pursuingWhiskers \? !whiskersTrust\.active : !whiskersStoryVisible/);
+  assert.match(game, /whiskersStoryVisible = \(pursuingWhiskers \|\| Boolean\(whiskersHint\)\) && !gathering/);
+  assert.match(game, /wayfinding: whiskersStoryVisible \? !whiskersTrustVisible : true/);
 });
 
 test("mobile shuttle controls expose both sequential gear shifts", async () => {
@@ -401,5 +401,5 @@ test("AMNH is a full exploration level with permanent halls, crowds, and Megathe
   assert.match(game, /museumWorld\.update\(gameTime, delta, player, yaw, velocity\.length\(\)\)/);
   assert.match(game, /transitStage === "MUSEUM" && museumWorld/);
   assert.match(game, /function museumMissionReady\(\)/);
-  assert.match(game, /allFollowersWithin\([\s\S]{0,120}scooterRiding \? 13\.5 : 11\.5/);
+  assert.match(game, /allFollowersWithin\([\s\S]{0,120}museumWorld\.megatheriumGatheringTarget[\s\S]{0,120}museumWorld\.megatheriumGatheringRadius/);
 });
