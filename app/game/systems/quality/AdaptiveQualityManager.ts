@@ -52,21 +52,20 @@ export type RenderBudget = QualityProfile & {
 
 type QualityListener = (snapshot: QualitySnapshot) => void;
 
-// v2 changes the first-run policy from device-adaptive to authored High.
-// Players can still select Auto, Medium, or Low explicitly if their device
-// needs a lighter render budget.
+// Keep the v2 key so an explicit player choice survives this change. When no
+// choice has been saved, Auto now performs the requested first-run selection.
 const STORAGE_KEY = "slothpark-quality-mode-v2";
 const LEVELS: QualityLevel[] = ["low", "medium", "high", "ultra"];
 
 export const QUALITY_PROFILES: Readonly<Record<QualityLevel, QualityProfile>> = {
   low: {
-    level: "low", label: "Low", pixelRatioCap: 1, pixelBudget: 720_000, antialias: false,
-    shadows: true, shadowMapSize: 512, softShadows: false, postProcessing: false, ambientOcclusion: false,
+    level: "low", label: "Performance", pixelRatioCap: 1, pixelBudget: 720_000, antialias: false,
+    shadows: false, shadowMapSize: 512, softShadows: false, postProcessing: false, ambientOcclusion: false,
     foliageDensity: 0.48, npcDensity: 0.5, particles: 0.35, textureAnisotropy: 2, textureScale: 0.55,
     reflectionScale: 0.35, motionScale: 0.65,
   },
   medium: {
-    level: "medium", label: "Medium", pixelRatioCap: 1.15, pixelBudget: 1_300_000, antialias: true,
+    level: "medium", label: "Balanced", pixelRatioCap: 1.15, pixelBudget: 1_300_000, antialias: true,
     shadows: true, shadowMapSize: 1024, softShadows: false, postProcessing: false, ambientOcclusion: false,
     foliageDensity: 0.72, npcDensity: 0.72, particles: 0.62, textureAnisotropy: 4, textureScale: 0.78,
     reflectionScale: 0.55, motionScale: 0.82,
@@ -109,28 +108,30 @@ function detectDevice(): DeviceProfile {
   };
 }
 
-function recommendedLevel(device: DeviceProfile): { level: QualityLevel; reason: string } {
+export function recommendQualityLevel(device: DeviceProfile): { level: QualityLevel; reason: string } {
   let score = 0;
   score += device.cores >= 10 ? 3 : device.cores >= 8 ? 2 : device.cores >= 6 ? 1 : device.cores <= 3 ? -2 : 0;
   if (device.memoryGb !== null) score += device.memoryGb >= 8 ? 2 : device.memoryGb >= 6 ? 1 : device.memoryGb <= 3 ? -2 : 0;
-  if (device.webGpu) score += 1;
+  // WebGPU availability does not indicate faster rendering here because the
+  // game currently uses WebGL. Avoid promoting every modern Safari device on
+  // a capability that this renderer cannot consume.
   if (device.mobile) score -= 2;
   if (device.saveData) score -= 3;
   if (device.reducedMotion) score -= 1;
   if (device.viewportPixels * device.devicePixelRatio ** 2 > 4_500_000) score -= 1;
-  if (score >= 6 && !device.mobile) return { level: "ultra", reason: "High-end desktop capability detected" };
+  if (score >= 5 && !device.mobile) return { level: "ultra", reason: "High-end desktop capability detected" };
   if (score >= 2) return { level: "high", reason: "High detail fits this device" };
   if (score >= -2) return { level: "medium", reason: device.mobile ? "Balanced for mobile play" : "Balanced for this device" };
   return { level: "low", reason: device.saveData ? "Data-saver mode detected" : "Prioritizing a stable frame rate" };
 }
 
 function loadMode(): QualityMode {
-  if (!isBrowser()) return "high";
+  if (!isBrowser()) return "auto";
   try {
     const stored = window.localStorage.getItem(STORAGE_KEY);
-    return qualityMode(stored) ? stored : "high";
+    return qualityMode(stored) ? stored : "auto";
   } catch {
-    return "high";
+    return "auto";
   }
 }
 
@@ -151,7 +152,7 @@ export class AdaptiveQualityManager {
   private snapshot: QualitySnapshot;
 
   constructor(mode: QualityMode = loadMode()) {
-    const recommendation = recommendedLevel(this.device);
+    const recommendation = recommendQualityLevel(this.device);
     const activeLevel = mode === "auto" ? recommendation.level : mode;
     this.snapshot = {
       mode,
@@ -177,7 +178,7 @@ export class AdaptiveQualityManager {
     if (isBrowser()) {
       try { window.localStorage.setItem(STORAGE_KEY, mode); } catch { /* Storage can be disabled in private browsing. */ }
     }
-    const recommendation = recommendedLevel(this.device);
+    const recommendation = recommendQualityLevel(this.device);
     const activeLevel = mode === "auto" ? recommendation.level : mode;
     this.lowWindows = 0; this.highWindows = 0; this.frameDurations = [];
     this.update({
@@ -231,14 +232,21 @@ export class AdaptiveQualityManager {
   /** Re-evaluate DPR, viewport size, motion preference, and mobile state. */
   refreshDeviceProfile() {
     this.device = detectDevice();
-    const recommendation = recommendedLevel(this.device);
-    const activeLevel = this.snapshot.mode === "auto" ? recommendation.level : this.snapshot.activeLevel;
+    const recommendation = recommendQualityLevel(this.device);
+    // A resize can lower the safe ceiling (for example, rotating a high-DPI
+    // phone), but it must not erase an FPS-driven downgrade. Auto earns its way
+    // back up through the slower headroom hysteresis in adapt().
+    const activeLevel = this.snapshot.mode === "auto"
+      ? LEVELS[Math.min(LEVELS.indexOf(this.snapshot.activeLevel), LEVELS.indexOf(recommendation.level))]
+      : this.snapshot.activeLevel;
+    const preservesRuntimeDowngrade = this.snapshot.mode === "auto"
+      && LEVELS.indexOf(activeLevel) < LEVELS.indexOf(recommendation.level);
     this.update({
       device: this.device,
       targetFps: this.device.mobile ? 45 : 60,
       activeLevel,
       profile: QUALITY_PROFILES[activeLevel],
-      reason: this.snapshot.mode === "auto" ? recommendation.reason : this.snapshot.reason,
+      reason: this.snapshot.mode === "auto" && !preservesRuntimeDowngrade ? recommendation.reason : this.snapshot.reason,
     });
   }
 
@@ -274,7 +282,7 @@ export class AdaptiveQualityManager {
         this.update({ activeLevel: next, profile: QUALITY_PROFILES[next], reason: `Adjusted to hold ${target} FPS` });
       }
     } else if (this.highWindows >= 7 && elapsed > 18_000) {
-      const ceiling = recommendedLevel(this.device).level;
+      const ceiling = recommendQualityLevel(this.device).level;
       const next = stepLevel(this.snapshot.activeLevel, 1);
       if (LEVELS.indexOf(next) <= LEVELS.indexOf(ceiling) && next !== this.snapshot.activeLevel) {
         this.lastAdaptedAt = timestamp; this.highWindows = 0;

@@ -468,6 +468,8 @@ button { font: inherit; }
   z-index:160;
 }
 .experience-settings > button { backdrop-filter:blur(14px); }
+.experience-settings-trigger { display:flex; align-items:center; justify-content:center; gap:8px; }
+.experience-settings-trigger-label { font-size:9px; text-transform:uppercase; }
 body:has(.game-shell[data-side-quest]:not([data-side-quest="none"])) .experience-settings,
 body:has(.game-shell[data-side-quest]:not([data-side-quest="none"])) .debug-jump-menu,
 body.zoo-side-quest-open .experience-settings,
@@ -628,6 +630,7 @@ body.zoo-side-quest-open .debug-jump-menu {
 @media(max-width:900px), (pointer:coarse) {
   .experience-settings { top:max(8px,env(safe-area-inset-top)); right:max(60px,calc(env(safe-area-inset-right) + 48px)); }
   .experience-settings > button { width:40px !important; min-width:40px !important; height:40px; min-height:40px !important; }
+  .experience-settings-trigger-label { display:none; }
   .debug-jump-menu { right:max(10px,env(safe-area-inset-right)); bottom:max(10px,env(safe-area-inset-bottom)); width:min(366px,calc(100vw - 20px)); }
   .debug-jump-grid { max-height:55vh; }
   .world-transition strong { max-width:85vw; font-size:26px; }

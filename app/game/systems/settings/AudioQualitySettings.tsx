@@ -17,6 +17,8 @@ const panelStyle: CSSProperties = {
   top: "calc(100% + 10px)",
   right: 0,
   width: "min(330px, calc(100vw - 28px))",
+  maxHeight: "calc(100dvh - 180px)",
+  overflowY: "auto",
   padding: 16,
   border: "1px solid rgba(210, 235, 168, .28)",
   borderRadius: 14,
@@ -53,12 +55,12 @@ const buttonStyle: CSSProperties = {
   letterSpacing: ".08em",
 };
 
-const QUALITY_OPTIONS: { value: QualityMode; label: string }[] = [
-  { value: "auto", label: "Auto" },
-  { value: "low", label: "Low" },
-  { value: "medium", label: "Med" },
-  { value: "high", label: "High" },
-  { value: "ultra", label: "Ultra" },
+const QUALITY_OPTIONS: { value: QualityMode; label: string; detail: string }[] = [
+  { value: "auto", label: "Auto", detail: "Chooses for this device and adapts to measured frame rate" },
+  { value: "low", label: "Performance", detail: "Lowest render cost for older phones and laptops" },
+  { value: "medium", label: "Balanced", detail: "Lower resolution, scene density, and effects with authored LODs" },
+  { value: "high", label: "High", detail: "The present high-quality experience" },
+  { value: "ultra", label: "Ultra", detail: "Maximum detail for high-end desktops" },
 ];
 
 export function AudioQualitySettings({ audio, quality, className, defaultOpen = false }: AudioQualitySettingsProps) {
@@ -74,9 +76,11 @@ export function AudioQualitySettings({ audio, quality, className, defaultOpen = 
       aria-expanded={open}
       aria-label={open ? "Close audio and graphics settings" : "Open audio and graphics settings"}
       onClick={() => { audio.playUiConfirm(); setOpen(value => !value); }}
-      style={buttonStyle}
+      className="experience-settings-trigger"
+      style={{ ...buttonStyle, paddingInline: 13 }}
     >
-      {open ? "×" : "⚙"}
+      <span aria-hidden="true">{open ? "×" : "⚙"}</span>
+      <span className="experience-settings-trigger-label">{open ? "Close" : "Settings"}</span>
     </button>
     {open && <section id={panelId} aria-label="Audio and graphics settings" style={panelStyle}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
@@ -104,18 +108,20 @@ export function AudioQualitySettings({ audio, quality, className, defaultOpen = 
       </div>
 
       <fieldset style={{ margin: "15px 0 0", padding: "12px 0 0", border: 0, borderTop: "1px solid rgba(224, 239, 192, .12)" }}>
-        <legend style={{ padding: 0, color: "rgba(238, 244, 223, .55)", fontSize: 10, fontWeight: 800, letterSpacing: ".18em", textTransform: "uppercase" }}>Character & graphics detail</legend>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 5, marginTop: 10 }}>
-          {QUALITY_OPTIONS.map(({ value, label }) => {
+        <legend style={{ padding: 0, color: "rgba(238, 244, 223, .55)", fontSize: 10, fontWeight: 800, letterSpacing: ".18em", textTransform: "uppercase" }}>Performance & quality</legend>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 6, marginTop: 10 }}>
+          {QUALITY_OPTIONS.map(({ value, label, detail }) => {
             const selected = qualityState.mode === value;
             return <button
               key={value}
               type="button"
               aria-pressed={selected}
+              aria-label={`${label}: ${detail}`}
+              title={detail}
               onClick={() => { quality.setMode(value); audio.playUiConfirm(); }}
               style={{
-                minHeight: 34,
-                padding: "0 4px",
+                minHeight: 38,
+                padding: "0 8px",
                 border: `1px solid ${selected ? "rgba(217, 239, 139, .72)" : "rgba(224, 239, 192, .12)"}`,
                 borderRadius: 7,
                 color: selected ? "#efffb9" : "rgba(238, 244, 223, .64)",
@@ -128,8 +134,8 @@ export function AudioQualitySettings({ audio, quality, className, defaultOpen = 
           })}
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 10, color: "rgba(238, 244, 223, .56)", fontSize: 11, lineHeight: 1.4 }}>
-          <span>{qualityState.reason}. High is the default on desktop and mobile; choose Medium or Low for lighter authored characters.</span>
-          <span style={{ flex: "0 0 auto", color: "#d9ef8b", fontWeight: 800, textTransform: "uppercase" }}>{qualityState.activeLevel}{qualityState.averageFps ? ` · ${Math.round(qualityState.averageFps)} FPS` : ""}</span>
+          <span>{qualityState.reason}. Auto starts from this system&apos;s capabilities, then adjusts carefully if measured FPS needs it. Manual choices stay saved.</span>
+          <span style={{ flex: "0 0 auto", color: "#d9ef8b", fontWeight: 800, textTransform: "uppercase" }}>{qualityState.profile.label}{qualityState.averageFps ? ` · ${Math.round(qualityState.averageFps)} FPS` : ""}</span>
         </div>
       </fieldset>
     </section>}

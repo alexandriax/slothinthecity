@@ -3,15 +3,12 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
 import * as THREE from "three";
-import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
-import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
-import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
-import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { GoalWayfinder } from "./GoalWayfinder";
 import { DebugJumpMenu } from "./mobile/DebugJumpMenu";
 import { MobileHud } from "./mobile/MobileHud";
 import { TouchControls } from "./mobile/TouchControls";
 import { createSlothRig, layoutCanonicalSlothViewmodel } from "./player/SlothRig";
+import { AdaptiveRenderPipeline } from "./rendering/AdaptiveRenderPipeline";
 import { loadGameTextures } from "./rendering/textures";
 import { AudioQualitySettings, createAdaptiveQualityManager, createPremiumAudioDirector, type AdaptiveQualityManager, type PremiumAudioDirector } from "./systems";
 import { SubwayGame } from "./SubwayGame";
@@ -101,11 +98,8 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
     actionMarker.visible = dropMarker.visible = false; actionMarker.renderOrder = dropMarker.renderOrder = 100; scene.add(actionMarker, dropMarker);
     const { sun } = addCentralParkLighting(scene, initialBudget.shadowMapSize);
 
-    let composer: EffectComposer | null = null;
-    if (initialBudget.postProcessing && innerWidth * innerHeight < 1_750_000) {
-      composer = new EffectComposer(renderer); composer.addPass(new RenderPass(scene, camera));
-      const gtao = new GTAOPass(scene, camera, innerWidth, innerHeight); gtao.blendIntensity = .58; composer.addPass(gtao); composer.addPass(new OutputPass());
-    }
+    const renderPipeline = new AdaptiveRenderPipeline({ renderer, scene, camera });
+    renderPipeline.apply(initialBudget, innerWidth, innerHeight);
 
     const timer = new THREE.Timer(); timer.connect(document);
     const keys = new Set<string>(), velocity = new THREE.Vector3(), player = START.clone();
@@ -188,10 +182,10 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
     document.addEventListener(DEBUG_LOOK_REQUEST_EVENT, requestLock);
     document.addEventListener("pointerlockchange", pointerLockChanged); window.addEventListener("blur", releaseInput);
     const applyRenderBudget = () => {
-      const budget = quality.getRenderBudget(); renderer.setPixelRatio(budget.pixelRatio); renderer.shadowMap.enabled = budget.shadows; renderer.shadowMap.type = THREE.PCFShadowMap;
+      renderPipeline.apply(quality.getRenderBudget(), innerWidth, innerHeight);
     };
     const unsubscribeQuality = quality.subscribe(applyRenderBudget);
-    const resize = () => { quality.refreshDeviceProfile(); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); applyRenderBudget(); renderer.setSize(innerWidth, innerHeight); composer?.setSize(innerWidth, innerHeight); layoutSloth(); };
+    const resize = () => { quality.refreshDeviceProfile(); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); applyRenderBudget(); layoutSloth(); };
     addEventListener("resize", resize);
 
     let raf = 0, lastFootstepAt = 0;
@@ -411,7 +405,9 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
       if (clampedX !== player.x || clampedZ !== player.z) { blockedBy = moving ? "TREE" : blockedBy; player.x = clampedX; player.z = clampedZ; velocity.multiplyScalar(.35); }
     }
     function frame(timestamp?: number) {
-      raf = requestAnimationFrame(frame); if (timestamp !== undefined) quality.reportFrame(timestamp); timer.update(timestamp); const delta = Math.min(timer.getDelta(), .05);
+      raf = requestAnimationFrame(frame);
+      if (document.hidden) { timer.update(timestamp); return; }
+      if (timestamp !== undefined) quality.reportFrame(timestamp); timer.update(timestamp); const delta = Math.min(timer.getDelta(), .05);
       if (phaseRef.current === "playing") {
         gameTime += delta;
         campaign.update(gameTime, delta);
@@ -926,13 +922,13 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
         const rowboatPassenger = activeBoat ? activeBoat.getWorldPassengerTransform(duckPassengerPosition, duckPassengerQuaternion) : null;
         duckQuest.update(gameTime, 0, { player, playerYaw: activeBoat?.root.rotation.y ?? yaw, locomotion: activeBoat ? "rowboat" : swimming ? "water" : "land", floorYAt: (x, z) => groundHeight(x, z) - 1.48, resolveBody: resolveDuckCompanion, rowboatPassenger });
       }
-      if (composer) composer.render(); else renderer.render(scene, camera);
+      renderPipeline.render();
     }
     frame();
     return () => {
       disposed = true; cartMotorState.driving = false; cartMotorState.speed = 0; audio.setCartMotor(false); cancelAnimationFrame(raf); renderer.domElement.removeEventListener("pointerdown", pointer); renderer.domElement.removeEventListener("pointermove", pointerMove); renderer.domElement.removeEventListener("pointerup", pointerUp);
       document.removeEventListener("mousemove", mouse); document.removeEventListener("keydown", keyDown); document.removeEventListener("keyup", keyUp); document.removeEventListener("sloth-look", touchLook); document.removeEventListener(DEBUG_LOOK_REQUEST_EVENT, requestLock); document.removeEventListener("pointerlockchange", pointerLockChanged); window.removeEventListener("blur", releaseInput); removeEventListener("resize", resize);
-      unsubscribeQuality(); duckQuest.dispose(); carts.forEach(candidate => candidate.dispose()); rowboats.forEach(boat => boat.dispose()); campaign.dispose(); markerGeometry.dispose(); actionMarkerMaterial.dispose(); dropMarkerMaterial.dispose(); timer.dispose(); composer?.dispose(); renderer.dispose(); if (host.contains(renderer.domElement)) host.removeChild(renderer.domElement);
+      unsubscribeQuality(); duckQuest.dispose(); carts.forEach(candidate => candidate.dispose()); rowboats.forEach(boat => boat.dispose()); campaign.dispose(); markerGeometry.dispose(); actionMarkerMaterial.dispose(); dropMarkerMaterial.dispose(); timer.dispose(); renderPipeline.dispose(); renderer.dispose(); if (host.contains(renderer.domElement)) host.removeChild(renderer.domElement);
     };
   }, [audio, onEnterSubway, quality, setPhase, showToast]);
 
