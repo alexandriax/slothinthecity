@@ -1,109 +1,111 @@
-# vinext-starter
+# Sloth in the City
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+[![Sloth in the City — a cinematic New York City browser adventure](public/social/sloth-in-the-city-og-v2.jpg)](https://www.slothinthecity.com/)
 
-## Prerequisites
+**[Play Sloth in the City](https://www.slothinthecity.com/)**
 
-- Node.js `>=22.13.0`
+Sloth in the City is a cinematic, first-person browser adventure built with Three.js and Next.js. You play as a displaced sloth making a slow, improbable journey across New York City: forage and climb through Central Park, cross The Lake, navigate the subway, find your friends at the Bronx Zoo, and lead the growing group home through the American Museum of Natural History.
 
-## Quick Start
+The game is designed to run directly in a modern browser on desktop or touch devices. No account, API key, database, or other external service is required for local development.
+
+## What is in the game?
+
+- A continuous story spanning Central Park, the subway, the Bronx Zoo, Manhattan streets, the museum, and a homecoming finale.
+- Sloth-specific traversal with climbing, gripping, branch transfers, controlled descents, swimming, and scent vision.
+- Rowboats, a park utility cart, the subway, a skateboard, a museum shuttle, and electric scooters.
+- Optional animal encounters and companions that can join the campaign.
+- Adaptive graphics, spatial audio, keyboard and mouse controls, and a touch-first mobile HUD.
+- Project-authored characters and animals with reproducible asset pipelines and dedicated visual QA scenes.
+
+## Quick start
+
+### Requirements
+
+- [Node.js](https://nodejs.org/) `22.13.0` or newer
+- npm (included with Node.js)
+
+### Run locally
 
 ```bash
+git clone https://github.com/alexandriax/slothinthecity.git
+cd slothinthecity
 npm install
 npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) and select **Enter the Ramble**. Headphones are recommended.
+
+No environment variables are required. `SITE_URL` is optional and only overrides the canonical URL used by social metadata; it defaults to `https://www.slothinthecity.com`.
+
+## Controls
+
+| Action | Desktop | Touch |
+| --- | --- | --- |
+| Move | `W A S D` or arrow keys | Left stick |
+| Look | Mouse | Drag the right side of the screen |
+| Interact, climb, enter, or exit | `E` | Contextual action button |
+| Hold a grip | `Shift` | **Grip** |
+| Descend or release | `Ctrl` or `Space` | **Down** |
+| Scent vision | `C` | **Sense** |
+| Pause | `P` | **Pause** |
+| Mute or unmute | `M` | Audio settings |
+
+Vehicle prompts appear in the HUD. Most vehicles use `W` / `S` for throttle, `A` / `D` to steer, `Space` to brake, and `E` to exit.
+
+## Useful commands
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the standard Next.js development server |
+| `npm run build` | Create a production Next.js build |
+| `npm run start` | Serve the production build |
+| `npm run lint` | Run ESLint across the project |
+| `npm test` | Build the game and run the full Node test suite |
+| `npm run animals:manifest` | Rebuild the approved authored-animal runtime manifest |
+| `npm run dev:sites` | Run the Cloudflare/vinext development target |
+| `npm run build:sites` | Build the Cloudflare/vinext target |
+
+For a clean dependency install in CI, use `npm ci` instead of `npm install`.
+
+## Project structure
+
+```text
+app/                         Next.js routes, UI, game systems, and Three.js worlds
+public/game/                 Runtime art, audio, models, textures, and Draco decoder
+public/social/               Open Graph and social-sharing artwork
+tests/                       Campaign, rendering, controls, asset, and regression tests
+tools/animal-pipeline/       Reproducible animal source, validation, and export tools
+tools/character-pipeline/    Reproducible human-character build pipeline
+skills/                      Repository-specific production guidance and checks
+```
+
+The main experience is mounted at `/`. Two focused review routes are also available during development:
+
+- `/debug/animals` — authored-animal lineup, animation, contact, and LOD review
+- `/debug/characters` — human-character lineup, face, profile, idle, walk, and LOD review
+
+## Development and contribution notes
+
+Before changing production characters or animals, read [`AGENTS.md`](AGENTS.md). Those assets follow project-specific authorship, provenance, source-retention, runtime-contract, and visual-review requirements. Relevant entry points include:
+
+- [`tools/animal-pipeline/README.md`](tools/animal-pipeline/README.md)
+- [`tools/character-pipeline/README.md`](tools/character-pipeline/README.md)
+- [`skills/create-premium-characters/SKILL.md`](skills/create-premium-characters/SKILL.md)
+
+Keep changes working on both desktop and touch layouts, and run the focused tests for the systems you modify. Before opening a pull request, the standard baseline is:
+
+```bash
+npm run lint
+npm test
+```
+
+## Deployment
+
+The production site is a standard Next.js app:
+
+```bash
 npm run build
+npm run start
 ```
 
-This starter does not use `wrangler.jsonc`.
-
-## Included Shape
-
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
-
-## Workspace Auth Headers
-
-OpenAI workspace sites can read the current user's email from
-`oai-authenticated-user-email`.
-
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
-```
-
-## Optional Dispatch-Owned ChatGPT Sign-In
-
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
-
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
-
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
-
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
-
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
-
-## Useful Commands
-
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
-
-## Premium character development
-
-Human characters use a checked-in, reproducible authored-asset pipeline rather than runtime generation. Before adding an NPC archetype or changing its mesh, textures, rig, animation, LOD, loading behavior, or crowd motion, follow the repo-local [`create-premium-characters` agent skill](skills/create-premium-characters/SKILL.md). Its references cover image and texture generation, mesh-source selection (including reconstruction tools), Blender cleanup, rigging, loop-safe movement, browser integration, provenance, and focused QA.
-
-Useful entry points:
-
-- [`tools/character-pipeline/README.md`](tools/character-pipeline/README.md): pinned CC0 source and deterministic Blender rebuild.
-- [`/debug/characters`](/debug/characters): direct lineup, profile, face, idle, and walk review without campaign traversal.
-- `node skills/create-premium-characters/scripts/verify_character_contract.mjs`: verify the shipping GLB/LOD/material/skin/animation interface.
-- `node --test tests/authored-human-assets.test.mjs tests/character-debug.test.mjs`: focused asset and debug-surface regression tests.
-
-## Learn More
-
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+Set `SITE_URL` when deploying to a different canonical domain. The repository also includes vinext commands and [`.openai/hosting.json`](.openai/hosting.json) for the Cloudflare/Sites-compatible target.

@@ -3,7 +3,7 @@ import "./globals.css";
 
 const title = "Sloth in the City — A New York City Adventure";
 const description = "Play as a displaced sloth in a cinematic first-person New York City adventure. Forage and climb through Central Park, navigate the subway, and find your friends at the Bronx Zoo.";
-const socialImage = "/social/sloth-in-the-city-og.jpg";
+const socialImage = "/social/sloth-in-the-city-og-v2.jpg";
 const siteUrl = process.env.SITE_URL ?? "https://www.slothinthecity.com";
 
 export const metadata: Metadata = {
