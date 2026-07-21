@@ -4,22 +4,22 @@
       "id": "human-male-short",
       "license": "CC0-1.0",
       "lod0": {
-        "bytes": 383596,
+        "bytes": 383136,
         "file": "human-male-short-lod0.glb",
         "materials": 8,
         "meshes": 8,
-        "sha256": "090c528671ce7799ee1c595836980c22c06949cbab0c36d4085ebfbdefd0cd13",
+        "sha256": "2084fac569fccb5300898bef4d208ee8ae388a912fb94ee991887a84e0d4c559",
         "triangles": 75728,
         "vertices": 37947
       },
       "lod2": {
-        "bytes": 176064,
+        "bytes": 186692,
         "file": "human-male-short-lod2.glb",
         "materials": 8,
         "meshes": 8,
-        "sha256": "f4d046fcfb8b1db49b3076a2e523270d0936c13621d1cd0e40d4e898435a0c67",
-        "triangles": 22050,
-        "vertices": 11105
+        "sha256": "0692dc1f389c23a48515385521c788c9989e8667bc69e91e3b358e0a96a4923f",
+        "triangles": 24466,
+        "vertices": 12314
       },
       "source": "male"
     },
@@ -27,22 +27,22 @@
       "id": "human-male-curly",
       "license": "CC0-1.0",
       "lod0": {
-        "bytes": 386864,
+        "bytes": 386952,
         "file": "human-male-curly-lod0.glb",
         "materials": 8,
         "meshes": 8,
-        "sha256": "3bf2cdd0f121d19c34d884907aeec8f8c167f87b8535330ab5ca006ce1d21f6d",
+        "sha256": "7b2fc7fc5d3f3dc7039af9f23df2626a81b1873e7a876e9df80cfc7efec2b2c0",
         "triangles": 76226,
         "vertices": 38197
       },
       "lod2": {
-        "bytes": 178320,
+        "bytes": 188680,
         "file": "human-male-curly-lod2.glb",
         "materials": 8,
         "meshes": 8,
-        "sha256": "b8590339e079b9d30d46ba52cd14dab83c8ea37f4d2df22bcb484202065e03cc",
-        "triangles": 22206,
-        "vertices": 11187
+        "sha256": "728dacb05c35dd476eeabf5b505e677d3e84863cb0de69c0fd497f139db4b145",
+        "triangles": 24619,
+        "vertices": 12391
       },
       "source": "male"
     },
@@ -50,22 +50,22 @@
       "id": "human-female-bob",
       "license": "CC0-1.0",
       "lod0": {
-        "bytes": 318544,
+        "bytes": 321944,
         "file": "human-female-bob-lod0.glb",
         "materials": 8,
         "meshes": 8,
-        "sha256": "73a9c97eff8c8e0725633eb4dc9ed0f5e679d637a3da50c13f7726ec97b31356",
-        "triangles": 60854,
-        "vertices": 30494
+        "sha256": "a2984924bb853f197e7b8761d8301c44a76336606e9d8fd376a86af6ef711f5f",
+        "triangles": 61536,
+        "vertices": 30857
       },
       "lod2": {
-        "bytes": 147008,
+        "bytes": 157316,
         "file": "human-female-bob-lod2.glb",
         "materials": 8,
         "meshes": 8,
-        "sha256": "7053b0f1cecc35d5e910feec0f571ad163834b8ce288c3e5cc8e4972122aa6a7",
-        "triangles": 18080,
-        "vertices": 9106
+        "sha256": "e0e37a4dce21c073bacde93f9e5c8f026858bd42ddfd9767c58c8065cb9253aa",
+        "triangles": 20168,
+        "vertices": 10173
       },
       "source": "female"
     },
@@ -73,22 +73,22 @@
       "id": "human-female-ponytail",
       "license": "CC0-1.0",
       "lod0": {
-        "bytes": 318772,
+        "bytes": 321548,
         "file": "human-female-ponytail-lod0.glb",
         "materials": 8,
         "meshes": 8,
-        "sha256": "fe17ad079f942ae380b10a6638956c68246c643b7b505455c1296dbb8116a754",
-        "triangles": 61062,
-        "vertices": 30595
+        "sha256": "dab69fd26786c0108646b2461adc1c2bb2b4b6913687d9c4a613e4e33a1d59e5",
+        "triangles": 61810,
+        "vertices": 30997
       },
       "lod2": {
-        "bytes": 148392,
+        "bytes": 158636,
         "file": "human-female-ponytail-lod2.glb",
         "materials": 8,
         "meshes": 8,
-        "sha256": "dd16a5e81ccba2e44bd12ba1ed3d78a37413e0f7300d91b8fa8bde8ee0b2200d",
-        "triangles": 18097,
-        "vertices": 9111
+        "sha256": "69b35687ba5116c81f9edf93b500bf7a5fd0fa955975a575c0a1bb1772f5ac89",
+        "triangles": 20223,
+        "vertices": 10202
       },
       "source": "female"
     }
@@ -108,7 +108,7 @@
   "source": {
     "exportCommand": "/Applications/Blender.app/Contents/MacOS/Blender --background --factory-startup --python tools/character-pipeline/build_humans.py -- --source /tmp/human-base-meshes/human_base_meshes_bundle.blend --output public/game/characters/authored --preview /tmp/human-previews",
     "license": "CC0-1.0",
-    "modifications": "Head/neck posture correction; fitted crew-neck garments; connected authored hair shells; shared rig, skin weights, LODs, and idle/walk clips.",
+    "modifications": "Head/neck posture correction; measured flush eye alignment; fitted crew-neck garments; style-specific connected hair shells and gathered ponytail; shared rig, skin weights, LODs, and idle/walk clips.",
     "name": "Blender Studio Human Base Meshes bundle v1.0.0",
     "publisher": "Blender Studio",
     "retrieved": "2026-07-15",

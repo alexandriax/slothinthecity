@@ -8,7 +8,7 @@ import { createPremiumHuman, markPremiumHumanDisposed, type PremiumHumanOptions 
 import styles from "./CharacterShowroom.module.css";
 
 type LightingPreset = "studio" | "park" | "subway";
-type Framing = "lineup" | "body" | "face";
+type Framing = "lineup" | "body" | "face" | "profile" | "three-quarter" | "back";
 type QualityPreset = "hero" | "mobile";
 type AnimationPreset = "HumanIdle" | "HumanWalk";
 type PosePreset = NonNullable<PremiumHumanOptions["pose"]>;
@@ -212,14 +212,20 @@ export function CharacterShowroom() {
         // Every source mesh has slightly different stature and head-to-body
         // proportions. Frame the measured cranium rather than a hard-coded
         // adult height so the close-up gate cannot crop shorter archetypes.
-        const faceY = hasBounds ? bounds.min.y + height * .875 : 1.93;
+        // Keep the lens at eye level. The previous .875 target sat beneath
+        // the nose on compact figures, producing an unflattering low-angle
+        // view that hid eyelid/iris alignment defects instead of exposing them.
+        const faceY = hasBounds ? bounds.min.y + height * .91 : 1.93;
         const faceDistance = THREE.MathUtils.clamp(height * .48, .92, 1.25);
         camera.position.set(center.x, faceY, center.z - faceDistance);
         controls.target.set(center.x, faceY, center.z);
         controls.minDistance = .55;
-      } else if (mode === "body") {
+      } else if (mode === "body" || mode === "profile" || mode === "three-quarter" || mode === "back") {
         const bodyDistance = THREE.MathUtils.clamp(height * 2.2, 4.2, 5.8);
-        camera.position.set(center.x, center.y + height * .05, center.z - bodyDistance);
+        if (mode === "profile") camera.position.set(center.x + bodyDistance, center.y + height * .05, center.z);
+        else if (mode === "three-quarter") camera.position.set(center.x + bodyDistance * .72, center.y + height * .05, center.z - bodyDistance * .72);
+        else if (mode === "back") camera.position.set(center.x, center.y + height * .05, center.z + bodyDistance);
+        else camera.position.set(center.x, center.y + height * .05, center.z - bodyDistance);
         controls.target.copy(center);
         controls.minDistance = 2.2;
       } else {
@@ -236,6 +242,7 @@ export function CharacterShowroom() {
       timer.update(timestamp);
       const delta = Math.min(timer.getDelta(), .05);
       if (previousLighting !== lightingRef.current) { previousLighting = lightingRef.current; applyLighting(lightingRef.current); }
+      backdrop.visible = framingRef.current !== "back";
       const framingGeometry = results.map(result => String(result.root.userData.authoredHumanStatus ?? "loading")).join(":");
       if (appliedFramingVersion !== framingVersion.current || appliedFramingGeometry !== framingGeometry) {
         appliedFramingVersion = framingVersion.current;
@@ -245,6 +252,8 @@ export function CharacterShowroom() {
       results.forEach((result, resultIndex) => {
         const ready = result.root.userData.authoredHumanStatus === "ready";
         result.root.visible = ready && (framingRef.current === "lineup" || resultIndex === selectedRef.current);
+        const accessory = result.root.getObjectByName(`authored-human-accessory-${ARCHETYPES[resultIndex].accessory ?? "none"}`);
+        if (accessory) accessory.visible = !["face", "back"].includes(framingRef.current);
         if (!ready || !result.root.animations.length) return;
         const desired = result.root.animations.find(clip => clip.name === animationClipRef.current) ?? result.root.animations[0];
         const current = mixers.get(result.root);
@@ -290,7 +299,7 @@ export function CharacterShowroom() {
     </header>
     <aside className={styles.panel}>
       <section><label>Framing</label><div className={styles.segmented}>
-        {(["lineup", "body", "face"] as Framing[]).map(value => <button key={value} className={framing === value ? styles.active : ""} onClick={() => setFraming(value)}>{value}</button>)}
+        {(["lineup", "body", "face", "profile", "three-quarter", "back"] as Framing[]).map(value => <button key={value} className={framing === value ? styles.active : ""} onClick={() => setFraming(value)}>{value}</button>)}
       </div></section>
       <section><label>Identity</label><div className={styles.identities}>
         {ARCHETYPES.map((character, index) => <button key={character.label} className={selected === index ? styles.active : ""} onClick={() => { setSelected(index); if (framing === "lineup") setFraming("body"); }}><span>{String(index + 1).padStart(2, "0")}</span>{character.label}</button>)}

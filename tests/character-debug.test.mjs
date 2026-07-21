@@ -14,6 +14,12 @@ test("character lab offers direct authored-human review without campaign travers
   assert.match(page, /CharacterShowroom/);
   assert.match(showroom, /Human character lab/);
   assert.match(showroom, /lineup.*body.*face/s);
+  assert.match(showroom, /profile.*three-quarter.*back/s);
+  assert.match(showroom, /mode === "profile"/);
+  assert.match(showroom, /mode === "three-quarter"/);
+  assert.match(showroom, /mode === "back"/);
+  assert.match(showroom, /backdrop\.visible = framingRef\.current !== "back"/);
+  assert.match(showroom, /accessory\.visible = !\["face", "back"\]\.includes\(framingRef\.current\)/);
   assert.match(showroom, /Natural walk/);
   assert.match(showroom, /HumanWalk/);
   assert.match(showroom, /result\.root\.visible = ready/);
@@ -24,7 +30,7 @@ test("character lab offers direct authored-human review without campaign travers
   assert.match(showroom, /timer\.connect\(document\)/);
   assert.match(showroom, /THREE\.PCFShadowMap/);
   assert.doesNotMatch(showroom, /THREE\.Clock|PCFSoftShadowMap/);
-  assert.match(showroom, /bounds\.min\.y \+ height \* \.875/);
+  assert.match(showroom, /bounds\.min\.y \+ height \* \.91/);
   assert.match(showroom, /appliedFramingGeometry !== framingGeometry/);
   assert.match(showroom, /next !== "neutral"\) setAnimationClip\("HumanIdle"\)/);
   assert.doesNotMatch(showroom, /controls\.target\.set\(focusX, 2\.18, 0\)/);
@@ -67,6 +73,12 @@ test("authored pipeline rejects primitive face and body remnants", async () => {
   assert.match(pipeline, /bmesh\.ops\.smooth_vert/);
   assert.match(pipeline, /sloth_city_loose_shirt_ease/);
   assert.match(pipeline, /def make_authored_hair_cap/);
+  assert.match(pipeline, /def make_hair_back_extension/);
+  assert.match(pipeline, /eye\.dimensions\.y \* 0\.5 \+ 0\.00015/);
+  assert.match(pipeline, /sloth_city_authored_hair_extension/);
+  assert.match(pipeline, /target_hairline = 0\.948/);
+  assert.match(pipeline, /material_name == "Skin"/);
+  assert.match(pipeline, /max\(ratio, 0\.36\)/);
   assert.match(pipeline, /sloth_city_authored_hair_shell/);
   assert.match(pipeline, /sha256.*file_sha256/s);
   assert.match(pipeline, /add_walk_action/);
