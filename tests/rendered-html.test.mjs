@@ -16,7 +16,7 @@ test("server-renders the branded game shell", async () => {
   assert.match(html, /Play as a displaced sloth in a cinematic first-person New York City adventure/i);
   assert.match(html, /rel="canonical" href="https:\/\/www\.slothinthecity\.com"/i);
   assert.match(html, /property="og:url" content="https:\/\/www\.slothinthecity\.com"/i);
-  assert.match(html, /property="og:image" content="https:\/\/www\.slothinthecity\.com\/social\/sloth-in-the-city-og\.jpg"/i);
+  assert.match(html, /property="og:image" content="https:\/\/www\.slothinthecity\.com\/social\/sloth-in-the-city-og-v2\.jpg"/i);
   assert.match(html, /property="og:image:width" content="1200"/i);
   assert.match(html, /property="og:image:height" content="630"/i);
   assert.match(html, /name="twitter:card" content="summary_large_image"/i);
@@ -30,6 +30,15 @@ test("server-renders the branded game shell", async () => {
   assert.doesNotMatch(html, /SLOTH \/ PARK/i);
   assert.match(html, /viewport-fit=cover/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
+});
+
+test("uses a canonical 1200 by 630 social card", async () => {
+  const image = await readFile(new URL("../public/social/sloth-in-the-city-og-v2.jpg", import.meta.url));
+  const startOfFrame = image.indexOf(Buffer.from([0xff, 0xc0]));
+
+  assert.ok(startOfFrame > 0, "expected a baseline JPEG social card");
+  assert.equal(image.readUInt16BE(startOfFrame + 5), 630);
+  assert.equal(image.readUInt16BE(startOfFrame + 7), 1200);
 });
 
 test("landing wordmark remains responsive instead of relying on crop-prone image text", async () => {
@@ -56,7 +65,7 @@ test("removes the disposable starter and keeps the game browser-safe", async () 
   ]);
   assert.match(page, /GameClient/);
   assert.match(layout, /Play as a displaced sloth in a cinematic first-person New York City adventure/i);
-  assert.match(layout, /sloth-in-the-city-og\.jpg/);
+  assert.match(layout, /sloth-in-the-city-og-v2\.jpg/);
   assert.match(layout, /applicationName: "Sloth in the City"/);
   assert.match(layout, /https:\/\/www\.slothinthecity\.com/);
   assert.match(game, /^"use client";/);
