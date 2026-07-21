@@ -2232,7 +2232,8 @@ export class BronxZooWorld {
       [4, -139, 3.05, 47, 12, "#4f667f", "#292d30", "#c18a68", "cotton-denim"],
     ] as const;
     guestData.slice(0, quality < .58 ? 6 : quality < .82 ? 9 : guestData.length).forEach((data, index) => {
-      const result = makeVisitor(data[3], data[4], data[5], data[6], data[7], data[8], index % 3 === 1 ? "camera" : index % 3 === 2 ? "tote" : "backpack");
+      const accessory = index % 3 === 1 ? "camera" : index % 3 === 2 ? "tote" : "backpack";
+      const result = makeVisitor(data[3], data[4], data[5], data[6], data[7], data[8], accessory);
       result.root.name = `bronx-zoo-wandering-visitor-${index + 1}`;
       result.root.position.set(data[0], terrainHeight(data[0], data[1]), data[1]);
       result.root.rotation.y = data[2];
@@ -2241,6 +2242,11 @@ export class BronxZooWorld {
       const axis = new THREE.Vector3(index % 2 ? -1 : .25, 0, index % 2 ? .18 : 1).normalize();
       const right = new THREE.Vector3(-axis.z, 0, axis.x);
       const origin = result.root.position.clone(), routeLength = 4.4 + index % 4 * .75, routeWidth = .9 + index % 3 * .35;
+      const attentionTarget = Object.values(IN_WORLD_ZOO_QUESTS).reduce((nearest, habitat) => {
+        const target = new THREE.Vector3(habitat.center[0], terrainHeight(habitat.center[0], habitat.center[1]) + 1.35, habitat.center[1]);
+        return target.distanceToSquared(origin) < nearest.distanceToSquared(origin) ? target : nearest;
+      }, new THREE.Vector3(this.gatePosition.x, 1.35, this.gatePosition.z));
+      const pauseActivity = accessory === "camera" ? "photographing" : accessory === "tote" ? "checking-route" : "observing";
       this.guestAgents.push(createAmbientHumanAgent(result.root, {
         axis,
         waypoints: [
@@ -2252,6 +2258,9 @@ export class BronxZooWorld {
         speed: .72 + index * .025,
         pauseSeconds: 2.5 + index * .37,
         pauseCount: 3,
+        pauseActivities: [pauseActivity, "observing", pauseActivity],
+        pauseTargets: [attentionTarget],
+        pauseVariance: .16 + index % 4 * .045,
         paceVariation: .07 + index % 4 * .025,
         phase: index * 2.1,
         lookAround: .13 + index % 4 * .035,

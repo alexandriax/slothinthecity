@@ -1465,12 +1465,17 @@ export class CityBusWorld {
       result.root.name = atMuseum ? "central-park-west-pedestrian-" + index : "southern-boulevard-pedestrian-" + index;
       result.root.position.copy(frame.center).addScaledVector(frame.right, side * 13.2); result.root.position.y += .2; this.root.add(result.root); this.ownedTextures.push(...result.ownedTextures);
       const origin = result.root.position.clone(), tangent = frame.tangent.clone().setY(0).normalize(), sidewalkIn = frame.right.clone().multiplyScalar(-side * .65);
+      const storefrontAttention = origin.clone().addScaledVector(frame.right, side * 8).setY(origin.y + 1.4);
+      const pauseActivity = index % 4 === 0 ? "photographing" : index % 4 === 1 ? "checking-route" : index % 5 === 0 ? "conversation" : "observing";
       this.pedestrians.push(createAmbientHumanAgent(result.root, {
         axis: tangent,
         waypoints: [origin, origin.clone().addScaledVector(tangent, 3.2 + index % 3), origin.clone().addScaledVector(tangent, 6.4 + index % 3).add(sidewalkIn), origin.clone().add(sidewalkIn)],
         speed: .72 + index % 3 * .07,
         pauseSeconds: 2.2 + index % 3,
         pauseCount: 3,
+        pauseActivities: [pauseActivity, "observing", pauseActivity],
+        pauseTargets: [storefrontAttention],
+        pauseVariance: .17 + index % 4 * .045,
         paceVariation: .08 + index % 4 * .02,
         phase: index * 2.4,
         lookAround: .12 + index % 4 * .035,

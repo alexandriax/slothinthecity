@@ -1448,6 +1448,11 @@ export class NaturalHistoryMuseumWorld {
 
   private createResidentGuests() {
     const count = this.quality < .58 ? 5 : this.quality < .82 ? 8 : MUSEUM_RESIDENT_GUEST_INDEXES.length;
+    const exhibitAttentionPoints = [
+      new THREE.Vector3(0, 2.4, 7), new THREE.Vector3(-21, 2.2, -45), new THREE.Vector3(27, 2.2, -70),
+      new THREE.Vector3(-22, 2.2, -104), new THREE.Vector3(22, 2.2, -130), new THREE.Vector3(-18, 2.2, -162),
+      new THREE.Vector3(0, 2.8, -198),
+    ];
     MUSEUM_RESIDENT_GUEST_INDEXES.slice(0, count).forEach((index, cohortIndex) => {
       const [x, z] = MUSEUM_GUEST_SPAWNS[index];
       const docent = cohortIndex === count - 1;
@@ -1456,12 +1461,18 @@ export class NaturalHistoryMuseumWorld {
       const axis = (Math.abs(x) > 18 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(index % 2 ? 1 : -1, 0, .3)).normalize();
       const right = new THREE.Vector3(-axis.z, 0, axis.x), origin = result.root.position.clone();
       const travel = docent ? .65 : 3.2 + index % 4;
+      const attentionTarget = exhibitAttentionPoints.reduce((nearest, target) =>
+        target.distanceToSquared(origin) < nearest.distanceToSquared(origin) ? target : nearest);
+      const pauseActivity = docent ? "conversation" : index % 5 === 0 ? "photographing" : index % 5 === 2 ? "checking-route" : "observing";
       this.guests.push(createAmbientHumanAgent(result.root, {
         axis,
         waypoints: [origin, origin.clone().addScaledVector(axis, travel * .55), origin.clone().addScaledVector(axis, travel).addScaledVector(right, 1 + index % 3 * .28), origin.clone().addScaledVector(right, .8)],
         speed: docent ? .46 : .68 + index % 3 * .06,
         pauseSeconds: docent ? 5.2 : 2.6 + index % 3,
         pauseCount: docent ? 2 : 3,
+        pauseActivities: docent ? ["conversation", "observing"] : [pauseActivity, "observing", pauseActivity],
+        pauseTargets: [attentionTarget],
+        pauseVariance: docent ? .12 : .18 + index % 3 * .055,
         paceVariation: docent ? .05 : .08 + index % 3 * .025,
         phase: index * 1.9,
         lookAround: docent ? .28 : .12 + index % 4 * .04,

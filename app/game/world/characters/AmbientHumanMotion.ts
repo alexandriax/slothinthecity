@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { prepareAuthoredHumanLocomotion, updateAuthoredHumanMotion } from "./AuthoredHumanAssets";
 
+export type AmbientHumanActivity = "checking-route" | "conversation" | "observing" | "photographing" | "waiting";
+
 export type AmbientHumanAgent = {
   root: THREE.Group;
   origin: THREE.Vector3;
@@ -17,6 +19,9 @@ export type AmbientHumanAgent = {
   closedRoute: boolean;
   lookAround: number;
   pauseCount: number;
+  pauseDurations: readonly number[];
+  pauseActivities: readonly AmbientHumanActivity[];
+  pauseTargets: readonly THREE.Vector3[];
   paceVariation: number;
 };
 
@@ -36,6 +41,12 @@ export type AmbientHumanAgentOptions = {
   pauseCount?: number;
   /** Gentle stride-rate variance; zero is a mechanically constant pace. */
   paceVariation?: number;
+  /** Per-stop semantic activity published for animation, props, and QA. */
+  pauseActivities?: readonly AmbientHumanActivity[];
+  /** World-space subjects that the visitor deliberately faces while stopped. */
+  pauseTargets?: readonly THREE.Vector3[];
+  /** Deterministic dwell diversity; avoids every stop lasting the same time. */
+  pauseVariance?: number;
 };
 
 /**
@@ -58,6 +69,12 @@ export function createAmbientHumanAgent(
     ? new THREE.CatmullRomCurve3(options.waypoints.map(point => point.clone()), closedRoute, "catmullrom", .42)
     : undefined;
   const routeLength = route?.getLength() ?? 0;
+  const phase = options.phase ?? 0;
+  const pauseCount = Math.max(1, Math.floor(options.pauseCount ?? Math.min(3, options.waypoints?.length ?? 1)));
+  const pauseSeconds = options.pauseSeconds ?? 2.6;
+  const pauseVariance = THREE.MathUtils.clamp(options.pauseVariance ?? .22, 0, .45);
+  const pauseDurations = Array.from({ length: pauseCount }, (_, index) =>
+    pauseSeconds * (1 + Math.sin(phase * 1.31 + index * 2.17) * pauseVariance));
   return {
     root,
     origin: root.position.clone(),
@@ -65,15 +82,18 @@ export function createAmbientHumanAgent(
     travel,
     speed,
     walkSeconds: options.walkSeconds ?? Math.max(1.6, route ? routeLength / speed : travel / speed),
-    pauseSeconds: options.pauseSeconds ?? 2.6,
-    phase: options.phase ?? 0,
+    pauseSeconds,
+    phase,
     previous: root.position.clone(),
     initialized: false,
     route,
     routeLength,
     closedRoute,
     lookAround: options.lookAround ?? .18,
-    pauseCount: Math.max(1, Math.floor(options.pauseCount ?? Math.min(3, options.waypoints?.length ?? 1))),
+    pauseCount,
+    pauseDurations,
+    pauseActivities: options.pauseActivities?.length ? [...options.pauseActivities] : ["observing"],
+    pauseTargets: options.pauseTargets?.map(target => target.clone()) ?? [],
     paceVariation: THREE.MathUtils.clamp(options.paceVariation ?? .1, 0, .22),
   };
 }
@@ -91,11 +111,13 @@ export function updateAmbientHumanAgent(agent: AmbientHumanAgent, elapsed: numbe
     // authored points. Reversing the complete loop at one origin made crowds
     // double back in formation and gather robotically at the same spot.
     const segmentWalkSeconds = walkSeconds / agent.pauseCount;
-    const segmentSeconds = segmentWalkSeconds + pauseSeconds;
-    const cycleSeconds = segmentSeconds * agent.pauseCount;
-    const cycle = THREE.MathUtils.euclideanModulo(elapsed + agent.phase, cycleSeconds);
-    stopIndex = Math.min(agent.pauseCount - 1, Math.floor(cycle / segmentSeconds));
-    const segmentTime = cycle - stopIndex * segmentSeconds;
+    const cycleSeconds = agent.pauseDurations.reduce((total, duration) => total + segmentWalkSeconds + duration, 0);
+    let segmentTime = THREE.MathUtils.euclideanModulo(elapsed + agent.phase, cycleSeconds);
+    for (stopIndex = 0; stopIndex < agent.pauseCount - 1; stopIndex++) {
+      const segmentSeconds = segmentWalkSeconds + agent.pauseDurations[stopIndex];
+      if (segmentTime < segmentSeconds) break;
+      segmentTime -= segmentSeconds;
+    }
     if (segmentTime < segmentWalkSeconds) {
       const linearProgress = segmentTime / Math.max(segmentWalkSeconds, .001);
       // Preserve exact endpoints while varying the middle of each leg. The
@@ -107,23 +129,27 @@ export function updateAmbientHumanAgent(agent: AmbientHumanAgent, elapsed: numbe
       moving = true;
     } else {
       amount = (stopIndex + 1) / agent.pauseCount;
-      pauseProgress = THREE.MathUtils.clamp((segmentTime - segmentWalkSeconds) / Math.max(pauseSeconds, .001), 0, 1);
+      pauseProgress = THREE.MathUtils.clamp((segmentTime - segmentWalkSeconds) / Math.max(agent.pauseDurations[stopIndex], .001), 0, 1);
     }
   } else {
-    const cycleSeconds = (walkSeconds + pauseSeconds) * 2;
+    const outwardPause = agent.pauseDurations[0] ?? pauseSeconds;
+    const returnPause = agent.pauseDurations[1 % agent.pauseDurations.length] ?? pauseSeconds;
+    const cycleSeconds = walkSeconds * 2 + outwardPause + returnPause;
     const cycle = ((elapsed + agent.phase) % cycleSeconds + cycleSeconds) % cycleSeconds;
     if (cycle < walkSeconds) {
       amount = cycle / walkSeconds;
       moving = true;
-    } else if (cycle < walkSeconds + pauseSeconds) {
+    } else if (cycle < walkSeconds + outwardPause) {
       amount = 1;
-      pauseProgress = (cycle - walkSeconds) / Math.max(pauseSeconds, .001);
-    } else if (cycle < walkSeconds * 2 + pauseSeconds) {
-      amount = 1 - (cycle - walkSeconds - pauseSeconds) / walkSeconds;
+      stopIndex = 0;
+      pauseProgress = (cycle - walkSeconds) / Math.max(outwardPause, .001);
+    } else if (cycle < walkSeconds * 2 + outwardPause) {
+      amount = 1 - (cycle - walkSeconds - outwardPause) / walkSeconds;
       moving = true;
       direction = -1;
     } else {
-      pauseProgress = (cycle - walkSeconds * 2 - pauseSeconds) / Math.max(pauseSeconds, .001);
+      stopIndex = 1;
+      pauseProgress = (cycle - walkSeconds * 2 - outwardPause) / Math.max(returnPause, .001);
     }
   }
 
@@ -138,6 +164,13 @@ export function updateAmbientHumanAgent(agent: AmbientHumanAgent, elapsed: numbe
     const eased = amount * amount * (3 - 2 * amount);
     agent.root.position.copy(agent.origin).addScaledVector(agent.axis, eased * agent.travel);
   }
+  const attentionTarget = !moving && agent.pauseTargets.length
+    ? agent.pauseTargets[stopIndex % agent.pauseTargets.length]
+    : null;
+  if (attentionTarget) {
+    facing.copy(attentionTarget).sub(agent.root.position).setY(0);
+    if (facing.lengthSq() > .0001) facing.normalize();
+  }
   if (!agent.initialized) {
     // Establish the phase position before deriving velocity. This prevents a
     // visible origin-to-route teleport and a one-frame maximum-speed walk pose.
@@ -149,7 +182,7 @@ export function updateAmbientHumanAgent(agent: AmbientHumanAgent, elapsed: numbe
     // the route velocity; the former +Z formula made every pedestrian play a
     // forward walk while visually travelling backward.
     const lookDirection = Math.sin(agent.phase * 2.37 + stopIndex * 1.91) < 0 ? -1 : 1;
-    const pauseLook = moving ? 0 : Math.sin(pauseProgress * Math.PI) * agent.lookAround * lookDirection;
+    const pauseLook = moving ? 0 : Math.sin(pauseProgress * Math.PI) * agent.lookAround * lookDirection * (attentionTarget ? .24 : 1);
     const targetYaw = Math.atan2(-facing.x, -facing.z) + pauseLook;
     const yawDelta = Math.atan2(
       Math.sin(targetYaw - agent.root.rotation.y),
@@ -163,6 +196,14 @@ export function updateAmbientHumanAgent(agent: AmbientHumanAgent, elapsed: numbe
   const distance = agent.previous.distanceTo(agent.root.position);
   const actualSpeed = distance / Math.max(delta, .001);
   const walking = moving && distance > .00008;
+  agent.root.userData.ambientHumanMotionState = walking ? "walking" : "idle";
+  agent.root.userData.ambientHumanActivity = walking
+    ? "walking"
+    : agent.pauseActivities[stopIndex % agent.pauseActivities.length] ?? "observing";
+  agent.root.userData.ambientHumanStopIndex = stopIndex;
+  agent.root.userData.ambientHumanDwellSeconds = agent.pauseDurations[stopIndex % agent.pauseDurations.length] ?? pauseSeconds;
+  if (attentionTarget) agent.root.userData.ambientHumanAttentionTarget = attentionTarget.toArray();
+  else delete agent.root.userData.ambientHumanAttentionTarget;
   updateAuthoredHumanMotion(
     agent.root,
     delta,
