@@ -9,11 +9,34 @@ import { createAmbientHumanAgent, updateAmbientHumanAgent, type AmbientHumanAgen
 import { createElectricScooter, rollPersonalMobility, type PersonalMobilityVehicle } from "./PersonalMobility";
 import { createWhiskersCat, type ZooAnimalRig } from "./ZooAnimals";
 import { markAuthoredZooAnimalDisposed } from "./animals/AuthoredZooAnimalAssets";
-import { planMuseumCompanionPath } from "./MuseumCompanionPath";
+import { museumNavigationDistanceToBox, planMuseumCompanionPath } from "./MuseumCompanionPath";
 import { advanceWhiskersTrust, whiskersTrustInstruction, type WhiskersTrustState } from "./WhiskersTrust";
 
 type BoxObstacle = { minX: number; maxX: number; minZ: number; maxZ: number };
 type CircleObstacle = { x: number; z: number; radius: number };
+
+function registerGroundedBox(
+  boxes: BoxObstacle[],
+  x: number,
+  z: number,
+  width: number,
+  depth: number,
+  yaw = 0,
+) {
+  // Plinths are authored as local rounded boxes. Register their world-space
+  // axis-aligned footprint so every locomotion system sees the same solid
+  // exhibit, including rotated fossil cases whose corners extend past a
+  // coarse circular approximation.
+  const cosine = Math.abs(Math.cos(yaw)), sine = Math.abs(Math.sin(yaw));
+  const halfWidth = (width * cosine + depth * sine) * .5;
+  const halfDepth = (width * sine + depth * cosine) * .5;
+  boxes.push({
+    minX: x - halfWidth,
+    maxX: x + halfWidth,
+    minZ: z - halfDepth,
+    maxZ: z + halfDepth,
+  });
+}
 
 export type WhiskersQuestState = "AVAILABLE" | "TRAIL" | "COMPLETE";
 export type WhiskersQuestEvent = {
@@ -534,7 +557,7 @@ function detailedCollectionSpecimen(index: number, fossil: THREE.Material, miner
   return specimen;
 }
 
-function addGalleryFixtures(root: THREE.Group, textures: GameTextures, ownedTextures: THREE.Texture[], quality: number) {
+function addGalleryFixtures(root: THREE.Group, textures: GameTextures, ownedTextures: THREE.Texture[], quality: number, boxes: BoxObstacle[]) {
   const fixtures = new THREE.Group(); fixtures.name = "amnh-authored-gallery-fixtures-and-display-cases";
   const brass = new THREE.MeshStandardMaterial({ color: "#a88b4d", roughness: .38, metalness: .68 });
   const darkStone = new THREE.MeshStandardMaterial({ color: "#34342f", map: textures.stone, bumpMap: textures.stone, bumpScale: .025, roughness: .82 });
@@ -599,6 +622,7 @@ function addGalleryFixtures(root: THREE.Group, textures: GameTextures, ownedText
     artifact.position.set(0, 1.42, 0); artifact.rotation.y = index * .37; display.add(artifact);
     const caption = new THREE.Mesh(new RoundedBoxGeometry(2.45, .34, .06, 3, .02), label); caption.name = "museum-case-interpretation-label"; caption.position.set(0, .68, 1.56); caption.rotation.x = -.22; display.add(caption);
     fixtures.add(display);
+    registerGroundedBox(boxes, display.position.x, display.position.z, 4.2, 3.05);
   }
 
   // Stop the furniture program before the hero fossil hall. The previous
@@ -609,6 +633,7 @@ function addGalleryFixtures(root: THREE.Group, textures: GameTextures, ownedText
     const back = new THREE.Mesh(new RoundedBoxGeometry(3.7, .78, .18, 4, .045), walnut); back.position.set(0, 1.18, .34); back.rotation.x = -.1; bench.add(back);
     for (const x of [-1.42, 1.42]) { const leg = new THREE.Mesh(new RoundedBoxGeometry(.18, .76, .58, 3, .035), brass); leg.position.set(x, .42, 0); bench.add(leg); }
     fixtures.add(bench);
+    registerGroundedBox(boxes, bench.position.x, bench.position.z, 3.7, 1.05);
   }
 
   // Recessed ceiling coffers and bronze frames break up the single flat lid
@@ -631,11 +656,12 @@ function addGalleryFixtures(root: THREE.Group, textures: GameTextures, ownedText
     }
     const taskLight = new THREE.Mesh(new THREE.CylinderGeometry(.18, .28, .14, 14), new THREE.MeshStandardMaterial({ color: "#eee0b6", emissive: "#ffd994", emissiveIntensity: 1.2, roughness: .3 })); taskLight.position.set(0, 2.2, 0); station.add(taskLight);
     fixtures.add(station);
+    registerGroundedBox(boxes, station.position.x, station.position.z, 3.4, 1.55);
   }
   root.add(fixtures);
 }
 
-function addRotundaDinosaurs(root: THREE.Group, bone: THREE.Material, circles: CircleObstacle[]) {
+function addRotundaDinosaurs(root: THREE.Group, bone: THREE.Material, boxes: BoxObstacle[]) {
   const exhibit = new THREE.Group(); exhibit.name = "theodore-roosevelt-rotunda-barosaurus-allosaurus-display";
   const baseMaterial = new THREE.MeshStandardMaterial({ color: "#3e3b36", roughness: .76, metalness: .08 });
   const mountMetal = new THREE.MeshStandardMaterial({ color: "#171a18", roughness: .32, metalness: .82 });
@@ -738,7 +764,7 @@ function addRotundaDinosaurs(root: THREE.Group, bone: THREE.Material, circles: C
     post.name = "rotunda-fossil-mount-blackened-steel"; exhibit.add(post);
   }
   mergeMuseumFossils(exhibit, bone, "barosaurus-original-merged-anatomical-fossil-mesh");
-  root.add(exhibit); circles.push({ x: 0, z: -5, radius: 12.2 });
+  root.add(exhibit); registerGroundedBox(boxes, 0, -5, 27, 14);
 }
 
 function addBlueWhale(root: THREE.Group, circles: CircleObstacle[]) {
@@ -912,7 +938,7 @@ function addEarthAndMeteoriteHalls(root: THREE.Group, circles: CircleObstacle[])
  * fill the formerly empty central procession without narrowing its clear
  * scooter route, while framed media and portals eliminate unprogrammed walls.
  */
-function addOfficialPermanentHallMoments(root: THREE.Group, textures: GameTextures, ownedTextures: THREE.Texture[], quality: number, circles: CircleObstacle[]) {
+function addOfficialPermanentHallMoments(root: THREE.Group, textures: GameTextures, ownedTextures: THREE.Texture[], quality: number, boxes: BoxObstacle[]) {
   const collection = new THREE.Group(); collection.name = "amnh-official-permanent-hall-dense-exhibit-program";
   const bronze = new THREE.MeshStandardMaterial({ color: "#8f7541", metalness: .72, roughness: .34 });
   const blackenedSteel = new THREE.MeshStandardMaterial({ color: "#1c211f", metalness: .76, roughness: .34 });
@@ -969,7 +995,7 @@ function addOfficialPermanentHallMoments(root: THREE.Group, textures: GameTextur
     }
     const graphic = exhibitTexture(moment.title, moment.subtitle, index % 2 ? "#7fc2c0" : "#d4b56d"); ownedTextures.push(graphic);
     const label = new THREE.Mesh(new RoundedBoxGeometry(5.15, 1.2, .08, 4, .025), new THREE.MeshBasicMaterial({ map: graphic, toneMapped: false })); label.name = "official-amnh-exhibit-identity-panel"; label.position.set(0, 3.38, 2.06); island.add(label);
-    collection.add(island); circles.push({ x: moment.x, z: moment.z, radius: 3.3 });
+    collection.add(island); registerGroundedBox(boxes, moment.x, moment.z, 5.9, 4.35);
   }
 
   const portalProgram = [
@@ -1056,7 +1082,7 @@ function createCompactGroundSlothSkeleton(name: string, bone: THREE.Material, sc
   return skeleton;
 }
 
-function addSlothEvolutionGallery(root: THREE.Group, textures: GameTextures, ownedTextures: THREE.Texture[], bone: THREE.Material, quality: number, circles: CircleObstacle[]) {
+function addSlothEvolutionGallery(root: THREE.Group, textures: GameTextures, ownedTextures: THREE.Texture[], bone: THREE.Material, quality: number, boxes: BoxObstacle[]) {
   const gallery = new THREE.Group(); gallery.name = "fossil-mammal-halls-expanded-sloths-through-time-gallery";
   const walnut = new THREE.MeshStandardMaterial({ color: "#4d3327", map: textures.bark, roughness: .88 });
   const plinthMaterial = new THREE.MeshStandardMaterial({ color: "#302f2b", map: textures.stone, roughness: .8 });
@@ -1073,7 +1099,7 @@ function addSlothEvolutionGallery(root: THREE.Group, textures: GameTextures, own
     const plinth = new THREE.Mesh(new RoundedBoxGeometry(8.8, .68, 6.2, 6, .14), plinthMaterial); plinth.position.y = .34; display.add(plinth);
     const skeleton = createCompactGroundSlothSkeleton(specimen.name, bone, specimen.scale); skeleton.position.set(0, .72, 0); skeleton.rotation.y = Math.PI / 2; display.add(skeleton);
     const hood = new THREE.Mesh(new RoundedBoxGeometry(8.3, 5.3, 5.75, 6, .08), glass); hood.name = "sloth-evolution-low-reflection-study-case"; hood.position.y = 3.22; display.add(hood);
-    gallery.add(display); circles.push({ x: specimen.x, z: specimen.z, radius: 5.2 });
+    gallery.add(display); registerGroundedBox(boxes, specimen.x, specimen.z, 8.8, 6.2, specimen.yaw);
     addExhibitSign(root, ownedTextures, specimen.title, specimen.subtitle, specimen.x + (specimen.x < 0 ? 5.1 : -5.1), 3.2, specimen.z, specimen.x < 0 ? Math.PI / 2 : -Math.PI / 2, .58);
   }
 
@@ -1083,14 +1109,14 @@ function addSlothEvolutionGallery(root: THREE.Group, textures: GameTextures, own
   const livingSloth = createPremiumSlothFriend(textures, quality, 8, "#51483b");
   livingSloth.root.name = "bradypus-living-three-toed-sloth-anatomy-model"; livingSloth.root.position.set(-1.2, 3.78, -.1); livingSloth.root.rotation.set(0, .5, .06); livingSloth.root.scale.multiplyScalar(.9); living.add(livingSloth.root); ownedTextures.push(...livingSloth.ownedTextures);
   const canopyGlass = new THREE.Mesh(new RoundedBoxGeometry(11.6, 6.8, 8.1, 7, .1), glass); canopyGlass.name = "living-sloth-canopy-diorama-glazing"; canopyGlass.position.y = 3.65; living.add(canopyGlass);
-  gallery.add(living); circles.push({ x: 27.5, z: -158.5, radius: 6.3 });
+  gallery.add(living); registerGroundedBox(boxes, 27.5, -158.5, 12, 8.5);
   addExhibitSign(root, ownedTextures, "BRADYPUS · LIVING THREE-TOED SLOTH", "CANOPY ANATOMY · SUSPENSORY LOCOMOTION · LIVING XENARTHRAN", 22.2, 3.4, -158.5, -Math.PI / 2, .62);
 
   const rooseveltCase = new THREE.Group(); rooseveltCase.name = "roosevelt-collection-ground-sloth-skin-and-dung-case"; rooseveltCase.position.set(-28, 0, -213);
   const rooseveltPlinth = new THREE.Mesh(new RoundedBoxGeometry(10, .72, 6.3, 6, .14), plinthMaterial); rooseveltPlinth.position.y = .36; rooseveltCase.add(rooseveltPlinth);
   const skinSample = new THREE.Mesh(new RoundedBoxGeometry(6.8, .18, 2.9, 8, .08), new THREE.MeshStandardMaterial({ color: "#665343", map: textures.fur, bumpMap: textures.fur, bumpScale: .035, roughness: 1 })); skinSample.name = "roosevelt-collection-giant-ground-sloth-skin-study"; skinSample.position.set(0, 1.18, .65); skinSample.rotation.y = -.14; rooseveltCase.add(skinSample);
   for (let index = 0; index < 4; index++) { const coprolite = new THREE.Mesh(new THREE.IcosahedronGeometry(.35 + index % 2 * .09, 3), new THREE.MeshStandardMaterial({ color: "#514333", roughness: 1 })); coprolite.name = "roosevelt-collection-ground-sloth-coprolite"; coprolite.position.set(-2 + index * 1.3, 1.2, -1.25); coprolite.scale.set(1.45, .7, .9); rooseveltCase.add(coprolite); }
-  const rooseveltGlass = new THREE.Mesh(new RoundedBoxGeometry(9.6, 3.4, 5.9, 6, .08), glass); rooseveltGlass.position.y = 2.18; rooseveltCase.add(rooseveltGlass); gallery.add(rooseveltCase); circles.push({ x: -28, z: -213, radius: 5.4 });
+  const rooseveltGlass = new THREE.Mesh(new RoundedBoxGeometry(9.6, 3.4, 5.9, 6, .08), glass); rooseveltGlass.position.y = 2.18; rooseveltCase.add(rooseveltGlass); gallery.add(rooseveltCase); registerGroundedBox(boxes, -28, -213, 10, 6.3);
   addExhibitSign(root, ownedTextures, "ROOSEVELT COLLECTION", "GIANT GROUND SLOTH SKIN · DUNG · SOUTH AMERICAN PEOPLES", -22.5, 3.2, -213, Math.PI / 2, .62);
 
   const familyTreePanels = [
@@ -1101,7 +1127,7 @@ function addSlothEvolutionGallery(root: THREE.Group, textures: GameTextures, own
   root.add(gallery);
 }
 
-function addMegatherium(root: THREE.Group, ownedTextures: THREE.Texture[], bone: THREE.Material, circles: CircleObstacle[]) {
+function addMegatherium(root: THREE.Group, ownedTextures: THREE.Texture[], bone: THREE.Material, boxes: BoxObstacle[]) {
   const gallery = new THREE.Group(); gallery.name = "fossil-mammal-halls-megatherium-americanum-finale";
   const stageMaterial = new THREE.MeshStandardMaterial({ color: "#302d29", roughness: .72, metalness: .06 });
   const mountMaterial = new THREE.MeshStandardMaterial({ color: "#151817", roughness: .3, metalness: .86 });
@@ -1265,7 +1291,7 @@ function addMegatherium(root: THREE.Group, ownedTextures: THREE.Texture[], bone:
     const rail = new THREE.Mesh(new THREE.CylinderGeometry(.045, .055, 19.5, 10), brass);
     rail.name = "megatherium-gallery-brass-visitor-rail"; rail.position.set(side * 10.4, 1.02, -198); rail.rotation.x = Math.PI / 2; gallery.add(rail);
   }
-  root.add(gallery); circles.push({ x: 0, z: -198, radius: 11.5 });
+  root.add(gallery); registerGroundedBox(boxes, 0, -198, 25, 17.5);
   addGroundedMegatheriumSign(root, ownedTextures, brass);
 }
 
@@ -1283,6 +1309,12 @@ const MUSEUM_GUEST_SPAWNS = [
   [-18, -194], [18, -202], [-12, -208], [13, -190], [-30, -116], [31, -117],
 ] as const;
 const MEGATHERIUM_VIEWING_HALF_SPAN = 9.5;
+const MEGATHERIUM_STAGE_FOOTPRINT: BoxObstacle = {
+  minX: -12.5,
+  maxX: 12.5,
+  minZ: -206.75,
+  maxZ: -189.25,
+};
 // Build one deliberately distributed cohort during the existing offscreen
 // museum prewarm. Creating new premium rigs as the player crossed each hall
 // caused the repeatable multi-second hitches reported on the museum approach.
@@ -1302,6 +1334,11 @@ export class NaturalHistoryMuseumWorld {
     new THREE.Vector3(-14.5, 1.48, -198),
   ] as const;
   readonly megatheriumTarget = this.megatheriumViewingTargets[0];
+  readonly megatheriumGatheringTarget = new THREE.Vector3(0, 1.48, -198);
+  // The party may fan out around any side of the 25 x 17.5 metre mount. The
+  // finale checks this center radius only after the player reaches the stage,
+  // so companions do not have to converge on one arbitrary north-side point.
+  readonly megatheriumGatheringRadius = 28;
   readonly cameraPosition = new THREE.Vector3(0, 7.2, -176);
   readonly cameraTarget = new THREE.Vector3(0, 5.2, -198);
   readonly scooterDockTarget = new THREE.Vector3(-18, 1.48, 47.5);
@@ -1319,6 +1356,7 @@ export class NaturalHistoryMuseumWorld {
   private readonly whiskersFreshTrail: THREE.Group[] = [];
   private readonly whiskersPrevious = new THREE.Vector3();
   private readonly whiskersResolveVelocity = new THREE.Vector3();
+  private readonly guestResolveVelocity = new THREE.Vector3();
   private readonly whiskersFollowTarget = new THREE.Vector3();
   private readonly whiskersLightOffset = new THREE.Vector3(0, 1.45, 0);
   private readonly whiskersPrints: Array<{ print: THREE.Group; emissiveMaterials: THREE.MeshStandardMaterial[] }> = [];
@@ -1335,7 +1373,6 @@ export class NaturalHistoryMuseumWorld {
   private whiskersTrustStateValue: WhiskersTrustState = "APPROACH";
   private whiskersCelebrationUntil = 0;
   private pendingWhiskersEvent: WhiskersQuestEvent | null = null;
-  private readonly megatheriumProximityTarget = new THREE.Vector3();
   private readonly scooterPrevious = new THREE.Vector3();
   private scooterConvoyActive = false;
   private scooterHeading = 0;
@@ -1370,16 +1407,16 @@ export class NaturalHistoryMuseumWorld {
     }
     const bone = new THREE.MeshStandardMaterial({ color: "#d5c6a2", roughness: .8, metalness: .02 });
     addArchitecture(this.root, textures, this.ownedTextures, quality, this.boxes);
-    addGalleryFixtures(this.root, textures, this.ownedTextures, quality);
-    addRotundaDinosaurs(this.root, bone, this.circles);
+    addGalleryFixtures(this.root, textures, this.ownedTextures, quality, this.boxes);
+    addRotundaDinosaurs(this.root, bone, this.boxes);
     addBlueWhale(this.root, this.circles);
     addMilsteinOceanLifeDetails(this.root, quality, this.circles);
     addAfricanMammals(this.root, textures, this.ownedTextures, bone, this.circles);
     addAkeleyHabitatDioramas(this.root, quality, this.circles);
     addEarthAndMeteoriteHalls(this.root, this.circles);
-    addOfficialPermanentHallMoments(this.root, textures, this.ownedTextures, quality, this.circles);
-    addSlothEvolutionGallery(this.root, textures, this.ownedTextures, bone, quality, this.circles);
-    addMegatherium(this.root, this.ownedTextures, bone, this.circles);
+    addOfficialPermanentHallMoments(this.root, textures, this.ownedTextures, quality, this.boxes);
+    addSlothEvolutionGallery(this.root, textures, this.ownedTextures, bone, quality, this.boxes);
+    addMegatherium(this.root, this.ownedTextures, bone, this.boxes);
     this.whiskers = createWhiskersCat(textures, quality);
     this.whiskers.root.position.copy(WHISKERS_HIDEOUTS[this.whiskersOrder[0]].position);
     this.whiskers.root.position.y = this.floorHeight(this.whiskers.root.position.x, this.whiskers.root.position.z);
@@ -1489,16 +1526,20 @@ export class NaturalHistoryMuseumWorld {
       const [x, z] = MUSEUM_GUEST_SPAWNS[index];
       const docent = cohortIndex === count - 1;
       const result = createPremiumHuman({ role: docent ? "attendant" : "visitor", quality: this.quality, variant: 61 + index, faceVariant: 9 + index, clothingVariant: 17 + index * 3, coat: ["#4d6d78", "#8b5b42", "#6a5b82", "#65744e", "#875f67", "#4d7468"][index % 6], trousers: ["#30363c", "#403c38", "#292d35", "#4b453d"][index % 4], skin: ["#b57959", "#77503e", "#d1a17d", "#906047", "#583d32", "#c18c6a"][index % 6], outfit: index % 3 === 0 ? "silk-leggings" : index % 3 === 1 ? "knit-chinos" : "cotton-denim", accessory: index % 5 === 0 ? "camera" : index % 5 === 1 ? "tote" : index % 5 === 2 ? "none" : "backpack", pose: index % 5 === 0 ? "photographing" : index % 5 === 2 ? "checking-map" : "neutral" });
-      result.root.name = docent ? "fossil-mammal-hall-docent" : "amnh-wandering-museum-visitor-" + (index + 1); result.root.position.set(x, 0, z); this.root.add(result.root); this.ownedTextures.push(...result.ownedTextures);
+      result.root.name = docent ? "fossil-mammal-hall-docent" : "amnh-wandering-museum-visitor-" + (index + 1); result.root.position.set(x, 0, z);
+      this.guestResolveVelocity.set(0, 0, 0);
+      this.resolveCompanion(result.root.position, this.guestResolveVelocity, .51);
+      this.root.add(result.root); this.ownedTextures.push(...result.ownedTextures);
       const axis = (Math.abs(x) > 18 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(index % 2 ? 1 : -1, 0, .3)).normalize();
       const right = new THREE.Vector3(-axis.z, 0, axis.x), origin = result.root.position.clone();
       const travel = docent ? .65 : 3.2 + index % 4;
       const attentionTarget = exhibitAttentionPoints.reduce((nearest, target) =>
         target.distanceToSquared(origin) < nearest.distanceToSquared(origin) ? target : nearest);
       const pauseActivity = docent ? "conversation" : index % 5 === 0 ? "photographing" : index % 5 === 2 ? "checking-route" : "observing";
+      const authoredStops = [origin, origin.clone().addScaledVector(axis, travel * .55), origin.clone().addScaledVector(axis, travel).addScaledVector(right, 1 + index % 3 * .28), origin.clone().addScaledVector(right, .8)];
       this.guests.push(createAmbientHumanAgent(result.root, {
         axis,
-        waypoints: [origin, origin.clone().addScaledVector(axis, travel * .55), origin.clone().addScaledVector(axis, travel).addScaledVector(right, 1 + index % 3 * .28), origin.clone().addScaledVector(right, .8)],
+        waypoints: this.planClosedGuestRoute(authoredStops, .38),
         speed: docent ? .46 : .68 + index % 3 * .06,
         pauseSeconds: docent ? 5.2 : 2.6 + index % 3,
         pauseCount: docent ? 2 : 3,
@@ -1510,6 +1551,26 @@ export class NaturalHistoryMuseumWorld {
         lookAround: docent ? .28 : .12 + index % 4 * .04,
       }));
     });
+  }
+
+  private planClosedGuestRoute(stops: readonly THREE.Vector3[], radius: number) {
+    const safeStops = stops.map(stop => {
+      const safe = stop.clone();
+      this.guestResolveVelocity.set(0, 0, 0);
+      this.resolveCompanion(safe, this.guestResolveVelocity, radius + .13);
+      return safe;
+    });
+    const route: THREE.Vector3[] = [];
+    safeStops.forEach((from, index) => {
+      const to = safeStops[(index + 1) % safeStops.length];
+      const leg = planMuseumCompanionPath(from, to, this.boxes, this.circles, radius);
+      leg.forEach((point, pointIndex) => {
+        if (route.length && pointIndex === 0) return;
+        route.push(new THREE.Vector3(point.x, this.floorHeight(point.x, point.z), point.z));
+      });
+    });
+    if (route.length > 1 && route[0].distanceToSquared(route.at(-1)!) < .0001) route.pop();
+    return route.length >= 3 ? route : safeStops;
   }
 
   private addWhiskersTrailPresentation() {
@@ -1754,8 +1815,7 @@ export class NaturalHistoryMuseumWorld {
     return target.set(nearestX, 1.48, nearestZ);
   }
   megatheriumNearby(player: THREE.Vector3, distance = 8.5) {
-    const nearest = this.nearestMegatheriumViewingTarget(player, this.megatheriumProximityTarget);
-    return Math.hypot(player.x - nearest.x, player.z - nearest.z) <= distance;
+    return museumNavigationDistanceToBox(player, MEGATHERIUM_STAGE_FOOTPRINT) <= distance;
   }
   scooterDockNearby(player: THREE.Vector3, distance = 5.2) {
     return !this.scooterConvoyActive && this.scooters.some(scooter => scooter.root.visible && Math.hypot(player.x - scooter.root.position.x, player.z - scooter.root.position.z) <= distance);
@@ -1819,7 +1879,14 @@ export class NaturalHistoryMuseumWorld {
         backgroundHz: 10,
         forwardDistance: 220,
       });
-      if (scheduledDelta !== null) updateAmbientHumanAgent(agent, elapsed, scheduledDelta);
+      if (scheduledDelta !== null) {
+        updateAmbientHumanAgent(agent, elapsed, scheduledDelta);
+        // Route planning prevents deliberate paths through cases; this final
+        // shared resolver also protects against Catmull-Rom corner overshoot.
+        this.guestResolveVelocity.set(0, 0, 0);
+        this.resolveCompanion(agent.root.position, this.guestResolveVelocity, .38);
+        agent.previous.copy(agent.root.position);
+      }
     });
     this.updateWhiskers(elapsed, delta, player, playerYaw, playerSpeed);
   }

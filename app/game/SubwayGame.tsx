@@ -1311,17 +1311,12 @@ export function SubwayGame({
         !museumCompletionArmed ||
         !museumWorld ||
         transitStage !== "MUSEUM" ||
-        (museumWorld.isWhiskersQuestActive && !museumWorld.isWhiskersQuestComplete) ||
         !museumWorld.megatheriumNearby(player)
       )
         return false;
-      museumWorld.nearestMegatheriumViewingTarget(
-        player,
-        museumGatheringTarget,
-      );
       return allFollowersWithin(
-        museumGatheringTarget,
-        scooterRiding ? 13.5 : 11.5,
+        museumWorld.megatheriumGatheringTarget,
+        museumWorld.megatheriumGatheringRadius + (scooterRiding ? 2 : 0),
       );
     }
     function completeMission() {
@@ -2869,8 +2864,10 @@ export function SubwayGame({
           audio.playFootstep("stone", Math.min(1, velocity.length() / 2.55));
         }
         const pursuingWhiskers = museumWorld.isWhiskersQuestActive,
-          whiskersStoryVisible = pursuingWhiskers || Boolean(whiskersHint),
+          gathering = museumWorld.megatheriumNearby(player, 13),
+          whiskersStoryVisible = (pursuingWhiskers || Boolean(whiskersHint)) && !gathering,
           whiskersTrust = museumWorld.whiskersTrust,
+          whiskersTrustVisible = whiskersStoryVisible && whiskersTrust.active,
           target = whiskersStoryVisible
             ? museumWorld.whiskersObjectiveTarget
             : museumWorld.nearestMegatheriumViewingTarget(player, museumGatheringTarget),
@@ -2900,11 +2897,10 @@ export function SubwayGame({
         if (gameTime - lastHud > 0.12) {
           lastHud = gameTime;
           const count = totalFollowerCount(),
-            gathering = museumWorld.megatheriumNearby(player, 13),
             whiskersProgress = museumWorld.whiskersProgress,
             prompt = whiskersHint
               ? whiskersHint.label
-              : whiskersTrust.active
+              : whiskersTrustVisible
                 ? `${whiskersTrust.instruction} · ${Math.round(whiskersTrust.progress * 100)}%`
               : gathering
               ? `GATHER ${friendCountLabel(count).toUpperCase()} AT THE EXHIBIT`
@@ -2917,7 +2913,7 @@ export function SubwayGame({
           setHud({
             bearing,
             distance,
-            fieldStatus: whiskersTrust.active
+            fieldStatus: whiskersTrustVisible
               ? `${whiskersTrust.instruction} · ${Math.round(whiskersTrust.progress * 100)}%`
               : undefined,
             motion: scooterRiding
@@ -2932,7 +2928,7 @@ export function SubwayGame({
               : `Find Megatherium and bring ${friendCountLabel(count)} to the giant ground sloth`,
             objectiveShort: whiskersStoryVisible ? "WHISKERS" : "MEGATHERIUM",
             prompt,
-            promptKey: whiskersHint ? "E" : whiskersTrust.active || gathering ? "" : scooterRiding || scooterNear ? "E" : "",
+            promptKey: whiskersHint ? "E" : whiskersTrustVisible || gathering ? "" : scooterRiding || scooterNear ? "E" : "",
             station:
               player.z > 20
                 ? "AMNH · CENTRAL PARK WEST ENTRANCE"
@@ -2943,10 +2939,10 @@ export function SubwayGame({
                     : "AMNH · FOSSIL MAMMAL HALLS · FLOOR 4",
             status: scooterRiding
               ? `${riderCountLabel(count).toUpperCase()} · ELECTRIC SCOOTER CONVOY`
-              : pursuingWhiskers
+              : whiskersStoryVisible
                 ? museumWorld.isWhiskersWaitingForPlayer
                   ? "WHISKERS WAITING · FOLLOW THE FRESH PRINTS"
-                  : whiskersTrust.active
+                  : whiskersTrustVisible
                     ? `QUIET TRUST · ${Math.round(whiskersTrust.progress * 100)}% · ${whiskersTrust.instruction}`
                   : `WHISKERS TRAIL · ${whiskersProgress.current} / ${whiskersProgress.total}`
                 : whiskersHint
@@ -2954,9 +2950,9 @@ export function SubwayGame({
               : gathering
                 ? "MEGATHERIUM FOUND · MENAGERIE GATHERING"
                 : companionStatus(count),
-            value: whiskersTrust.active ? `${Math.round(whiskersTrust.progress * 100)}%` : `${Math.round(distance)}M`,
-            waypoint: whiskersTrust.active ? "Whiskers · quiet gallery moment" : whiskersStoryVisible ? "Whiskers · moving gallery trail" : "Megatherium · Giant Ground Sloth",
-            wayfinding: pursuingWhiskers ? !whiskersTrust.active : !whiskersStoryVisible,
+            value: whiskersTrustVisible ? `${Math.round(whiskersTrust.progress * 100)}%` : `${Math.round(distance)}M`,
+            waypoint: whiskersTrustVisible ? "Whiskers · quiet gallery moment" : whiskersStoryVisible ? "Whiskers · moving gallery trail" : "Megatherium · Giant Ground Sloth",
+            wayfinding: whiskersStoryVisible ? !whiskersTrustVisible : true,
           });
         }
       } else if (transitStage === "CENTRAL_PARK" && parkReturnWorld) {

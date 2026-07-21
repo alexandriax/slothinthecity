@@ -70,8 +70,9 @@ test("the museum uses one greeting, then automatic world-space trust moments", a
   assert.match(game, /museumWorld\.update\(gameTime, delta, player, yaw, velocity\.length\(\)\)/);
   assert.match(game, /museumWorld\.consumeWhiskersEvent\(\)/);
   assert.match(game, /QUIET TRUST/);
-  assert.match(game, /fieldStatus: whiskersTrust\.active/);
+  assert.match(game, /whiskersTrustVisible = whiskersStoryVisible && whiskersTrust\.active/);
+  assert.match(game, /fieldStatus: whiskersTrustVisible/);
   assert.match(game, /stage === "MUSEUM" && hud\.fieldStatus \? hud\.fieldStatus : hud\.motion/);
-  assert.match(game, /wayfinding: pursuingWhiskers \? !whiskersTrust\.active/);
+  assert.match(game, /wayfinding: whiskersStoryVisible \? !whiskersTrustVisible : true/);
   assert.match(checkpoints, /"museum-whiskers-trust": "museumwhiskerstrust"/);
 });
