@@ -8,7 +8,7 @@ import { SlothLockPick } from "./SlothLockPick";
 import { ZOO_SIDE_QUESTS, type ZooSideQuestId } from "./zooSideQuestLogic";
 import { ShuttleMinimap } from "./ShuttleMinimap";
 import { MobileHud } from "./mobile/MobileHud";
-import { TouchControls } from "./mobile/TouchControls";
+import { TouchControls, type TouchControlOption } from "./mobile/TouchControls";
 import {
   createSlothRig,
   layoutCanonicalSlothViewmodel,
@@ -82,6 +82,8 @@ export function shuttleBoardingRadiusFor(friendCount: number) {
 type TransitHud = {
   bearing: number;
   distance: number;
+  fieldControls?: readonly TouchControlOption[];
+  fieldStatus?: string;
   motion: string;
   objective: string;
   objectiveShort: string;
@@ -160,6 +162,12 @@ function worldQuality(
     : level === "ultra"
       ? "ultra"
       : "balanced";
+}
+
+function fieldInputLabel(code: string) {
+  if (code.startsWith("Key")) return code.slice(3);
+  if (code.startsWith("Digit")) return code.slice(5);
+  return code;
 }
 
 export function SubwayGame({
@@ -435,6 +443,8 @@ export function SubwayGame({
           ),
         ),
         distance,
+        fieldControls: habitatProgress?.control?.options,
+        fieldStatus: habitatProgress?.control?.status,
         motion: released ? "MENAGERIE ESCORT" : "ZOO EXPLORATION",
         objective,
         objectiveShort:
@@ -446,13 +456,13 @@ export function SubwayGame({
               ? "PICK LOCK"
               : "SHUTTLE BUS",
         prompt: hint?.label ?? "",
-        promptKey: hint ? "E" : "",
+        promptKey: hint && hint.kind !== "ANIMAL_QUEST_FOCUS" ? "E" : "",
         station: released
           ? "BRONX ZOO · MUSEUM SHUTTLE STOP"
           : "BRONX ZOO · WILDLIFE CONSERVATION CAMPUS",
         status:
           activeHabitatQuest && habitatProgress
-            ? `LIVE HABITAT RESPONSE · ${habitatProgress.current} / ${habitatProgress.total}${habitatProgress.operationActive ? habitatProgress.tracking ? " · RESPONSE HELD" : " · FOLLOW IT" : ""} · STREAK ${world.researchStreak}`
+            ? `LIVE HABITAT RESPONSE · ${habitatProgress.current} / ${habitatProgress.total}${habitatProgress.operationActive ? !habitatProgress.tracking ? " · FOLLOW IT" : !habitatProgress.calibrated ? ` · ${habitatProgress.control?.status ?? "CALIBRATE"}` : " · CALIBRATED" : ""} · STREAK ${world.researchStreak}`
             : quest === "ENTER_ZOO"
             ? companionStatus(count)
             : quest === "FIND_SLOTHS"
@@ -478,6 +488,13 @@ export function SubwayGame({
     };
     const keyDown = (event: KeyboardEvent) => {
       if (lockPickingRef.current) return;
+      if (!event.repeat && transitStage === "BRONX_ZOO" && zooWorld?.handleHabitatControl(event.code)) {
+        event.preventDefault();
+        keys.delete(event.code);
+        velocity.multiplyScalar(.35);
+        audio.playUiConfirm();
+        return;
+      }
       keys.add(event.code);
       if (event.code === "KeyE" && !event.repeat) actionRequested = true;
       if (event.code === "KeyR" && !event.repeat) shiftUpRequested = true;
@@ -2501,7 +2518,7 @@ export function SubwayGame({
             status = skateboarding
               ? "SKATEBOARD · SPACE KICKFLIP"
               : activeHabitatQuest && habitatProgress
-                ? `LIVE HABITAT RESPONSE · ${habitatProgress.current} / ${habitatProgress.total}${habitatProgress.operationActive ? habitatProgress.tracking ? " · RESPONSE HELD" : " · FOLLOW IT" : ""} · STREAK ${zooWorld.researchStreak}`
+                ? `LIVE HABITAT RESPONSE · ${habitatProgress.current} / ${habitatProgress.total}${habitatProgress.operationActive ? !habitatProgress.tracking ? " · FOLLOW IT" : !habitatProgress.calibrated ? ` · ${habitatProgress.control?.status ?? "CALIBRATE"}` : " · CALIBRATED" : ""} · STREAK ${zooWorld.researchStreak}`
               : quest === "ENTER_ZOO"
                 ? count
                   ? companionStatus(count)
@@ -2516,6 +2533,8 @@ export function SubwayGame({
           setHud({
             bearing,
             distance,
+            fieldControls: habitatProgress?.control?.options,
+            fieldStatus: habitatProgress?.control?.status,
             motion: skateboarding
               ? moving
                 ? "SKATEBOARDING"
@@ -3203,7 +3222,9 @@ export function SubwayGame({
                       : mobilityMode === "scooter"
                         ? `${riderCountLabel(followerCount)} travel together · Space brakes · E parks the convoy`
                         : stage === "BRONX_ZOO"
-                          ? followerCount > 0
+                          ? hud.fieldControls?.length
+                            ? "Operate the physical station while keeping its live habitat response in view"
+                            : followerCount > 0
                             ? "Lead your growing menagerie along the visitor paths and board the museum shuttle together"
                             : "Explore every habitat · E talks, presents the island ticket, and starts animal quests"
                           : stage === "MUSEUM"
@@ -3254,6 +3275,8 @@ export function SubwayGame({
             <span>
               {stage === "BUS_DRIVE"
                 ? "W Forward · S Brake / Reverse"
+                : hud.fieldControls?.length
+                  ? "Hold position at the live field station"
                 : mobilityMode
                   ? "W / A / S / D Ride"
                   : "W / A / S / D Walk"}
@@ -3261,6 +3284,8 @@ export function SubwayGame({
             <span>
               {stage === "BUS_DRIVE"
                 ? "A / D Steer · Space handbrake"
+                : hud.fieldControls?.length
+                  ? hud.fieldControls.map(control => `${fieldInputLabel(control.code)} ${control.label}`).join(" · ")
                 : mobilityMode === "skateboard"
                   ? "Space kickflip"
                   : mobilityMode === "scooter"
@@ -3272,6 +3297,8 @@ export function SubwayGame({
             <span>
               {stage === "BUS_DRIVE"
                 ? "R Gear up · F Gear down"
+                : hud.fieldControls?.length
+                  ? "Keep the moving animal response centered"
                 : mobilityMode
                   ? "E step off"
                   : stage === "RIDING"
@@ -3368,6 +3395,8 @@ export function SubwayGame({
       {stage !== "COMPLETE" && !lockPicking && (
         <TouchControls
           arboreal={false}
+          fieldControls={hud.fieldControls}
+          fieldStatus={hud.fieldStatus}
           prompt={hud.prompt}
           promptKey={hud.promptKey}
           showSense={false}

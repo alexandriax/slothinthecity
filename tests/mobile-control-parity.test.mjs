@@ -42,3 +42,20 @@ test("mobile park controls preserve scent, braking, descending, pausing, and int
   assert.match(touch, /emitKey\("KeyF", true\)/);
   assert.match(game, /<TouchControls[\s\S]{0,200}showPause/);
 });
+
+test("live zoo equipment exposes the same species controls on keyboard and touch", async () => {
+  const [game, touch, zoo] = await Promise.all([
+    readFile(new URL("../app/game/SubwayGame.tsx", import.meta.url), "utf8"),
+    readFile(touchUrl, "utf8"),
+    readFile(new URL("../app/game/world/BronxZooWorld.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(game, /zooWorld\?\.handleHabitatControl\(event\.code\)/);
+  assert.match(game, /fieldControls: habitatProgress\?\.control\?\.options/);
+  assert.match(game, /fieldControls=\{hud\.fieldControls\}/);
+  assert.match(game, /fieldStatus=\{hud\.fieldStatus\}/);
+  assert.match(touch, /aria-label="Live habitat equipment controls"/);
+  assert.match(touch, /className="touch-field-readout" aria-live="polite"/);
+  assert.match(touch, /emitKey\(control\.code, true\); emitKey\(control\.code, false\)/);
+  for (const code of ["KeyE", "KeyA", "KeyD", "Digit1", "Digit2", "Digit3"]) assert.match(zoo, new RegExp(`code: "${code}"`));
+});

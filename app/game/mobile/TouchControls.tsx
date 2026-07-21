@@ -4,6 +4,8 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 
 type TouchControlsProps = {
   arboreal: boolean;
+  fieldControls?: readonly TouchControlOption[];
+  fieldStatus?: string;
   prompt: string;
   promptKey: string;
   showPause?: boolean;
@@ -11,7 +13,8 @@ type TouchControlsProps = {
   vehicle: "cart" | "rowboat" | "bus" | "skateboard" | "scooter" | null;
 };
 
-type TouchAction = { code: string; label: string };
+export type TouchControlOption = { ariaLabel?: string; code: string; label: string };
+type TouchAction = TouchControlOption;
 
 export const PARK_GROUND_DESCENT_REQUEST_EVENT = "sloth-park-ground-descent-requested";
 
@@ -66,7 +69,7 @@ export function resolveTouchAction(prompt: string, promptKey: string, vehicle: T
 const emitKey = (code: string, down: boolean) =>
   document.dispatchEvent(new KeyboardEvent(down ? "keydown" : "keyup", { code, bubbles: true }));
 
-export function TouchControls({ arboreal, prompt, promptKey, showPause = false, showSense = true, vehicle }: TouchControlsProps) {
+export function TouchControls({ arboreal, fieldControls = [], fieldStatus, prompt, promptKey, showPause = false, showSense = true, vehicle }: TouchControlsProps) {
   const [expanded, setExpanded] = useState(true);
   const held = useRef(new Set<string>());
   const lookPoint = useRef<{ x: number; y: number } | null>(null);
@@ -123,6 +126,10 @@ export function TouchControls({ arboreal, prompt, promptKey, showPause = false, 
     {expanded && <>
       <div className="touch-stick" aria-label="Movement joystick" onPointerDown={(event) => { try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch {} moveStick(event); }} onPointerMove={(event) => { if (typeof event.currentTarget.hasPointerCapture !== "function" || event.currentTarget.hasPointerCapture(event.pointerId)) moveStick(event); }} onPointerUp={stopStick} onPointerCancel={stopStick} onLostPointerCapture={stopStick}><span /></div>
       <div className="touch-look" aria-label="Look area" onPointerDown={(event) => { try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch {} lookPoint.current = { x: event.clientX, y: event.clientY }; }} onPointerMove={(event) => { if (typeof event.currentTarget.hasPointerCapture !== "function" || event.currentTarget.hasPointerCapture(event.pointerId)) moveLook(event); }} onPointerUp={() => { lookPoint.current = null; }} onPointerCancel={() => { lookPoint.current = null; }} onLostPointerCapture={() => { lookPoint.current = null; }}/>
+      {fieldControls.length > 0 && <div className="touch-field-controls" aria-label="Live habitat equipment controls">
+        {fieldStatus && <output className="touch-field-readout" aria-live="polite">{fieldStatus}</output>}
+        <div className="touch-field-buttons">{fieldControls.map(control => <button type="button" data-input-code={control.code} aria-label={control.ariaLabel ?? control.label} key={control.code} onClick={() => { emitKey(control.code, true); emitKey(control.code, false); }}>{control.label}</button>)}</div>
+      </div>}
       {action && !dedicatedAction && <button className="touch-action" data-input-code={action.code} aria-label={vehicle && action.label === "Exit" ? `Exit ${vehicle === "cart" ? "field-services cart" : vehicle === "bus" ? "museum shuttle bus" : vehicle === "skateboard" ? "skateboard" : vehicle === "scooter" ? "electric scooter" : "rowboat"}` : prompt || action.label} onClick={() => { emitKey(action.code, true); emitKey(action.code, false); }}>{action.label}</button>}
       {(vehicle || arboreal) && <button className="touch-grip" aria-label={vehicle === "skateboard" ? "Kickflip" : yieldingToTanner ? "Hold to yield to Tanner's family" : vehicle ? `Hold ${vehicle} brake` : "Hold grip"} onPointerDown={(event) => { try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch {} setHeld(vehicle ? "Space" : "ShiftLeft", true); }} onPointerUp={() => setHeld(vehicle ? "Space" : "ShiftLeft", false)} onPointerCancel={() => setHeld(vehicle ? "Space" : "ShiftLeft", false)} onLostPointerCapture={() => setHeld(vehicle ? "Space" : "ShiftLeft", false)}>{vehicle === "skateboard" ? "Trick" : yieldingToTanner ? "Yield" : vehicle ? "Brake" : "Grip"}</button>}
       {vehicle === "bus" && <div className="touch-gears" aria-label="Shuttle gear controls"><button type="button" data-input-code="KeyR" aria-label="Shift shuttle gear up" onClick={() => { emitKey("KeyR", true); emitKey("KeyR", false); }}>Gear +</button><button type="button" data-input-code="KeyF" aria-label="Shift shuttle gear down" onClick={() => { emitKey("KeyF", true); emitKey("KeyF", false); }}>Gear −</button></div>}

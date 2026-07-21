@@ -238,6 +238,75 @@ test("habitat research requires live first-person focus, preserves zoo animals, 
   world.dispose();
 });
 
+test("monkey, red panda, tortoise, and flamingo fieldwork require distinct live equipment controls", async () => {
+  const { BronxZooWorld, THREE } = await loadBronxZooHarness();
+  const scenarios = [
+    { center: [-43, -101], codes: ["KeyE"], kind: "rope-tension", quest: "monkey-canopy-rig" },
+    { center: [-36, -132], codes: ["KeyA", "KeyD"], kind: "scent-vane", quest: "red-panda-scent-wind" },
+    { center: [36, -132], codes: ["KeyA", "KeyD"], kind: "solar-mirror", quest: "tortoise-sun-trail" },
+    { center: [-71, -55], codes: ["Digit1", "Digit2", "Digit3"], kind: "wetland-balance", quest: "flamingo-wetland-balance" },
+  ];
+
+  for (const [index, scenario] of scenarios.entries()) {
+    const world = new BronxZooWorld(new THREE.Scene(), textureSet(THREE), .22, 119021 + index);
+    world.beginAnimalQuest(scenario.quest);
+    const player = world.objectiveTarget.clone();
+    const centerDirection = new THREE.Vector3(scenario.center[0], player.y, scenario.center[1]).sub(player);
+    const centerYaw = Math.atan2(-centerDirection.x, -centerDirection.z);
+    assert.equal(world.interact(player, centerYaw)?.kind, "ANIMAL_QUEST_OPERATION_STARTED");
+    assert.deepEqual(world.activeSideQuestProgress.control.options.map(option => option.code), scenario.codes);
+    assert.equal(world.activeSideQuestProgress.calibrated, false, `${scenario.quest} should open out of calibration`);
+
+    for (let frame = 0; frame < 90; frame++) {
+      const target = world.activeHabitatResponseTarget;
+      const direction = target.clone().sub(player);
+      world.update(frame / 60, 1 / 60, player, Math.atan2(-direction.x, -direction.z));
+    }
+    assert.equal(world.activeSideQuestProgress.operation, 0, `${scenario.quest} must not advance from camera tracking alone`);
+
+    for (let controlStep = 0; controlStep < 60 && !world.activeSideQuestProgress.calibrated; controlStep++) {
+      if (scenario.kind === "rope-tension") world.handleHabitatControl("KeyE");
+      else if (scenario.kind === "scent-vane" || scenario.kind === "solar-mirror") world.handleHabitatControl("KeyD");
+      else {
+        const status = world.activeSideQuestProgress.control.status;
+        const readings = status.match(/WATER (\d+) · SALT (\d+)/);
+        assert.ok(readings, "the wetland station should publish both physical readings");
+        const water = Number(readings[1]), salinity = Number(readings[2]);
+        const code = salinity > 57
+          ? "Digit2"
+          : water < 46
+            ? "Digit1"
+            : water > 59
+              ? "Digit3"
+              : salinity < 42
+                ? water > 52 ? "Digit3" : "Digit1"
+                : "Digit2";
+        world.handleHabitatControl(code);
+      }
+    }
+    assert.equal(world.activeSideQuestProgress.calibrated, true, `${scenario.quest} controls should reach a recoverable authored solution`);
+
+    const liveTarget = world.activeHabitatResponseTarget;
+    const trackingDirection = liveTarget.clone().sub(player);
+    world.update(2, 1 / 60, player, Math.atan2(-trackingDirection.x, -trackingDirection.z));
+    let activeStation;
+    world.root.traverse(object => {
+      if (object.userData.questStationState === "active" && object.userData.fieldCalibrationKind === scenario.kind) activeStation = object;
+    });
+    assert.ok(activeStation, `${scenario.quest} should publish its live physical calibration state on the station`);
+    assert.equal(activeStation.userData.fieldCalibrationReady, true);
+
+    for (let frame = 1; frame <= 45; frame++) {
+      if (scenario.kind === "rope-tension" && frame === 30) world.handleHabitatControl("KeyE");
+      const target = world.activeHabitatResponseTarget;
+      const direction = target.clone().sub(player);
+      world.update(2 + frame / 60, 1 / 60, player, Math.atan2(-direction.x, -direction.z));
+    }
+    assert.ok(world.activeSideQuestProgress.operation > 0, `${scenario.quest} should advance only after its equipment and live response agree`);
+    world.dispose();
+  }
+});
+
 test("zebra scanning follows a live animal and tortoise mirrors illuminate physical basking shelves", async () => {
   const { BronxZooWorld, THREE } = await loadBronxZooHarness();
   const zebraWorld = new BronxZooWorld(new THREE.Scene(), textureSet(THREE), .22, 73021);

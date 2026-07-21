@@ -2,7 +2,16 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { Sky } from "three/addons/objects/Sky.js";
 import type { GameTextures } from "../rendering/textures";
-import { ZOO_SIDE_QUESTS, type ZooSideQuestId } from "../zooSideQuestLogic";
+import {
+  ZOO_SIDE_QUESTS,
+  createZooSideQuestConfig,
+  operateWetlandValve,
+  wetlandReadingSafe,
+  type WetlandReading,
+  type WetlandValve,
+  type ZooSideQuestConfig,
+  type ZooSideQuestId,
+} from "../zooSideQuestLogic";
 import {
   createPremiumHuman,
   createPremiumSlothFriend,
@@ -68,9 +77,30 @@ export type BronxZooInteractionHint = {
 };
 
 type ActiveHabitatOperation = {
+  calibration: HabitatCalibration;
   key: string;
   progress: number;
   tracking: boolean;
+};
+
+type HabitatCalibration =
+  | { kind: "passive" }
+  | { feedback: number; kind: "rope-tension"; target: number; tension: number }
+  | { direction: number; feedback: number; kind: "scent-vane"; target: number }
+  | { angle: number; feedback: number; kind: "solar-mirror"; target: number }
+  | { drift: WetlandReading; feedback: number; kind: "wetland-balance"; lastValve: WetlandValve | null; reading: WetlandReading };
+
+export type HabitatFieldControlOption = {
+  ariaLabel: string;
+  code: string;
+  label: string;
+};
+
+export type HabitatFieldControl = {
+  hint: string;
+  options: readonly HabitatFieldControlOption[];
+  ready: boolean;
+  status: string;
 };
 
 type GarySnackState = "NONE" | "CARRIED" | "AIRBORNE" | "LOOSE" | "EATEN";
@@ -2047,6 +2077,7 @@ export class BronxZooWorld {
   private readonly arrivalDistrictMotion: ZooArrivalDistrictRuntime;
   private readonly sessionSeed: number;
   private activeAnimalQuest: ActiveInWorldZooQuest | null = null;
+  private activeAnimalQuestConfig: ZooSideQuestConfig | null = null;
   private activeHabitatOperation: ActiveHabitatOperation | null = null;
   private habitatResearchStreak = 0;
   private garyRig: ZooAnimalRig | null = null;
@@ -2233,13 +2264,59 @@ export class BronxZooWorld {
   get activeSideQuestId() { return this.activeAnimalQuest?.id ?? null; }
   get activeSideQuestProgress() {
     if (!this.activeAnimalQuest) return null;
+    const control = this.activeHabitatFieldControl;
     return {
+      calibrated: control?.ready ?? true,
+      control,
       current: this.activeAnimalQuest.step + 1,
       operationActive: Boolean(this.activeHabitatOperation),
       operation: this.activeHabitatOperation?.progress ?? 0,
       replay: this.activeAnimalQuest.replay,
       tracking: this.activeHabitatOperation?.tracking ?? false,
       total: this.activeAnimalQuest.order.length,
+    };
+  }
+  get activeHabitatFieldControl(): HabitatFieldControl | null {
+    const calibration = this.activeHabitatOperation?.calibration;
+    if (!calibration || calibration.kind === "passive") return null;
+    const ready = this.habitatCalibrationReady(calibration);
+    if (calibration.kind === "rope-tension") {
+      const low = Math.round((calibration.target - .11) * 100);
+      const high = Math.round((calibration.target + .11) * 100);
+      return {
+        hint: "Tap to feed measured tension into the live canopy line",
+        options: [{ ariaLabel: "Pulse the monkey canopy tension wheel", code: "KeyE", label: "Pulse" }],
+        ready,
+        status: `TENSION ${Math.round(calibration.tension * 100)}% · SAFE ${low}–${high}%`,
+      };
+    }
+    if (calibration.kind === "scent-vane") return {
+      hint: "Turn the physical vane until the scent ribbon connects",
+      options: [
+        { ariaLabel: "Turn the red panda scent vane left", code: "KeyA", label: "Vane −" },
+        { ariaLabel: "Turn the red panda scent vane right", code: "KeyD", label: "Vane +" },
+      ],
+      ready,
+      status: `VANE ${calibration.direction + 1} / 4 · ${ready ? "SCENT LINE CONNECTED" : "SEEK THE CANOPY LINE"}`,
+    };
+    if (calibration.kind === "solar-mirror") return {
+      hint: "Aim the real mirror until the next beam segment ignites",
+      options: [
+        { ariaLabel: "Rotate the tortoise warming mirror left", code: "KeyA", label: "Mirror −" },
+        { ariaLabel: "Rotate the tortoise warming mirror right", code: "KeyD", label: "Mirror +" },
+      ],
+      ready,
+      status: `MIRROR ${calibration.angle + 1} / 6 · ${ready ? "BEAM LOCKED" : "AIM AT THE WARMING STONE"}`,
+    };
+    return {
+      hint: "Balance both live wetland readings with the three physical flows",
+      options: [
+        { ariaLabel: "Open the flamingo wetland intake", code: "Digit1", label: "Intake" },
+        { ariaLabel: "Send fresh flow through the flamingo reed bed", code: "Digit2", label: "Fresh" },
+        { ariaLabel: "Open the flamingo wetland drain", code: "Digit3", label: "Drain" },
+      ],
+      ready,
+      status: `WATER ${Math.round(calibration.reading.water)} · SALT ${Math.round(calibration.reading.salinity)} · ${ready ? "HABITAT BAND" : "BALANCE 46–59 / 42–57"}`,
     };
   }
   get activeHabitatResponseTarget() {
@@ -2262,7 +2339,13 @@ export class BronxZooWorld {
       if (this.activeHabitatOperation) {
         const station = activeQuestStation(this.activeAnimalQuest);
         const operation = HABITAT_QUEST_OPERATIONS[station.kind];
-        return `${operation.objective} · ${this.activeHabitatOperation.tracking ? "RESPONSE HELD" : "FIND THE LIVE RESPONSE"}`;
+        const control = this.activeHabitatFieldControl;
+        const operationState = !this.activeHabitatOperation.tracking
+          ? "FIND THE LIVE RESPONSE"
+          : control && !control.ready
+            ? control.status
+            : "CALIBRATED · RESPONSE HELD";
+        return `${operation.objective} · ${operationState}`;
       }
       return activeQuestObjective(this.activeAnimalQuest).objective;
     }
@@ -2301,10 +2384,15 @@ export class BronxZooWorld {
       const distance = this.distanceXZ(player, target);
       if (this.activeHabitatOperation && distance <= 3.25) {
         const operation = HABITAT_QUEST_OPERATIONS[station.kind];
+        const control = this.activeHabitatFieldControl;
         return {
           kind: "ANIMAL_QUEST_FOCUS",
           questId: this.activeAnimalQuest.id,
-          label: this.activeHabitatOperation.tracking ? operation.focusLabel : `FIND THE LIVE RESPONSE · ${operation.focusLabel}`,
+          label: !this.activeHabitatOperation.tracking
+            ? `FIND THE LIVE RESPONSE · ${operation.focusLabel}`
+            : control && !control.ready
+              ? `${control.status} · ${control.hint}`
+              : operation.focusLabel,
           target: this.activeHabitatResponseTarget ?? target,
           distance,
         };
@@ -2329,6 +2417,75 @@ export class BronxZooWorld {
     return null;
   }
 
+  private habitatCalibrationReady(calibration: HabitatCalibration) {
+    if (calibration.kind === "passive") return true;
+    if (calibration.kind === "rope-tension") return Math.abs(calibration.tension - calibration.target) <= .11;
+    if (calibration.kind === "scent-vane") return calibration.direction === calibration.target;
+    if (calibration.kind === "solar-mirror") return calibration.angle === calibration.target;
+    return wetlandReadingSafe(calibration.reading);
+  }
+
+  private createHabitatCalibration(station: HabitatQuestStation): HabitatCalibration {
+    const stationIndex = this.activeAnimalQuest?.order[this.activeAnimalQuest.step] ?? 0;
+    const config = this.activeAnimalQuestConfig;
+    if (station.kind === "rope-anchor" && config?.questId === "monkey-canopy-rig") {
+      const target = .47 + config.anchorOffsets[stationIndex % config.anchorOffsets.length] * .1;
+      return { feedback: 0, kind: "rope-tension", target, tension: Math.max(.12, target - .31) };
+    }
+    if (station.kind === "scent-vane" && config?.questId === "red-panda-scent-wind") return {
+      direction: config.initialDirections[stationIndex % config.initialDirections.length],
+      feedback: 0,
+      kind: "scent-vane",
+      target: config.solution[stationIndex % config.solution.length],
+    };
+    if (station.kind === "solar-mirror" && config?.questId === "tortoise-sun-trail") return {
+      angle: config.initialAngles[stationIndex % config.initialAngles.length],
+      feedback: 0,
+      kind: "solar-mirror",
+      target: config.solution[stationIndex % config.solution.length],
+    };
+    if (station.kind === "wetland-valve" && config?.questId === "flamingo-wetland-balance") return {
+      drift: { water: config.waterDrift, salinity: config.salinityDrift },
+      feedback: 0,
+      kind: "wetland-balance",
+      lastValve: null,
+      reading: {
+        water: THREE.MathUtils.clamp(config.initialWater + stationIndex * 1.7, 0, 100),
+        salinity: THREE.MathUtils.clamp(config.initialSalinity - stationIndex * 1.3, 0, 100),
+      },
+    };
+    return { kind: "passive" };
+  }
+
+  handleHabitatControl(code: string) {
+    const calibration = this.activeHabitatOperation?.calibration;
+    if (!calibration || calibration.kind === "passive") return false;
+    if (calibration.kind === "rope-tension") {
+      if (code !== "KeyE") return false;
+      calibration.tension = THREE.MathUtils.clamp(calibration.tension + .19, 0, 1);
+      calibration.feedback = 1;
+      return true;
+    }
+    if (calibration.kind === "scent-vane") {
+      if (code !== "KeyA" && code !== "KeyD") return false;
+      calibration.direction = THREE.MathUtils.euclideanModulo(calibration.direction + (code === "KeyD" ? 1 : -1), 4);
+      calibration.feedback = 1;
+      return true;
+    }
+    if (calibration.kind === "solar-mirror") {
+      if (code !== "KeyA" && code !== "KeyD") return false;
+      calibration.angle = THREE.MathUtils.euclideanModulo(calibration.angle + (code === "KeyD" ? 1 : -1), 6);
+      calibration.feedback = 1;
+      return true;
+    }
+    const valve = code === "Digit1" ? "intake" : code === "Digit2" ? "fresh" : code === "Digit3" ? "drain" : null;
+    if (!valve) return false;
+    calibration.reading = operateWetlandValve(calibration.reading, valve);
+    calibration.lastValve = valve;
+    calibration.feedback = 1;
+    return true;
+  }
+
   beginAnimalQuest(id: ZooSideQuestId): BronxZooEvent | null {
     if (this.activeAnimalQuest) return null;
     const quest = ZOO_SIDE_QUESTS[id];
@@ -2339,6 +2496,7 @@ export class BronxZooWorld {
     if (previousOrder === order.join(",") && order.length > 1) order = [...order.slice(1), order[0]];
     this.lastAnimalQuestOrders.set(id, order.join(","));
     this.activeAnimalQuest = { id, order, replay, step: 0 };
+    this.activeAnimalQuestConfig = createZooSideQuestConfig(id, seeded(replaySeed ^ 0x51f15e));
     this.activeHabitatOperation = null;
     const route = activeQuestObjective(this.activeAnimalQuest);
     return {
@@ -2373,6 +2531,7 @@ export class BronxZooWorld {
     if (completedStep >= stepCount) {
       const firstCompletion = !this.completedAnimalQuests.has(quest.id);
       this.activeAnimalQuest = null;
+      this.activeAnimalQuestConfig = null;
       this.habitatResearchStreak++;
       this.completeAnimalQuest(quest.id);
       return {
@@ -2435,6 +2594,7 @@ export class BronxZooWorld {
         };
       }
       this.activeHabitatOperation = {
+        calibration: this.createHabitatCalibration(station),
         key: `${this.activeAnimalQuest.id}:${station.id}`,
         progress: 0,
         tracking: true,
@@ -2449,7 +2609,7 @@ export class BronxZooWorld {
         questId: hint.questId,
         step: this.activeAnimalQuest.step + 1,
         stepCount: this.activeAnimalQuest.order.length,
-        message: `${station.action}. The habitat is responding now — ${operation.objective.toLowerCase()} all the way through.`,
+        message: `${station.action}. ${this.activeHabitatFieldControl ? `${this.activeHabitatFieldControl.hint}. ` : ""}The habitat is responding now — ${operation.objective.toLowerCase()} all the way through.`,
       };
     }
     return { kind: "LOCK_PICKING_STARTED", message: "Keep plug tension between 40% and 60%, then find the six pins in binding order." };
@@ -2600,10 +2760,18 @@ export class BronxZooWorld {
     const operation = HABITAT_QUEST_OPERATIONS[station.kind];
     const distance = Math.hypot(player.x - station.position[0], player.z - station.position[1]);
     const responseTarget = this.activeHabitatResponseTarget;
-    const engaged = distance <= 3.25 && Boolean(responseTarget) && this.habitatFocusAligned(player, yaw, responseTarget ?? undefined, .955);
-    this.activeHabitatOperation.tracking = engaged;
+    const tracking = distance <= 3.25 && Boolean(responseTarget) && this.habitatFocusAligned(player, yaw, responseTarget ?? undefined, .955);
+    const calibration = this.activeHabitatOperation.calibration;
+    if (calibration.kind !== "passive") calibration.feedback = Math.max(0, calibration.feedback - delta * 3.4);
+    if (calibration.kind === "rope-tension") calibration.tension = Math.max(0, calibration.tension - delta * (tracking ? .058 : .032));
+    else if (calibration.kind === "wetland-balance") calibration.reading = {
+      water: THREE.MathUtils.clamp(calibration.reading.water + calibration.drift.water * delta, 0, 100),
+      salinity: THREE.MathUtils.clamp(calibration.reading.salinity + calibration.drift.salinity * delta, 0, 100),
+    };
+    const engaged = tracking && this.habitatCalibrationReady(calibration);
+    this.activeHabitatOperation.tracking = tracking;
     this.activeHabitatOperation.progress = THREE.MathUtils.clamp(
-      this.activeHabitatOperation.progress + delta / operation.duration * (engaged ? 1 : -.24),
+      this.activeHabitatOperation.progress + delta / operation.duration * (engaged ? 1 : -.16),
       0,
       1,
     );
@@ -2631,7 +2799,10 @@ export class BronxZooWorld {
       visual.root.userData.questStationState = completed ? "complete" : active ? "active" : "available";
       const operating = active && this.activeHabitatOperation?.key === key;
       const progress = operating ? this.activeHabitatOperation?.progress ?? 0 : completed ? 1 : 0;
+      const calibration = operating ? this.activeHabitatOperation?.calibration ?? null : null;
       visual.root.userData.sustainedFocusProgress = progress;
+      visual.root.userData.fieldCalibrationKind = calibration?.kind ?? "none";
+      visual.root.userData.fieldCalibrationReady = calibration ? this.habitatCalibrationReady(calibration) : completed;
       visual.progressHalo.visible = operating;
       visual.progressMaterial.opacity = operating ? .42 + progress * .48 : 0;
       visual.progressHalo.scale.setScalar(.42 + progress * .58);
@@ -2690,10 +2861,21 @@ export class BronxZooWorld {
         }
       }
       if (operating || completed) {
-        const motion = completed ? 1 : progress;
-        const pulse = operating ? Math.sin(elapsed * 8) * .05 : 0;
+        const motion = completed
+          ? 1
+          : calibration?.kind === "rope-tension"
+            ? calibration.tension
+            : calibration?.kind === "wetland-balance"
+              ? calibration.reading.water / 100
+              : progress;
+        const feedback = calibration && calibration.kind !== "passive" ? calibration.feedback : 0;
+        const pulse = operating ? Math.sin(elapsed * 8) * .05 + feedback * .08 : 0;
         if (visual.kind === "rope-anchor" || visual.kind === "wetland-valve") visual.mechanism.rotation.z = motion * Math.PI * 1.5 + pulse;
-        else if (visual.kind === "scent-vane" || visual.kind === "solar-mirror") visual.mechanism.rotation.y = motion * Math.PI * .72 + pulse;
+        else if (visual.kind === "scent-vane") visual.mechanism.rotation.y = calibration?.kind === "scent-vane" ? calibration.direction * Math.PI / 2 + pulse : motion * Math.PI * .72 + pulse;
+        else if (visual.kind === "solar-mirror") {
+          visual.mechanism.rotation.y = calibration?.kind === "solar-mirror" ? calibration.angle * Math.PI / 3 : motion * Math.PI * .72;
+          visual.mechanism.rotation.x = -.16 + pulse;
+        }
         else if (visual.kind === "buoy-dock") visual.mechanism.position.y = Math.sin(elapsed * 4.8) * .08 * motion;
         else if (visual.kind === "stripe-scanner") visual.mechanism.rotation.y = Math.sin(elapsed * 2.5) * .18 * motion;
         else if (visual.kind === "bird-perch") visual.mechanism.rotation.x = Math.sin(elapsed * 5.4) * .07 * motion;
@@ -3423,20 +3605,19 @@ export class BronxZooWorld {
     const perched = createSpiderMonkey(textures, quality, 0);
     perched.root.userData.habitatRole = "canopy-contact-climber";
     perched.root.userData.motionPhase = 2.6;
-    const habitatWorld = this;
     let lastLiveRigState = "climb";
     let lastLiveRigTime = -Infinity;
     const contactAnimatedCanopy: ZooAnimalRig = {
       root: perched.root,
       ownedTextures: perched.ownedTextures,
-      update(elapsed, delta) {
+      update: (elapsed, delta) => {
         // A fixed-root contact schedule keeps every state on its measured
         // support. Distinct state speeds and the non-zero behavior phase stop
         // this animal synchronizing with either ground walker.
         const cycle = ((elapsed * .83 + 2.6) % 24 + 24) % 24;
         const state = cycle < 10.2 ? "perch" : cycle < 16.4 ? "climb" : "swing";
         const ambientAnimationSpeed = state === "perch" ? .78 : state === "climb" ? .93 : 1.07;
-        const liveRigTarget = habitatWorld.monkeyEnrichmentTarget;
+        const liveRigTarget = this.monkeyEnrichmentTarget;
         if (liveRigTarget) {
           lastLiveRigState = Number(liveRigTarget.userData.trackingProgress ?? 0) < .55 ? "climb" : "swing";
           lastLiveRigTime = elapsed;
