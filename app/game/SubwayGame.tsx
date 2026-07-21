@@ -920,13 +920,16 @@ export function SubwayGame({
       subwayProgress = stationWorld.progressState;
       stationWorld.dispose();
       stationWorld = null;
-      scene.background = new THREE.Color("#8fa694");
-      scene.fog = new THREE.FogExp2("#a9bba6", 0.0045);
       zooWorld = new BronxZooWorld(
         scene,
         textures,
         quality.getSnapshot().profile.foliageDensity,
       );
+      const zooPresentation = zooWorld.environmentSettings;
+      scene.background = new THREE.Color(zooPresentation.background);
+      scene.fog = new THREE.FogExp2(zooPresentation.background, zooPresentation.fogDensity);
+      camera.far = zooPresentation.cameraFar;
+      camera.updateProjectionMatrix();
       player.copy(zooWorld.spawn);
       velocity.set(0, 0, 0);
       yaw = 0;
@@ -1479,6 +1482,9 @@ export function SubwayGame({
       [
         "westfarms",
         "bronxentry",
+        "bronxcitynorth",
+        "bronxcityeast",
+        "bronxcitywest",
         "bronxpolar",
         "bronxgaryfed",
         "bronxbirds",
@@ -1523,6 +1529,9 @@ export function SubwayGame({
     if (
       [
         "bronxentry",
+        "bronxcitynorth",
+        "bronxcityeast",
+        "bronxcitywest",
         "bronxpolar",
         "bronxgaryfed",
         "bronxbirds",
@@ -1541,6 +1550,11 @@ export function SubwayGame({
           player.set(x, reviewWorld.floorHeight(x, z) + 1.48, z);
           yaw = qaZooSideQuest.yaw;
         } else if (qaInput === "bronxentry") player.copy(reviewWorld.entryReviewSpawn);
+        else if (["bronxcitynorth", "bronxcityeast", "bronxcitywest"].includes(qaInput ?? "")) {
+          player.set(0, reviewWorld.floorHeight(0, 24) + 1.48, 24);
+          yaw = qaInput === "bronxcitynorth" ? Math.PI : qaInput === "bronxcityeast" ? -Math.PI / 2 : Math.PI / 2;
+          pitch = -.025;
+        }
         // Start on the authored overlook, centered between glazing mullions.
         // The old spawn sat directly behind the west fence post and turned the
         // polar-bear review into a pair of screen-height black bars.
