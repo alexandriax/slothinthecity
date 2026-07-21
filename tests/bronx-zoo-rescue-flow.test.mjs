@@ -28,6 +28,22 @@ test("the island Bronx Zoo ticket persists through transit and the former donor 
   assert.match(zoo, /const gateOpen = this\.hasAdmissionTicket \? 1 : 0/);
 });
 
+test("the expanded Bronx backdrop preserves entrance grounding and deterministic gates", async () => {
+  const zoo = await readSource("../app/game/world/BronxZooWorld.ts");
+
+  assert.match(zoo, /const ZOO_WORLD_MAX_Z = 39\.5/);
+  assert.match(zoo, /const BRONX_BACKDROP_MIN_Z = ZOO_WORLD_MAX_Z \+ 1\.5/);
+  assert.match(zoo, /const backdropDepth = BRONX_BACKDROP_MAX_Z - BRONX_BACKDROP_MIN_Z/);
+  assert.match(zoo, /ground\.position\.set\(0, \.7, \(BRONX_BACKDROP_MIN_Z \+ BRONX_BACKDROP_MAX_Z\) \* \.5\)/);
+  assert.doesNotMatch(zoo, /ground\.position\.set\(0, \.7, 258\)/);
+  assert.match(zoo, /this\.skateboardDonor\.position\.set\([\s\S]{0,180}this\.floorHeight\(this\.skateboardDonorPosition\.x, this\.skateboardDonorPosition\.z\)/);
+  assert.match(zoo, /const arrivalRoadHalfWidth = 88, boroughRoadHalfWidth = 500/);
+  assert.doesNotMatch(zoo, /roadSpecs\.push\(\{ x: 0, y: \.84, z: 35\.8, sx: 1000/);
+  assert.match(zoo, /pivot\.userData\.openRotation = -side \* 1\.36/);
+  assert.match(zoo, /pivot\.rotation\.y = this\.hasAdmissionTicket \? pivot\.userData\.openRotation : 0/);
+  assert.match(zoo, /const target = gateOpen \* Number\(leaf\.userData\.openRotation \?\? 0\)/);
+});
+
 test("the sloth keeper door launches a full-screen randomized six-pin tension lock", async () => {
   const [zoo, game, lock, styles] = await Promise.all([
     readSource("../app/game/world/BronxZooWorld.ts"),
@@ -200,7 +216,7 @@ test("the expansive zoo includes the sun conure, companion birds, monkeys, and a
   for (const habitat of ["SEA LION POOL", "AFRICAN PLAINS", "RED PANDA", "GIANT TORTOISE", "FLAMINGO WETLAND", "AMERICAN BISON"]) assert.match(zoo, new RegExp(habitat));
   for (const amenity of ["bronx-zoo-water-refill-and-snack-station", "bronx-zoo-waste-recycling-pair", "bronx-zoo-low-glare-path-lamp", "bronx-zoo-keeper-service-yard-detail"]) assert.match(zoo, new RegExp(amenity));
   for (const building of ["bronx-zoo-wildlife-health-center", "bronx-zoo-conservation-center", "bronx-zoo-world-of-reptiles", "bronx-zoo-jungleworld-pavilion", "bronx-zoo-dancing-crane-cafe", "bronx-zoo-nature-trek-center"]) assert.match(zoo, new RegExp(building));
-  assert.match(zoo, /worldBounds = Object\.freeze\(\{ minX: -84, maxX: 84, minZ: -158, maxZ: 39\.5 \}\)/);
+  assert.match(zoo, /worldBounds = Object\.freeze\(\{ minX: -84, maxX: 84, minZ: -158, maxZ: ZOO_WORLD_MAX_Z \}\)/);
   assert.match(zoo, /bronx-zoo-textured-undulating-parkland/);
   assert.match(zoo, /bronx-zoo-instanced-foliage-branch-canopies/);
 });

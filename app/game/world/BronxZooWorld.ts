@@ -78,6 +78,10 @@ type OrientedBoxObstacle = {
 };
 type Obstacle = CircleObstacle | BoxObstacle | OrientedBoxObstacle;
 
+const ZOO_WORLD_MAX_Z = 39.5;
+const BRONX_BACKDROP_MIN_Z = ZOO_WORLD_MAX_Z + 1.5;
+const BRONX_BACKDROP_MAX_Z = 520;
+
 const ANIMAL_QUEST_SOURCE_ROOTS: Record<ZooSideQuestId, readonly string[]> = {
   "aviary-voices": ["sun-conure-hero-bird", "blue-and-gold-macaw-bird", "scarlet-ibis-bird", "green-aracari-bird"],
   "sea-lion-current": ["bronx-zoo-sea-lion-1"],
@@ -1049,9 +1053,10 @@ function addZooArrivalDistrictBackdrop(root: THREE.Group, materials: ZooMaterial
   const buildingMaterial = new THREE.MeshStandardMaterial({ color: "#ffffff", map: textures.stone, bumpMap: textures.stone, bumpScale: .012, roughness: .89, vertexColors: true });
   const roofMaterial = new THREE.MeshStandardMaterial({ color: "#343c3b", roughness: .91, metalness: .08 });
   const fireEscapeMaterial = new THREE.MeshStandardMaterial({ color: "#171b1a", roughness: .54, metalness: .76 });
-  const ground = new THREE.Mesh(new RoundedBoxGeometry(1040, .18, 520, 3, .04), cityGroundMaterial);
+  const backdropDepth = BRONX_BACKDROP_MAX_Z - BRONX_BACKDROP_MIN_Z;
+  const ground = new THREE.Mesh(new RoundedBoxGeometry(1040, .18, backdropDepth, 3, .04), cityGroundMaterial);
   ground.name = "bronx-borough-scale-urban-ground-to-fog";
-  ground.position.set(0, .7, 258);
+  ground.position.set(0, .7, (BRONX_BACKDROP_MIN_Z + BRONX_BACKDROP_MAX_Z) * .5);
   ground.receiveShadow = true;
   borough.add(ground);
 
@@ -1079,7 +1084,13 @@ function addZooArrivalDistrictBackdrop(root: THREE.Group, materials: ZooMaterial
   const roadSpecs: InstanceSpec[] = [];
   avenueCenters.slice(1, -1).filter(x => x !== 18).forEach(x => roadSpecs.push({ x, y: .84, z: 258, sx: 14, sy: .16, sz: 440 }));
   crossStreetCenters.slice(1, -1).forEach(z => roadSpecs.push({ x: 0, y: .85, z, sx: 1000, sy: .16, sz: 14 }));
-  roadSpecs.push({ x: 0, y: .84, z: 35.8, sx: 1000, sy: .16, sz: 14.5 });
+  // Continue the authored 176 m station road only beyond its two ends. A
+  // second full-width slab over the arrival road created overlapping depth
+  // surfaces and visible shimmer across the debug spawn and shuttle apron.
+  const arrivalRoadHalfWidth = 88, boroughRoadHalfWidth = 500;
+  const outerRoadWidth = boroughRoadHalfWidth - arrivalRoadHalfWidth;
+  const outerRoadCenter = arrivalRoadHalfWidth + outerRoadWidth * .5;
+  for (const side of [-1, 1]) roadSpecs.push({ x: side * outerRoadCenter, y: .84, z: 35.8, sx: outerRoadWidth, sy: .16, sz: 14.5 });
   addInstances("bronx-borough-complete-street-grid", new THREE.BoxGeometry(1, 1, 1), cityAsphalt, roadSpecs).receiveShadow = true;
 
   const laneSpecs: InstanceSpec[] = [];
@@ -1089,7 +1100,10 @@ function addZooArrivalDistrictBackdrop(root: THREE.Group, materials: ZooMaterial
   crossStreetCenters.slice(1, -1).forEach(z => {
     for (let x = -500; x < 505; x += 22) laneSpecs.push({ x, y: .95, z, sx: 7.2, sy: .025, sz: .12, color: "#d9d7c9" });
   });
-  for (let x = -500; x < 505; x += 20) laneSpecs.push({ x, y: .95, z: 35.8, sx: 6.8, sy: .025, sz: .12, color: "#e4c451" });
+  for (let x = -490; x <= 490; x += 20) {
+    if (Math.abs(x) <= arrivalRoadHalfWidth + 7) continue;
+    laneSpecs.push({ x, y: .95, z: 35.8, sx: 6.8, sy: .025, sz: .12, color: "#e4c451" });
+  }
   const laneMaterial = new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: .75, vertexColors: true });
   addInstances("bronx-borough-lane-marking-network", new THREE.BoxGeometry(1, 1, 1), laneMaterial, laneSpecs);
 
@@ -1409,7 +1423,7 @@ export class BronxZooWorld {
   readonly root = new THREE.Group();
   readonly spawn = new THREE.Vector3(0, 2.5, 25.5);
   readonly friendReviewSpawn = new THREE.Vector3(0, 1.48, -124.5);
-  readonly entryReviewSpawn = new THREE.Vector3(-8.5, 1.48, 7.8);
+  readonly entryReviewSpawn = new THREE.Vector3(-18, 1.48, 9.5);
   readonly habitatReviewSpawn = new THREE.Vector3(0, 1.48, -125.8);
   readonly attendantPosition = new THREE.Vector3(3.5, 1.48, -16);
   readonly skateboardDonorPosition = new THREE.Vector3(-8.5, 1.48, 6.2);
@@ -1425,7 +1439,7 @@ export class BronxZooWorld {
   readonly skateboardPosition = new THREE.Vector3(-4.1, terrainHeight(-4.1, -1.1), -1.1);
   readonly cameraPosition = new THREE.Vector3(0, 4.2, -118);
   readonly cameraTarget = new THREE.Vector3(0, 3.8, -140);
-  readonly worldBounds = Object.freeze({ minX: -84, maxX: 84, minZ: -158, maxZ: 39.5 });
+  readonly worldBounds = Object.freeze({ minX: -84, maxX: 84, minZ: -158, maxZ: ZOO_WORLD_MAX_Z });
   readonly environmentSettings = Object.freeze({ cameraFar: 680, fogDensity: .0036, background: "#95aaa0" });
   readonly attendant: THREE.Group;
   readonly skateboardDonor: THREE.Group;
@@ -1558,7 +1572,11 @@ export class BronxZooWorld {
     this.skateboardDonor.name = "bronx-zoo-skateboard-donor";
     this.skateboardDonor.userData.dialogue = "Oh, you can have my skateboard if you want. It’s over there.";
     this.skateboardDonor.userData.offersSkateboard = true;
-    this.skateboardDonor.position.set(this.skateboardDonorPosition.x, 0, this.skateboardDonorPosition.z);
+    this.skateboardDonor.position.set(
+      this.skateboardDonorPosition.x,
+      this.floorHeight(this.skateboardDonorPosition.x, this.skateboardDonorPosition.z),
+      this.skateboardDonorPosition.z,
+    );
     this.skateboardDonor.rotation.y = Math.PI * .72;
     this.root.add(this.skateboardDonor);
     this.ownedTextures.push(...donor.ownedTextures);
@@ -1866,8 +1884,8 @@ export class BronxZooWorld {
   update(elapsed: number, delta = 1 / 60, player?: THREE.Vector3) {
     if (this.hasAdmissionTicket && this.state === "ENTER_ZOO" && player && player.z < -10.5) this.state = "FIND_SLOTHS";
     const gateOpen = this.hasAdmissionTicket ? 1 : 0;
-    this.entryGateLeaves.forEach((leaf, index) => {
-      const target = gateOpen * (index ? -1.36 : 1.36);
+    this.entryGateLeaves.forEach(leaf => {
+      const target = gateOpen * Number(leaf.userData.openRotation ?? 0);
       leaf.rotation.y += (target - leaf.rotation.y) * (1 - Math.exp(-delta * 4.5));
     });
     this.keeperDoorLeaves.forEach((leaf, index) => {
@@ -1996,6 +2014,11 @@ export class BronxZooWorld {
       const pivot = new THREE.Group();
       pivot.name = side < 0 ? "bronx-zoo-ticket-gate-left-leaf" : "bronx-zoo-ticket-gate-right-leaf";
       pivot.position.set(side * 6.1, 0, gateZ);
+      pivot.userData.openRotation = -side * 1.36;
+      // Admission is already valid when this streamed world is constructed.
+      // Start at the authoritative state so debug/Strict Mode initialization
+      // cannot visibly replay a closed-to-open gate animation.
+      pivot.rotation.y = this.hasAdmissionTicket ? pivot.userData.openRotation : 0;
       for (let index = 0; index < 6; index++) {
         const bar = new THREE.Mesh(new THREE.CylinderGeometry(.055, .07, 5.1, 9), materials.iron);
         bar.position.set(-side * (.5 + index * 1.02), 2.55, 0);

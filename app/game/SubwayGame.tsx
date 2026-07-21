@@ -1549,7 +1549,14 @@ export function SubwayGame({
           const [x, z] = qaZooSideQuest.position;
           player.set(x, reviewWorld.floorHeight(x, z) + 1.48, z);
           yaw = qaZooSideQuest.yaw;
-        } else if (qaInput === "bronxentry") player.copy(reviewWorld.entryReviewSpawn);
+        } else if (qaInput === "bronxentry") {
+          player.copy(reviewWorld.entryReviewSpawn);
+          // Frame the grounded donor, parked skateboard, and already-open
+          // admission gate together so the direct debug route reviews the
+          // complete arrival interaction instead of pointing into the kiosk.
+          yaw = -.98;
+          pitch = -.045;
+        }
         else if (["bronxcitynorth", "bronxcityeast", "bronxcitywest"].includes(qaInput ?? "")) {
           player.set(0, reviewWorld.floorHeight(0, 24) + 1.48, 24);
           yaw = qaInput === "bronxcitynorth" ? Math.PI : qaInput === "bronxcityeast" ? -Math.PI / 2 : Math.PI / 2;
