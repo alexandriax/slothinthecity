@@ -4,7 +4,7 @@
 
 **[Play Sloth in the City](https://www.slothinthecity.com/)**
 
-> **A New York City adventure with a Field Guide built in.** Learn about Central Park, the subway, the Bronx Zoo, the city streets, the American Museum of Natural History, and the animals who become your friends as you travel. Brief discoveries appear in context along the way; open the Field Guide with `i` or the **Learn** button for the full story and a Wikipedia source.
+> **A New York City adventure with a Field Guide built in.** Learn about Central Park, the subway, the Bronx Zoo, the city streets, the American Museum of Natural History, and the animals who become your friends as you travel. Field Guide discoveries unfold in context throughout the adventure; open it with `i` or the **Learn** button for the full story and a Wikipedia source.
 
 > **Built with ChatGPT Codex.** ChatGPT Codex was used to build this entire app, from code and gameplay through asset production. Codex used Computer Use to coordinate sound effects, generate and refine Blender models, and repeatedly play, inspect, and self-QA the experience.
 
