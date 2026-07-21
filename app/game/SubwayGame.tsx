@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
+import { EducationOverlay } from "./EducationOverlay";
 import { GoalWayfinder } from "./GoalWayfinder";
 import { AdaptiveRenderPipeline } from "./rendering/AdaptiveRenderPipeline";
 import { SlothLockPick } from "./SlothLockPick";
@@ -59,6 +60,7 @@ import {
   friendCountLabel,
   riderCountLabel,
 } from "./campaign/companionCopy";
+import { educationContextForTransitStage } from "./educationFacts";
 
 type TransitStage =
   | "FIFTH_AV"
@@ -3146,6 +3148,10 @@ export function SubwayGame({
     },
     [],
   );
+  const educationContext = educationContextForTransitStage(
+    stage,
+    `${hud.objective} ${hud.prompt} ${hud.status} ${hud.waypoint}`,
+  );
   return (
     <main
       className="game-shell subway-shell"
@@ -3400,6 +3406,13 @@ export function SubwayGame({
         <div className="toast" role="status" aria-live="polite">
           {toast}
         </div>
+      )}
+      {stage !== "COMPLETE" && !lockPicking && !transition && (
+        <EducationOverlay
+          key={educationContext}
+          context={educationContext}
+          viewportRef={mount}
+        />
       )}
       {stage !== "COMPLETE" &&
         pointerLockAvailable &&
