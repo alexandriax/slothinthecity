@@ -303,6 +303,104 @@ test("zebra scanning follows a live animal and tortoise mirrors illuminate physi
   tortoiseWorld.dispose();
 });
 
+test("red pandas, flamingos, and bison physically follow their live habitat responses", async () => {
+  const { BronxZooWorld, THREE } = await loadBronxZooHarness();
+  const scenarios = [
+    {
+      center: [-36, -132],
+      detail: "red-panda-supported-live-scent-route",
+      grounded: false,
+      quest: "red-panda-scent-wind",
+      roots: ["bronx-zoo-red-panda"],
+    },
+    {
+      center: [-71, -55],
+      detail: "bronx-zoo-american-flamingo-wetland",
+      grounded: true,
+      quest: "flamingo-wetland-balance",
+      roots: ["bronx-zoo-american-flamingo-1", "bronx-zoo-american-flamingo-2", "bronx-zoo-american-flamingo-3"],
+    },
+    {
+      center: [72, -105],
+      detail: "bison-physical-native-prairie-restoration-plots",
+      grounded: true,
+      quest: "bison-prairie-seeding",
+      roots: ["bronx-zoo-american-bison-1", "bronx-zoo-american-bison-2"],
+    },
+  ];
+
+  for (const [scenarioIndex, scenario] of scenarios.entries()) {
+    const world = new BronxZooWorld(new THREE.Scene(), textureSet(THREE), .22, 84031 + scenarioIndex);
+    assert.ok(world.root.getObjectByName(scenario.detail), `${scenario.quest} should have a physical habitat response destination`);
+    world.beginAnimalQuest(scenario.quest);
+    const player = world.objectiveTarget.clone();
+    const centerDirection = new THREE.Vector3(scenario.center[0], player.y, scenario.center[1]).sub(player);
+    const centerYaw = Math.atan2(-centerDirection.x, -centerDirection.z);
+    assert.equal(world.interact(player, centerYaw)?.kind, "ANIMAL_QUEST_OPERATION_STARTED");
+    world.update(0, 1 / 60, player, centerYaw);
+    const roots = scenario.roots.map(name => world.root.getObjectByName(name));
+    assert.ok(roots.every(Boolean), `${scenario.quest} should retain every authored habitat animal`);
+    if (scenario.quest === "flamingo-wetland-balance") {
+      assert.ok(roots.every(root => Math.abs(root.scale.y - .56) < .001), "the live flock should use believable adult flamingo scale");
+    }
+    if (scenario.quest === "bison-prairie-seeding") {
+      assert.ok(roots.every(root => Math.abs(root.scale.y - .72) < .001), "the live herd should use believable adult bison scale");
+    }
+    const starts = roots.map(root => root.position.clone());
+    for (let frame = 1; frame <= 100; frame++) {
+      const target = world.activeHabitatResponseTarget;
+      const direction = target.clone().sub(player);
+      world.update(frame / 60, 1 / 60, player, Math.atan2(-direction.x, -direction.z));
+    }
+    roots.forEach((root, index) => {
+      assert.equal(root.userData.enrichmentActive, true, `${root.name} should respond to the live habitat event`);
+      assert.equal(root.userData.animationState, "walk", `${root.name} should use its authored walk cycle while following`);
+      assert.match(root.userData.enrichmentTargetName ?? "", /^live-habitat-response-/);
+      assert.ok(root.position.distanceTo(starts[index]) > .1, `${root.name} should physically change position with the habitat response`);
+      if (scenario.grounded) {
+        assert.ok(Math.abs(root.position.y - world.floorHeight(root.position.x, root.position.z)) < .16, `${root.name} should remain grounded while following`);
+      }
+    });
+    world.dispose();
+  }
+});
+
+test("monkey rig operations drive contact-safe live climb and swing behavior", async () => {
+  const { BronxZooWorld, THREE } = await loadBronxZooHarness();
+  const world = new BronxZooWorld(new THREE.Scene(), textureSet(THREE), .22, 51519);
+  world.beginAnimalQuest("monkey-canopy-rig");
+  const player = world.objectiveTarget.clone();
+  const centerDirection = new THREE.Vector3(-43, player.y, -101).sub(player);
+  const centerYaw = Math.atan2(-centerDirection.x, -centerDirection.z);
+  assert.equal(world.interact(player, centerYaw)?.kind, "ANIMAL_QUEST_OPERATION_STARTED");
+  world.update(0, 1 / 60, player, centerYaw);
+  const canopyMonkey = world.root.getObjectByName("spider-monkey-1");
+  assert.ok(canopyMonkey, "the measured-support canopy monkey should remain in the live habitat");
+  const fixedContactRoot = canopyMonkey.position.clone();
+  const activeCables = [];
+  world.root.traverse(object => {
+    if (object.name.startsWith("monkey-physical-tension-cable-") && object.visible) activeCables.push(object);
+  });
+  assert.equal(activeCables.length, 1, "only the operated anchor should tension a physical cable");
+  const cablePositions = activeCables[0].geometry.getAttribute("position");
+  assert.ok(Math.hypot(
+    cablePositions.getX(1) - cablePositions.getX(0),
+    cablePositions.getY(1) - cablePositions.getY(0),
+    cablePositions.getZ(1) - cablePositions.getZ(0),
+  ) > 8, "the live cable should connect field equipment to the canopy rig");
+  for (let frame = 1; frame <= 100; frame++) {
+    const target = world.activeHabitatResponseTarget;
+    const direction = target.clone().sub(player);
+    world.update(frame / 60, 1 / 60, player, Math.atan2(-direction.x, -direction.z));
+  }
+  assert.equal(canopyMonkey.userData.enrichmentActive, true);
+  assert.match(canopyMonkey.userData.enrichmentTargetName ?? "", /^live-habitat-response-monkey-canopy-rig-/);
+  assert.match(canopyMonkey.userData.animationState ?? "", /^(climb|swing)$/);
+  assert.equal(canopyMonkey.userData.activeContactSupport, "measured-climb-rope-and-foot-rung");
+  assert.ok(canopyMonkey.position.distanceTo(fixedContactRoot) < .001, "the live response must preserve measured support contact at the fixed root");
+  world.dispose();
+});
+
 test("sea-lion enrichment follows the moving buoy rather than a generic pool-center timer", async () => {
   const { BronxZooWorld, THREE } = await loadBronxZooHarness();
   const world = new BronxZooWorld(new THREE.Scene(), textureSet(THREE), .22, 99117);

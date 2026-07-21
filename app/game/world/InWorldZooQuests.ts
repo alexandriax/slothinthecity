@@ -92,9 +92,9 @@ export const IN_WORLD_ZOO_QUESTS: Record<ZooSideQuestId, InWorldZooQuestDefiniti
     startPrompt: "INSPECT THE MONKEY CANOPY RIG",
     routeLabel: "Monkey canopy rig",
     stations: [
-      { id: "north", position: [-42.2, -84.9], action: "TENSION THE NORTH CANOPY ANCHOR", confirmation: "The upper hand line settles without lifting the foot rung.", kind: "rope-anchor" },
-      { id: "west", position: [-59.7, -101.3], action: "SECURE THE WEST SWING ANCHOR", confirmation: "The swing line takes load and the tail support stays planted.", kind: "rope-anchor" },
-      { id: "south", position: [-42.5, -117.4], action: "LOCK THE CLIMBING-RIG TURNBUCKLE", confirmation: "All three contact lines hold a quiet, even tension.", kind: "rope-anchor" },
+      { id: "north", position: [-42.2, -84.9], responsePath: [[-42, -96.6], [-36.5, -100.7]], responseBend: .4, responseHeight: 4.55, action: "TENSION THE NORTH CANOPY ANCHOR", confirmation: "The upper hand line settles while the canopy monkey tests the climb contact.", kind: "rope-anchor" },
+      { id: "west", position: [-59.7, -101.3], responsePath: [[-49.5, -101.2], [-36.5, -100.7]], responseBend: .35, responseHeight: 4.55, action: "SECURE THE WEST SWING ANCHOR", confirmation: "The swing line takes load and the monkey checks its tail-supported reach.", kind: "rope-anchor" },
+      { id: "south", position: [-42.5, -117.4], responsePath: [[-42.2, -107], [-36.5, -100.7]], responseBend: .42, responseHeight: 4.55, action: "LOCK THE CLIMBING-RIG TURNBUCKLE", confirmation: "All three contact lines hold through one final supported swing.", kind: "rope-anchor" },
     ],
   },
   "zebra-stripe-scan": {
@@ -116,9 +116,9 @@ export const IN_WORLD_ZOO_QUESTS: Record<ZooSideQuestId, InWorldZooQuestDefiniti
     startPrompt: "FOLLOW THE RED PANDA SCENT TRAIL",
     routeLabel: "Red panda scent trail",
     stations: [
-      { id: "cedar", position: [-47.1, -124.4], action: "TURN THE CEDAR SCENT VANE", confirmation: "Cedar scent drifts beneath the first climbing branch.", kind: "scent-vane" },
-      { id: "bamboo", position: [-47.2, -139.2], action: "TURN THE BAMBOO SCENT VANE", confirmation: "The enrichment trail bends toward the shaded perch.", kind: "scent-vane" },
-      { id: "nest", position: [-27.1, -142], action: "COMPLETE THE SCENT TRAIL AT THE NEST BOX", confirmation: "The red panda follows the completed canopy scent route.", kind: "scent-vane" },
+      { id: "cedar", position: [-47.1, -124.4], responsePath: [[-40, -134.5], [-36, -132.8]], responseBend: 0, responseHeight: 3.1, action: "TURN THE CEDAR SCENT VANE", confirmation: "Cedar scent drifts beneath the first climbing branch.", kind: "scent-vane" },
+      { id: "bamboo", position: [-47.2, -139.2], responsePath: [[-36, -132.8], [-32.4, -130.5]], responseBend: 0, responseHeight: 3.1, action: "TURN THE BAMBOO SCENT VANE", confirmation: "The enrichment trail bends toward the shaded perch.", kind: "scent-vane" },
+      { id: "nest", position: [-27.1, -142], responsePath: [[-39.3, -134.2], [-32.4, -130.5]], responseBend: 0, responseHeight: 3.1, action: "COMPLETE THE SCENT TRAIL AT THE NEST BOX", confirmation: "The red panda follows the completed canopy scent route.", kind: "scent-vane" },
     ],
   },
   "tortoise-sun-trail": {
@@ -140,9 +140,9 @@ export const IN_WORLD_ZOO_QUESTS: Record<ZooSideQuestId, InWorldZooQuestDefiniti
     startPrompt: "RESTORE THE FLAMINGO WETLAND FLOW",
     routeLabel: "Flamingo wetland flow",
     stations: [
-      { id: "intake", position: [-60.6, -48.8], action: "OPEN THE FRESH-WATER INTAKE", confirmation: "Fresh water enters slowly without flooding the reed shelf.", kind: "wetland-valve" },
-      { id: "reedbed", position: [-79.9, -45.9], action: "ROUTE FLOW THROUGH THE REED BED", confirmation: "The planted filter clears the shallow feeding edge.", kind: "wetland-valve" },
-      { id: "outflow", position: [-81.8, -61.4], action: "SET THE WETLAND OUTFLOW", confirmation: "Depth and salinity settle into the habitat band.", kind: "wetland-valve" },
+      { id: "intake", position: [-60.6, -48.8], responsePath: [[-66.4, -52.1], [-73.3, -57]], responseBend: .35, responseHeight: .34, action: "OPEN THE FRESH-WATER INTAKE", confirmation: "Fresh water enters slowly without flooding the reed shelf.", kind: "wetland-valve" },
+      { id: "reedbed", position: [-79.9, -45.9], responsePath: [[-75.8, -52.2], [-68.4, -57.1]], responseBend: .32, responseHeight: .34, action: "ROUTE FLOW THROUGH THE REED BED", confirmation: "The planted filter clears the shallow feeding edge.", kind: "wetland-valve" },
+      { id: "outflow", position: [-81.8, -61.4], responsePath: [[-75.4, -58.2], [-67.2, -53.2]], responseBend: .3, responseHeight: .34, action: "SET THE WETLAND OUTFLOW", confirmation: "Depth and salinity settle into the habitat band.", kind: "wetland-valve" },
     ],
   },
   "bison-prairie-seeding": {
@@ -152,9 +152,9 @@ export const IN_WORLD_ZOO_QUESTS: Record<ZooSideQuestId, InWorldZooQuestDefiniti
     startPrompt: "WALK THE BISON PRAIRIE SEED LINE",
     routeLabel: "Bison prairie restoration",
     stations: [
-      { id: "bluestem", position: [61.9, -96.4], action: "PLANT THE BIG BLUESTEM POCKET", confirmation: "Big bluestem seed settles behind the browse barrier.", kind: "seed-plot" },
-      { id: "grama", position: [64.1, -115.7], action: "PLANT THE BLUE GRAMA POCKET", confirmation: "Blue grama fills the dry edge beside the rubbing log.", kind: "seed-plot" },
-      { id: "switchgrass", position: [81.5, -115.2], action: "PLANT THE SWITCHGRASS POCKET", confirmation: "The restored prairie now links all three forage patches.", kind: "seed-plot" },
+      { id: "bluestem", position: [61.9, -96.4], responsePath: [[66.8, -100.2], [68.5, -102.5]], responseBend: .42, responseHeight: .72, action: "PLANT THE BIG BLUESTEM POCKET", confirmation: "Big bluestem seed settles behind the browse barrier.", kind: "seed-plot" },
+      { id: "grama", position: [64.1, -115.7], responsePath: [[67.4, -110], [69.2, -108.2]], responseBend: .38, responseHeight: .72, action: "PLANT THE BLUE GRAMA POCKET", confirmation: "Blue grama fills the dry edge beside the rubbing log.", kind: "seed-plot" },
+      { id: "switchgrass", position: [81.5, -115.2], responsePath: [[78.5, -110.3], [76, -108]], responseBend: .4, responseHeight: .72, action: "PLANT THE SWITCHGRASS POCKET", confirmation: "The restored prairie now links all three forage patches.", kind: "seed-plot" },
     ],
   },
 };

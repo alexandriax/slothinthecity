@@ -100,19 +100,23 @@ type SubwayGameProps = {
   initialCompanionIds?: readonly string[];
 };
 
-const QA_ZOO_SIDE_QUESTS: Partial<Record<string, { focusCenter?: [number, number]; questId: ZooSideQuestId; position: [number, number]; yaw: number }>> = {
+const QA_ZOO_SIDE_QUESTS: Partial<Record<string, { focusCenter?: [number, number]; focusPitch?: number; questId: ZooSideQuestId; position: [number, number]; yaw: number }>> = {
   bronxquestbirds: { questId: "aviary-voices", position: [-26, -40], yaw: 1 },
   bronxquestbirdsfocus: { focusCenter: [-43, -51], questId: "aviary-voices", position: [-26, -40], yaw: 1 },
   bronxquestsealion: { questId: "sea-lion-current", position: [0, -63], yaw: 0 },
   bronxquestsealionfocus: { focusCenter: [0, -76], questId: "sea-lion-current", position: [0, -63], yaw: 0 },
   bronxquestmonkey: { questId: "monkey-canopy-rig", position: [-24, -98], yaw: 1.4 },
+  bronxquestmonkeyfocus: { focusCenter: [-36.5, -100.7], focusPitch: .14, questId: "monkey-canopy-rig", position: [-24, -98], yaw: 1.4 },
   bronxquestzebra: { questId: "zebra-stripe-scan", position: [26, -98], yaw: -1.2 },
   bronxquestzebrafocus: { focusCenter: [43, -101], questId: "zebra-stripe-scan", position: [26, -98], yaw: -1.2 },
   bronxquestredpanda: { questId: "red-panda-scent-wind", position: [-24, -135], yaw: 1.816 },
+  bronxquestredpandafocus: { focusCenter: [-36, -132], questId: "red-panda-scent-wind", position: [-24, -135], yaw: 1.816 },
   bronxquesttortoise: { questId: "tortoise-sun-trail", position: [24, -135], yaw: -1.816 },
   bronxquesttortoisefocus: { focusCenter: [36, -132], questId: "tortoise-sun-trail", position: [24, -135], yaw: -1.816 },
   bronxquestflamingo: { questId: "flamingo-wetland-balance", position: [-71, -67], yaw: Math.PI },
+  bronxquestflamingofocus: { focusCenter: [-71, -55], questId: "flamingo-wetland-balance", position: [-71, -67], yaw: Math.PI },
   bronxquestbison: { questId: "bison-prairie-seeding", position: [59, -107], yaw: -1.723 },
+  bronxquestbisonfocus: { focusCenter: [72, -105], questId: "bison-prairie-seeding", position: [59, -107], yaw: -1.723 },
 };
 
 const IN_WORLD_QUEST_CUES = {
@@ -1592,7 +1596,10 @@ export function SubwayGame({
       ].includes(qaInput ?? "") &&
       stationWorld
     ) {
-      const reviewWorld = enterBronxZoo(73021);
+      // The contact-focused monkey review opens on the north anchor, the
+      // shortest clear visitor sightline to the measured canopy support rig.
+      // Other review routes keep the long-standing deterministic seed.
+      const reviewWorld = enterBronxZoo(qaInput === "bronxquestmonkeyfocus" ? 73002 : 73021);
       if (reviewWorld) {
         if (qaZooSideQuest) {
           const [x, z] = qaZooSideQuest.position;
@@ -1685,7 +1692,7 @@ export function SubwayGame({
             // Keep that authored overlook and let the waypoint lead naturally
             // to the first station. The local-only focus checkpoint above is
             // deliberately offset from the equipment for interaction QA.
-            pitch = -.035;
+            pitch = qaZooSideQuest.focusPitch ?? -.035;
             setZooPhase(`IN_WORLD_QUEST_${qaZooSideQuest.questId.toUpperCase()}`);
             showToast(event.message, 5200);
           }

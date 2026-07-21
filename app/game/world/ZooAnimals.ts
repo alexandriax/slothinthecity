@@ -21,6 +21,7 @@ export type ZooHabitatMotionOptions = {
 };
 
 export type ZooAnimalEnrichmentDirective = {
+  grounded?: boolean;
   heading?: readonly [number, number];
   motion: "forage" | "surface" | "swim" | "walk";
   offset: readonly [number, number, number];
@@ -264,6 +265,9 @@ export function configureAutonomousZooAnimal(rig: ZooAnimalRig, options: ZooHabi
         enrichmentDesired.x += appliedEnrichment.offset[0];
         enrichmentDesired.y += appliedEnrichment.offset[1];
         enrichmentDesired.z += appliedEnrichment.offset[2];
+        if (appliedEnrichment.grounded && options.floorHeight) {
+          enrichmentDesired.y = options.floorHeight(enrichmentDesired.x, enrichmentDesired.z) + appliedEnrichment.offset[1];
+        }
         rig.root.position.lerp(enrichmentDesired, enrichmentBlend);
         if (appliedEnrichment.heading) rig.root.rotation.y = Math.atan2(-appliedEnrichment.heading[0], -appliedEnrichment.heading[1]);
         else {
