@@ -21,7 +21,7 @@ import {
   isAutomatedQaSession,
   requestedGameCheckpoint,
 } from "./debugCheckpoints";
-import { BronxZooWorld } from "./world/BronxZooWorld";
+import { BronxZooWorld, type BronxZooEvent } from "./world/BronxZooWorld";
 import { CentralParkReturnWorld } from "./world/CentralParkReturnWorld";
 import {
   CITY_BUS_CITY_REVIEW_PROGRESS,
@@ -100,8 +100,9 @@ type SubwayGameProps = {
   initialCompanionIds?: readonly string[];
 };
 
-const QA_ZOO_SIDE_QUESTS: Partial<Record<string, { questId: ZooSideQuestId; position: [number, number]; yaw: number }>> = {
+const QA_ZOO_SIDE_QUESTS: Partial<Record<string, { focusCenter?: [number, number]; questId: ZooSideQuestId; position: [number, number]; yaw: number }>> = {
   bronxquestbirds: { questId: "aviary-voices", position: [-26, -40], yaw: 1 },
+  bronxquestbirdsfocus: { focusCenter: [-43, -51], questId: "aviary-voices", position: [-26, -40], yaw: 1 },
   bronxquestsealion: { questId: "sea-lion-current", position: [0, -63], yaw: 0 },
   bronxquestmonkey: { questId: "monkey-canopy-rig", position: [-24, -98], yaw: 1.4 },
   bronxquestzebra: { questId: "zebra-stripe-scan", position: [26, -98], yaw: -1.2 },
@@ -921,7 +922,7 @@ export function SubwayGame({
       velocity.set(0, 0, 0);
       startInterior(option);
     }
-    function enterBronxZoo() {
+    function enterBronxZoo(sessionSeed?: number) {
       if (
         !stationWorld ||
         transitStage === "BRONX_ZOO" ||
@@ -935,6 +936,7 @@ export function SubwayGame({
         scene,
         textures,
         quality.getSnapshot().profile.foliageDensity,
+        sessionSeed,
       );
       const zooPresentation = zooWorld.environmentSettings;
       scene.background = new THREE.Color(zooPresentation.background);
@@ -1034,6 +1036,39 @@ export function SubwayGame({
       setZooPhase(zooWorld.questState);
       audio.playQuestComplete();
       return recruited;
+    };
+    const reflectHabitatQuestEvent = (event: BronxZooEvent) => {
+      if (!event.questId || !event.kind.startsWith("ANIMAL_QUEST_")) return;
+      if (event.kind === "ANIMAL_QUEST_FOCUS_REQUIRED") {
+        showToast(event.message, 3600);
+        return;
+      }
+      if (event.kind === "ANIMAL_QUEST_OPERATION_STARTED") {
+        audio.playZooQuestCue(IN_WORLD_QUEST_CUES[event.questId], (event.step ?? 1) - 1);
+        setZooPhase(`IN_WORLD_QUEST_${event.questId.toUpperCase()}`);
+        showToast(event.message, 4200);
+        return;
+      }
+      audio.playZooQuestCue(
+        event.kind === "ANIMAL_QUEST_COMPLETED" ? "success" : IN_WORLD_QUEST_CUES[event.questId],
+        (event.step ?? 1) - 1,
+      );
+      if (event.kind === "ANIMAL_QUEST_COMPLETED") {
+        if (event.firstCompletion !== false) {
+          const recruited = recruitHabitatQuestAnimals(event.questId);
+          showToast(
+            `${event.message} ${recruited.length === 1 ? "A new animal ambassador joins" : `${recruited.length} new animal ambassadors join`} your menagerie.`,
+            7600,
+          );
+        } else {
+          setZooPhase(zooWorld?.questState ?? "FIND_SLOTHS");
+          audio.playQuestComplete();
+          showToast(event.message, 6800);
+        }
+      } else {
+        setZooPhase(`IN_WORLD_QUEST_${event.questId.toUpperCase()}`);
+        showToast(event.message, event.kind === "ANIMAL_QUEST_STARTED" ? 5800 : 4600);
+      }
     };
     function startBusDrive(
       startProgress = 0,
@@ -1554,7 +1589,7 @@ export function SubwayGame({
       ].includes(qaInput ?? "") &&
       stationWorld
     ) {
-      const reviewWorld = enterBronxZoo();
+      const reviewWorld = enterBronxZoo(73021);
       if (reviewWorld) {
         if (qaZooSideQuest) {
           const [x, z] = qaZooSideQuest.position;
@@ -1619,13 +1654,34 @@ export function SubwayGame({
         if (qaZooSideQuest) {
           const event = reviewWorld.beginAnimalQuest(qaZooSideQuest.questId);
           if (event?.kind === "ANIMAL_QUEST_STARTED") {
-            // The review checkpoint is already staged at a clear visitor
+            if (qaZooSideQuest.focusCenter) {
+              const focusTarget = reviewWorld.objectiveTarget;
+              const focusDirection = new THREE.Vector3(
+                qaZooSideQuest.focusCenter[0] - focusTarget.x,
+                0,
+                qaZooSideQuest.focusCenter[1] - focusTarget.z,
+              ).normalize();
+              const focusSide = new THREE.Vector3(-focusDirection.z, 0, focusDirection.x);
+              player.copy(focusTarget)
+                .addScaledVector(focusDirection, -2.22)
+                .addScaledVector(focusSide, .65);
+              player.y = reviewWorld.floorHeight(player.x, player.z) + 1.48;
+              const viewDirection = new THREE.Vector3(
+                qaZooSideQuest.focusCenter[0] - player.x,
+                0,
+                qaZooSideQuest.focusCenter[1] - player.z,
+              ).normalize();
+              yaw = Math.atan2(-viewDirection.x, -viewDirection.z);
+              reviewWorld.update(0, 0, player, yaw);
+            }
+            // Standard review checkpoints remain staged at a clear visitor
             // overlook inside the enclosure-wide trigger. Teleporting onto
             // objectiveTarget placed the camera at the exact centre of the
             // first physical research station, so its post and equipment
             // filled the frame before the player could read the habitat.
-            // Keep the authored overlook and let the waypoint lead naturally
-            // to the first station, matching the real campaign flow.
+            // Keep that authored overlook and let the waypoint lead naturally
+            // to the first station. The local-only focus checkpoint above is
+            // deliberately offset from the equipment for interaction QA.
             pitch = -.035;
             setZooPhase(`IN_WORLD_QUEST_${qaZooSideQuest.questId.toUpperCase()}`);
             showToast(event.message, 5200);
@@ -2308,7 +2364,12 @@ export function SubwayGame({
         );
         player.addScaledVector(velocity, delta);
         zooWorld.resolvePlayer(player, velocity);
-        zooWorld.update(gameTime, delta, player);
+        zooWorld.update(gameTime, delta, player, yaw);
+        let habitatEvent = zooWorld.consumeHabitatEvent();
+        while (habitatEvent) {
+          reflectHabitatQuestEvent(habitatEvent);
+          habitatEvent = zooWorld.consumeHabitatEvent();
+        }
         let garyEvent = zooWorld.consumeGaryEvent();
         while (garyEvent) {
           if (garyEvent.kind === "GARY_FED") {
@@ -2419,22 +2480,8 @@ export function SubwayGame({
                   document.exitPointerLock();
                 } catch {}
               }
-            } else if (event.questId && event.kind.startsWith("ANIMAL_QUEST_")) {
-              audio.playZooQuestCue(
-                event.kind === "ANIMAL_QUEST_COMPLETED" ? "success" : IN_WORLD_QUEST_CUES[event.questId],
-                (event.step ?? 1) - 1,
-              );
-              if (event.kind === "ANIMAL_QUEST_COMPLETED") {
-                const recruited = recruitHabitatQuestAnimals(event.questId);
-                showToast(
-                  `${event.message} ${recruited.length === 1 ? "A new animal joins" : `${recruited.length} new animals join`} your menagerie.`,
-                  7200,
-                );
-              } else {
-                setZooPhase(`IN_WORLD_QUEST_${event.questId.toUpperCase()}`);
-                showToast(event.message, event.kind === "ANIMAL_QUEST_STARTED" ? 5600 : 4400);
-              }
-            } else showToast(event.message, 5000);
+            } else if (event.questId && event.kind.startsWith("ANIMAL_QUEST_")) reflectHabitatQuestEvent(event);
+            else showToast(event.message, 5000);
           }
         }
         if (!lockPickingRef.current && !zooWorld.activeSideQuestId) setZooPhase(zooWorld.questState);
@@ -2453,7 +2500,7 @@ export function SubwayGame({
             status = skateboarding
               ? "SKATEBOARD · SPACE KICKFLIP"
               : activeHabitatQuest && habitatProgress
-                ? `IN-WORLD HABITAT WORK · ${habitatProgress.current} / ${habitatProgress.total} · STREAK ${zooWorld.researchStreak}`
+                ? `IN-WORLD HABITAT WORK · ${habitatProgress.current} / ${habitatProgress.total}${habitatProgress.operation > 0 ? ` · FOCUS ${Math.round(habitatProgress.operation * 100)}%` : ""} · STREAK ${zooWorld.researchStreak}`
               : quest === "ENTER_ZOO"
                 ? count
                   ? companionStatus(count)
@@ -2487,7 +2534,7 @@ export function SubwayGame({
                   ? "PICK LOCK"
                   : "SHUTTLE BUS",
             prompt,
-            promptKey: prompt ? "E" : "",
+            promptKey: prompt && hint?.kind !== "ANIMAL_QUEST_FOCUS" ? "E" : "",
             station: released
               ? "BRONX ZOO · MUSEUM SHUTTLE STOP"
               : "BRONX ZOO · WILDLIFE CONSERVATION CAMPUS",

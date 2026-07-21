@@ -26,7 +26,6 @@ test("every Bronx Zoo habitat quest plays in-world and hands its animal to the p
   ];
   for (const id of questIds) {
     assert.match(logic, new RegExp(`"${id}"`));
-    assert.match(zoo, new RegExp(`"${id}"`));
     assert.match(spatialQuests, new RegExp(`"${id}"`));
   }
   for (const species of [
@@ -38,6 +37,10 @@ test("every Bronx Zoo habitat quest plays in-world and hands its animal to the p
   assert.match(zoo, /kind: "ANIMAL_QUEST_STARTED"/);
   assert.match(zoo, /kind: "ANIMAL_QUEST_ADVANCED"/);
   assert.match(zoo, /kind: "ANIMAL_QUEST_COMPLETED"/);
+  assert.match(zoo, /kind: "ANIMAL_QUEST_OPERATION_STARTED"/);
+  assert.match(zoo, /consumeHabitatEvent/);
+  assert.match(zoo, /The habitat remains alive for future field replays/);
+  assert.doesNotMatch(zoo, /source\.visible = false/, "recruiting an ambassador must not empty the zoo habitat");
   assert.match(zoo, /completeAnimalQuest\(questId: ZooSideQuestId\)/);
   assert.match(game, /const recruitHabitatQuestAnimals = \(questId: ZooSideQuestId\)/);
   assert.match(game, /animalMenagerie\.recruit\(id, spawn, floorY\)/);
@@ -45,6 +48,7 @@ test("every Bronx Zoo habitat quest plays in-world and hands its animal to the p
   assert.match(game, /data-side-quest="in-world"/);
   assert.match(spatialQuests, /triggerRadius: 20\.5/);
   assert.match(spatialQuests, /createInWorldZooQuestOrder/);
+  assert.match(spatialQuests, /HABITAT_QUEST_OPERATIONS/);
   for (const kind of ["bird-perch", "buoy-dock", "rope-anchor", "stripe-scanner", "scent-vane", "solar-mirror", "wetland-valve", "seed-plot"]) {
     assert.match(spatialQuests, new RegExp(`kind: "${kind}"`));
   }

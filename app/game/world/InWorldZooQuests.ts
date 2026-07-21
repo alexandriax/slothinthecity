@@ -19,6 +19,28 @@ export type HabitatQuestStation = {
   kind: HabitatQuestStationKind;
 };
 
+export type HabitatQuestOperation = {
+  duration: number;
+  focusLabel: string;
+  objective: string;
+};
+
+/**
+ * Research equipment is only the starting point. Each station asks the player
+ * to keep the live habitat response in view while the physical operation
+ * completes, turning a single button press into a short first-person field task.
+ */
+export const HABITAT_QUEST_OPERATIONS: Record<HabitatQuestStationKind, HabitatQuestOperation> = {
+  "bird-perch": { duration: 2.35, focusLabel: "KEEP THE PERCHED FLOCK IN VIEW", objective: "Keep the perched flock in view" },
+  "buoy-dock": { duration: 2.1, focusLabel: "TRACK THE BUOY ACROSS THE POOL", objective: "Track the buoy across the pool" },
+  "rope-anchor": { duration: 2.65, focusLabel: "WATCH THE CANOPY LINE TAKE TENSION", objective: "Watch the canopy line take tension" },
+  "stripe-scanner": { duration: 2.5, focusLabel: "KEEP THE ZEBRA'S LIVE PROFILE CENTERED", objective: "Keep the zebra's live profile centered" },
+  "scent-vane": { duration: 2.25, focusLabel: "FOLLOW THE SCENT RIBBON INTO THE CANOPY", objective: "Follow the scent ribbon into the canopy" },
+  "solar-mirror": { duration: 2.7, focusLabel: "HOLD THE SUNBEAM ON THE BASKING STONE", objective: "Hold the sunbeam on the basking stone" },
+  "wetland-valve": { duration: 2.55, focusLabel: "WATCH THE REED-SHELF WATERLINE", objective: "Watch the reed-shelf waterline" },
+  "seed-plot": { duration: 2.2, focusLabel: "TRACK THE SEED ARC INTO THE PRAIRIE", objective: "Track the seed arc into the prairie" },
+};
+
 export type InWorldZooQuestDefinition = {
   id: ZooSideQuestId;
   center: readonly [number, number];
@@ -136,6 +158,7 @@ export const IN_WORLD_ZOO_QUESTS: Record<ZooSideQuestId, InWorldZooQuestDefiniti
 export type ActiveInWorldZooQuest = {
   id: ZooSideQuestId;
   order: readonly number[];
+  replay: boolean;
   step: number;
 };
 
@@ -156,14 +179,18 @@ export function createInWorldZooQuestOrder(id: ZooSideQuestId, sessionSeed: numb
 }
 
 export function habitatQuestAt(player: THREE.Vector3, completed: ReadonlySet<ZooSideQuestId>) {
-  let nearest: { definition: InWorldZooQuestDefinition; distance: number } | null = null;
+  let nearestNew: { definition: InWorldZooQuestDefinition; distance: number; replay: false } | null = null;
+  let nearestReplay: { definition: InWorldZooQuestDefinition; distance: number; replay: true } | null = null;
   for (const definition of Object.values(IN_WORLD_ZOO_QUESTS)) {
-    if (completed.has(definition.id)) continue;
     const distance = Math.hypot(player.x - definition.center[0], player.z - definition.center[1]);
-    if (distance > definition.triggerRadius || nearest && distance >= nearest.distance) continue;
-    nearest = { definition, distance };
+    if (distance > definition.triggerRadius) continue;
+    if (completed.has(definition.id)) {
+      if (!nearestReplay || distance < nearestReplay.distance) nearestReplay = { definition, distance, replay: true };
+    } else if (!nearestNew || distance < nearestNew.distance) {
+      nearestNew = { definition, distance, replay: false };
+    }
   }
-  return nearest;
+  return nearestNew ?? nearestReplay;
 }
 
 export function activeQuestStation(active: ActiveInWorldZooQuest) {

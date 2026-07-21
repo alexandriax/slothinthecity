@@ -157,3 +157,51 @@ test("habitat research stays in the live zoo and starts across each enclosure ed
   assert.equal(reviewWorld.beginAnimalQuest("flamingo-wetland-balance"), null, "one world cannot start a second copy of an active route");
   reviewWorld.dispose();
 });
+
+test("habitat research requires live first-person focus, preserves zoo animals, and supports field replays", async () => {
+  const { BronxZooWorld, THREE } = await loadBronxZooHarness();
+  const world = new BronxZooWorld(new THREE.Scene(), textureSet(THREE), .22, 73021);
+  const mangoHabitatRoot = world.root.getObjectByName("sun-conure-hero-bird");
+  assert.ok(mangoHabitatRoot, "the live aviary should own Mango's habitat rig");
+  const mangoVisibilityBeforeResearch = mangoHabitatRoot.visible;
+  const start = world.beginAnimalQuest("aviary-voices");
+  assert.equal(start?.kind, "ANIMAL_QUEST_STARTED");
+  const firstRouteTarget = world.objectiveTarget.clone();
+
+  let completion;
+  for (let stationIndex = 0; stationIndex < 3; stationIndex++) {
+    const player = world.objectiveTarget.clone();
+    const habitatCenter = new THREE.Vector3(-43, player.y, -51);
+    const direction = habitatCenter.sub(player);
+    const alignedYaw = Math.atan2(-direction.x, -direction.z);
+    if (stationIndex === 0) {
+      const wrongWay = world.interact(player, alignedYaw + Math.PI);
+      assert.equal(wrongWay?.kind, "ANIMAL_QUEST_FOCUS_REQUIRED");
+      assert.equal(world.activeSideQuestProgress?.operation, 0, "a blind button press must not advance live habitat research");
+    }
+    const operation = world.interact(player, alignedYaw);
+    assert.equal(operation?.kind, "ANIMAL_QUEST_OPERATION_STARTED");
+    assert.equal(world.activeSideQuestProgress?.operation, 0);
+
+    for (let frame = 0; frame < 190; frame++) world.update(frame / 60, 1 / 60, player, alignedYaw);
+    const result = world.consumeHabitatEvent();
+    assert.ok(result, "sustained focus should finish the active physical station");
+    if (stationIndex < 2) assert.equal(result.kind, "ANIMAL_QUEST_ADVANCED");
+    else completion = result;
+  }
+
+  assert.equal(completion?.kind, "ANIMAL_QUEST_COMPLETED");
+  assert.equal(completion?.firstCompletion, true);
+  assert.equal(mangoHabitatRoot.visible, mangoVisibilityBeforeResearch, "Mango's live aviary visibility must not change when an ambassador joins");
+
+  const aviaryEdge = new THREE.Vector3(-56, 1.48, -51);
+  const replayHint = world.interactionHint(aviaryEdge);
+  assert.equal(replayHint?.kind, "ANIMAL_QUEST");
+  assert.match(replayHint?.label ?? "", /REVISIT MANGO'S CANOPY CHORUS/);
+  const replay = world.interact(aviaryEdge);
+  assert.equal(replay?.kind, "ANIMAL_QUEST_STARTED");
+  assert.equal(world.activeSideQuestProgress?.replay, true);
+  assert.match(replay?.message ?? "", /field replay started with a new route/i);
+  assert.ok(world.objectiveTarget.distanceTo(firstRouteTarget) > 1, "a replay must not open on the same station order as the previous route");
+  world.dispose();
+});

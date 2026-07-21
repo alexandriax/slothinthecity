@@ -36,6 +36,7 @@ import {
 import { markAuthoredZooAnimalsDisposed } from "./animals/AuthoredZooAnimalAssets";
 import { createSkateboard, rollPersonalMobility, type PersonalMobilityVehicle } from "./PersonalMobility";
 import {
+  HABITAT_QUEST_OPERATIONS,
   IN_WORLD_ZOO_QUESTS,
   activeQuestObjective,
   activeQuestStation,
@@ -48,7 +49,8 @@ import {
 export type BronxZooQuestState = "ENTER_ZOO" | "FIND_SLOTHS" | "ESCORT_TO_BUS";
 
 export type BronxZooEvent = {
-  kind: "SKATEBOARD_OFFERED" | "LOCK_PICKING_STARTED" | "SLOTHS_RELEASED" | "GARY_HUNGRY" | "JAM_SANDWICH_VENDED" | "JAM_SANDWICH_RECOVERED" | "JAM_SANDWICH_MISSED" | "GARY_FED" | "ANIMAL_QUEST_STARTED" | "ANIMAL_QUEST_ADVANCED" | "ANIMAL_QUEST_COMPLETED";
+  kind: "SKATEBOARD_OFFERED" | "LOCK_PICKING_STARTED" | "SLOTHS_RELEASED" | "GARY_HUNGRY" | "JAM_SANDWICH_VENDED" | "JAM_SANDWICH_RECOVERED" | "JAM_SANDWICH_MISSED" | "GARY_FED" | "ANIMAL_QUEST_STARTED" | "ANIMAL_QUEST_OPERATION_STARTED" | "ANIMAL_QUEST_FOCUS_REQUIRED" | "ANIMAL_QUEST_ADVANCED" | "ANIMAL_QUEST_COMPLETED";
+  firstCompletion?: boolean;
   message: string;
   questId?: ZooSideQuestId;
   step?: number;
@@ -56,11 +58,16 @@ export type BronxZooEvent = {
 };
 
 export type BronxZooInteractionHint = {
-  kind: "SKATEBOARD_DONOR" | "SLOTH_HABITAT" | "BUS_BOARDING" | "SNACK_MACHINE" | "GARY_HABITAT" | "LOOSE_JAM_SANDWICH" | "ANIMAL_QUEST" | "ANIMAL_QUEST_STEP";
+  kind: "SKATEBOARD_DONOR" | "SLOTH_HABITAT" | "BUS_BOARDING" | "SNACK_MACHINE" | "GARY_HABITAT" | "LOOSE_JAM_SANDWICH" | "ANIMAL_QUEST" | "ANIMAL_QUEST_STEP" | "ANIMAL_QUEST_FOCUS";
   label: string;
   target: THREE.Vector3;
   distance: number;
   questId?: ZooSideQuestId;
+};
+
+type ActiveHabitatOperation = {
+  key: string;
+  progress: number;
 };
 
 type GarySnackState = "NONE" | "CARRIED" | "AIRBORNE" | "LOOSE" | "EATEN";
@@ -82,17 +89,6 @@ const ZOO_WORLD_MAX_Z = 39.5;
 const BRONX_BACKDROP_MIN_Z = ZOO_WORLD_MAX_Z + 1.5;
 const BRONX_BACKDROP_MAX_Z = 760;
 const BRONX_CITY_HALF_EXTENT = 760;
-
-const ANIMAL_QUEST_SOURCE_ROOTS: Record<ZooSideQuestId, readonly string[]> = {
-  "aviary-voices": ["sun-conure-hero-bird", "blue-and-gold-macaw-bird", "scarlet-ibis-bird", "green-aracari-bird"],
-  "sea-lion-current": ["bronx-zoo-sea-lion-1"],
-  "monkey-canopy-rig": ["spider-monkey-1"],
-  "zebra-stripe-scan": ["bronx-zoo-plains-zebra-1"],
-  "red-panda-scent-wind": ["bronx-zoo-red-panda"],
-  "tortoise-sun-trail": ["bronx-zoo-aldabra-giant-tortoise"],
-  "flamingo-wetland-balance": ["bronx-zoo-american-flamingo-1"],
-  "bison-prairie-seeding": ["bronx-zoo-american-bison-1"],
-};
 
 type CaptiveSlothMotion = {
   root: THREE.Group;
@@ -956,15 +952,22 @@ function addMuseumShuttleBus(root: THREE.Group, materials: ZooMaterials, ownedTe
 
 type HabitatQuestStationVisual = {
   indicator: THREE.MeshStandardMaterial;
+  kind: HabitatQuestStationKind;
+  mechanism: THREE.Group;
+  progressHalo: THREE.Mesh;
+  progressMaterial: THREE.MeshBasicMaterial;
+  questId: ZooSideQuestId;
   root: THREE.Group;
+  stationId: string;
+  stationIndex: number;
 };
 
 function addHabitatQuestStationTop(group: THREE.Group, kind: HabitatQuestStationKind, materials: ZooMaterials, quality: number) {
   const dark = new THREE.MeshStandardMaterial({ color: "#26322d", roughness: .52, metalness: .42 });
   const accent = new THREE.MeshStandardMaterial({ color: "#d2aa48", roughness: .5, metalness: .3 });
   if (kind === "bird-perch") {
-    const callHorn = new THREE.Mesh(new THREE.CylinderGeometry(.24, .11, .48, quality > .72 ? 18 : 12), accent);
-    callHorn.rotation.z = Math.PI / 2; callHorn.position.set(0, 1.42, 0); callHorn.name = "in-world-aviary-acoustic-response-horn"; group.add(callHorn);
+    const callHorn = new THREE.Mesh(new THREE.CylinderGeometry(.17, .085, .36, quality > .72 ? 18 : 12), accent);
+    callHorn.rotation.z = Math.PI / 2; callHorn.position.set(0, 1.32, 0); callHorn.name = "in-world-aviary-acoustic-response-horn"; group.add(callHorn);
   } else if (kind === "buoy-dock") {
     const cradle = new THREE.Mesh(new THREE.TorusGeometry(.34, .075, 10, quality > .72 ? 28 : 18), dark);
     cradle.rotation.x = Math.PI / 2; cradle.position.y = 1.35; cradle.name = "in-world-sea-lion-floating-buoy-cradle"; group.add(cradle);
@@ -1024,14 +1027,33 @@ function addInWorldHabitatQuestStations(root: THREE.Group, materials: ZooMateria
       foot.position.y = .09; foot.receiveShadow = true; stationRoot.add(foot);
       const post = new THREE.Mesh(new THREE.CylinderGeometry(.07, .1, 1.15, quality > .72 ? 12 : 8), materials.iron);
       post.position.y = .72; post.castShadow = true; stationRoot.add(post);
-      addHabitatQuestStationTop(stationRoot, station.kind, materials, quality);
+      const mechanism = new THREE.Group();
+      mechanism.name = `habitat-research-live-mechanism-${station.kind}`;
+      addHabitatQuestStationTop(mechanism, station.kind, materials, quality);
+      stationRoot.add(mechanism);
       const indicator = new THREE.MeshStandardMaterial({ color: "#c8af65", emissive: "#7a5d18", emissiveIntensity: .12, roughness: .3, metalness: .18 });
-      const beacon = new THREE.Mesh(new THREE.SphereGeometry(.105, quality > .72 ? 16 : 10, 8), indicator);
-      beacon.name = `habitat-research-beacon-${index + 1}`; beacon.position.set(.33, 1.78, .04); stationRoot.add(beacon);
+      const beacon = new THREE.Mesh(new THREE.SphereGeometry(.045, quality > .72 ? 16 : 10, 8), indicator);
+      beacon.name = `habitat-research-beacon-${index + 1}`; beacon.position.set(.3, 1.62, .04); stationRoot.add(beacon);
+      const progressMaterial = new THREE.MeshBasicMaterial({ color: "#ffe27b", transparent: true, opacity: 0, depthWrite: false, toneMapped: false });
+      const progressHalo = new THREE.Mesh(new THREE.RingGeometry(.145, .205, quality > .72 ? 28 : 18), progressMaterial);
+      progressHalo.name = "habitat-research-sustained-focus-progress-halo";
+      progressHalo.position.set(.3, 1.62, .055);
+      progressHalo.scale.setScalar(.02);
+      stationRoot.add(progressHalo);
       stationRoot.traverse(object => { if (object instanceof THREE.Mesh) object.castShadow = quality > .66; });
       stationGroup.add(stationRoot);
       obstacles.push({ kind: "circle", x: station.position[0], z: station.position[1], radius: .5 });
-      visuals.set(`${definition.id}:${station.id}`, { indicator, root: stationRoot });
+      visuals.set(`${definition.id}:${station.id}`, {
+        indicator,
+        kind: station.kind,
+        mechanism,
+        progressHalo,
+        progressMaterial,
+        questId: definition.id,
+        root: stationRoot,
+        stationId: station.id,
+        stationIndex: index,
+      });
     });
   }
   root.add(stationGroup);
@@ -1612,11 +1634,14 @@ export class BronxZooWorld {
   private readonly jamSandwich = createJamSandwich();
   private readonly jamSandwichVelocity = new THREE.Vector3();
   private readonly garyEvents: BronxZooEvent[] = [];
+  private readonly habitatEvents: BronxZooEvent[] = [];
   private readonly completedAnimalQuests = new Set<ZooSideQuestId>();
+  private readonly lastAnimalQuestOrders = new Map<ZooSideQuestId, string>();
   private readonly questStationVisuals: Map<string, HabitatQuestStationVisual>;
   private readonly arrivalDistrictMotion: ZooArrivalDistrictRuntime;
   private readonly sessionSeed: number;
   private activeAnimalQuest: ActiveInWorldZooQuest | null = null;
+  private activeHabitatOperation: ActiveHabitatOperation | null = null;
   private habitatResearchStreak = 0;
   private garyRig: ZooAnimalRig | null = null;
   private garySnackState: GarySnackState = "NONE";
@@ -1800,7 +1825,12 @@ export class BronxZooWorld {
   get activeSideQuestId() { return this.activeAnimalQuest?.id ?? null; }
   get activeSideQuestProgress() {
     if (!this.activeAnimalQuest) return null;
-    return { current: this.activeAnimalQuest.step + 1, total: this.activeAnimalQuest.order.length };
+    return {
+      current: this.activeAnimalQuest.step + 1,
+      operation: this.activeHabitatOperation?.progress ?? 0,
+      replay: this.activeAnimalQuest.replay,
+      total: this.activeAnimalQuest.order.length,
+    };
   }
   get researchStreak() { return this.habitatResearchStreak; }
 
@@ -1812,7 +1842,14 @@ export class BronxZooWorld {
   }
 
   get objectiveLabel() {
-    if (this.activeAnimalQuest) return activeQuestObjective(this.activeAnimalQuest).objective;
+    if (this.activeAnimalQuest) {
+      if (this.activeHabitatOperation) {
+        const station = activeQuestStation(this.activeAnimalQuest);
+        const operation = HABITAT_QUEST_OPERATIONS[station.kind];
+        return `${operation.objective} · ${Math.round(this.activeHabitatOperation.progress * 100)}%`;
+      }
+      return activeQuestObjective(this.activeAnimalQuest).objective;
+    }
     if (this.state === "ENTER_ZOO") return "Enter the Bronx Zoo with your island ticket";
     if (this.state === "FIND_SLOTHS") return "Find the sloth habitat and pick its keeper lock";
     return "Bring your friends to the zoo shuttle bus";
@@ -1846,13 +1883,25 @@ export class BronxZooWorld {
       const station = activeQuestStation(this.activeAnimalQuest);
       const target = new THREE.Vector3(station.position[0], 1.48, station.position[1]);
       const distance = this.distanceXZ(player, target);
+      if (this.activeHabitatOperation && distance <= 3.25) {
+        const operation = HABITAT_QUEST_OPERATIONS[station.kind];
+        return {
+          kind: "ANIMAL_QUEST_FOCUS",
+          questId: this.activeAnimalQuest.id,
+          label: `${operation.focusLabel} · ${Math.round(this.activeHabitatOperation.progress * 100)}%`,
+          target,
+          distance,
+        };
+      }
       if (distance <= 2.75) return { kind: "ANIMAL_QUEST_STEP", questId: this.activeAnimalQuest.id, label: station.action, target, distance };
     } else {
       const nearbyHabitat = habitatQuestAt(player, this.completedAnimalQuests);
       if (nearbyHabitat) return {
         kind: "ANIMAL_QUEST",
         questId: nearbyHabitat.definition.id,
-        label: nearbyHabitat.definition.startPrompt,
+        label: nearbyHabitat.replay
+          ? `REVISIT ${nearbyHabitat.definition.routeLabel.toUpperCase()} · BUILD YOUR FIELD STREAK`
+          : nearbyHabitat.definition.startPrompt,
         target: player.clone(),
         distance: 0,
       };
@@ -1865,16 +1914,70 @@ export class BronxZooWorld {
   }
 
   beginAnimalQuest(id: ZooSideQuestId): BronxZooEvent | null {
-    if (this.activeAnimalQuest || this.completedAnimalQuests.has(id)) return null;
+    if (this.activeAnimalQuest) return null;
     const quest = ZOO_SIDE_QUESTS[id];
-    this.activeAnimalQuest = { id, order: createInWorldZooQuestOrder(id, this.sessionSeed), step: 0 };
+    const replay = this.completedAnimalQuests.has(id);
+    const replaySeed = this.sessionSeed + this.habitatResearchStreak * 0x9e3779b1;
+    let order = createInWorldZooQuestOrder(id, replaySeed);
+    const previousOrder = this.lastAnimalQuestOrders.get(id);
+    if (previousOrder === order.join(",") && order.length > 1) order = [...order.slice(1), order[0]];
+    this.lastAnimalQuestOrders.set(id, order.join(","));
+    this.activeAnimalQuest = { id, order, replay, step: 0 };
+    this.activeHabitatOperation = null;
     const route = activeQuestObjective(this.activeAnimalQuest);
     return {
       kind: "ANIMAL_QUEST_STARTED",
       questId: id,
       step: 1,
       stepCount: this.activeAnimalQuest.order.length,
-      message: `${quest.title} is now live in the habitat. ${route.objective} Follow the glowing research beacon.`,
+      message: replay
+        ? `${quest.title} field replay started with a new route. ${route.objective} Hold each live habitat response in view to extend your research streak.`
+        : `${quest.title} is now live in the habitat. ${route.objective} Follow the glowing research beacon, then hold the live habitat response in view.`,
+    };
+  }
+
+  private habitatFocusAligned(player: THREE.Vector3, yaw: number) {
+    if (!this.activeAnimalQuest) return false;
+    const center = IN_WORLD_ZOO_QUESTS[this.activeAnimalQuest.id].center;
+    const toHabitatX = center[0] - player.x;
+    const toHabitatZ = center[1] - player.z;
+    const length = Math.hypot(toHabitatX, toHabitatZ) || 1;
+    const forwardX = -Math.sin(yaw);
+    const forwardZ = -Math.cos(yaw);
+    return (forwardX * toHabitatX + forwardZ * toHabitatZ) / length >= .5;
+  }
+
+  private finishActiveHabitatStation(): BronxZooEvent | null {
+    if (!this.activeAnimalQuest) return null;
+    const quest = this.activeAnimalQuest;
+    const station = activeQuestStation(quest);
+    const completedStep = quest.step + 1;
+    const stepCount = quest.order.length;
+    this.activeHabitatOperation = null;
+    if (completedStep >= stepCount) {
+      const firstCompletion = !this.completedAnimalQuests.has(quest.id);
+      this.activeAnimalQuest = null;
+      this.habitatResearchStreak++;
+      this.completeAnimalQuest(quest.id);
+      return {
+        kind: "ANIMAL_QUEST_COMPLETED",
+        firstCompletion,
+        questId: quest.id,
+        step: stepCount,
+        stepCount,
+        message: firstCompletion
+          ? `${station.confirmation} ${ZOO_SIDE_QUESTS[quest.id].title} complete · research streak ${this.habitatResearchStreak}. The habitat remains alive for future field replays.`
+          : `${station.confirmation} Field replay complete · research streak ${this.habitatResearchStreak}. A new route will be waiting on the next visit.`,
+      };
+    }
+    quest.step++;
+    const next = activeQuestObjective(quest);
+    return {
+      kind: "ANIMAL_QUEST_ADVANCED",
+      questId: quest.id,
+      step: completedStep,
+      stepCount,
+      message: `${station.confirmation} Field observation captured. Next: ${next.objective}`,
     };
   }
 
@@ -1902,46 +2005,41 @@ export class BronxZooWorld {
       return null;
     }
     if (hint.kind === "ANIMAL_QUEST" && hint.questId) return this.beginAnimalQuest(hint.questId);
+    if (hint.kind === "ANIMAL_QUEST_FOCUS") return null;
     if (hint.kind === "ANIMAL_QUEST_STEP" && hint.questId && this.activeAnimalQuest?.id === hint.questId) {
       const station = activeQuestStation(this.activeAnimalQuest);
-      const completedStep = this.activeAnimalQuest.step + 1;
-      const stepCount = this.activeAnimalQuest.order.length;
-      if (completedStep >= stepCount) {
-        this.activeAnimalQuest = null;
-        this.habitatResearchStreak++;
-        this.completeAnimalQuest(hint.questId);
+      const operation = HABITAT_QUEST_OPERATIONS[station.kind];
+      if (!this.habitatFocusAligned(player, yaw)) {
         return {
-          kind: "ANIMAL_QUEST_COMPLETED",
+          kind: "ANIMAL_QUEST_FOCUS_REQUIRED",
           questId: hint.questId,
-          step: stepCount,
-          stepCount,
-          message: `${station.confirmation} ${ZOO_SIDE_QUESTS[hint.questId].title} complete · research streak ${this.habitatResearchStreak}.`,
+          step: this.activeAnimalQuest.step + 1,
+          stepCount: this.activeAnimalQuest.order.length,
+          message: `Use the station from here, then face the live enclosure. ${operation.objective}.`,
         };
       }
-      this.activeAnimalQuest.step++;
-      const next = activeQuestObjective(this.activeAnimalQuest);
+      this.activeHabitatOperation = {
+        key: `${this.activeAnimalQuest.id}:${station.id}`,
+        progress: 0,
+      };
       return {
-        kind: "ANIMAL_QUEST_ADVANCED",
+        kind: "ANIMAL_QUEST_OPERATION_STARTED",
         questId: hint.questId,
-        step: completedStep,
-        stepCount,
-        message: `${station.confirmation} Next: ${next.objective}`,
+        step: this.activeAnimalQuest.step + 1,
+        stepCount: this.activeAnimalQuest.order.length,
+        message: `${station.action}. ${operation.objective} while the physical response completes.`,
       };
     }
     return { kind: "LOCK_PICKING_STARTED", message: "Keep plug tension between 40% and 60%, then find the six pins in binding order." };
   }
 
   completeAnimalQuest(questId: ZooSideQuestId) {
-    if (this.completedAnimalQuests.has(questId)) return ZOO_SIDE_QUESTS[questId].recruitedSpecies;
     this.completedAnimalQuests.add(questId);
-    ANIMAL_QUEST_SOURCE_ROOTS[questId].forEach(name => {
-      const source = this.root.getObjectByName(name);
-      if (source) source.visible = false;
-    });
     return ZOO_SIDE_QUESTS[questId].recruitedSpecies;
   }
 
   consumeGaryEvent() { return this.garyEvents.shift() ?? null; }
+  consumeHabitatEvent() { return this.habitatEvents.shift() ?? null; }
 
   setGaryFed(fed = true) {
     this.garyFed = fed;
@@ -2039,7 +2137,7 @@ export class BronxZooWorld {
     position.y = this.floorHeight(position.x, position.z);
   }
 
-  update(elapsed: number, delta = 1 / 60, player?: THREE.Vector3) {
+  update(elapsed: number, delta = 1 / 60, player?: THREE.Vector3, yaw = 0) {
     if (this.hasAdmissionTicket && this.state === "ENTER_ZOO" && player && player.z < -10.5) this.state = "FIND_SLOTHS";
     const gateOpen = this.hasAdmissionTicket ? 1 : 0;
     this.entryGateLeaves.forEach(leaf => {
@@ -2054,14 +2152,9 @@ export class BronxZooWorld {
     idleAuthoredHuman(this.skateboardDonor, delta);
     this.guestAgents.forEach(agent => updateAmbientHumanAgent(agent, elapsed, delta));
     this.arrivalDistrictMotion.update(elapsed);
+    this.updateHabitatOperation(delta, player, yaw);
     this.updateHabitatQuestStations(elapsed);
     this.animals.forEach(animal => animal.update(elapsed, delta));
-    this.completedAnimalQuests.forEach(questId => {
-      ANIMAL_QUEST_SOURCE_ROOTS[questId].forEach(name => {
-        const source = this.root.getObjectByName(name);
-        if (source) source.visible = false;
-      });
-    });
     if (player && !this.garyFed && !this.garyHungryAnnounced && this.distanceXZ(player, this.garyViewingPosition) <= 5.2) {
       this.garyHungryAnnounced = true;
       this.garyEvents.push({ kind: "GARY_HUNGRY", message: "Gary presses his nose toward the fence. He’s hungry — a nearby snack machine vends jam sandwiches." });
@@ -2074,17 +2167,63 @@ export class BronxZooWorld {
     }
   }
 
+  private updateHabitatOperation(delta: number, player?: THREE.Vector3, yaw = 0) {
+    if (!this.activeAnimalQuest || !this.activeHabitatOperation || !player) return;
+    const station = activeQuestStation(this.activeAnimalQuest);
+    const stationKey = `${this.activeAnimalQuest.id}:${station.id}`;
+    if (this.activeHabitatOperation.key !== stationKey) {
+      this.activeHabitatOperation = null;
+      return;
+    }
+    const operation = HABITAT_QUEST_OPERATIONS[station.kind];
+    const distance = Math.hypot(player.x - station.position[0], player.z - station.position[1]);
+    const engaged = distance <= 3.25 && this.habitatFocusAligned(player, yaw);
+    this.activeHabitatOperation.progress = THREE.MathUtils.clamp(
+      this.activeHabitatOperation.progress + delta / operation.duration * (engaged ? 1 : -.38),
+      0,
+      1,
+    );
+    if (this.activeHabitatOperation.progress >= 1) {
+      const event = this.finishActiveHabitatStation();
+      if (event) this.habitatEvents.push(event);
+    }
+  }
+
   private updateHabitatQuestStations(elapsed: number) {
     const activeStation = this.activeAnimalQuest ? activeQuestStation(this.activeAnimalQuest) : null;
     const activeKey = this.activeAnimalQuest && activeStation ? `${this.activeAnimalQuest.id}:${activeStation.id}` : "";
     this.questStationVisuals.forEach((visual, key) => {
-      const questId = key.slice(0, key.lastIndexOf(":")) as ZooSideQuestId;
-      const completed = this.completedAnimalQuests.has(questId);
+      const activeRouteIndex = this.activeAnimalQuest?.id === visual.questId
+        ? this.activeAnimalQuest.order.indexOf(visual.stationIndex)
+        : -1;
+      const routeStepComplete = activeRouteIndex >= 0 && activeRouteIndex < (this.activeAnimalQuest?.step ?? 0);
+      const completed = routeStepComplete || (
+        this.completedAnimalQuests.has(visual.questId) && this.activeAnimalQuest?.id !== visual.questId
+      );
       const active = key === activeKey;
       visual.indicator.color.set(completed ? "#8fd49a" : active ? "#ffe27b" : "#9d936f");
       visual.indicator.emissive.set(completed ? "#3d9c57" : active ? "#f0a72b" : "#493b18");
-      visual.indicator.emissiveIntensity = completed ? .7 : active ? 1.75 + Math.sin(elapsed * 5.2) * .42 : .1;
+      visual.indicator.emissiveIntensity = completed ? .42 : active ? .78 + Math.sin(elapsed * 5.2) * .18 : .08;
       visual.root.userData.questStationState = completed ? "complete" : active ? "active" : "available";
+      const operating = active && this.activeHabitatOperation?.key === key;
+      const progress = operating ? this.activeHabitatOperation?.progress ?? 0 : completed ? 1 : 0;
+      visual.root.userData.sustainedFocusProgress = progress;
+      visual.progressHalo.visible = operating;
+      visual.progressMaterial.opacity = operating ? .42 + progress * .48 : 0;
+      visual.progressHalo.scale.setScalar(.42 + progress * .58);
+      visual.progressHalo.rotation.z = elapsed * .72;
+      visual.mechanism.position.y = 0;
+      visual.mechanism.rotation.set(0, 0, 0);
+      if (operating || completed) {
+        const motion = completed ? 1 : progress;
+        const pulse = operating ? Math.sin(elapsed * 8) * .05 : 0;
+        if (visual.kind === "rope-anchor" || visual.kind === "wetland-valve") visual.mechanism.rotation.z = motion * Math.PI * 1.5 + pulse;
+        else if (visual.kind === "scent-vane" || visual.kind === "solar-mirror") visual.mechanism.rotation.y = motion * Math.PI * .72 + pulse;
+        else if (visual.kind === "buoy-dock") visual.mechanism.position.y = Math.sin(elapsed * 4.8) * .08 * motion;
+        else if (visual.kind === "stripe-scanner") visual.mechanism.rotation.y = Math.sin(elapsed * 2.5) * .18 * motion;
+        else if (visual.kind === "bird-perch") visual.mechanism.rotation.x = Math.sin(elapsed * 5.4) * .07 * motion;
+        else visual.mechanism.rotation.z = Math.sin(elapsed * 7.2) * .06 * motion;
+      }
     });
   }
 
