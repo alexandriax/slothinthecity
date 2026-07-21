@@ -52,8 +52,8 @@ export type RenderBudget = QualityProfile & {
 
 type QualityListener = (snapshot: QualitySnapshot) => void;
 
-// Keep the v2 key so an explicit player choice survives this change. When no
-// choice has been saved, Auto now performs the requested first-run selection.
+// Keep the v2 key so explicit player choices survive. Only mobile players
+// without a saved preference start in Performance; desktop first runs use Auto.
 const STORAGE_KEY = "slothpark-quality-mode-v2";
 const LEVELS: QualityLevel[] = ["low", "medium", "high", "ultra"];
 
@@ -125,13 +125,18 @@ export function recommendQualityLevel(device: DeviceProfile): { level: QualityLe
   return { level: "low", reason: device.saveData ? "Data-saver mode detected" : "Prioritizing a stable frame rate" };
 }
 
-function loadMode(): QualityMode {
-  if (!isBrowser()) return "auto";
+export function resolveInitialQualityMode(stored: string | null, device: DeviceProfile): QualityMode {
+  if (qualityMode(stored)) return stored;
+  return device.mobile ? "low" : "auto";
+}
+
+function loadMode(device: DeviceProfile): QualityMode {
+  if (!isBrowser()) return resolveInitialQualityMode(null, device);
   try {
     const stored = window.localStorage.getItem(STORAGE_KEY);
-    return qualityMode(stored) ? stored : "auto";
+    return resolveInitialQualityMode(stored, device);
   } catch {
-    return "auto";
+    return resolveInitialQualityMode(null, device);
   }
 }
 
@@ -151,18 +156,24 @@ export class AdaptiveQualityManager {
   private device = detectDevice();
   private snapshot: QualitySnapshot;
 
-  constructor(mode: QualityMode = loadMode()) {
+  constructor(mode?: QualityMode) {
+    const initialMode = mode ?? loadMode(this.device);
     const recommendation = recommendQualityLevel(this.device);
-    const activeLevel = mode === "auto" ? recommendation.level : mode;
+    const activeLevel = initialMode === "auto" ? recommendation.level : initialMode;
+    const usesMobileDefault = mode === undefined && this.device.mobile && initialMode === "low";
     this.snapshot = {
-      mode,
+      mode: initialMode,
       activeLevel,
       profile: QUALITY_PROFILES[activeLevel],
       device: this.device,
       averageFps: null,
       targetFps: this.device.mobile ? 45 : 60,
-      adapting: mode === "auto",
-      reason: mode === "auto" ? recommendation.reason : `${QUALITY_PROFILES[activeLevel].label} selected manually`,
+      adapting: initialMode === "auto",
+      reason: initialMode === "auto"
+        ? recommendation.reason
+        : usesMobileDefault
+          ? "Performance by default for mobile play"
+          : `${QUALITY_PROFILES[activeLevel].label} selected manually`,
     };
   }
 

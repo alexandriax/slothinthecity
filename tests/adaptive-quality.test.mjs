@@ -4,6 +4,7 @@ import {
   AdaptiveQualityManager,
   QUALITY_PROFILES,
   recommendQualityLevel,
+  resolveInitialQualityMode,
 } from "../app/game/systems/quality/AdaptiveQualityManager.ts";
 
 const device = overrides => ({
@@ -25,6 +26,15 @@ test("first-run recommendations keep Pro quality while protecting Air and phone 
   assert.equal(recommendQualityLevel(device({ cores: 6, mobile: true, touch: true, devicePixelRatio: 3, viewportPixels: 390 * 844 })).level, "medium");
   assert.equal(recommendQualityLevel(device({ cores: 4, memoryGb: 2, mobile: true, touch: true, devicePixelRatio: 2 })).level, "low");
   assert.equal(recommendQualityLevel(device({ cores: 12, memoryGb: 8, saveData: true })).level, "high");
+});
+
+test("mobile first runs select Performance while saved choices and desktop Auto remain intact", () => {
+  const mobile = device({ mobile: true, touch: true });
+  assert.equal(resolveInitialQualityMode(null, mobile), "low");
+  assert.equal(resolveInitialQualityMode("not-a-mode", mobile), "low");
+  assert.equal(resolveInitialQualityMode(null, device({})), "auto");
+  assert.equal(resolveInitialQualityMode("auto", mobile), "auto");
+  assert.equal(resolveInitialQualityMode("high", mobile), "high");
 });
 
 test("performance and balanced are materially lighter than the present high profile", () => {
