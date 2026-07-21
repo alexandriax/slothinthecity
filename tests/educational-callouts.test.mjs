@@ -9,7 +9,7 @@ test("the campaign carries a dense Wikipedia-backed fact library", async () => {
   );
   const factCount = [...facts.matchAll(/\bfact\(\n\s+"/g)].length;
 
-  assert.ok(factCount >= 100, `expected at least 100 field notes, found ${factCount}`);
+  assert.ok(factCount >= 100, `expected at least 100 Field Guide entries, found ${factCount}`);
   assert.match(facts, /"central-park"/);
   assert.match(facts, /"the-lake"/);
   assert.match(facts, /"subway-train"/);
@@ -31,7 +31,7 @@ test("the campaign carries a dense Wikipedia-backed fact library", async () => {
   assert.doesNotMatch(facts, /https:\/\/(?!en\.wikipedia\.org)/);
 });
 
-test("field notes follow park, transit, habitat, city, and museum context", async () => {
+test("Field Guide entries follow park, transit, habitat, city, and museum context", async () => {
   const facts = await readFile(
     new URL("../app/game/educationFacts.ts", import.meta.url),
     "utf8",
@@ -54,6 +54,8 @@ test("education modal releases and restores look control with keyboard and butto
   ]);
 
   assert.match(component, /event\.code !== "KeyI"/);
+  assert.match(component, /Field Guide · \{EDUCATION_CONTEXT_LABELS\[context\]\}/);
+  assert.doesNotMatch(component, /field note/i);
   assert.match(component, /aria-haspopup="dialog"/);
   assert.match(component, /role="dialog"/);
   assert.match(component, /aria-modal="true"/);

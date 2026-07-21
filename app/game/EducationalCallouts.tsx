@@ -196,7 +196,7 @@ export function EducationalCallouts({
       {calloutVisible && !open && (
         <div className="education-callout" data-testid="education-callout">
           <div>
-            <span>Field note · {factIndex + 1}/{facts.length}</span>
+            <span>Field Guide · {factIndex + 1}/{facts.length}</span>
             <strong>{activeFact.teaser}</strong>
           </div>
           <button type="button" onClick={openModal} aria-label={`Learn more: ${activeFact.title}`}>
@@ -210,7 +210,7 @@ export function EducationalCallouts({
           className="education-launch"
           type="button"
           onClick={openModal}
-          aria-label={`Open field note: ${activeFact.title}`}
+          aria-label={`Open Field Guide: ${activeFact.title}`}
           aria-haspopup="dialog"
         >
           <span aria-hidden="true">i</span>
@@ -237,7 +237,7 @@ export function EducationalCallouts({
           >
             <header>
               <div>
-                <span>Along the way · {EDUCATION_CONTEXT_LABELS[context]}</span>
+                <span>Field Guide · {EDUCATION_CONTEXT_LABELS[context]}</span>
                 <small>
                   {discoveredIds.size} discovered · {factIndex + 1} of {facts.length} in this area
                 </small>
@@ -247,7 +247,7 @@ export function EducationalCallouts({
                 className="education-close"
                 type="button"
                 onClick={closeModal}
-                aria-label="Close field note and return to the game"
+                aria-label="Close Field Guide and return to the game"
               >
                 <span aria-hidden="true">×</span>
                 <kbd>Esc</kbd>

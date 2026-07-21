@@ -844,7 +844,7 @@ export const EDUCATION_FACTS: readonly EducationFact[] = [
 ];
 
 export const EDUCATION_CONTEXT_LABELS: Record<EducationContext, string> = {
-  "central-park": "Central Park field notes",
+  "central-park": "Central Park",
   "central-park-landmarks": "Park landmarks",
   "the-lake": "The Lake and its wildlife",
   subway: "New York City Subway",

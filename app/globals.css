@@ -117,7 +117,7 @@ button { font: inherit; }
 @keyframes floatIn{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}
 
 /* Contextual learning stays outside the mission HUD. Desktop gets one short
-   field note; compact layouts expose only the Learn control until it is tapped. */
+   Field Guide entry; compact layouts expose only the Learn control until it is tapped. */
 .education-layer { --education-accent:var(--acid); position:absolute; inset:0; z-index:37; pointer-events:none; text-shadow:none; }
 .education-layer[data-education-open="true"] { z-index:300; }
 .subway-shell .education-layer { --education-accent:var(--transit-accent); }
