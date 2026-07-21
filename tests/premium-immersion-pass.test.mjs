@@ -92,7 +92,7 @@ test("Whiskers is a project-original, spatial museum quest with a variable galle
     readSource("../tools/animal-pipeline/source/whiskers-cat.provenance.json").then(JSON.parse),
     readSource("../public/game/animals/authored/manifest.json").then(JSON.parse),
   ]);
-  assert.match(museum, /Meet the planetarium's manager Skye's cat Whiskers/);
+  assert.match(museum, /Meet the planetarium’s manager Cosmic Skye’s cat Whiskers/);
   assert.doesNotMatch(museum, /amnh-whiskers-resident-gallery-cat-introduction-sign/);
   assert.doesNotMatch(museum, /TAN & WHITE RESIDENT GALLERY CAT/);
   assert.match(museum, /resident-gallery-cat/);

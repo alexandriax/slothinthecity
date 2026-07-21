@@ -1644,7 +1644,7 @@ export class NaturalHistoryMuseumWorld {
   get whiskersObjectiveLabel() {
     if (this.whiskersStateValue === "COMPLETE") return "Whiskers found · continue to Megatherium";
     const hideout = WHISKERS_HIDEOUTS[this.whiskersOrder[this.whiskersWaypointIndex]];
-    if (this.whiskersStateValue === "AVAILABLE") return "Meet the planetarium's manager Skye's cat Whiskers";
+    if (this.whiskersStateValue === "AVAILABLE") return "Meet the planetarium’s manager Cosmic Skye’s cat Whiskers";
     if (this.isWhiskersTrustMoment) return `Give Whiskers a quiet moment near ${hideout.location}`;
     return this.whiskersWaitingForPlayer
       ? `Whiskers is waiting near ${hideout.location}`
