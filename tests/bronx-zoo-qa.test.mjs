@@ -149,6 +149,14 @@ test("habitat research stays in the live zoo and starts across each enclosure ed
     ["bird-perch", "buoy-dock", "rope-anchor", "scent-vane", "seed-plot", "solar-mirror", "stripe-scanner", "wetland-valve"],
   );
   assert.ok(liveResponses.every(response => !response.visible), "habitat responses should appear only when their equipment is operated");
+  for (const habitatDetail of [
+    "bronx-zoo-layered-zebra-grassland-habitat",
+    "zebra-grounded-stone-water-trough",
+    "zebra-weathered-field-shade-roof",
+    "bronx-zoo-layered-aldabra-tortoise-yard",
+    "tortoise-low-weather-shelter-roof",
+    "tortoise-shallow-hydration-wallow",
+  ]) assert.ok(world.root.getObjectByName(habitatDetail), `${habitatDetail} should be present in the live habitat`);
   const anywhereAlongAviaryEdge = new THREE.Vector3(-56, 1.48, -51);
   const hint = world.interactionHint(anywhereAlongAviaryEdge);
   assert.equal(hint?.kind, "ANIMAL_QUEST");
@@ -228,6 +236,71 @@ test("habitat research requires live first-person focus, preserves zoo animals, 
   assert.match(replay?.message ?? "", /field replay started with a new route/i);
   assert.ok(world.objectiveTarget.distanceTo(firstRouteTarget) > 1, "a replay must not open on the same station order as the previous route");
   world.dispose();
+});
+
+test("zebra scanning follows a live animal and tortoise mirrors illuminate physical basking shelves", async () => {
+  const { BronxZooWorld, THREE } = await loadBronxZooHarness();
+  const zebraWorld = new BronxZooWorld(new THREE.Scene(), textureSet(THREE), .22, 73021);
+  zebraWorld.beginAnimalQuest("zebra-stripe-scan");
+  const zebraPlayer = zebraWorld.objectiveTarget.clone();
+  const zebraCenterDirection = new THREE.Vector3(43, zebraPlayer.y, -101).sub(zebraPlayer);
+  const zebraCenterYaw = Math.atan2(-zebraCenterDirection.x, -zebraCenterDirection.z);
+  assert.equal(zebraWorld.interact(zebraPlayer, zebraCenterYaw)?.kind, "ANIMAL_QUEST_OPERATION_STARTED");
+  zebraWorld.update(0, 1 / 60, zebraPlayer, zebraCenterYaw);
+  const zebraTargetStart = zebraWorld.activeHabitatResponseTarget.clone();
+  const zebraRoots = [
+    zebraWorld.root.getObjectByName("bronx-zoo-plains-zebra-1"),
+    zebraWorld.root.getObjectByName("bronx-zoo-plains-zebra-2"),
+  ].filter(Boolean);
+  assert.equal(zebraRoots.length, 2);
+  const nearestZebraStart = Math.min(...zebraRoots.map(zebra => Math.hypot(zebra.position.x - zebraTargetStart.x, zebra.position.z - zebraTargetStart.z)));
+  assert.ok(nearestZebraStart < .05, "the profile band should originate on a live zebra, not an independent enclosure path");
+  let activeScanResponse;
+  zebraWorld.root.traverse(object => {
+    if (object.visible && object.userData.embeddedHabitatResponse && object.userData.responseKind === "stripe-scanner") activeScanResponse = object;
+  });
+  assert.match(activeScanResponse?.userData.liveAnimalTarget ?? "", /^bronx-zoo-plains-zebra-/);
+  for (let frame = 1; frame < 100; frame++) {
+    const target = zebraWorld.activeHabitatResponseTarget;
+    const direction = target.clone().sub(zebraPlayer);
+    zebraWorld.update(frame / 60, 1 / 60, zebraPlayer, Math.atan2(-direction.x, -direction.z));
+  }
+  assert.ok(zebraWorld.activeHabitatResponseTarget.distanceTo(zebraTargetStart) > .08, "the live scan should move with the walking zebra");
+  zebraWorld.dispose();
+
+  const tortoiseWorld = new BronxZooWorld(new THREE.Scene(), textureSet(THREE), .22, 73021);
+  tortoiseWorld.beginAnimalQuest("tortoise-sun-trail");
+  const tortoisePlayer = tortoiseWorld.objectiveTarget.clone();
+  const tortoiseCenterDirection = new THREE.Vector3(36, tortoisePlayer.y, -132).sub(tortoisePlayer);
+  const tortoiseCenterYaw = Math.atan2(-tortoiseCenterDirection.x, -tortoiseCenterDirection.z);
+  assert.equal(tortoiseWorld.interact(tortoisePlayer, tortoiseCenterYaw)?.kind, "ANIMAL_QUEST_OPERATION_STARTED");
+  tortoiseWorld.update(0, 1 / 60, tortoisePlayer, tortoiseCenterYaw);
+  const activeBeams = [];
+  tortoiseWorld.root.traverse(object => {
+    if (object.name.startsWith("tortoise-physical-mirror-beam-") && object.visible) activeBeams.push(object);
+  });
+  assert.equal(activeBeams.length, 1, "only the operated mirror should cast a physical beam");
+  const beamPositions = activeBeams[0].geometry.getAttribute("position");
+  assert.ok(Math.hypot(
+    beamPositions.getX(1) - beamPositions.getX(0),
+    beamPositions.getY(1) - beamPositions.getY(0),
+    beamPositions.getZ(1) - beamPositions.getZ(0),
+  ) > 4, "the beam should bridge the real mirror and habitat sun spot");
+  assert.ok(tortoiseWorld.root.getObjectByName("tortoise-sun-trail-basking-shelf-1"));
+  assert.ok(tortoiseWorld.root.getObjectByName("tortoise-sun-trail-basking-shelf-2"));
+  assert.ok(tortoiseWorld.root.getObjectByName("tortoise-sun-trail-basking-shelf-3"));
+  const tortoise = tortoiseWorld.root.getObjectByName("bronx-zoo-aldabra-giant-tortoise");
+  assert.ok(tortoise, "the live Aldabra tortoise should remain in the habitat");
+  const tortoiseStart = tortoise.position.clone();
+  for (let frame = 1; frame <= 90; frame++) {
+    const target = tortoiseWorld.activeHabitatResponseTarget;
+    const direction = target.clone().sub(tortoisePlayer);
+    tortoiseWorld.update(frame / 60, 1 / 60, tortoisePlayer, Math.atan2(-direction.x, -direction.z));
+  }
+  assert.equal(tortoise.userData.enrichmentActive, true, "the tortoise should respond to the live sun spot");
+  assert.equal(tortoise.userData.animationState, "walk", "the warming response should use the tortoise's authored walk cycle");
+  assert.ok(tortoise.position.distanceTo(tortoiseStart) > .12, "the tortoise should visibly approach the warming trail");
+  tortoiseWorld.dispose();
 });
 
 test("sea-lion enrichment follows the moving buoy rather than a generic pool-center timer", async () => {

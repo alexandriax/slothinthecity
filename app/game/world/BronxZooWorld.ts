@@ -999,6 +999,8 @@ type HabitatQuestStationVisual = {
 type HabitatQuestResponseVisual = {
   end: THREE.Vector3;
   facingYaw: number;
+  link: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial> | null;
+  linkStart: THREE.Vector3 | null;
   pathBend: THREE.Vector3;
   root: THREE.Group;
   start: THREE.Vector3;
@@ -1095,7 +1097,7 @@ function addHabitatQuestResponse(
         ? "#ffe28a"
         : "#bcebf0",
     transparent: true,
-    opacity: .58,
+    opacity: station.kind === "stripe-scanner" ? .035 : .58,
     depthWrite: false,
     toneMapped: false,
     side: THREE.DoubleSide,
@@ -1158,11 +1160,29 @@ function addHabitatQuestResponse(
       root.add(wheel);
     }
   } else if (station.kind === "stripe-scanner") {
-    const scanBand = new THREE.Mesh(new RoundedBoxGeometry(.1, 2.5, 2.1, 3, .03), translucent);
+    const scanBand = new THREE.Mesh(new THREE.PlaneGeometry(2.05, 2.35), translucent);
     scanBand.name = "zebra-live-profile-scan-band";
+    scanBand.rotation.y = Math.PI / 2;
     root.add(scanBand);
-    const lens = new THREE.Mesh(new RoundedBoxGeometry(.24, .34, .48, 4, .05), dark);
+    const scanLineMaterial = new THREE.MeshBasicMaterial({ color: "#8ce8e4", transparent: true, opacity: .46, depthWrite: false, toneMapped: false });
+    for (const [width, height, depth, y, z] of [
+      [.028, .025, 2.08, 1.16, 0], [.028, .025, 2.08, -1.16, 0],
+      [.028, 2.3, .025, 0, 1.02], [.028, 2.3, .025, 0, -1.02],
+    ] as const) {
+      const frame = new THREE.Mesh(new RoundedBoxGeometry(width, height, depth, 2, .007), scanLineMaterial);
+      frame.name = "zebra-live-profile-scanner-frame";
+      frame.position.set(.015, y, z);
+      root.add(frame);
+    }
+    for (let scanLine = -2; scanLine <= 2; scanLine++) {
+      const line = new THREE.Mesh(new RoundedBoxGeometry(.026, .018, 1.9, 2, .007), scanLineMaterial);
+      line.name = "zebra-live-profile-scanner-line";
+      line.position.y = scanLine * .48;
+      root.add(line);
+    }
+    const lens = new THREE.Mesh(new RoundedBoxGeometry(.12, .18, .25, 4, .035), dark);
     lens.name = "zebra-live-profile-tracker";
+    lens.position.set(.1, 1.02, -.86);
     root.add(lens);
   } else if (station.kind === "scent-vane") {
     for (let moteIndex = 0; moteIndex < 9; moteIndex++) {
@@ -1231,7 +1251,19 @@ function addHabitatQuestResponse(
     }
   });
   parent.add(root);
-  return { end, facingYaw, pathBend, root, start } satisfies HabitatQuestResponseVisual;
+  let link: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial> | null = null, linkStart: THREE.Vector3 | null = null;
+  if (station.kind === "solar-mirror") {
+    linkStart = new THREE.Vector3(station.position[0], terrainHeight(station.position[0], station.position[1]) + 1.48, station.position[1]);
+    link = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([linkStart, start]),
+      new THREE.LineBasicMaterial({ color: "#fff0a3", transparent: true, opacity: .62, depthWrite: false, toneMapped: false }),
+    );
+    link.name = `tortoise-physical-mirror-beam-${station.id}`;
+    link.visible = false;
+    link.frustumCulled = false;
+    parent.add(link);
+  }
+  return { end, facingYaw, link, linkStart, pathBend, root, start } satisfies HabitatQuestResponseVisual;
 }
 
 function addInWorldHabitatQuestStations(root: THREE.Group, materials: ZooMaterials, quality: number, obstacles: Obstacle[]) {
@@ -1977,7 +2009,10 @@ export class BronxZooWorld {
   private readonly guestAgents: AmbientHumanAgent[] = [];
   private readonly animals: ZooAnimalRig[] = [];
   private readonly seaLionRigs: ZooAnimalRig[] = [];
+  private readonly zebraRigs: ZooAnimalRig[] = [];
   private seaLionEnrichmentTarget: THREE.Object3D | null = null;
+  private tortoiseEnrichmentTarget: THREE.Object3D | null = null;
+  private tortoiseRig: ZooAnimalRig | null = null;
   private readonly captiveSlothMotion: CaptiveSlothMotion[] = [];
   private readonly obstacles: Obstacle[] = [];
   private readonly entryGateLeaves: THREE.Group[] = [];
@@ -2587,6 +2622,7 @@ export class BronxZooWorld {
       visual.mechanism.position.y = 0;
       visual.mechanism.rotation.set(0, 0, 0);
       visual.response.root.visible = operating;
+      if (visual.response.link) visual.response.link.visible = operating;
       visual.response.root.scale.setScalar(1);
       visual.response.root.rotation.set(0, visual.response.facingYaw, 0);
       if (operating) {
@@ -2604,8 +2640,13 @@ export class BronxZooWorld {
           visual.response.root.position.y += Math.sin(responseProgress * Math.PI) * .5;
           visual.response.root.rotation.z = Math.sin(elapsed * 6.1) * .045;
         } else if (visual.kind === "stripe-scanner") {
-          visual.response.root.position.y += Math.sin(responseProgress * Math.PI * 2) * .38;
-          visual.response.root.rotation.y += Math.sin(elapsed * 2.2) * .16;
+          const zebra = this.zebraRigs[visual.stationIndex % this.zebraRigs.length];
+          if (zebra) {
+            visual.response.root.position.copy(zebra.root.position);
+            visual.response.root.position.y += 1.28 + Math.sin(elapsed * 2.2) * .06;
+            visual.response.root.rotation.y = zebra.root.rotation.y;
+            visual.response.root.userData.liveAnimalTarget = zebra.root.name;
+          }
         } else if (visual.kind === "scent-vane") {
           visual.response.root.position.y += Math.sin(responseProgress * Math.PI) * 1.25 + Math.sin(elapsed * 3.1) * .12;
           visual.response.root.rotation.y += elapsed * .34;
@@ -2620,6 +2661,12 @@ export class BronxZooWorld {
           visual.response.root.rotation.z = -responseProgress * Math.PI * 1.2;
         }
         visual.response.root.userData.trackingProgress = progress;
+        if (visual.response.link && visual.response.linkStart) {
+          const positions = visual.response.link.geometry.getAttribute("position") as THREE.BufferAttribute;
+          positions.setXYZ(0, visual.response.linkStart.x, visual.response.linkStart.y, visual.response.linkStart.z);
+          positions.setXYZ(1, visual.response.root.position.x, visual.response.root.position.y, visual.response.root.position.z);
+          positions.needsUpdate = true;
+        }
       }
       if (operating || completed) {
         const motion = completed ? 1 : progress;
@@ -2636,6 +2683,10 @@ export class BronxZooWorld {
       ? this.questStationVisuals.get(this.activeHabitatOperation.key)?.response.root ?? null
       : null;
     this.updateSeaLionEnrichmentTarget(seaLionResponse);
+    const tortoiseResponse = this.activeAnimalQuest?.id === "tortoise-sun-trail" && this.activeHabitatOperation
+      ? this.questStationVisuals.get(this.activeHabitatOperation.key)?.response.root ?? null
+      : null;
+    this.updateTortoiseEnrichmentTarget(tortoiseResponse);
   }
 
   private updateSeaLionEnrichmentTarget(target: THREE.Object3D | null) {
@@ -2655,6 +2706,18 @@ export class BronxZooWorld {
         target,
       } : null);
     });
+  }
+
+  private updateTortoiseEnrichmentTarget(target: THREE.Object3D | null) {
+    if (target === this.tortoiseEnrichmentTarget) return;
+    this.tortoiseEnrichmentTarget = target;
+    if (!this.tortoiseRig) return;
+    setZooAnimalEnrichmentDirective(this.tortoiseRig, target ? {
+      motion: "walk",
+      offset: [0, -.48, 0],
+      responsiveness: .12,
+      target,
+    } : null);
   }
 
   private updateGarySandwich(delta: number, player?: THREE.Vector3) {
@@ -2685,6 +2748,7 @@ export class BronxZooWorld {
 
   dispose() {
     this.updateSeaLionEnrichmentTarget(null);
+    this.updateTortoiseEnrichmentTarget(null);
     markAuthoredZooAnimalsDisposed(this.root);
     markPremiumCharactersDisposed(this.root);
     this.root.removeFromParent();
@@ -3304,9 +3368,93 @@ export class BronxZooWorld {
   }
 
   private addZebraHabitat(materials: ZooMaterials, textures: GameTextures, quality: number) {
-    addCircularFence(this.root, materials, 43, -101, 15.5, quality > .72 ? 28 : 20);
-    placeAnimal(this.root, this.animals, createZebra(textures, quality, 0), 40, -101, -1.1, 0, { mode: "terrestrial", radius: 2.8, speed: .12, phase: 1.2 });
-    placeAnimal(this.root, this.animals, createZebra(textures, quality, 1), 47, -105, 2.1, 0, { mode: "terrestrial", radius: 2.2, speed: .1, phase: 5.6 });
+    const x = 43, z = -101, radius = 15.5;
+    addCircularFence(this.root, materials, x, z, radius, quality > .72 ? 28 : 20);
+    const plains = new THREE.Group();
+    plains.name = "bronx-zoo-layered-zebra-grassland-habitat";
+    const grassland = new THREE.Mesh(
+      new THREE.CylinderGeometry(radius - .65, radius - .45, .06, quality > .72 ? 56 : 36),
+      new THREE.MeshStandardMaterial({ map: textures.ground, bumpMap: textures.ground, bumpScale: .085, color: "#8c8555", roughness: .99 }),
+    );
+    grassland.name = "zebra-drained-native-grassland-substrate";
+    grassland.position.set(x, terrainHeight(x, z) + .01, z);
+    grassland.receiveShadow = true;
+    plains.add(grassland);
+
+    const random = seeded(413901);
+    const clumpCount = quality < .58 ? 22 : 38;
+    const grassCount = clumpCount * 3;
+    const tallGrass = new THREE.InstancedMesh(
+      new THREE.ConeGeometry(.035, .58, 4),
+      new THREE.MeshStandardMaterial({ color: "#c0ae68", roughness: 1, vertexColors: true }),
+      grassCount,
+    );
+    tallGrass.name = "zebra-instanced-native-bunchgrass-edge";
+    const dummy = new THREE.Object3D();
+    const grassPalette = [new THREE.Color("#b6a45f"), new THREE.Color("#887f49"), new THREE.Color("#6f7546")];
+    let clumpX = 0, clumpZ = 0;
+    for (let index = 0; index < grassCount; index++) {
+      if (index % 3 === 0) {
+        const angle = random() * Math.PI * 2, patchRadius = 5.4 + random() * 8.35;
+        clumpX = x + Math.cos(angle) * patchRadius;
+        clumpZ = z + Math.sin(angle) * patchRadius;
+      }
+      const gx = clumpX + (random() - .5) * .23, gz = clumpZ + (random() - .5) * .23;
+      dummy.position.set(gx, terrainHeight(gx, gz) + .27, gz);
+      dummy.rotation.set((random() - .5) * .13, random() * Math.PI * 2, (random() - .5) * .16);
+      dummy.scale.set(.78 + random() * .5, .72 + random() * .65, .78 + random() * .5);
+      dummy.updateMatrix();
+      tallGrass.setMatrixAt(index, dummy.matrix);
+      tallGrass.setColorAt(index, grassPalette[index % grassPalette.length]);
+    }
+    tallGrass.instanceMatrix.needsUpdate = true;
+    if (tallGrass.instanceColor) tallGrass.instanceColor.needsUpdate = true;
+    tallGrass.castShadow = quality > .72;
+    plains.add(tallGrass);
+
+    const shadeRoof = new THREE.Mesh(
+      new RoundedBoxGeometry(6.4, .16, 4.4, 5, .08),
+      new THREE.MeshStandardMaterial({ color: "#b8a77e", roughness: .9, side: THREE.DoubleSide }),
+    );
+    shadeRoof.name = "zebra-weathered-field-shade-roof";
+    shadeRoof.position.set(48.7, terrainHeight(48.7, -110.2) + 3.2, -110.2);
+    shadeRoof.rotation.z = -.055;
+    shadeRoof.castShadow = true;
+    plains.add(shadeRoof);
+    for (const px of [46.1, 51.3]) for (const pz of [-108.7, -111.7]) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(.09, .13, 3.1, 10), materials.wood);
+      post.name = "zebra-shade-load-bearing-post";
+      post.position.set(px, terrainHeight(px, pz) + 1.55, pz);
+      post.castShadow = true;
+      plains.add(post);
+    }
+    const trough = new THREE.Mesh(new RoundedBoxGeometry(3.8, .46, 1.18, 5, .12), materials.stone);
+    trough.name = "zebra-grounded-stone-water-trough";
+    trough.position.set(34.6, terrainHeight(34.6, -106.3) + .24, -106.3);
+    trough.rotation.y = -.22;
+    trough.castShadow = trough.receiveShadow = true;
+    plains.add(trough);
+    const troughWater = new THREE.Mesh(new RoundedBoxGeometry(3.26, .055, .69, 4, .05), materials.water);
+    troughWater.name = "zebra-trough-visible-water-surface";
+    troughWater.position.copy(trough.position).add(new THREE.Vector3(0, .245, 0));
+    troughWater.rotation.y = trough.rotation.y;
+    plains.add(troughWater);
+    for (const [px, pz] of [[52.5, -97.4], [34.8, -96.2]] as const) {
+      const brush = new THREE.Mesh(new THREE.CylinderGeometry(.2, .24, 1.85, 12), materials.wood);
+      brush.name = "zebra-natural-rubbing-and-scent-post";
+      brush.position.set(px, terrainHeight(px, pz) + .925, pz);
+      brush.rotation.z = px > x ? .08 : -.1;
+      plains.add(brush);
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(.27, 12, 8), new THREE.MeshStandardMaterial({ color: "#706042", roughness: .93 }));
+      cap.name = "zebra-mineral-lick-cap";
+      cap.position.copy(brush.position).add(new THREE.Vector3(0, .92, 0));
+      plains.add(cap);
+    }
+    this.root.add(plains);
+    this.zebraRigs.push(
+      placeAnimal(this.root, this.animals, createZebra(textures, quality, 0), 40, -101, -1.1, .14, { mode: "terrestrial", radius: 2.8, speed: .12, phase: 1.2 }),
+      placeAnimal(this.root, this.animals, createZebra(textures, quality, 1), 47, -105, 2.1, .14, { mode: "terrestrial", radius: 2.2, speed: .1, phase: 5.6 }),
+    );
     addHabitatLabel(this.root, this.ownedTextures, materials, "AFRICAN PLAINS", "PLAINS ZEBRA · GRASSLAND CONSERVATION", 31, -89, .75, this.obstacles);
   }
 
@@ -3320,8 +3468,58 @@ export class BronxZooWorld {
   }
 
   private addTortoiseHabitat(materials: ZooMaterials, textures: GameTextures, quality: number) {
-    addCircularFence(this.root, materials, 36, -132, 9.5, quality > .72 ? 20 : 14);
-    placeAnimal(this.root, this.animals, createAldabraTortoise(textures, quality), 36, -132, -.6, 0, { mode: "terrestrial", radius: 1.35, speed: .035, phase: 3.7 });
+    const x = 36, z = -132, radius = 9.5;
+    addCircularFence(this.root, materials, x, z, radius, quality > .72 ? 20 : 14);
+    const yard = new THREE.Group();
+    yard.name = "bronx-zoo-layered-aldabra-tortoise-yard";
+    const sand = new THREE.Mesh(
+      new THREE.CylinderGeometry(radius - .45, radius - .3, .06, quality > .72 ? 42 : 28),
+      new THREE.MeshStandardMaterial({ map: textures.ground, bumpMap: textures.ground, bumpScale: .07, color: "#9b8b68", roughness: .99 }),
+    );
+    sand.name = "tortoise-warm-drained-sand-and-soil-substrate";
+    sand.position.set(x, terrainHeight(x, z) + .01, z);
+    sand.receiveShadow = true;
+    yard.add(sand);
+    const baskingShelves = [[40, -128.5, -.2], [38, -136, .35], [31.8, -132.5, -.45]] as const;
+    baskingShelves.forEach(([px, pz, yaw], index) => {
+      const shelf = new THREE.Mesh(new THREE.DodecahedronGeometry(1 + index * .06, 1), materials.stone);
+      shelf.name = `tortoise-sun-trail-basking-shelf-${index + 1}`;
+      shelf.position.set(px, terrainHeight(px, pz) + .23, pz);
+      shelf.rotation.set(.06, yaw, -.04);
+      shelf.scale.set(1.25, .2, .9);
+      shelf.castShadow = shelf.receiveShadow = true;
+      yard.add(shelf);
+    });
+    const shelterRoof = new THREE.Mesh(new RoundedBoxGeometry(4.3, .24, 3.2, 5, .09), materials.wood);
+    shelterRoof.name = "tortoise-low-weather-shelter-roof";
+    shelterRoof.position.set(40, terrainHeight(40, -137.6) + 1.72, -137.6);
+    shelterRoof.rotation.z = -.04;
+    shelterRoof.castShadow = true;
+    yard.add(shelterRoof);
+    for (const px of [38.25, 41.75]) for (const pz of [-136.4, -138.8]) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(.08, .12, 1.7, 9), materials.wood);
+      post.name = "tortoise-shelter-grounded-post";
+      post.position.set(px, terrainHeight(px, pz) + .85, pz);
+      yard.add(post);
+    }
+    const wallow = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.42, .14, 28), materials.water);
+    wallow.name = "tortoise-shallow-hydration-wallow";
+    wallow.position.set(40.5, terrainHeight(40.5, -132.2) + .08, -132.2);
+    yard.add(wallow);
+    const succulentMaterial = new THREE.MeshStandardMaterial({ color: "#687b4d", roughness: .94 });
+    [[32.2, -137.2], [42.3, -133.8], [33, -127.8], [38.8, -125.8]].forEach(([px, pz], cluster) => {
+      for (let leaf = 0; leaf < 5; leaf++) {
+        const succulent = new THREE.Mesh(new THREE.ConeGeometry(.09, .68, 5), succulentMaterial);
+        succulent.name = "tortoise-safe-succulent-browse-cluster";
+        const angle = leaf / 5 * Math.PI * 2;
+        succulent.position.set(px + Math.cos(angle) * .13, terrainHeight(px, pz) + .3, pz + Math.sin(angle) * .13);
+        succulent.rotation.set(Math.cos(angle) * .38, angle + cluster * .4, -Math.sin(angle) * .38);
+        succulent.castShadow = true;
+        yard.add(succulent);
+      }
+    });
+    this.root.add(yard);
+    this.tortoiseRig = placeAnimal(this.root, this.animals, createAldabraTortoise(textures, quality), 36, -132, -.6, .14, { mode: "terrestrial", radius: 1.35, speed: .035, phase: 3.7 });
     addHabitatLabel(this.root, this.ownedTextures, materials, "GIANT TORTOISE", "ALDABRA ATOLL CONSERVATION", 28, -123, .7, this.obstacles);
   }
 

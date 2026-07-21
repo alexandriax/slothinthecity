@@ -22,7 +22,7 @@ export type ZooHabitatMotionOptions = {
 
 export type ZooAnimalEnrichmentDirective = {
   heading?: readonly [number, number];
-  motion: "swim" | "surface";
+  motion: "forage" | "surface" | "swim" | "walk";
   offset: readonly [number, number, number];
   responsiveness?: number;
   target: THREE.Object3D;
@@ -199,6 +199,7 @@ export function configureAutonomousZooAnimal(rig: ZooAnimalRig, options: ZooHabi
   let travelClock = phase * .17;
   let initialized = false;
   let enrichmentBlend = 0;
+  let lastEnrichment: ZooAnimalEnrichmentDirective | null = null;
   const tangent = new THREE.Vector3(), next = new THREE.Vector3();
   const enrichmentTarget = new THREE.Vector3(), enrichmentDesired = new THREE.Vector3();
   return {
@@ -252,23 +253,26 @@ export function configureAutonomousZooAnimal(rig: ZooAnimalRig, options: ZooHabi
         if (tangent.lengthSq() > .00001) rig.root.rotation.y = Math.atan2(-tangent.x, -tangent.z);
       } else rig.root.rotation.y += Math.atan2(Math.sin(baseYaw - rig.root.rotation.y), Math.cos(baseYaw - rig.root.rotation.y)) * (1 - Math.exp(-delta * 2.4));
       const enrichment = zooAnimalEnrichmentDirectives.get(rig.root);
+      if (enrichment) lastEnrichment = enrichment;
+      const appliedEnrichment = enrichment ?? lastEnrichment;
       const enrichmentTargetBlend = enrichment ? 1 : 0;
       const responseRate = enrichment?.responsiveness ?? 2.25;
       enrichmentBlend += (enrichmentTargetBlend - enrichmentBlend) * (1 - Math.exp(-delta * responseRate));
-      if (enrichment && enrichmentBlend > .001) {
-        enrichment.target.getWorldPosition(enrichmentTarget);
+      if (appliedEnrichment && enrichmentBlend > .001) {
+        appliedEnrichment.target.getWorldPosition(enrichmentTarget);
         enrichmentDesired.copy(enrichmentTarget);
-        enrichmentDesired.x += enrichment.offset[0];
-        enrichmentDesired.y += enrichment.offset[1];
-        enrichmentDesired.z += enrichment.offset[2];
+        enrichmentDesired.x += appliedEnrichment.offset[0];
+        enrichmentDesired.y += appliedEnrichment.offset[1];
+        enrichmentDesired.z += appliedEnrichment.offset[2];
         rig.root.position.lerp(enrichmentDesired, enrichmentBlend);
-        if (enrichment.heading) rig.root.rotation.y = Math.atan2(-enrichment.heading[0], -enrichment.heading[1]);
+        if (appliedEnrichment.heading) rig.root.rotation.y = Math.atan2(-appliedEnrichment.heading[0], -appliedEnrichment.heading[1]);
         else {
           tangent.copy(enrichmentTarget).sub(rig.root.position).setY(0);
           if (tangent.lengthSq() > .00001) rig.root.rotation.y = Math.atan2(-tangent.x, -tangent.z);
         }
-        state = enrichment.motion;
+        state = appliedEnrichment.motion;
       }
+      if (!enrichment && enrichmentBlend <= .001) lastEnrichment = null;
       rig.root.userData.animationState = state;
       rig.root.userData.enrichmentActive = Boolean(enrichment) && enrichmentBlend > .08;
       rig.root.userData.enrichmentBlend = enrichmentBlend;

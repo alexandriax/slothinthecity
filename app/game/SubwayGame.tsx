@@ -107,8 +107,10 @@ const QA_ZOO_SIDE_QUESTS: Partial<Record<string, { focusCenter?: [number, number
   bronxquestsealionfocus: { focusCenter: [0, -76], questId: "sea-lion-current", position: [0, -63], yaw: 0 },
   bronxquestmonkey: { questId: "monkey-canopy-rig", position: [-24, -98], yaw: 1.4 },
   bronxquestzebra: { questId: "zebra-stripe-scan", position: [26, -98], yaw: -1.2 },
+  bronxquestzebrafocus: { focusCenter: [43, -101], questId: "zebra-stripe-scan", position: [26, -98], yaw: -1.2 },
   bronxquestredpanda: { questId: "red-panda-scent-wind", position: [-24, -135], yaw: 1.816 },
   bronxquesttortoise: { questId: "tortoise-sun-trail", position: [24, -135], yaw: -1.816 },
+  bronxquesttortoisefocus: { focusCenter: [36, -132], questId: "tortoise-sun-trail", position: [24, -135], yaw: -1.816 },
   bronxquestflamingo: { questId: "flamingo-wetland-balance", position: [-71, -67], yaw: Math.PI },
   bronxquestbison: { questId: "bison-prairie-seeding", position: [59, -107], yaw: -1.723 },
 };

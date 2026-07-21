@@ -128,9 +128,9 @@ export const IN_WORLD_ZOO_QUESTS: Record<ZooSideQuestId, InWorldZooQuestDefiniti
     startPrompt: "ALIGN THE TORTOISE SUN TRAIL",
     routeLabel: "Tortoise warming trail",
     stations: [
-      { id: "east", position: [47.1, -124.2], action: "AIM THE EAST WARMING MIRROR", confirmation: "A warm beam reaches the first stone shelf.", kind: "solar-mirror" },
-      { id: "south", position: [36.5, -145.4], action: "AIM THE SOUTH WARMING MIRROR", confirmation: "The second reflection carries light across the yard.", kind: "solar-mirror" },
-      { id: "west", position: [25.3, -139.1], action: "LIGHT THE FINAL BASKING STONE", confirmation: "The basking trail now warms gradually from end to end.", kind: "solar-mirror" },
+      { id: "east", position: [47.1, -124.2], responsePath: [[43.2, -126.1], [40, -128.5]], responseBend: .28, responseHeight: .48, action: "AIM THE EAST WARMING MIRROR", confirmation: "A warm beam reaches the first stone shelf.", kind: "solar-mirror" },
+      { id: "south", position: [36.5, -145.4], responsePath: [[39.1, -139.2], [38, -136]], responseBend: .25, responseHeight: .48, action: "AIM THE SOUTH WARMING MIRROR", confirmation: "The second reflection carries light across the yard.", kind: "solar-mirror" },
+      { id: "west", position: [25.3, -139.1], responsePath: [[28.7, -136.2], [31.8, -132.5]], responseBend: .3, responseHeight: .48, action: "LIGHT THE FINAL BASKING STONE", confirmation: "The basking trail now warms gradually from end to end.", kind: "solar-mirror" },
     ],
   },
   "flamingo-wetland-balance": {
