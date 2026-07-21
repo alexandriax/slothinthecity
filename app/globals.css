@@ -171,7 +171,7 @@ button { font: inherit; }
   .desktop-hud{display:none}.mobile-hud{display:block}.touch-ui{display:block}.mouse-resume{display:none}
   .goal-wayfinder{top:max(64px,calc(env(safe-area-inset-top) + 56px));width:min(232px,calc(100vw - 124px));min-width:0;max-width:calc(100vw - 124px);height:32px;padding:3px 10px 3px 5px;gap:7px}.goal-wayfinder-arrow{width:24px;height:24px}.goal-wayfinder-arrow i{width:9px;height:13px}
   .toast{top:max(103px,calc(env(safe-area-inset-top) + 95px)); max-width:calc(100vw - 24px); padding:7px 11px; border-radius:999px; font-family:inherit; font-size:10px; line-height:1.25; box-shadow:0 10px 26px rgba(0,0,0,.22)}
-  .game-shell[data-buds="5"] .toast{top:max(103px,calc(env(safe-area-inset-top) + 95px))}
+  .game-shell[data-buds="3"] .toast{top:max(103px,calc(env(safe-area-inset-top) + 95px))}
 }
 @media(max-width:430px) and (orientation:portrait){
   .mobile-telemetry{grid-template-columns:minmax(46px,.72fr) minmax(82px,1.45fr) minmax(48px,.75fr);gap:5px;padding-right:94px}
@@ -196,8 +196,8 @@ button { font: inherit; }
   .touch-sense{right:max(72px,calc(env(safe-area-inset-right) + 60px));bottom:max(10px,env(safe-area-inset-bottom));width:44px;height:44px}
   .touch-pause{right:max(124px,calc(env(safe-area-inset-right) + 112px));bottom:max(10px,env(safe-area-inset-bottom));width:44px;height:44px}
 }
-@media(max-height:500px) and (orientation:landscape) and (max-width:900px), (max-height:500px) and (orientation:landscape) and (pointer:coarse){.toast{top:max(48px,calc(env(safe-area-inset-top) + 43px))}.game-shell[data-buds="5"] .toast{top:max(82px,calc(env(safe-area-inset-top) + 77px))}}
-@media(max-height:500px) and (orientation:landscape){.game-shell[data-touch-capable="true"] .toast{top:max(48px,calc(env(safe-area-inset-top) + 43px))}.game-shell[data-touch-capable="true"][data-buds="5"] .toast{top:max(82px,calc(env(safe-area-inset-top) + 77px))}}
+@media(max-height:500px) and (orientation:landscape) and (max-width:900px), (max-height:500px) and (orientation:landscape) and (pointer:coarse){.toast{top:max(48px,calc(env(safe-area-inset-top) + 43px))}.game-shell[data-buds="3"] .toast{top:max(82px,calc(env(safe-area-inset-top) + 77px))}}
+@media(max-height:500px) and (orientation:landscape){.game-shell[data-touch-capable="true"] .toast{top:max(48px,calc(env(safe-area-inset-top) + 43px))}.game-shell[data-touch-capable="true"][data-buds="3"] .toast{top:max(82px,calc(env(safe-area-inset-top) + 77px))}}
 @media(prefers-reduced-motion:reduce){.grain,.game-shell[data-hawk-phase="DIVING"] .world-vignette{animation:none}.meter-fill,.scent-overlay,.primary{transition:none}}
 
 /* Subway campaign — enamel wayfinding, fluorescent platform light, and route-color telemetry. */

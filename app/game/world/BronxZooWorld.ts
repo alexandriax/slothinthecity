@@ -2,6 +2,8 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { Sky } from "three/addons/objects/Sky.js";
 import type { GameTextures } from "../rendering/textures";
+import { batchStaticMeshes } from "../systems/performance/StaticSceneBatcher";
+import { VisibilityAwareUpdateScheduler } from "../systems/performance/VisibilityAwareUpdateScheduler";
 import {
   ZOO_SIDE_QUESTS,
   createZooSideQuestConfig,
@@ -729,12 +731,12 @@ function addLandscape(root: THREE.Group, materials: ZooMaterials, textures: Game
   const treeCount = Math.round(120 + quality * 180);
   const branchesPerTree = quality > .75 ? 18 : quality > .5 ? 10 : 6;
   const canopyCardsPerTree = quality > .75 ? 32 : quality > .5 ? 16 : 8;
-  const trunkGeometry = new THREE.CylinderGeometry(.32, .52, 7.1, quality > .75 ? 12 : 8, 3);
+  const trunkGeometry = new THREE.CylinderGeometry(.32, .52, 7.1, quality > .75 ? 12 : 8, 1);
   const trunks = new THREE.InstancedMesh(trunkGeometry, materials.bark, treeCount);
   trunks.name = "bronx-zoo-instanced-landscape-trunks";
   trunks.castShadow = quality > .65;
   trunks.receiveShadow = true;
-  const branchGeometry = new THREE.CylinderGeometry(.08, .19, 1, quality > .75 ? 10 : 7, 2);
+  const branchGeometry = new THREE.CylinderGeometry(.08, .19, 1, quality > .75 ? 10 : 7, 1);
   const branches = new THREE.InstancedMesh(branchGeometry, materials.bark, treeCount * branchesPerTree);
   branches.name = "bronx-zoo-instanced-articulated-landscape-branches";
   branches.castShadow = quality > .74;
@@ -1365,6 +1367,7 @@ function addInWorldHabitatQuestStations(root: THREE.Group, materials: ZooMateria
 }
 
 type ZooArrivalDistrictRuntime = {
+  movingRoots: readonly THREE.Object3D[];
   update(elapsed: number): void;
 };
 
@@ -1730,12 +1733,12 @@ function addZooArrivalDistrictBackdrop(root: THREE.Group, materials: ZooMaterial
     }
   }
   addInstances("bronx-city-block-raised-sidewalk-islands", new THREE.BoxGeometry(1, 1, 1), sidewalkMaterial, sidewalkSpecs).receiveShadow = true;
-  const shells = addInstances("bronx-full-volume-varied-building-field", new RoundedBoxGeometry(1, 1, 1, 3, .025), buildingMaterial, buildingSpecs);
+  const shells = addInstances("bronx-full-volume-varied-building-field", new THREE.BoxGeometry(1, 1, 1), buildingMaterial, buildingSpecs);
   shells.castShadow = quality > .82;
   shells.receiveShadow = true;
   addInstances("bronx-building-roofline-cornice-network", new THREE.BoxGeometry(1, 1, 1), roofMaterial, corniceSpecs);
   addInstances("bronx-building-articulated-storefront-plinths", new THREE.BoxGeometry(1, 1, 1), buildingMaterial, storefrontSpecs);
-  addInstances("bronx-rooftop-hvac-and-service-units", new RoundedBoxGeometry(1, 1, 1, 3, .06), roofMaterial, rooftopUnitSpecs);
+  addInstances("bronx-rooftop-hvac-and-service-units", new THREE.BoxGeometry(1, 1, 1), roofMaterial, rooftopUnitSpecs);
   const boroughWindowMaterial = new THREE.MeshStandardMaterial({ color: "#ffffff", emissive: "#725d3e", emissiveIntensity: .18, roughness: .38, metalness: .14, vertexColors: true });
   const windowFrameMaterial = new THREE.MeshStandardMaterial({ color: "#d0c2a8", roughness: .74, metalness: .05 });
   addInstances("bronx-building-south-north-window-frame-depth-field", new THREE.BoxGeometry(1, 1, 1), windowFrameMaterial, southNorthWindowSpecs.map(spec => ({ ...spec, sx: spec.sx + .38, sy: spec.sy + .34, sz: .08 })));
@@ -1749,12 +1752,12 @@ function addZooArrivalDistrictBackdrop(root: THREE.Group, materials: ZooMaterial
   const awningMaterial = new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: .72, vertexColors: true });
   addInstances("bronx-neighborhood-storefront-awning-network", new THREE.BoxGeometry(1, 1, 1), awningMaterial, awningSpecs);
   const storefrontDoorMaterial = new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: .48, metalness: .18, vertexColors: true });
-  addInstances("bronx-corridor-recessed-storefront-door-network", new RoundedBoxGeometry(1, 1, 1, 3, .03), storefrontDoorMaterial, storefrontDoorSpecs);
-  addInstances("bronx-neighborhood-ground-floor-storefront-frame-network", new RoundedBoxGeometry(1, 1, 1, 3, .035), windowFrameMaterial, storefrontGlazingSpecs.map(spec => ({ ...spec, sx: spec.sx + .3, sy: spec.sy + .3, sz: .09 })));
+  addInstances("bronx-corridor-recessed-storefront-door-network", new THREE.BoxGeometry(1, 1, 1), storefrontDoorMaterial, storefrontDoorSpecs);
+  addInstances("bronx-neighborhood-ground-floor-storefront-frame-network", new THREE.BoxGeometry(1, 1, 1), windowFrameMaterial, storefrontGlazingSpecs.map(spec => ({ ...spec, sx: spec.sx + .3, sy: spec.sy + .3, sz: .09 })));
   const storefrontGlassMaterial = new THREE.MeshStandardMaterial({ color: "#294545", emissive: "#8a6d3d", emissiveIntensity: .34, roughness: .28, metalness: .18 });
-  addInstances("bronx-neighborhood-ground-floor-glazing-and-interior-light", new RoundedBoxGeometry(1, 1, 1, 3, .025), storefrontGlassMaterial, storefrontGlazingSpecs);
+  addInstances("bronx-neighborhood-ground-floor-glazing-and-interior-light", new THREE.BoxGeometry(1, 1, 1), storefrontGlassMaterial, storefrontGlazingSpecs);
   const bladeSignMaterial = new THREE.MeshStandardMaterial({ color: "#ffffff", emissive: "#54451f", emissiveIntensity: .16, roughness: .44, metalness: .22, vertexColors: true });
-  addInstances("bronx-corridor-human-scale-blade-sign-network", new RoundedBoxGeometry(1, 1, 1, 3, .04), bladeSignMaterial, storefrontBladeSignSpecs);
+  addInstances("bronx-corridor-human-scale-blade-sign-network", new THREE.BoxGeometry(1, 1, 1), bladeSignMaterial, storefrontBladeSignSpecs);
   storefrontSignAnchors.forEach((anchor, index) => {
     const texture = storefrontSignTexture(anchor.title, anchor.subtitle, anchor.palette);
     ownedTextures.push(texture);
@@ -2007,6 +2010,7 @@ function addZooArrivalDistrictBackdrop(root: THREE.Group, materials: ZooMaterial
   district.add(borough);
   root.add(district);
   const runtime: ZooArrivalDistrictRuntime = {
+    movingRoots: [...trafficMotions.map(motion => motion.root), elevatedTrain],
     update(elapsed) {
       trafficMotions.forEach(motion => {
         const span = motion.end - motion.start;
@@ -2053,6 +2057,7 @@ export class BronxZooWorld {
 
   private ownedTextures: THREE.Texture[] = [];
   private readonly guestAgents: AmbientHumanAgent[] = [];
+  private readonly guestUpdateScheduler = new VisibilityAwareUpdateScheduler();
   private readonly animals: ZooAnimalRig[] = [];
   private readonly seaLionRigs: ZooAnimalRig[] = [];
   private readonly zebraRigs: ZooAnimalRig[] = [];
@@ -2186,6 +2191,21 @@ export class BronxZooWorld {
     this.root.add(this.jamSandwich);
     addLandscape(this.root, materials, textures, quality, this.obstacles);
     this.addPermanentCollisions();
+
+    batchStaticMeshes(this.root, {
+      cellSize: 38,
+      exclude: [
+        this.skateboard.root,
+        this.jamSandwich,
+        this.keeperPadlock,
+        ...this.entryGateLeaves,
+        ...this.keeperDoorLeaves,
+        ...this.captiveSloths,
+        ...this.animals.map(animal => animal.root),
+        ...this.arrivalDistrictMotion.movingRoots,
+        ...[...this.questStationVisuals.values()].flatMap(visual => [visual.root, visual.response.root]),
+      ],
+    });
 
     const makeVisitor = (variant: number, faceVariant: number, coat: string, trousers: string, skin: string, outfit: PremiumHumanOutfit, accessory: "backpack" | "camera" | "tote" = "backpack") => createPremiumHuman({
       role: "visitor", quality, variant, faceVariant, coat, trousers, skin, outfit, accessory, pose: accessory === "camera" ? "photographing" : "neutral",
@@ -2854,7 +2874,14 @@ export class BronxZooWorld {
     });
     idleAuthoredHuman(this.attendant, delta);
     idleAuthoredHuman(this.skateboardDonor, delta);
-    this.guestAgents.forEach(agent => updateAmbientHumanAgent(agent, elapsed, delta));
+    this.guestAgents.forEach(agent => {
+      const scheduledDelta = this.guestUpdateScheduler.deltaFor(agent.root, elapsed, delta, player, yaw, {
+        fullRateDistance: 52,
+        backgroundHz: 10,
+        forwardDistance: 210,
+      });
+      if (scheduledDelta !== null) updateAmbientHumanAgent(agent, elapsed, scheduledDelta);
+    });
     this.arrivalDistrictMotion.update(elapsed);
     this.updateHabitatOperation(delta, player, yaw);
     this.updateHabitatQuestStations(elapsed);

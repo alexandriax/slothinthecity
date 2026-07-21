@@ -13,7 +13,10 @@ import {
   SUBWAY_STAIR_CUTOUT,
 } from "./CampaignLandmarks";
 
-export const BUDS = [
+export const LEAF_SPROUTS = [
+  new THREE.Vector3(-39.5, 0, 50), new THREE.Vector3(-35, 0, 45),
+  new THREE.Vector3(-30.5, 0, 39), new THREE.Vector3(-24, 0, 32),
+  new THREE.Vector3(-18, 0, 25),
   new THREE.Vector3(-12, 0, 14), new THREE.Vector3(17, 0, -4),
   new THREE.Vector3(18, 0, -20), new THREE.Vector3(-1, 0, -47),
   new THREE.Vector3(-24, 0, -58), new THREE.Vector3(-45, 0, -28),
@@ -1278,8 +1281,8 @@ export function buildRealisticWorld(scene: THREE.Scene, textures: GameTextures, 
 
   const buds: THREE.Group[] = [], rings: THREE.Mesh[] = [];
   const budMaterial = new THREE.MeshPhysicalMaterial({ color: "#9ec55c", roughness: .65, clearcoat: .12 });
-  const budPlacements = BUDS.map((point) => point.clone());
-  for (const index of [2, 4]) {
+  const budPlacements = LEAF_SPROUTS.map((point) => point.clone());
+  for (const index of [7, 9]) {
     const point = budPlacements[index];
     const hostTree = trees.reduce((nearest, tree) => Math.hypot(point.x - tree.x, point.z - tree.z) < Math.hypot(point.x - nearest.x, point.z - nearest.z) ? tree : nearest, trees[0]);
     const outward = Math.atan2(point.z - hostTree.z, point.x - hostTree.x);

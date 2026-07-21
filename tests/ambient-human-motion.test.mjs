@@ -106,11 +106,13 @@ test("station, zoo, museum, and streets advance authored roles with contextual p
     readSource("../app/game/world/CityBusWorld.ts"),
   ]);
 
-  assert.match(zoo, /guestAgents\.forEach\(agent => updateAmbientHumanAgent\(agent, elapsed, delta\)\)/);
+  assert.match(zoo, /guestUpdateScheduler\.deltaFor\(agent\.root, elapsed, delta, player, yaw/);
+  assert.match(zoo, /scheduledDelta !== null\) updateAmbientHumanAgent\(agent, elapsed, scheduledDelta\)/);
   assert.match(zoo, /pauseTargets: \[attentionTarget\]/);
   assert.match(zoo, /pauseActivities: \[pauseActivity, "observing", pauseActivity\]/);
   assert.match(museum, /exhibitAttentionPoints/);
   assert.match(museum, /pauseTargets: \[attentionTarget\]/);
+  assert.match(museum, /guestUpdateScheduler\.deltaFor\(agent\.root, elapsed, delta, player, playerYaw/);
   assert.match(city, /storefrontAttention/);
   assert.match(city, /pauseTargets: \[storefrontAttention\]/);
   assert.match(subway, /mode: "ALIGHT" \| "AMBIENT" \| "BOARD" \| "WAIT"/);

@@ -26,6 +26,7 @@ type VehicleKind = "cart" | "rowboat" | null;
 type MotionState = "ON GROUND" | "SWIMMING" | "DRIVING" | "ROWING" | "CLIMBING" | "ON BRANCH" | "REACHING" | "LOWERING" | "DESCENDING" | "CAUGHT" | "HAWK DIVE" | "SNATCHED" | "PATH BLOCKED";
 type HawkPhase = "PATROL" | "WATCHING" | "DIVING" | "SNATCHED" | "RECOVERING";
 type HudState = { energy: number; alert: number; buds: number; ticketCollected: boolean; objective: string; objectiveShort: string; objectiveDetail: string; objectiveValue: string; prompt: string; promptKey: string; heading: string; motion: MotionState; hint: string; threat: string; hawkPhase: HawkPhase; swimming: boolean; driving: boolean; speed: number; x: number; y: number; z: number; branchId: number; branchProgress: number; arboreal: boolean; goalDistance: number; goalBearing: number; parkStage: ParkStage; targetActive: boolean; vehicle: VehicleKind; waypointLabel: string };
+const OPENING_LEAF_SPROUT_GOAL = 3;
 type HawkEvent = { kind: "DIVE" | "SNATCH"; started: number; duration: number; from: THREE.Vector3; target: THREE.Vector3; rescue: THREE.Vector3; willSnatch: boolean };
 
 function hasTouchInput() {
@@ -51,7 +52,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
   const [mouseCaptured, setMouseCaptured] = useState(false);
   const [touchCapable, setTouchCapable] = useState(false);
   const [pointerLockAvailable] = useState(() => typeof window !== "undefined" && !hasTouchInput() && typeof HTMLCanvasElement.prototype.requestPointerLock === "function" && matchMedia("(pointer: fine)").matches && !isAutomatedQaSession(location.search, location.hostname));
-  const [hud, setHud] = useState<HudState>({ energy: 100, alert: 6, buds: 0, ticketCollected: false, objective: "Forage five buds across trail and canopy", objectiveShort: "FORAGE", objectiveDetail: "0 / 5 tender buds foraged", objectiveValue: "0 / 5", prompt: "", promptKey: "", heading: "N", motion: "ON GROUND", hint: "E climbs a nearby trunk · W / S moves · Shift grips", threat: "PATROL DISTANT", hawkPhase: "PATROL", swimming: false, driving: false, speed: 0, x: START.x, y: 0, z: START.z, branchId: -1, branchProgress: 0, arboreal: false, goalDistance: Math.hypot(BOW_BRIDGE_TARGET.x - START.x, BOW_BRIDGE_TARGET.z - START.z), goalBearing: 0, parkStage: "FORAGE", targetActive: false, vehicle: null, waypointLabel: "Bow Bridge" });
+  const [hud, setHud] = useState<HudState>({ energy: 100, alert: 6, buds: 0, ticketCollected: false, objective: "Gather three leaf sprouts along the opening trail", objectiveShort: "GATHER", objectiveDetail: "0 / 3 leaf sprouts gathered", objectiveValue: "0 / 3", prompt: "", promptKey: "", heading: "N", motion: "ON GROUND", hint: "E climbs a nearby trunk · W / S moves · Shift grips", threat: "PATROL DISTANT", hawkPhase: "PATROL", swimming: false, driving: false, speed: 0, x: START.x, y: 0, z: START.z, branchId: -1, branchProgress: 0, arboreal: false, goalDistance: Math.hypot(BOW_BRIDGE_TARGET.x - START.x, BOW_BRIDGE_TARGET.z - START.z), goalBearing: 0, parkStage: "FORAGE", targetActive: false, vehicle: null, waypointLabel: "Bow Bridge" });
   const setPhase = useCallback((next: Phase) => {
     phaseRef.current = next;
     setPhaseState(next);
@@ -105,6 +106,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
 
     const timer = new THREE.Timer(); timer.connect(document);
     const keys = new Set<string>(), velocity = new THREE.Vector3(), player = START.clone();
+    const movementForward = new THREE.Vector3(), movementRight = new THREE.Vector3(), movementWish = new THREE.Vector3();
     const qaInput = requestedGameCheckpoint(location.search, location.hostname);
     const automatedQa = isAutomatedQaSession(location.search, location.hostname);
     if (qaInput === "autowalk") keys.add("KeyW");
@@ -158,8 +160,8 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
       if (!collected.current.has(index) && bud.visible && bud.position.distanceTo(camera.position) < 3.2) {
         collected.current.add(index); bud.visible = false; energy = Math.min(100, energy + 30);
         collectedBud = true;
-        if (collected.current.size >= 5) parkStage = "BOW_BRIDGE";
-        showToast(collected.current.size >= 5 ? "The Lake marked — head south to Bow Bridge · +30 energy" : `Tender bud ${collected.current.size} of 5 — +30 energy`, collected.current.size >= 5 ? 4200 : 2100);
+        if (collected.current.size >= OPENING_LEAF_SPROUT_GOAL) parkStage = "BOW_BRIDGE";
+        showToast(collected.current.size >= OPENING_LEAF_SPROUT_GOAL ? "The Lake marked — head south to Bow Bridge · +30 energy" : `Leaf sprout ${collected.current.size} of ${OPENING_LEAF_SPROUT_GOAL} — +30 energy`, collected.current.size >= OPENING_LEAF_SPROUT_GOAL ? 4200 : 2100);
       }
       });
       return collectedBud;
@@ -484,7 +486,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
             }
             qaPrepared = true;
           } else if (["bowbridge", "rowboat", "ticketisland", "ticket", "lakeduck", "duckpassenger", "duckfollowing", "subwayentrance"].includes(qaInput ?? "")) {
-            world.buds.slice(0, 5).forEach((bud, index) => { collected.current.add(index); bud.visible = false; });
+            world.buds.slice(0, OPENING_LEAF_SPROUT_GOAL).forEach((bud, index) => { collected.current.add(index); bud.visible = false; });
             alert = 5; nextHawkPassAt = Number.POSITIVE_INFINITY;
             if (qaInput === "rowboat") { parkStage = "LAKE_TICKET"; rowboats[0].getWorldEntryPosition(player); player.y = waterSurfaceY + .58; actionRequested = true; }
             else if (qaInput === "bowbridge") {
@@ -544,7 +546,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
             qaPrepared = true;
           }
         }
-        const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)), right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)), wish = new THREE.Vector3();
+        const forward = movementForward.set(-Math.sin(yaw), 0, -Math.cos(yaw)), right = movementRight.set(Math.cos(yaw), 0, -Math.sin(yaw)), wish = movementWish.set(0, 0, 0);
         const forwardHeld = keys.has("KeyW") || keys.has("ArrowUp"), backHeld = keys.has("KeyS") || keys.has("ArrowDown"), leftHeld = keys.has("KeyA") || keys.has("ArrowLeft"), rightHeld = keys.has("KeyD") || keys.has("ArrowRight");
         const gripping = keys.has("ShiftLeft") || keys.has("ShiftRight");
         let moving = false, cartNearby = false, nearbyCart: ParkUtilityCart | null = null, nearbyBoat: ParkRowboat | null = null, groundTreeTarget: ClimbableTree | null = null, branchTarget: { route: BranchRoute; amount: number; point: THREE.Vector3; score: number } | null = null, lowerTarget: { route: BranchRoute; amount: number; point: THREE.Vector3; score: number } | null = null, traversalSpeed = 0, zapRockDirection: -1 | 0 | 1 = 0;
@@ -579,7 +581,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
         }
         // Keep the interaction shown by the HUD and the interaction that fires
         // on E identical when a forage pickup sits beside the parked cart.
-        if (actionRequested && hawkEvent?.kind !== "SNATCH" && !drivingCart && !activeBoat && collectNearby()) { if (collected.current.size >= 5) audio.playQuestComplete(); else audio.playUiConfirm(); actionRequested = false; }
+        if (actionRequested && hawkEvent?.kind !== "SNATCH" && !drivingCart && !activeBoat && collectNearby()) { if (collected.current.size >= OPENING_LEAF_SPROUT_GOAL) audio.playQuestComplete(); else audio.playUiConfirm(); actionRequested = false; }
         if (actionRequested && hawkEvent?.kind !== "SNATCH" && duckInteractionTarget) {
           const duckEvent = duckQuest.interact(duckInteractionTarget, gameTime);
           if (duckEvent) {
@@ -981,7 +983,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
         }
         if (gameTime - lastHud > .12) {
           lastHud = gameTime; let prompt = "", promptKey = "";
-          world.buds.forEach(bud => { if (bud.visible && bud.position.distanceTo(player) < 3.2) { prompt = "FORAGE TENDER BUD"; promptKey = "E"; } });
+          world.buds.forEach(bud => { if (bud.visible && bud.position.distanceTo(player) < 3.2) { prompt = "GATHER LEAF SPROUT"; promptKey = "E"; } });
           if (activeBoat) { prompt = "EXIT ROWBOAT"; promptKey = "E"; }
           else if (drivingCart) { prompt = "EXIT FIELD-SERVICES CART"; promptKey = "E"; }
           else if (!prompt && nearbyBoat) { prompt = "BOARD ROWBOAT"; promptKey = "E"; }
@@ -1019,10 +1021,10 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
           const goalBearing = THREE.MathUtils.radToDeg(Math.atan2(goalSide, goalAhead));
           const motion: MotionState = activeBoat ? "ROWING" : drivingCart ? "DRIVING" : hawkEvent?.kind === "SNATCH" ? "SNATCHED" : hawkEvent?.kind === "DIVE" ? "HAWK DIVE" : gameTime < caughtUntil ? "CAUGHT" : transfer ? (transfer.kind === "DROP" ? "LOWERING" : "REACHING") : branchRoute ? "ON BRANCH" : climbingTree ? "CLIMBING" : controlledDescent ? "DESCENDING" : swimming ? "SWIMMING" : blockedBy ? "PATH BLOCKED" : "ON GROUND";
           const vehicleSpeed = activeBoat?.speedMetersPerSecond ?? (drivingCart ? cart.speedMetersPerSecond : 0);
-          const hint = activeBoat ? `${Math.round(Math.abs(vehicleSpeed) * 3.6)} km/h · W / S row · A / D steer · Space brake · ${duckInteraction ? "E greet Tanner" : "E exit"}` : drivingCart ? `${Math.round(Math.abs(vehicleSpeed) * 3.6)} km/h · W / S drive · A / D steer · Space brake · E exit` : hawkEvent?.kind === "SNATCH" ? "Recoverable snatch · the hawk will drop you beneath nearby cover" : hawkEvent?.kind === "DIVE" ? "Break its line of sight: reach canopy or enter the water" : gameTime < caughtUntil ? "Lower branch caught · grip secure" : transfer ? (transfer.kind === "DROP" ? "Lowering to the highlighted branch" : "Reaching hand-over-hand") : squirrelQuest.isRockingAcorn ? hasTouchInput() ? "Alternate the move stick forward and back · each change flexes the branch" : "Alternate W and S · each clean direction change flexes the living branch" : branchRoute ? (branchRoute.corridorId ? "Hold W for continuous tree-to-tree travel · look or steer at junctions" : "W / S crawl · endpoint branches auto-grab · Ctrl or Space descends") : climbingTree ? (energy < 18 ? "Rest in place to recover energy · Ctrl descends" : "W / S climb · E enters a branch · Ctrl descends") : controlledDescent ? "A safe descent is active · Shift slows the lowering motion" : swimming ? (energy < 20 ? "Rest on the surface to recover · swimming never stops completely" : "Slower strokes · water cools hawk awareness · rest to recover energy") : blockedBy === "TREE" ? "Solid trunk · face its marker and press E to climb" : blockedBy === "LANDMARK" ? "Solid park structure · use or steer around it" : gameTime < gripHintUntil ? "Move within arm’s reach of a marked trunk, then press E" : energy < 20 ? (moving ? "Low energy slows you, but never freezes movement" : "Resting — energy recovering quickly") : moving ? "Walking drains energy · stop to recover or forage a bud" : "Resting restores energy · tender buds restore 30";
+          const hint = activeBoat ? `${Math.round(Math.abs(vehicleSpeed) * 3.6)} km/h · W / S row · A / D steer · Space brake · ${duckInteraction ? "E greet Tanner" : "E exit"}` : drivingCart ? `${Math.round(Math.abs(vehicleSpeed) * 3.6)} km/h · W / S drive · A / D steer · Space brake · E exit` : hawkEvent?.kind === "SNATCH" ? "Recoverable snatch · the hawk will drop you beneath nearby cover" : hawkEvent?.kind === "DIVE" ? "Break its line of sight: reach canopy or enter the water" : gameTime < caughtUntil ? "Lower branch caught · grip secure" : transfer ? (transfer.kind === "DROP" ? "Lowering to the highlighted branch" : "Reaching hand-over-hand") : squirrelQuest.isRockingAcorn ? hasTouchInput() ? "Alternate the move stick forward and back · each change flexes the branch" : "Alternate W and S · each clean direction change flexes the living branch" : branchRoute ? (branchRoute.corridorId ? "Hold W for continuous tree-to-tree travel · look or steer at junctions" : "W / S crawl · endpoint branches auto-grab · Ctrl or Space descends") : climbingTree ? (energy < 18 ? "Rest in place to recover energy · Ctrl descends" : "W / S climb · E enters a branch · Ctrl descends") : controlledDescent ? "A safe descent is active · Shift slows the lowering motion" : swimming ? (energy < 20 ? "Rest on the surface to recover · swimming never stops completely" : "Slower strokes · water cools hawk awareness · rest to recover energy") : blockedBy === "TREE" ? "Solid trunk · face its marker and press E to climb" : blockedBy === "LANDMARK" ? "Solid park structure · use or steer around it" : gameTime < gripHintUntil ? "Move within arm’s reach of a marked trunk, then press E" : energy < 20 ? (moving ? "Low energy slows you, but never freezes movement" : "Resting — energy recovering quickly") : moving ? "Walking drains energy · stop to recover or gather a leaf sprout" : "Resting restores energy · leaf sprouts restore 30";
           const threat = hawkPhase === "SNATCHED" ? "SNATCHED · RECOVERING" : hawkPhase === "DIVING" ? "DIVE PASS INBOUND" : hawkPhase === "RECOVERING" ? "DISORIENTED · SAFE" : drivingCart ? "CART ROOF COVER" : activeBoat || swimming ? "WATER SHELTER" : alert >= 85 ? "DANGER · FIND COVER" : hawkPhase === "WATCHING" ? "HAWK WATCHING" : "PATROL DISTANT";
           const campaignCopy = parkStage === "FORAGE"
-            ? { objective: "Forage five buds across trail and canopy", short: "FORAGE", detail: `${Math.min(collected.current.size, 5)} / 5 tender buds foraged`, value: `${Math.min(collected.current.size, 5)} / 5`, label: "Bow Bridge" }
+            ? { objective: "Gather three leaf sprouts along the opening trail", short: "GATHER", detail: `${Math.min(collected.current.size, OPENING_LEAF_SPROUT_GOAL)} / ${OPENING_LEAF_SPROUT_GOAL} leaf sprouts gathered`, value: `${Math.min(collected.current.size, OPENING_LEAF_SPROUT_GOAL)} / ${OPENING_LEAF_SPROUT_GOAL}`, label: "Bow Bridge" }
             : parkStage === "BOW_BRIDGE"
               ? { objective: "Head south to Bow Bridge on The Lake", short: "BRIDGE", detail: `${Math.round(goalDistance)} m to Bow Bridge`, value: `${Math.round(goalDistance)} M`, label: "Bow Bridge" }
               : parkStage === "LAKE_TICKET"
@@ -1042,7 +1044,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
                 : { objective: "Give Tanner's family the right of way", short: "TANNER", detail: duckQuest.instruction, value: duckQuest.state === "CROSSING" ? `${duckQuest.ducksCleared} / ${duckQuest.family.length}` : `${duckQuest.progress}%`, label: "Tanner · family crossing" }
               : null;
           const objectiveCopy = localQuestCopy ?? campaignCopy;
-          setHud({ energy, alert, buds: Math.min(collected.current.size, 5), ticketCollected, objective: objectiveCopy.objective, objectiveShort: objectiveCopy.short, objectiveDetail: objectiveCopy.detail, objectiveValue: objectiveCopy.value, prompt, promptKey, heading: directions[Math.round(head / (Math.PI / 4)) % 8], motion, hint, threat, hawkPhase, swimming, driving: Boolean(drivingCart || activeBoat), speed: vehicleSpeed, x: player.x, y: player.y, z: player.z, branchId: branchRoute?.id ?? -1, branchProgress, arboreal: Boolean(climbingTree || branchRoute || transfer || controlledDescent || dropVelocity < 0), goalDistance, goalBearing, parkStage, targetActive: !localQuestCopy && parkStage !== "FORAGE", vehicle: activeBoat ? "rowboat" : drivingCart ? "cart" : null, waypointLabel: objectiveCopy.label });
+          setHud({ energy, alert, buds: Math.min(collected.current.size, OPENING_LEAF_SPROUT_GOAL), ticketCollected, objective: objectiveCopy.objective, objectiveShort: objectiveCopy.short, objectiveDetail: objectiveCopy.detail, objectiveValue: objectiveCopy.value, prompt, promptKey, heading: directions[Math.round(head / (Math.PI / 4)) % 8], motion, hint, threat, hawkPhase, swimming, driving: Boolean(drivingCart || activeBoat), speed: vehicleSpeed, x: player.x, y: player.y, z: player.z, branchId: branchRoute?.id ?? -1, branchProgress, arboreal: Boolean(climbingTree || branchRoute || transfer || controlledDescent || dropVelocity < 0), goalDistance, goalBearing, parkStage, targetActive: !localQuestCopy && parkStage !== "FORAGE", vehicle: activeBoat ? "rowboat" : drivingCart ? "cart" : null, waypointLabel: objectiveCopy.label });
         }
       } else {
         carts.forEach(candidate => candidate.animate(gameTime)); rowboats.forEach(boat => boat.animate(gameTime)); world.animate(gameTime, player, scentRef.current, collected.current);

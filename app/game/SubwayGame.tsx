@@ -632,11 +632,10 @@ export function SubwayGame({
         preloadCamera.position.copy(museumWorld.spawn);
         preloadCamera.rotation.order = "YXZ";
         preloadCamera.rotation.y = museumWorld.spawnYaw;
-        // `compile()` is deliberately used instead of `compileAsync()`: the
-        // latter waits on every texture's async readiness contract and throws
-        // for Three materials whose maps are intentionally populated in place.
-        // This idle callback still moves shader creation off the arrival click.
-        renderer.compile(museumPreloadScene, preloadCamera);
+        // Parallel shader compilation avoids a long main-thread stall during
+        // the shuttle drive. A failed warm-up safely falls through to Three's
+        // normal first render rather than blocking the active scene.
+        void renderer.compileAsync(museumPreloadScene, preloadCamera).catch(() => undefined);
       };
       museumPreloadHandle =
         typeof window.requestIdleCallback === "function"

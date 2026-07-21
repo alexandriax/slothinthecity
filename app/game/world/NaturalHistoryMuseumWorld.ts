@@ -2,6 +2,8 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { GameTextures } from "../rendering/textures";
+import { batchStaticMeshes } from "../systems/performance/StaticSceneBatcher";
+import { VisibilityAwareUpdateScheduler } from "../systems/performance/VisibilityAwareUpdateScheduler";
 import { createPremiumHuman, createPremiumSlothFriend, markPremiumCharactersDisposed } from "./PremiumCharacter";
 import { createAmbientHumanAgent, updateAmbientHumanAgent, type AmbientHumanAgent } from "./characters/AmbientHumanMotion";
 import { createElectricScooter, rollPersonalMobility, type PersonalMobilityVehicle } from "./PersonalMobility";
@@ -1307,6 +1309,7 @@ export class NaturalHistoryMuseumWorld {
   private readonly boxes: BoxObstacle[] = [];
   private readonly circles: CircleObstacle[] = [];
   private readonly guests: AmbientHumanAgent[] = [];
+  private readonly guestUpdateScheduler = new VisibilityAwareUpdateScheduler();
   private readonly ownedTextures: THREE.Texture[] = [];
   private readonly scooters: PersonalMobilityVehicle[] = [];
   private readonly whiskers: ZooAnimalRig;
@@ -1316,6 +1319,9 @@ export class NaturalHistoryMuseumWorld {
   private readonly whiskersFreshTrail: THREE.Group[] = [];
   private readonly whiskersPrevious = new THREE.Vector3();
   private readonly whiskersResolveVelocity = new THREE.Vector3();
+  private readonly whiskersFollowTarget = new THREE.Vector3();
+  private readonly whiskersLightOffset = new THREE.Vector3(0, 1.45, 0);
+  private readonly whiskersPrints: Array<{ print: THREE.Group; emissiveMaterials: THREE.MeshStandardMaterial[] }> = [];
   private whiskersStateValue: WhiskersQuestState = "AVAILABLE";
   private whiskersWaypointIndex = 0;
   private whiskersTravelActive = false;
@@ -1381,7 +1387,7 @@ export class NaturalHistoryMuseumWorld {
     this.root.add(this.whiskers.root);
     this.whiskersMomentLight = new THREE.PointLight("#f0c36c", .14, 6.5, 1.8);
     this.whiskersMomentLight.name = "whiskers-restrained-gallery-story-pool-light";
-    this.whiskersMomentLight.position.copy(this.whiskers.root.position).add(new THREE.Vector3(0, 1.45, 0));
+    this.whiskersMomentLight.position.copy(this.whiskers.root.position).add(this.whiskersLightOffset);
     this.root.add(this.whiskersMomentLight);
     this.whiskersPrevious.copy(this.whiskers.root.position);
     this.addWhiskersTrailPresentation();
@@ -1459,6 +1465,17 @@ export class NaturalHistoryMuseumWorld {
       const hero = this.root.getObjectByName(heroName);
       if (hero) setShadows(hero, quality > .62);
     }
+    batchStaticMeshes(this.root, {
+      cellSize: 34,
+      exclude: [
+        this.whiskers.root,
+        this.whiskersMomentLight,
+        ...this.whiskersPawprints,
+        ...this.whiskersFreshTrail,
+        ...this.scooters.map(scooter => scooter.root),
+        ...this.guests.map(guest => guest.root),
+      ],
+    });
   }
 
   private createResidentGuests() {
@@ -1518,7 +1535,7 @@ export class NaturalHistoryMuseumWorld {
         trail.add(paw);
       }
       trail.visible = routeIndex === 0;
-      this.whiskersPawprints.push(trail); this.root.add(trail);
+      this.whiskersPawprints.push(trail); this.root.add(trail); this.registerWhiskersPrint(trail);
     });
     for (let index = 0; index < 16; index++) {
       const paw = createWhiskersPawprint(brass, `whiskers-fresh-route-paw-${index + 1}`);
@@ -1526,7 +1543,20 @@ export class NaturalHistoryMuseumWorld {
       paw.visible = false;
       this.whiskersFreshTrail.push(paw);
       this.root.add(paw);
+      this.registerWhiskersPrint(paw);
     }
+  }
+
+  private registerWhiskersPrint(print: THREE.Group) {
+    const emissiveMaterials: THREE.MeshStandardMaterial[] = [];
+    print.traverse(object => {
+      if (!(object instanceof THREE.Mesh)) return;
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      materials.forEach(surface => {
+        if (surface instanceof THREE.MeshStandardMaterial && !emissiveMaterials.includes(surface)) emissiveMaterials.push(surface);
+      });
+    });
+    this.whiskersPrints.push({ print, emissiveMaterials });
   }
 
   get whiskersQuestState() { return this.whiskersStateValue; }
@@ -1780,13 +1810,16 @@ export class NaturalHistoryMuseumWorld {
 
   update(elapsed: number, delta: number, player?: THREE.Vector3, playerYaw = 0, playerSpeed = 0) {
     if (this.disposed) return;
-    // Static gallery content remains resident after the offscreen compile and
-    // uses Three's frustum culling. Runtime visibility streaming caused cold
-    // geometry and texture uploads every few metres, presenting as freezes.
+    // Keep the complete gallery resident and visible so turning around never
+    // reveals a streaming pop. Only clearly off-camera animation mixers are
+    // coalesced; every potentially visible guest remains full-rate.
     this.guests.forEach(agent => {
-      const nearby = !player || Math.abs(agent.root.position.z - player.z) < 76;
-      agent.root.visible = nearby;
-      if (nearby) updateAmbientHumanAgent(agent, elapsed, delta);
+      const scheduledDelta = this.guestUpdateScheduler.deltaFor(agent.root, elapsed, delta, player, playerYaw, {
+        fullRateDistance: 48,
+        backgroundHz: 10,
+        forwardDistance: 220,
+      });
+      if (scheduledDelta !== null) updateAmbientHumanAgent(agent, elapsed, scheduledDelta);
     });
     this.updateWhiskers(elapsed, delta, player, playerYaw, playerSpeed);
   }
@@ -1862,7 +1895,7 @@ export class NaturalHistoryMuseumWorld {
       if (elapsed < this.whiskersCelebrationUntil) {
         this.whiskers.root.userData.animationState = "pounce";
       } else {
-        const target = player.clone().add(new THREE.Vector3(1.3, -1.48, 2.25));
+        const target = this.whiskersFollowTarget.set(player.x + 1.3, player.y - 1.48, player.z + 2.25);
         const dx = target.x - this.whiskers.root.position.x, dz = target.z - this.whiskers.root.position.z, distance = Math.hypot(dx, dz);
         if (distance > .08) {
           const step = Math.min(distance, delta * 4.2 * THREE.MathUtils.clamp(distance * .5, .75, 1.8));
@@ -1877,7 +1910,7 @@ export class NaturalHistoryMuseumWorld {
     this.whiskers.root.userData.whiskersTrustActive = this.isWhiskersTrustMoment;
     this.whiskers.root.userData.whiskersTrustProgress = this.whiskersTrustProgressValue;
     this.whiskers.root.userData.whiskersTrustState = this.whiskersTrustStateValue;
-    this.whiskersMomentLight.position.copy(this.whiskers.root.position).add(new THREE.Vector3(0, 1.45, 0));
+    this.whiskersMomentLight.position.copy(this.whiskers.root.position).add(this.whiskersLightOffset);
     this.whiskersMomentLight.intensity = this.isWhiskersTrustMoment
       ? .48 + this.whiskersTrustProgressValue * .42
       : this.whiskersStateValue === "TRAIL"
@@ -1890,16 +1923,12 @@ export class NaturalHistoryMuseumWorld {
       const yaw = Math.atan2(-movedX, -movedZ), error = Math.atan2(Math.sin(yaw - this.whiskers.root.rotation.y), Math.cos(yaw - this.whiskers.root.rotation.y));
       this.whiskers.root.rotation.y += error * (1 - Math.exp(-delta * 8));
     }
-    [...this.whiskersPawprints, ...this.whiskersFreshTrail].forEach((print, index) => {
+    this.whiskersPrints.forEach(({ print, emissiveMaterials }, index) => {
       if (!print.visible) return;
       const activeWaypoint = print === this.whiskersPawprints[this.whiskersWaypointIndex];
       const trustWarmth = this.isWhiskersTrustMoment && activeWaypoint ? this.whiskersTrustProgressValue * .24 : 0;
       const pulse = .08 + Math.sin(elapsed * 2.2 + index) * .035 + trustWarmth;
-      print.traverse(object => {
-        if (!(object instanceof THREE.Mesh)) return;
-        const surface = object.material;
-        if (surface instanceof THREE.MeshStandardMaterial) surface.emissiveIntensity = pulse;
-      });
+      emissiveMaterials.forEach(surface => { surface.emissiveIntensity = pulse; });
     });
     this.whiskers.update(elapsed, delta);
   }

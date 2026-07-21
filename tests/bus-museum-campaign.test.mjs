@@ -209,7 +209,7 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
   assert.match(bus, /collider\.kind === "barrier" \? 4\.5 : 9/);
   assert.match(game, /function scheduleMuseumPreload/);
   assert.match(game, /new NaturalHistoryMuseumWorld\(\s*museumPreloadScene/);
-  assert.match(game, /renderer\.compile\(museumPreloadScene, preloadCamera\)/);
+  assert.match(game, /renderer\.compileAsync\(museumPreloadScene, preloadCamera\)/);
   assert.match(game, /Math\.min\(next\.pixelRatio, 1\.25\)/);
   assert.match(game, /renderPipeline\.render\(!museumRendering\(\)\)/);
 });
@@ -395,8 +395,9 @@ test("AMNH is a full exploration level with permanent halls, crowds, and Megathe
   assert.match(museum, /const MUSEUM_RESIDENT_GUEST_INDEXES/);
   assert.match(museum, /this\.createResidentGuests\(\)/);
   assert.doesNotMatch(museum, /ensureGuestsNear|updateStreaming|section\.object\.visible/);
-  assert.match(museum, /Static gallery content remains resident after the offscreen compile/);
-  assert.match(museum, /const nearby = !player \|\| Math\.abs\(agent\.root\.position\.z - player\.z\) < 76/);
+  assert.match(museum, /Keep the complete gallery resident and visible/);
+  assert.match(museum, /guestUpdateScheduler\.deltaFor/);
+  assert.match(museum, /every potentially visible guest remains full-rate/);
   assert.match(game, /museumWorld\.update\(gameTime, delta, player, yaw, velocity\.length\(\)\)/);
   assert.match(game, /transitStage === "MUSEUM" && museumWorld/);
   assert.match(game, /function museumMissionReady\(\)/);
