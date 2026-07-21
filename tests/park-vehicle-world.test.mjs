@@ -10,6 +10,8 @@ async function loadVehicleHarness() {
         export { createSlothRig } from "./app/game/player/SlothRig.ts";
         export { createParkRowboat } from "./app/game/world/ParkRowboat.ts";
         export { createParkUtilityCart } from "./app/game/world/ParkUtilityCart.ts";
+        export { createCampaignLandmarks } from "./app/game/world/CampaignLandmarks.ts";
+        export { terrainY } from "./app/game/world/RealisticWorld.ts";
         export * as THREE from "three";
       `,
       resolveDir: process.cwd(),
@@ -29,7 +31,7 @@ async function loadVehicleHarness() {
   return loadedModule.exports;
 }
 
-const { THREE, createSlothRig, createParkRowboat, createParkUtilityCart } = await loadVehicleHarness();
+const { THREE, createSlothRig, createParkRowboat, createParkUtilityCart, createCampaignLandmarks, terrainY } = await loadVehicleHarness();
 
 test("both lake shores provide usable boats and field-services carts", async () => {
   const [game, world] = await Promise.all([
@@ -50,6 +52,7 @@ test("both lake shores provide usable boats and field-services carts", async () 
   assert.match(game, /let cart: ParkUtilityCart = carts\[0\]/);
   assert.match(game, /for \(const candidate of carts\)/);
   assert.match(game, /cart = nearbyCart/);
+  assert.match(game, /qaInput === "cartsubway"/);
   assert.match(game, /carts\.forEach\(candidate => candidate\.dispose\(\)\)/);
 });
 
@@ -111,6 +114,36 @@ test("lake shore support, bridge approaches, and the subway excavation share aut
   assert.match(campaign, /SUBWAY_STAIR_CUTOUT/);
   assert.match(game, /qaInput === "shoreclimb"/);
   assert.match(game, /terrainTargetY - \.52/);
+});
+
+test("Fifth Avenue park underlay stays beneath the lake-to-subway approach terrain", () => {
+  const texture = new THREE.Texture();
+  const textures = new Proxy({}, { get: () => texture });
+  const scene = new THREE.Scene();
+  const landmarks = createCampaignLandmarks(scene, textures, terrainY, .6);
+  const underlay = landmarks.root.getObjectByName("fifth-avenue-continuous-central-park-ground-underlay");
+  assert.ok(underlay, "park-side horizon underlay exists");
+  scene.updateMatrixWorld(true);
+
+  const raycaster = new THREE.Raycaster();
+  const routeSamples = [
+    new THREE.Vector2(299, -344),
+    new THREE.Vector2(310, -355),
+    new THREE.Vector2(315, -360.5),
+    new THREE.Vector2(327, -374),
+  ];
+  for (const sample of routeSamples) {
+    raycaster.set(new THREE.Vector3(sample.x, 20, sample.y), new THREE.Vector3(0, -1, 0));
+    const hit = raycaster.intersectObject(underlay, true)[0];
+    assert.ok(hit, `underlay covers the distant horizon at ${sample.x}, ${sample.y}`);
+    assert.ok(
+      hit.point.y <= terrainY(sample.x, sample.y) - .1,
+      `underlay remains below drivable terrain at ${sample.x}, ${sample.y}`,
+    );
+  }
+
+  landmarks.dispose();
+  texture.dispose();
 });
 
 test("shore forestry and first-person vehicle grips preserve visual clarity", async () => {

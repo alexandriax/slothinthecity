@@ -419,13 +419,20 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
       if (phaseRef.current === "playing") {
         gameTime += delta;
         campaign.update(gameTime, delta);
-        if (!qaPrepared && (["autoclimb", "autobranch", "autotransfer", "autodrop", "autoflow", "grounddescent", "cart", "treecollision", "watercollision", "swim", "shoreclimb", "energy", "rest", "hawk", "bridgewalk", "bowbridge", "rowboat", "ticketisland", "ticket", "lakeduck", "duckpassenger", "duckfollowing", "squirrelquest", "squirrelacorn", "squirrelrocking", "squirrelfollowing", "subwayentrance"].includes(qaInput ?? ""))) {
+        if (!qaPrepared && (["autoclimb", "autobranch", "autotransfer", "autodrop", "autoflow", "grounddescent", "cart", "cartsubway", "treecollision", "watercollision", "swim", "shoreclimb", "energy", "rest", "hawk", "bridgewalk", "bowbridge", "rowboat", "ticketisland", "ticket", "lakeduck", "duckpassenger", "duckfollowing", "squirrelquest", "squirrelacorn", "squirrelrocking", "squirrelfollowing", "subwayentrance"].includes(qaInput ?? ""))) {
           const testTree = nearestTree(player);
           if (qaInput === "autoflow") {
             const flowRoute = world.canopyCorridors[0]?.routeIds[0] !== undefined ? world.branches[world.canopyCorridors[0].routeIds[0]] : undefined;
             if (flowRoute) { branchRoute = flowRoute; branchProgress = .72; branchPose(flowRoute, branchProgress, player); keys.add("KeyW"); qaPrepared = true; }
-          } else if (qaInput === "cart") {
-            cart.getWorldEntryPosition(cartEntry); player.copy(cartEntry); player.y = groundHeight(player.x, player.z); actionRequested = true; keys.add("KeyW"); qaPrepared = true;
+          } else if (qaInput === "cart" || qaInput === "cartsubway") {
+            if (qaInput === "cartsubway") {
+              ticketCollected = true; world.setTicketCollected(true); parkStage = "SUBWAY_ENTRANCE";
+              cart = carts[1];
+              cart.setPose(new THREE.Vector3(310, terrainY(310, -355), -355), -.86);
+            }
+            cart.getWorldEntryPosition(cartEntry); player.copy(cartEntry); player.y = groundHeight(player.x, player.z); actionRequested = true;
+            if (qaInput === "cart") keys.add("KeyW");
+            qaPrepared = true;
           } else if (qaInput === "autodrop") {
             const dropRoute = world.branches.find((route) => route.belowRouteIds.length > 0);
             if (dropRoute) { branchRoute = dropRoute; branchProgress = .5; branchPose(dropRoute, branchProgress, player); qaPrepared = true; qaStage = 1; }
