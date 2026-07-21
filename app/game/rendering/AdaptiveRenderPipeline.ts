@@ -80,11 +80,19 @@ export class AdaptiveRenderPipeline {
   }
 
   private createComposer(width: number, height: number) {
-    this.composer = new EffectComposer(this.renderer);
+    // Reuse the beauty pass depth buffer for GTAO. The stock pass otherwise
+    // renders every mesh a second time solely to recover depth and normals;
+    // GTAO supports reconstructing normals from this full-resolution depth.
+    const renderTarget = new THREE.WebGLRenderTarget(width, height, { type: THREE.HalfFloatType, depthBuffer: true });
+    renderTarget.depthTexture = new THREE.DepthTexture(width, height, THREE.UnsignedIntType);
+    this.composer = new EffectComposer(this.renderer, renderTarget);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.gtao = new GTAOPass(this.scene, this.camera, width, height);
     this.gtao.blendIntensity = this.ambientOcclusionIntensity;
     this.composer.addPass(this.gtao);
+    const sharedDepthTexture = this.composer.readBuffer.depthTexture;
+    if (!sharedDepthTexture) throw new Error("Adaptive render pipeline requires a readable beauty depth buffer");
+    this.gtao.setGBuffer(sharedDepthTexture);
     this.composer.addPass(new OutputPass());
   }
 

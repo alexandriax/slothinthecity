@@ -4,6 +4,7 @@ import type { GameTextures } from "../rendering/textures";
 import {
   createCampaignLandmarks,
   SUBWAY_ENTRY_TRIGGER,
+  SUBWAY_TARGET,
   type CampaignLandmarks,
 } from "./CampaignLandmarks";
 import { createParkRowboat, type ParkRowboat } from "./ParkRowboat";
@@ -135,6 +136,12 @@ export class CentralParkReturnWorld {
       quality: tier,
     }));
 
+    // The outbound transition fires midway down the authored stair, but a
+    // reverse camera at that same below-grade point looks into the underside
+    // of Central Park's continuous terrain. Hand the return trip back on the
+    // visible top tread: the stair, canopy, Fifth Avenue and park horizon all
+    // read in the first frame while the spawn remains on the same entrance.
+    this.spawn.set(SUBWAY_TARGET.x, 0, SUBWAY_TARGET.z - .68);
     this.spawn.y = this.surfaceHeightAt(this.spawn.x, this.spawn.z) + 1.48;
     this.lastPlayer.copy(this.spawn);
     this.sanctuaryTarget.y = this.surfaceHeightAt(this.sanctuaryTarget.x, this.sanctuaryTarget.z);

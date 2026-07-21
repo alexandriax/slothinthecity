@@ -175,6 +175,7 @@ type StationPassengerFlow = {
   group: THREE.Group;
   mode: "ALIGHT" | "AMBIENT" | "BOARD" | "WAIT";
   phase: number;
+  previous: THREE.Vector3;
   side: -1 | 1;
 };
 
@@ -848,6 +849,7 @@ function buildStation(id: SubwayStationId, textures: GameTextures, adTextures: T
       group: passenger,
       mode: z > 11 || id === "WEST_FARMS" ? "AMBIENT" : index % 3 === 0 ? "BOARD" : index % 3 === 1 ? "ALIGHT" : "WAIT",
       phase: index * 2.27 + (isLex ? 1.1 : id === "WEST_FARMS" ? 2.2 : 0),
+      previous: passenger.position.clone(),
       side: x < 0 ? -1 : 1,
     });
     if (id === "WEST_FARMS" && z <= 11) passengerFlows[passengerFlows.length - 1].mode = index % 3 === 0 ? "BOARD" : index % 3 === 1 ? "ALIGHT" : "WAIT";
@@ -1256,8 +1258,8 @@ export class SubwayWorld {
     const alightProgress = THREE.MathUtils.smoothstep(cycle, 6, 9.35);
     const boardProgress = THREE.MathUtils.smoothstep(cycle, 8.85, 12.75);
     station.passengerFlows.forEach((flow, index) => {
-      const previous = flow.group.position.clone();
-      const doorway = new THREE.Vector3(flow.side * 2.5, flow.base.y, flow.doorZ + (index % 2 ? .24 : -.24));
+      const previous = flow.previous.copy(flow.group.position);
+      const doorwayX = flow.side * 2.5, doorwayZ = flow.doorZ + (index % 2 ? .24 : -.24);
       let locomoting = false;
       if (flow.mode === "AMBIENT" || (flow.mode === "WAIT" && !exchangeActive)) {
         // Concourse and waiting passengers use a real walk/pause cycle rather
@@ -1288,12 +1290,23 @@ export class SubwayWorld {
         locomoting = flow.group.visible && flow.group.position.distanceTo(flow.base) > .025;
       } else if (flow.mode === "BOARD") {
         if (boardProgress >= .96) flow.exchangeComplete = true;
-        flow.group.visible = !flow.exchangeComplete; flow.group.position.lerpVectors(flow.base, doorway, boardProgress);
+        flow.group.visible = !flow.exchangeComplete;
+        flow.group.position.set(
+          THREE.MathUtils.lerp(flow.base.x, doorwayX, boardProgress),
+          flow.base.y,
+          THREE.MathUtils.lerp(flow.base.z, doorwayZ, boardProgress),
+        );
         flow.group.rotation.y = flow.side < 0 ? -Math.PI / 2 : Math.PI / 2;
         locomoting = boardProgress > .015 && boardProgress < .955;
       } else {
         if (alightProgress >= .985) flow.exchangeComplete = true;
-        flow.group.visible = true; flow.group.position.lerpVectors(doorway, flow.base, flow.exchangeComplete ? 1 : alightProgress);
+        const amount = flow.exchangeComplete ? 1 : alightProgress;
+        flow.group.visible = true;
+        flow.group.position.set(
+          THREE.MathUtils.lerp(doorwayX, flow.base.x, amount),
+          flow.base.y,
+          THREE.MathUtils.lerp(doorwayZ, flow.base.z, amount),
+        );
         flow.group.rotation.y = flow.side < 0 ? Math.PI / 2 : -Math.PI / 2;
         locomoting = alightProgress > .015 && alightProgress < .985;
       }

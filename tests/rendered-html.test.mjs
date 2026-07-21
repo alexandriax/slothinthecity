@@ -107,13 +107,23 @@ test("foraging opens the Bow Bridge, Bronx Zoo island ticket, and direct subway 
   ]);
 
   assert.match(game, /type ParkStage = "FORAGE" \| "BOW_BRIDGE" \| "LAKE_TICKET" \| "SUBWAY_ENTRANCE"/);
-  assert.match(game, /collected\.current\.size >= 5\) parkStage = "BOW_BRIDGE"/);
+  assert.match(game, /collected\.current\.size >= OPENING_LEAF_SPROUT_GOAL\) parkStage = "BOW_BRIDGE"/);
+  assert.match(game, /const OPENING_LEAF_SPROUT_GOAL = 3/);
+  assert.match(game, /Gather three leaf sprouts along the opening trail/);
+  assert.doesNotMatch(game, /tender buds?|Tender buds?/);
+  const sproutBlock = world.match(/export const LEAF_SPROUTS = \[([\s\S]*?)\];/)?.[1] ?? "";
+  assert.ok((sproutBlock.match(/new THREE\.Vector3/g) ?? []).length >= 10, "expected an expanded opening leaf-sprout route");
+  const sproutPoints = [...sproutBlock.matchAll(/new THREE\.Vector3\((-?\d+(?:\.\d+)?), 0, (-?\d+(?:\.\d+)?)\)/g)]
+    .map(([, x, z]) => ({ x: Number(x), z: Number(z) }));
+  const start = { x: -43, z: 54 };
+  assert.ok(sproutPoints.filter(point => Math.hypot(point.x - start.x, point.z - start.z) < 14).length <= 1, "opening sprouts should teach one pickup rather than form a spawn cluster");
+  assert.ok(sproutPoints.some(point => point.z <= -80), "added sprouts should continue down the trail toward Bow Bridge");
   assert.match(game, /parkStage === "BOW_BRIDGE"[\s\S]{0,800}parkStage = "LAKE_TICKET"/);
   assert.match(game, /actionRequested && ticketNearby[\s\S]{0,300}parkStage = "SUBWAY_ENTRANCE"/);
   assert.match(game, /RECOVER BRONX ZOO TICKET/);
   assert.match(game, /data-ticket-collected/);
   assert.match(game, /parkStage = "SUBWAY_ENTRANCE"/);
-  assert.match(game, /subwayStepsReached[\s\S]{0,420}onEnterSubway\(duckRecruited \? \[CENTRAL_PARK_MALLARD_COMPANION_ID\] : \[\]\)/);
+  assert.match(game, /subwayStepsReached[\s\S]{0,420}duckRecruited \? \[CENTRAL_PARK_MALLARD_COMPANION_ID\] : \[\][\s\S]{0,180}squirrelRecruited \? \[CENTRAL_PARK_SQUIRREL_COMPANION_ID\] : \[\][\s\S]{0,260}onEnterSubway\(companions\)/);
   assert.match(game, /<GoalWayfinder/);
   assert.match(game, /data-goal-distance/);
   assert.match(game, /active=\{hud\.targetActive\}/);

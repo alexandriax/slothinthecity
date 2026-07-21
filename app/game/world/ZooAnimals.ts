@@ -20,6 +20,34 @@ export type ZooHabitatMotionOptions = {
   floorHeight?: (x: number, z: number) => number;
 };
 
+export type ZooAnimalEnrichmentDirective = {
+  grounded?: boolean;
+  heading?: readonly [number, number];
+  motion: "forage" | "surface" | "swim" | "walk";
+  offset: readonly [number, number, number];
+  responsiveness?: number;
+  target: THREE.Object3D;
+};
+
+const zooAnimalEnrichmentDirectives = new WeakMap<THREE.Object3D, ZooAnimalEnrichmentDirective>();
+
+/**
+ * Temporarily hands an autonomous habitat animal a live world target without
+ * putting an Object3D reference in userData (which would make Three.js scene
+ * serialization recursive). Clearing the directive lets the animal blend
+ * back onto its authored ambient route.
+ */
+export function setZooAnimalEnrichmentDirective(rig: ZooAnimalRig, directive: ZooAnimalEnrichmentDirective | null) {
+  if (!directive) {
+    zooAnimalEnrichmentDirectives.delete(rig.root);
+    rig.root.userData.enrichmentActive = false;
+    delete rig.root.userData.enrichmentTargetName;
+    return;
+  }
+  zooAnimalEnrichmentDirectives.set(rig.root, directive);
+  rig.root.userData.enrichmentTargetName = directive.target.name;
+}
+
 type BirdPalette = {
   breast: string;
   crown: string;
@@ -171,14 +199,17 @@ export function configureAutonomousZooAnimal(rig: ZooAnimalRig, options: ZooHabi
   const radius = Math.max(.12, options.radius), verticalRange = options.verticalRange ?? 1.8;
   let travelClock = phase * .17;
   let initialized = false;
+  let enrichmentBlend = 0;
+  let lastEnrichment: ZooAnimalEnrichmentDirective | null = null;
   const tangent = new THREE.Vector3(), next = new THREE.Vector3();
+  const enrichmentTarget = new THREE.Vector3(), enrichmentDesired = new THREE.Vector3();
   return {
     root: rig.root,
     ownedTextures: rig.ownedTextures,
     update(elapsed, delta) {
       const cycle = ((elapsed + phase) % 18 + 18) % 18;
       const locomoting = options.mode === "aquatic" ? cycle < 13.2 : options.mode === "arboreal" ? cycle > 3.1 && cycle < 12.8 : options.mode === "perch" ? cycle > 11.6 && cycle < 14.4 : cycle > 3.4 && cycle < 12.7;
-      const state = options.mode === "aquatic"
+      let state = options.mode === "aquatic"
         ? locomoting ? "swim" : cycle < 15.2 ? "surface" : "dive"
         : options.mode === "arboreal"
           ? locomoting ? "swing" : cycle < 3.1 ? "perch" : "forage"
@@ -222,6 +253,33 @@ export function configureAutonomousZooAnimal(rig: ZooAnimalRig, options: ZooHabi
         tangent.copy(next).sub(rig.root.position);
         if (tangent.lengthSq() > .00001) rig.root.rotation.y = Math.atan2(-tangent.x, -tangent.z);
       } else rig.root.rotation.y += Math.atan2(Math.sin(baseYaw - rig.root.rotation.y), Math.cos(baseYaw - rig.root.rotation.y)) * (1 - Math.exp(-delta * 2.4));
+      const enrichment = zooAnimalEnrichmentDirectives.get(rig.root);
+      if (enrichment) lastEnrichment = enrichment;
+      const appliedEnrichment = enrichment ?? lastEnrichment;
+      const enrichmentTargetBlend = enrichment ? 1 : 0;
+      const responseRate = enrichment?.responsiveness ?? 2.25;
+      enrichmentBlend += (enrichmentTargetBlend - enrichmentBlend) * (1 - Math.exp(-delta * responseRate));
+      if (appliedEnrichment && enrichmentBlend > .001) {
+        appliedEnrichment.target.getWorldPosition(enrichmentTarget);
+        enrichmentDesired.copy(enrichmentTarget);
+        enrichmentDesired.x += appliedEnrichment.offset[0];
+        enrichmentDesired.y += appliedEnrichment.offset[1];
+        enrichmentDesired.z += appliedEnrichment.offset[2];
+        if (appliedEnrichment.grounded && options.floorHeight) {
+          enrichmentDesired.y = options.floorHeight(enrichmentDesired.x, enrichmentDesired.z) + appliedEnrichment.offset[1];
+        }
+        rig.root.position.lerp(enrichmentDesired, enrichmentBlend);
+        if (appliedEnrichment.heading) rig.root.rotation.y = Math.atan2(-appliedEnrichment.heading[0], -appliedEnrichment.heading[1]);
+        else {
+          tangent.copy(enrichmentTarget).sub(rig.root.position).setY(0);
+          if (tangent.lengthSq() > .00001) rig.root.rotation.y = Math.atan2(-tangent.x, -tangent.z);
+        }
+        state = appliedEnrichment.motion;
+      }
+      if (!enrichment && enrichmentBlend <= .001) lastEnrichment = null;
+      rig.root.userData.animationState = state;
+      rig.root.userData.enrichmentActive = Boolean(enrichment) && enrichmentBlend > .08;
+      rig.root.userData.enrichmentBlend = enrichmentBlend;
       // Locomotion speed controls the habitat route; clip speed is a separate
       // authored-behavior choice so nearby animals do not march in lockstep.
       rig.root.userData.animationSpeed = THREE.MathUtils.clamp(options.animationSpeed ?? 1, .35, 1.8);
@@ -532,7 +590,9 @@ export function createSunConure(textures: GameTextures, quality: number) {
     tail: "#258168",
   }, 1.08);
   bird.root.name = "sun-conure-hero-bird";
-  bird.root.userData.commonName = "Sun conure";
+  bird.root.userData.commonName = "Mango · Sun conure";
+  bird.root.userData.displayName = "Mango";
+  bird.root.userData.logicalId = "mango-sun-conure";
   return authorZooAnimalRig(bird, {
     species: "sun-conure",
     quality,
@@ -562,6 +622,40 @@ export function createMallard(_textures: GameTextures, quality: number): ZooAnim
 }
 
 export const createMallardDuck = createMallard;
+
+/** Project-authored Eastern gray squirrel used by Zap's park story. */
+export function createEasternGraySquirrel(_textures: GameTextures, quality: number): ZooAnimalRig {
+  const root = new THREE.Group();
+  root.name = "central-park-zap-eastern-gray-squirrel";
+  root.userData.species = "eastern-gray-squirrel";
+  root.userData.commonName = "Zap · Eastern gray squirrel";
+  root.userData.displayName = "Zap";
+  root.userData.logicalId = "central-park-squirrel";
+  root.userData.animationStates = ["idle", "walk", "forage", "climb"];
+  return authorZooAnimalRig({ root, update() {} }, {
+    species: "eastern-gray-squirrel",
+    quality,
+    defaultMotion: "idle",
+    phaseOffset: .71,
+  }) as ZooAnimalRig;
+}
+
+/** Project-authored tan-and-white museum cat used by the Whiskers trail. */
+export function createWhiskersCat(_textures: GameTextures, quality: number): ZooAnimalRig {
+  const root = new THREE.Group();
+  root.name = "amnh-whiskers-tan-and-white-museum-cat";
+  root.userData.species = "whiskers-cat";
+  root.userData.commonName = "Whiskers · Tan and white museum cat";
+  root.userData.displayName = "Whiskers";
+  root.userData.logicalId = "amnh-whiskers";
+  root.userData.animationStates = ["idle", "walk", "pounce"];
+  return authorZooAnimalRig({ root, update() {} }, {
+    species: "whiskers-cat",
+    quality,
+    defaultMotion: "idle",
+    phaseOffset: .23,
+  }) as ZooAnimalRig;
+}
 
 export function createBlueAndGoldMacaw(textures: GameTextures, quality: number) {
   return createPerchedBird(textures, quality, "blue-and-gold-macaw", {

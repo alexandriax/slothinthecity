@@ -28,15 +28,23 @@ test("homecoming reuses the exact original Central Park world and landmark build
 });
 
 test("return begins on the authored Fifth Avenue stair and ends beside an original opening tree", async () => {
-  const homecoming = await readSource("../app/game/world/CentralParkReturnWorld.ts");
+  const [homecoming, landmarks] = await Promise.all([
+    readSource("../app/game/world/CentralParkReturnWorld.ts"),
+    readSource("../app/game/world/CampaignLandmarks.ts"),
+  ]);
 
   assert.match(homecoming, /readonly spawn = SUBWAY_ENTRY_TRIGGER\.clone\(\)/);
+  assert.match(homecoming, /this\.spawn\.set\(SUBWAY_TARGET\.x, 0, SUBWAY_TARGET\.z - \.68\)/);
   assert.match(homecoming, /readonly spawnYaw = Math\.PI/);
   assert.match(homecoming, /readonly sanctuaryTarget = START\.clone\(\)/);
   assert.match(homecoming, /this\.world\.trees\.length/);
   assert.match(homecoming, /homeMarker\.userData\.originalTreeIndex = sanctuaryTree \? sanctuaryTreeIndex : -1/);
   assert.match(homecoming, /central-park-home-grove-destination-ring/);
   assert.match(homecoming, /central-park-sloth-sanctuary-sign/);
+  assert.match(landmarks, /function addGroundUnderlayPanels/);
+  assert.match(landmarks, /group\.userData\.stairOpeningPreserved = true/);
+  assert.match(landmarks, /SUBWAY_STAIR_CUTOUT\.halfWidth \+ \.45/);
+  assert.doesNotMatch(landmarks, /parkGround\.position\.set\(-70, -\.12, 0\)/);
 
   assert.doesNotMatch(homecoming, /function floorHeight|function addTree/);
   assert.doesNotMatch(homecoming, /new THREE\.PlaneGeometry\(132, 184|groveTrees|edgeTrees|instanced-central-park-understory|fifth-avenue-return-subway-exit/);

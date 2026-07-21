@@ -37,6 +37,9 @@ test("train interior scales detail for mobile without losing authored features",
   assert.match(source, /cameraOffset/);
   assert.match(source, /cameraRoll/);
   assert.match(source, /createPremiumHuman/);
+  assert.match(source, /THE EVENING LEAF/);
+  assert.match(source, /train-passenger-\$\{pose\}-activity-prop/);
+  assert.match(source, /passenger\.prop\.visible = passenger\.group\.visible && !locomoting/);
   assert.doesNotMatch(source, /faceAtlasUrl:/);
   assert.doesNotMatch(source, /clothingAtlasUrl:/);
 });

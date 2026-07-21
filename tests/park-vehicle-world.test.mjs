@@ -91,6 +91,8 @@ test("Bow Bridge and each timber pier provide dry, elevated player support", asy
   assert.match(world, /shoreInset === 0 && \(bowBridgeSupportsPlayer\(x, z\) \|\| lakeDockSurfaceHeightAt\(x, z\) !== null\)/);
   assert.match(world, /dummy\.position\.y = dockTopAt\(definition, amount\) - \.0525/);
   assert.match(world, /return lakeDockSurfaceHeightAt\(x, z\) \?\? baseTerrainY\(x, z\)/);
+  assert.match(world, /new THREE\.Vector3\(-23\.55, THE_LAKE_SURFACE_Y - \.04, -137\.85\)/);
+  assert.doesNotMatch(world, /new THREE\.Vector3\(-23\.8, THE_LAKE_SURFACE_Y - \.04, -134\.7\)/);
   assert.match(world, /new THREE\.Vector3\(-20\.1, THE_LAKE_SURFACE_Y - \.04, -138\.2\)/);
   assert.match(world, /new THREE\.Vector3\(194\.7, THE_LAKE_SURFACE_Y - \.04, -295\.8\)/);
 });
@@ -150,6 +152,25 @@ test("mobile vehicle braking emits Space and cart audio follows pause and resume
   assert.match(game, /if \(next === "playing" && cartMotorStateRef\.current\.driving\) audio\.setCartMotor\(true, cartMotorStateRef\.current\.speed\)/);
   assert.match(game, /else if \(next !== "playing"\) audio\.setCartMotor\(false\)/);
   assert.match(game, /cartMotorState\.speed = traversalSpeed/);
+});
+
+test("mobile canopy descent cannot recatch the released branch or stick at the trunk base", async () => {
+  const [game, touch] = await Promise.all([
+    readFile(new URL("../app/game/GameClient.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/mobile/TouchControls.tsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(game, /const caughtBranch = !controlledDescent && catchFallingBranch\(previousY, descentIgnoreRouteId\)/);
+  assert.match(game, /groundDescentRequested = true/);
+  assert.match(game, /qaInput === "grounddescent"/);
+  assert.match(game, /controlledDescent = true; dropVelocity = -2\.4/);
+  assert.match(game, /resolveGroundCollisions\(false\)/);
+  assert.match(game, /backHeld && !forwardHeld && climbHeight <= 1\.485/);
+  assert.match(game, /trunkBaseDescentSeconds >= \.18/);
+  assert.match(touch, /PARK_GROUND_DESCENT_REQUEST_EVENT = "sloth-park-ground-descent-requested"/);
+  assert.match(touch, /className="touch-down" data-input-code="GroundDescent"/);
+  assert.match(touch, /aria-label="Descend safely all the way to ground" onClick=/);
+  assert.match(touch, /document\.dispatchEvent\(new Event\(PARK_GROUND_DESCENT_REQUEST_EVENT\)\)/);
 });
 
 test("cart and rowboat expose live grip transforms that remain camera-relative during free-look", () => {

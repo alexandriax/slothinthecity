@@ -209,7 +209,7 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
   assert.match(bus, /collider\.kind === "barrier" \? 4\.5 : 9/);
   assert.match(game, /function scheduleMuseumPreload/);
   assert.match(game, /new NaturalHistoryMuseumWorld\(\s*museumPreloadScene/);
-  assert.match(game, /renderer\.compile\(museumPreloadScene, preloadCamera\)/);
+  assert.match(game, /renderer\.compileAsync\(museumPreloadScene, preloadCamera\)/);
   assert.match(game, /Math\.min\(next\.pixelRatio, 1\.25\)/);
   assert.match(game, /renderPipeline\.render\(!museumRendering\(\)\)/);
 });
@@ -230,6 +230,23 @@ test("the canonical first-person fur sampler becomes ready in every scene", asyn
   assert.match(rig, /emissiveMap: viewmodelFur/);
   assert.match(checkpoints, /"bus-highway-continuation": "busmissedexit"/);
   assert.match(game, /qaInput === "busmissedexit"\s*\?\s*"missed-exit"/);
+});
+
+test("the Whiskers review checkpoints cover discovery, active trail, and embodied trust", async () => {
+  const [game, checkpoints] = await Promise.all([
+    readSource("../app/game/SubwayGame.tsx"),
+    readSource("../app/game/debugCheckpoints.ts"),
+  ]);
+  assert.match(checkpoints, /"museum-whiskers-trail": "museumwhiskerstrail"/);
+  assert.match(checkpoints, /"museum-whiskers-trust": "museumwhiskerstrust"/);
+  assert.match(game, /qaInput === "museumwhiskers" \|\| qaInput === "museumwhiskerstrail" \|\| qaInput === "museumwhiskerstrust"/);
+  assert.match(game, /player\.set\(-1\.9, reviewMuseum\.floorHeight\(-1\.9, 15\) \+ 1\.48, 15\)/);
+  assert.match(game, /if \(qaInput === "museumwhiskerstrail"\)[\s\S]{0,220}reviewMuseum\.beginWhiskersTrail\(gameTime\)/);
+  assert.match(game, /if \(qaInput === "museumwhiskerstrust"\) reviewMuseum\.stageWhiskersTrustMoment\(\)/);
+  assert.match(game, /if \(qaInput === "museumwhiskerstrust"\) yaw \+= innerWidth <= 600 \? \.4 : \.58/);
+  assert.match(game, /lastHud = Number\.NEGATIVE_INFINITY/);
+  assert.match(game, /whiskersStoryVisible = pursuingWhiskers \|\| Boolean\(whiskersHint\)/);
+  assert.match(game, /wayfinding: pursuingWhiskers \? !whiskersTrust\.active : !whiskersStoryVisible/);
 });
 
 test("mobile shuttle controls expose both sequential gear shifts", async () => {
@@ -378,9 +395,10 @@ test("AMNH is a full exploration level with permanent halls, crowds, and Megathe
   assert.match(museum, /const MUSEUM_RESIDENT_GUEST_INDEXES/);
   assert.match(museum, /this\.createResidentGuests\(\)/);
   assert.doesNotMatch(museum, /ensureGuestsNear|updateStreaming|section\.object\.visible/);
-  assert.match(museum, /Static gallery content remains resident after the offscreen compile/);
-  assert.match(museum, /const nearby = !player \|\| Math\.abs\(agent\.root\.position\.z - player\.z\) < 76/);
-  assert.match(game, /museumWorld\.update\(gameTime, delta, player\)/);
+  assert.match(museum, /Keep the complete gallery resident and visible/);
+  assert.match(museum, /guestUpdateScheduler\.deltaFor/);
+  assert.match(museum, /every potentially visible guest remains full-rate/);
+  assert.match(game, /museumWorld\.update\(gameTime, delta, player, yaw, velocity\.length\(\)\)/);
   assert.match(game, /transitStage === "MUSEUM" && museumWorld/);
   assert.match(game, /function museumMissionReady\(\)/);
   assert.match(game, /allFollowersWithin\([\s\S]{0,120}scooterRiding \? 13\.5 : 11\.5/);

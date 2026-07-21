@@ -8,7 +8,7 @@ import { createPremiumHuman, markPremiumHumanDisposed, type PremiumHumanOptions 
 import styles from "./CharacterShowroom.module.css";
 
 type LightingPreset = "studio" | "park" | "subway";
-type Framing = "lineup" | "body" | "face";
+type Framing = "lineup" | "body" | "face" | "profile" | "three-quarter" | "back";
 type QualityPreset = "hero" | "mobile";
 type AnimationPreset = "HumanIdle" | "HumanWalk";
 type PosePreset = NonNullable<PremiumHumanOptions["pose"]>;
@@ -53,6 +53,18 @@ function inspectCharacter(root: THREE.Group): CharacterStatus {
   };
 }
 
+function reviewBodyBounds(root: THREE.Group) {
+  const bounds = new THREE.Box3();
+  root.updateWorldMatrix(true, true);
+  root.traverse(object => {
+    if (!(object instanceof THREE.SkinnedMesh)) return;
+    bounds.union(new THREE.Box3().setFromObject(object, true));
+  });
+  // Loading/error states should remain inspectable even if an exporter changes
+  // the mesh subclass. Runtime accessories never dictate face/body framing.
+  return bounds.isEmpty() ? new THREE.Box3().setFromObject(root, true) : bounds;
+}
+
 function disposeLooseSceneResources(root: THREE.Object3D) {
   const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
   root.traverse(object => {
@@ -86,7 +98,7 @@ export function CharacterShowroom() {
   useEffect(() => {
     const host = viewport.current;
     if (!host) return;
-    let disposed = false, raf = 0, previousStatus = "", previousLighting = "", appliedFramingVersion = -1;
+    let disposed = false, raf = 0, previousStatus = "", previousLighting = "", appliedFramingVersion = -1, appliedFramingGeometry = "";
     const scene = new THREE.Scene();
     const background = new THREE.Color("#171b19");
     scene.background = background;
@@ -98,7 +110,7 @@ export function CharacterShowroom() {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.08;
     renderer.shadowMap.enabled = quality === "hero";
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.setPixelRatio(Math.min(devicePixelRatio, quality === "hero" ? 2 : 1));
     host.appendChild(renderer.domElement);
 
@@ -156,7 +168,8 @@ export function CharacterShowroom() {
       return result;
     });
     const mixers = new Map<THREE.Group, { action: THREE.AnimationAction; clipName: string; mixer: THREE.AnimationMixer }>();
-    const clock = new THREE.Clock();
+    const timer = new THREE.Timer();
+    timer.connect(document);
 
     const resize = () => {
       const width = Math.max(1, host.clientWidth), height = Math.max(1, host.clientHeight);
@@ -190,13 +203,30 @@ export function CharacterShowroom() {
     const applyFraming = () => {
       const mode = framingRef.current, index = selectedRef.current;
       const focusX = lineupCenter + (index - 1.5) * spacing;
+      const selectedRoot = results[index]?.root;
+      const bounds = selectedRoot ? reviewBodyBounds(selectedRoot) : new THREE.Box3();
+      const hasBounds = !bounds.isEmpty();
+      const height = hasBounds ? Math.max(.1, bounds.max.y - bounds.min.y) : 2.2;
+      const center = hasBounds ? bounds.getCenter(new THREE.Vector3()) : new THREE.Vector3(focusX, 1.1, 0);
       if (mode === "face") {
-        camera.position.set(focusX, 2.2, -1.35);
-        controls.target.set(focusX, 2.18, 0);
+        // Every source mesh has slightly different stature and head-to-body
+        // proportions. Frame the measured cranium rather than a hard-coded
+        // adult height so the close-up gate cannot crop shorter archetypes.
+        // Keep the lens at eye level. The previous .875 target sat beneath
+        // the nose on compact figures, producing an unflattering low-angle
+        // view that hid eyelid/iris alignment defects instead of exposing them.
+        const faceY = hasBounds ? bounds.min.y + height * .91 : 1.93;
+        const faceDistance = THREE.MathUtils.clamp(height * .48, .92, 1.25);
+        camera.position.set(center.x, faceY, center.z - faceDistance);
+        controls.target.set(center.x, faceY, center.z);
         controls.minDistance = .55;
-      } else if (mode === "body") {
-        camera.position.set(focusX, 1.35, -4.8);
-        controls.target.set(focusX, 1.25, 0);
+      } else if (mode === "body" || mode === "profile" || mode === "three-quarter" || mode === "back") {
+        const bodyDistance = THREE.MathUtils.clamp(height * 2.2, 4.2, 5.8);
+        if (mode === "profile") camera.position.set(center.x + bodyDistance, center.y + height * .05, center.z);
+        else if (mode === "three-quarter") camera.position.set(center.x + bodyDistance * .72, center.y + height * .05, center.z - bodyDistance * .72);
+        else if (mode === "back") camera.position.set(center.x, center.y + height * .05, center.z + bodyDistance);
+        else camera.position.set(center.x, center.y + height * .05, center.z - bodyDistance);
+        controls.target.copy(center);
         controls.minDistance = 2.2;
       } else {
         camera.position.set(lineupCenter, 1.55, -14.2);
@@ -206,15 +236,24 @@ export function CharacterShowroom() {
       controls.update();
     };
 
-    const animate = () => {
+    const animate = (timestamp?: number) => {
       if (disposed) return;
       raf = requestAnimationFrame(animate);
-      const delta = Math.min(clock.getDelta(), .05);
+      timer.update(timestamp);
+      const delta = Math.min(timer.getDelta(), .05);
       if (previousLighting !== lightingRef.current) { previousLighting = lightingRef.current; applyLighting(lightingRef.current); }
-      if (appliedFramingVersion !== framingVersion.current) { appliedFramingVersion = framingVersion.current; applyFraming(); }
+      backdrop.visible = framingRef.current !== "back";
+      const framingGeometry = results.map(result => String(result.root.userData.authoredHumanStatus ?? "loading")).join(":");
+      if (appliedFramingVersion !== framingVersion.current || appliedFramingGeometry !== framingGeometry) {
+        appliedFramingVersion = framingVersion.current;
+        appliedFramingGeometry = framingGeometry;
+        applyFraming();
+      }
       results.forEach((result, resultIndex) => {
         const ready = result.root.userData.authoredHumanStatus === "ready";
         result.root.visible = ready && (framingRef.current === "lineup" || resultIndex === selectedRef.current);
+        const accessory = result.root.getObjectByName(`authored-human-accessory-${ARCHETYPES[resultIndex].accessory ?? "none"}`);
+        if (accessory) accessory.visible = !["face", "back"].includes(framingRef.current);
         if (!ready || !result.root.animations.length) return;
         const desired = result.root.animations.find(clip => clip.name === animationClipRef.current) ?? result.root.animations[0];
         const current = mixers.get(result.root);
@@ -238,6 +277,7 @@ export function CharacterShowroom() {
       cancelAnimationFrame(raf);
       resizeObserver.disconnect();
       mixers.forEach(({ mixer }) => mixer.stopAllAction());
+      timer.dispose();
       results.forEach(result => {
         markPremiumHumanDisposed(result.root);
         result.ownedTextures.forEach(texture => texture.dispose());
@@ -259,12 +299,12 @@ export function CharacterShowroom() {
     </header>
     <aside className={styles.panel}>
       <section><label>Framing</label><div className={styles.segmented}>
-        {(["lineup", "body", "face"] as Framing[]).map(value => <button key={value} className={framing === value ? styles.active : ""} onClick={() => setFraming(value)}>{value}</button>)}
+        {(["lineup", "body", "face", "profile", "three-quarter", "back"] as Framing[]).map(value => <button key={value} className={framing === value ? styles.active : ""} onClick={() => setFraming(value)}>{value}</button>)}
       </div></section>
       <section><label>Identity</label><div className={styles.identities}>
         {ARCHETYPES.map((character, index) => <button key={character.label} className={selected === index ? styles.active : ""} onClick={() => { setSelected(index); if (framing === "lineup") setFraming("body"); }}><span>{String(index + 1).padStart(2, "0")}</span>{character.label}</button>)}
       </div></section>
-      <section className={styles.twoColumn}><div><label>LOD</label><select value={quality} onChange={event => setQuality(event.target.value as QualityPreset)}><option value="hero">Hero · LOD0</option><option value="mobile">Mobile · LOD2</option></select></div><div><label>Pose</label><select value={pose} onChange={event => setPose(event.target.value as PosePreset)}><option value="neutral">Neutral</option><option value="waving">Waving</option><option value="checking-map">Map</option><option value="photographing">Camera</option><option value="seated">Seated</option></select></div></section>
+      <section className={styles.twoColumn}><div><label>LOD</label><select value={quality} onChange={event => setQuality(event.target.value as QualityPreset)}><option value="hero">Hero · LOD0</option><option value="mobile">Mobile · LOD2</option></select></div><div><label>Pose</label><select value={pose} onChange={event => { const next = event.target.value as PosePreset; setPose(next); if (next !== "neutral") setAnimationClip("HumanIdle"); }}><option value="neutral">Neutral</option><option value="waving">Waving</option><option value="checking-map">Map</option><option value="photographing">Camera</option><option value="seated">Seated</option></select></div></section>
       <section><label>Lighting</label><div className={styles.segmented}>{(["studio", "park", "subway"] as LightingPreset[]).map(value => <button key={value} className={lighting === value ? styles.active : ""} onClick={() => setLighting(value)}>{value}</button>)}</div></section>
       <section className={styles.twoColumn}><div><label>Animation</label><select value={animationClip} onChange={event => setAnimationClip(event.target.value as AnimationPreset)}><option value="HumanWalk">Natural walk</option><option value="HumanIdle">Breathing idle</option></select></div><button className={styles.playButton} onClick={() => setAnimationPlaying(value => !value)}><span>{animationPlaying ? "Ⅱ" : "▶"}</span>{animationPlaying ? "Pause" : "Play"}</button></section>
       <section className={styles.metrics}><label>Selected mesh</label><dl><div><dt>Status</dt><dd>{active.status}</dd></div><div><dt>LOD</dt><dd>{active.lod}</dd></div><div><dt>Triangles</dt><dd>{active.triangles.toLocaleString()}</dd></div><div><dt>Bones</dt><dd>{active.bones}</dd></div><div><dt>Roots</dt><dd>{active.visibleRoots}</dd></div><div><dt>Legacy</dt><dd className={active.legacyParts.length ? styles.warning : styles.clean}>{active.legacyParts.length ? active.legacyParts.length : "0 · clean"}</dd></div><div><dt>Clip</dt><dd>{active.clips.includes(animationClip) ? animationClip : active.clips[0] ?? "—"}</dd></div></dl>{active.legacyParts.length > 0 && <p className={styles.legacyList}>{active.legacyParts.join(" · ")}</p>}</section>

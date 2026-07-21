@@ -70,7 +70,7 @@ test("Bronx Zoo populations, grounding, and fabric wardrobes stay explicit", asy
     readFile(new URL("../app/debug/characters/CharacterShowroom.tsx", import.meta.url), "utf8"),
   ]);
   assert.doesNotMatch(campaign, /createPremiumHuman|function addZoo|central-park-zoo/);
-  assert.match(finale, /guestData\.slice\(0, quality < \.58 \? 4 : quality < \.82 \? 6 : guestData\.length\)/);
+  assert.match(finale, /guestData\.slice\(0, quality < \.58 \? 6 : quality < \.82 \? 9 : guestData\.length\)/);
   assert.match(finale, /this\.guestAgents\.push\(createAmbientHumanAgent\(result\.root/);
 
   for (const outfit of ["zoo-uniform", "cotton-denim", "silk-leggings", "knit-chinos"]) {

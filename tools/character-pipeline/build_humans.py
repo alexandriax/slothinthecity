@@ -701,10 +701,16 @@ def make_authored_hair_cap(
     back_height = {
         "short": 0.900,
         "curly": 0.885,
-        "bob": 0.845,
-        "ponytail": 0.870,
+        "bob": 0.785,
+        "ponytail": 0.835,
     }[style]
     front_height = 0.955
+    side_drop = {
+        "short": 0.010,
+        "curly": 0.022,
+        "bob": 0.045,
+        "ponytail": 0.030,
+    }[style]
 
     def scalp_predicate(center: Vector, _low: Vector, _high: Vector) -> bool:
         z = (center.z - low.z) / height
@@ -716,7 +722,7 @@ def make_authored_hair_cap(
         face_weight = 1.0 - smoothstep(-0.030, 0.018, y)
         side_weight = smoothstep(0.045, 0.105, x)
         threshold = back_height + (front_height - back_height) * face_weight
-        threshold -= side_weight * (0.010 if style == "short" else 0.025)
+        threshold -= side_weight * side_drop
         return x < 0.130 and z > threshold
 
     hair = make_surface_shell(
@@ -728,15 +734,113 @@ def make_authored_hair_cap(
         collection,
         keep_largest_component=True,
     )
-    # Offset the fitted source surface a few millimetres along its own normals.
-    # This prevents z-fighting without adding a solidified helmet rim.
+    # Smooth only the open hairline/nape boundary. Face-level triangle
+    # selection otherwise leaves a sawtooth fringe that reads like a plastic
+    # helmet in the browser close-up even when the crown surface is sound.
+    bm = bmesh.new()
+    bm.from_mesh(hair.data)
+    boundary_vertices = {
+        vertex
+        for edge in bm.edges
+        if len(edge.link_faces) == 1
+        for vertex in edge.verts
+    }
+    boundary_indices = {vertex.index for vertex in boundary_vertices}
+    for _ in range(5):
+        bmesh.ops.smooth_vert(
+            bm,
+            verts=list(boundary_vertices),
+            factor=0.24,
+            use_axis_x=True,
+            use_axis_y=True,
+            use_axis_z=True,
+        )
+    bm.to_mesh(hair.data)
+    bm.free()
+    hair.data.update()
+
+    # Project the visible forehead edge onto one continuous, temple-lowering
+    # hairline. Smoothing alone cannot remove the source mesh's alternating
+    # scan rows, which produced the conspicuous zigzag fringe in frontal QA.
+    for vertex_index in boundary_indices:
+        vertex = hair.data.vertices[vertex_index]
+        normalized_z = (vertex.co.z - low.z) / height
+        normalized_x = abs(vertex.co.x) / height
+        normalized_y = vertex.co.y / height
+        if normalized_y < -0.025 and normalized_z > 0.875:
+            target_hairline = 0.948 - smoothstep(0.035, 0.108, normalized_x) * 0.032
+            vertex.co.z = low.z + height * target_hairline
+    hair.data.update()
+
+    # Keep every style on the fitted authored scalp but vary its actual
+    # silhouette. Curly hair receives restrained continuous crown relief; the
+    # bob gains soft lower volume instead of sharing the short-hair helmet.
     for vertex in hair.data.vertices:
-        vertex.co += vertex.normal * 0.0045
+        normalized_z = (vertex.co.z - low.z) / height
+        if style == "curly":
+            ripple = 0.5 + 0.5 * math.sin(vertex.co.x * 118.0 + vertex.co.z * 83.0) * math.cos(vertex.co.y * 131.0 - vertex.co.z * 57.0)
+            offset = 0.0065 if vertex.index in boundary_indices else 0.0065 + ripple * 0.0045
+        elif style == "bob":
+            lower_volume = 1.0 - smoothstep(0.79, 0.90, normalized_z)
+            offset = 0.0075 + lower_volume * 0.0085
+        elif style == "ponytail":
+            offset = 0.0065
+        else:
+            offset = 0.0045
+        vertex.co += vertex.normal * offset
     hair.data.update()
     for polygon in hair.data.polygons:
         polygon.use_smooth = True
     hair["sloth_city_authored_hair_shell"] = style
+    if style == "ponytail":
+        make_hair_back_extension(body, material, collection)
     return hair
+
+
+def make_hair_back_extension(
+    body: bpy.types.Object,
+    material: bpy.types.Material,
+    collection: bpy.types.Collection,
+) -> bpy.types.Object:
+    """Author one tapered ponytail bundle rooted inside the fitted nape.
+
+    The curve is converted and merged into the single Hair material mesh before
+    export. Its base overlaps the scalp shell deliberately, so the final
+    silhouette reads as one gathered hairstyle rather than a detached tube.
+    """
+    low, high = object_bounds(body)
+    height = high.z - low.z
+    curve_data = bpy.data.curves.new("HairBackExtension", type="CURVE")
+    curve_data.dimensions = "3D"
+    curve_data.resolution_u = 5
+    curve_data.bevel_depth = height * 0.018
+    curve_data.bevel_resolution = 3
+    curve_data.fill_mode = "FULL"
+    spline = curve_data.splines.new("BEZIER")
+    spline.bezier_points.add(3)
+    coordinates = (
+        (0.0, height * 0.074, low.z + height * 0.870),
+        (height * 0.010, height * 0.112, low.z + height * 0.825),
+        (-height * 0.012, height * 0.132, low.z + height * 0.755),
+        (height * 0.008, height * 0.118, low.z + height * 0.675),
+    )
+    radii = (1.32, 1.05, 0.76, 0.36)
+    for point, coordinate, radius in zip(spline.bezier_points, coordinates, radii):
+        point.co = coordinate
+        point.radius = radius
+        point.handle_left_type = "AUTO"
+        point.handle_right_type = "AUTO"
+    extension = bpy.data.objects.new("HairBackExtension", curve_data)
+    collection.objects.link(extension)
+    select_only([extension])
+    bpy.context.view_layer.objects.active = extension
+    bpy.ops.object.convert(target="MESH")
+    extension = bpy.context.object
+    assign_material(extension, material)
+    for polygon in extension.data.polygons:
+        polygon.use_smooth = True
+    extension["sloth_city_authored_hair_extension"] = "gathered-back"
+    return extension
 
 
 def torso_predicate(
@@ -921,8 +1025,13 @@ def add_eye_details(
         # The bundled bodies face -Y. Keep the colored anatomy nearly flush to
         # the existing sclera and use source-specific adult proportions.
         iris_radius = (0.0081 if source_kind == "male" else 0.0067) * archetype.stature
+        # Place the colored anatomy from the measured sclera radius, not one
+        # shared magic depth. The male source eye is materially deeper than the
+        # female eye; the former constant buried its irises inside the sphere
+        # and exposed only off-centre crescents at close range.
+        bpy.context.view_layer.update()
         iris_location = Vector(eye.location)
-        iris_location.y -= 0.0146
+        iris_location.y -= eye.dimensions.y * 0.5 + 0.00015
         iris = add_eye_disc(
             f"Iris.{side}",
             iris_location,
@@ -933,7 +1042,7 @@ def add_eye_details(
             vertices=archetype.eye_segments,
         )
         pupil_location = iris_location.copy()
-        pupil_location.y -= 0.0007
+        pupil_location.y -= 0.00055
         pupil = add_eye_disc(
             f"Pupil.{side}",
             pupil_location,
@@ -1287,9 +1396,16 @@ def duplicate_for_lod(objects: Sequence[bpy.types.Object], rig: bpy.types.Object
             decimate = obj.modifiers.new("Mobile decimation", "DECIMATE")
             decimate.decimate_type = "COLLAPSE"
             material_name = obj.data.materials[0].name if obj.data.materials and obj.data.materials[0] else ""
-            # Preserve the authored hairline and crown silhouette on mobile;
-            # generic 72% collapse reduced female hair to fewer than 100 tris.
-            decimate.ratio = max(ratio, 0.58) if material_name == "Hair" else ratio
+            # Preserve the authored hairline/crown and enough facial topology
+            # for nearby mobile characters. A generic 72% collapse reduced
+            # female hair to fewer than 100 tris and visibly pinched eyelids,
+            # nostrils, and the mouth corners in the review lab.
+            if material_name == "Hair":
+                decimate.ratio = max(ratio, 0.58)
+            elif material_name == "Skin":
+                decimate.ratio = max(ratio, 0.36)
+            else:
+                decimate.ratio = ratio
             decimate.use_collapse_triangulate = True
             decimate.use_symmetry = True
             apply_modifiers(obj)
@@ -1561,7 +1677,7 @@ def main() -> None:
             "license": "CC0-1.0",
             "sha256": "46a912c0524072ac3b78c35d5d2471df7b8df102394a050ca8cd7184e3393648",
             "retrieved": "2026-07-15",
-            "modifications": "Head/neck posture correction; fitted crew-neck garments; connected authored hair shells; shared rig, skin weights, LODs, and idle/walk clips.",
+            "modifications": "Head/neck posture correction; measured flush eye alignment; fitted crew-neck garments; style-specific connected hair shells and gathered ponytail; shared rig, skin weights, LODs, and idle/walk clips.",
             "exportCommand": "/Applications/Blender.app/Contents/MacOS/Blender --background --factory-startup --python tools/character-pipeline/build_humans.py -- --source /tmp/human-base-meshes/human_base_meshes_bundle.blend --output public/game/characters/authored --preview /tmp/human-previews",
         },
         "materials": list(MATERIAL_NAMES),

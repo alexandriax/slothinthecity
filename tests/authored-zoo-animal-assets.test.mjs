@@ -11,9 +11,11 @@ const BIN_CHUNK = 0x004e4942;
 const EXPECTED_SPECIES = {
   "california-sea-lion": ["SeaLionIdle", "SeaLionSwim", "SeaLionSurface", "SeaLionDive"],
   "gary-polar-bear": ["BearIdle", "BearWalk", "BearForage", "BearTurn"],
+  "eastern-gray-squirrel": ["SquirrelIdle", "SquirrelScamper", "SquirrelForage", "SquirrelClimb"],
   "mallard-duck": ["DuckIdle", "DuckWaddle", "DuckSwim", "DuckShortFlight", "DuckLandingSettle"],
   "spider-monkey": ["MonkeyIdle", "MonkeyWalk", "MonkeyPerch", "MonkeyClimb", "MonkeySwing"],
   "sun-conure": ["LandingSettle", "Perch", "Preen", "ShortFlight"],
+  "whiskers-cat": ["CatIdle", "CatWalk", "CatPounce"],
 };
 
 async function loadGlb(file) {
@@ -58,7 +60,7 @@ test("authored zoo animal runtime is manifest-driven, skeleton-safe, and never f
   ]);
   assert.match(source, /AUTHORED_ZOO_ANIMAL_ROOT = "\/game\/animals\/authored"/);
   assert.match(source, /APPROVED_AUTHORED_ZOO_ANIMAL_SPECIES/);
-  assert.match(source, /"gary-polar-bear",\s+"spider-monkey",\s+"california-sea-lion",\s+"sun-conure",\s+"mallard-duck"/);
+  assert.match(source, /"gary-polar-bear",\s+"spider-monkey",\s+"california-sea-lion",\s+"sun-conure",\s+"mallard-duck",\s+"eastern-gray-squirrel",\s+"whiskers-cat"/);
   assert.match(source, /if \(!APPROVED_AUTHORED_ZOO_ANIMAL_SPECIES\.has\(speciesId\)\)/);
   assert.match(source, /fetch\(`\$\{AUTHORED_ZOO_ANIMAL_ROOT\}\/manifest\.json`, \{ cache: "no-cache" \}\)/);
   assert.match(source, /new DRACOLoader\(\)/);
@@ -87,6 +89,8 @@ test("authored zoo animal runtime is manifest-driven, skeleton-safe, and never f
   assert.match(subway, /species: "spider-monkey"/);
   assert.match(subway, /species: "sun-conure"/);
   assert.match(subway, /species: "mallard-duck"/);
+  assert.match(subway, /species: "eastern-gray-squirrel"/);
+  assert.match(subway, /species: "whiskers-cat"/);
 });
 
 test("original animal manifest pins every reviewed species, authored PBR maps, clips, LODs, and hashes", async () => {
@@ -258,7 +262,10 @@ test("authored animal GLBs are continuous skinned meshes with PBR texture inputs
       assert.equal(vertexCount(json), contract.vertices, `${contract.file} manifest vertex count should be exact`);
       assert.equal(buffer.length, contract.bytes, `${contract.file} manifest byte count should be exact`);
       assert.equal(createHash("sha256").update(buffer).digest("hex"), contract.sha256, `${contract.file} hash should pin the reviewed export`);
-      assert.ok(contract.triangles >= (lod === "lod0" ? 20_000 : 4_000), `${contract.file} should retain an intentional silhouette budget`);
+      const minimumTriangles = species.id === "whiskers-cat"
+        ? (lod === "lod0" ? 12_000 : 3_800)
+        : (lod === "lod0" ? 20_000 : 4_000);
+      assert.ok(contract.triangles >= minimumTriangles, `${contract.file} should retain an intentional silhouette budget`);
       assert.ok(contract.meshes <= 12, `${contract.file} should keep draw calls bounded`);
     }
     assert.ok(loaded.lod2.json.meshes, `${species.id} should load its mobile geometry`);

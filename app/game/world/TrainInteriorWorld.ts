@@ -106,6 +106,7 @@ type PassengerRig = {
   head: THREE.Group;
   movable: boolean;
   phase: number;
+  prop: THREE.Group;
 };
 
 type TrainSurfaceMaps = {
@@ -271,15 +272,40 @@ function createPassenger(index: number, quality: TrainInteriorQuality, pose: "ho
   const premium = createPremiumHuman({
     role: "visitor", quality: quality === "desktop" ? 1 : .58, variant: index + 31, faceVariant: [12, 15, 16, 17, 18, 19][index % 6], coat: palettes[0], trousers: palettes[2], skin: palettes[1],
     accessory: index % 3 === 0 ? "backpack" : index % 3 === 1 ? "tote" : "none",
-    pose: "neutral",
+    pose: pose === "reading" ? "checking-map" : pose === "holding" ? "waving" : "neutral",
   });
   prepareAuthoredHumanLocomotion(premium.root);
   premium.root.scale.setScalar(.88);
   group.add(premium.root); ownedTextures.push(...premium.ownedTextures);
+  const prop = new THREE.Group();
+  prop.name = `train-passenger-${pose}-activity-prop`;
+  if (pose === "reading") {
+    const paperTexture = canvasTexture(512, 320, (context, width, height) => {
+      context.fillStyle = "#eee9da"; context.fillRect(0, 0, width, height);
+      context.strokeStyle = "#a69d88"; context.lineWidth = 5; context.strokeRect(10, 10, width - 20, height - 20);
+      context.fillStyle = "#26332f"; context.font = "800 34px Georgia, serif"; context.fillText("THE EVENING LEAF", 30, 54);
+      context.fillStyle = "#68756f"; context.fillRect(30, 78, 210, 16); context.fillRect(270, 78, 212, 16);
+      context.fillStyle = "#98a39d";
+      for (let line = 0; line < 7; line++) { context.fillRect(30, 118 + line * 24, 210, 8); context.fillRect(270, 118 + line * 24, 212, 8); }
+      context.strokeStyle = "#b8ad96"; context.lineWidth = 3; context.beginPath(); context.moveTo(width / 2, 18); context.lineTo(width / 2, height - 18); context.stroke();
+    });
+    ownedTextures.push(paperTexture);
+    const paper = new THREE.Mesh(
+      new RoundedBoxGeometry(.56, .36, .018, 3, .012),
+      new THREE.MeshBasicMaterial({ map: paperTexture, side: THREE.DoubleSide, toneMapped: false }),
+    );
+    paper.position.set(0, 1.38, -.315); paper.rotation.x = -.08; prop.add(paper);
+  } else if (pose === "holding") {
+    const strapMaterial = new THREE.MeshStandardMaterial({ color: "#d7d0b7", roughness: .48, metalness: .08 });
+    const loop = new THREE.Mesh(new THREE.TorusGeometry(.105, .016, 8, 22), strapMaterial);
+    loop.position.set(.19, 1.95, -.12); prop.add(loop);
+    addCylinderBetween(prop, new THREE.Vector3(.19, 2.05, -.12), new THREE.Vector3(.19, 2.34, -.12), .014, strapMaterial);
+  }
+  group.add(prop);
   const inertLeft = new THREE.Group(), inertRight = new THREE.Group(), inertHead = new THREE.Group();
   return {
     armLeft: inertLeft, armLeftBaseX: 0, armRight: inertRight, armRightBaseX: 0, base: new THREE.Vector3(), group, head: inertHead,
-    baseRotation: 0, flow: "STAY", flowDoorZ: 0, humanRoot: premium.root, movable: true, phase: index * 1.73,
+    baseRotation: 0, flow: "STAY", flowDoorZ: 0, humanRoot: premium.root, movable: true, phase: index * 1.73, prop,
   } satisfies PassengerRig;
 }
 
@@ -619,6 +645,7 @@ export class TrainInteriorWorld {
       }
       const distance = previous.distanceTo(passenger.group.position);
       updateAuthoredHumanMotion(passenger.humanRoot, delta, passenger.group.visible && locomoting ? "walk" : "idle", THREE.MathUtils.clamp(distance / Math.max(delta, .001) / 1.05, .65, 1.35));
+      passenger.prop.visible = passenger.group.visible && !locomoting;
     });
     // The car is narrow enough that independently animated targets can cross.
     // Give every standing rider a physical footprint so boarding/alighting

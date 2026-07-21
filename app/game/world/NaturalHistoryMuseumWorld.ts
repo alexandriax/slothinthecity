@@ -2,12 +2,68 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { GameTextures } from "../rendering/textures";
+import { batchStaticMeshes } from "../systems/performance/StaticSceneBatcher";
+import { VisibilityAwareUpdateScheduler } from "../systems/performance/VisibilityAwareUpdateScheduler";
 import { createPremiumHuman, createPremiumSlothFriend, markPremiumCharactersDisposed } from "./PremiumCharacter";
 import { createAmbientHumanAgent, updateAmbientHumanAgent, type AmbientHumanAgent } from "./characters/AmbientHumanMotion";
 import { createElectricScooter, rollPersonalMobility, type PersonalMobilityVehicle } from "./PersonalMobility";
+import { createWhiskersCat, type ZooAnimalRig } from "./ZooAnimals";
+import { markAuthoredZooAnimalDisposed } from "./animals/AuthoredZooAnimalAssets";
+import { planMuseumCompanionPath } from "./MuseumCompanionPath";
+import { advanceWhiskersTrust, whiskersTrustInstruction, type WhiskersTrustState } from "./WhiskersTrust";
 
 type BoxObstacle = { minX: number; maxX: number; minZ: number; maxZ: number };
 type CircleObstacle = { x: number; z: number; radius: number };
+
+export type WhiskersQuestState = "AVAILABLE" | "TRAIL" | "COMPLETE";
+export type WhiskersQuestEvent = {
+  kind: "WHISKERS_TRAIL_STARTED" | "WHISKERS_TRAIL_ADVANCED" | "WHISKERS_FOUND";
+  message: string;
+  progress: number;
+  total: number;
+};
+export type WhiskersInteractionHint = { label: string; target: THREE.Vector3; distance: number };
+
+const WHISKERS_HIDEOUTS = [
+  { position: new THREE.Vector3(-7, 0, 15), location: "the rotunda entrance", label: "CALL TO WHISKERS INSIDE THE ROTUNDA ENTRANCE", moment: "Whiskers chirps back, then trots toward the blue whale gallery." },
+  { position: new THREE.Vector3(-24, 0, -43), location: "the blue whale", label: "GREET WHISKERS BY THE BLUE WHALE", moment: "A tan tail slips past the ocean-life case; fresh pawprints continue south." },
+  { position: new THREE.Vector3(24, 0, -83), location: "the Akeley dioramas", label: "FIND WHISKERS AT THE AKELEY DIORAMAS", moment: "Whiskers studies the painted savanna, then pads toward the meteorite halls." },
+  { position: new THREE.Vector3(-24, 0, -112), location: "Ahnighito", label: "FOLLOW WHISKERS TO AHNIGHITO", moment: "Whiskers' white paws circle the meteorite and turn toward the fossil halls." },
+  { position: new THREE.Vector3(19, 0, -145), location: "the mammal hall", label: "SPOT WHISKERS IN THE MAMMAL HALL", moment: "Whiskers pauses beside a fossil case, waiting until the whole group catches up." },
+  { position: new THREE.Vector3(-10, 0, -174), location: "her brass museum tag", label: "READ WHISKERS' BRASS MUSEUM TAG", moment: "The tag reads “Whiskers · Resident Gallery Cat.” She joins the final walk to Megatherium." },
+] as const;
+
+function whiskersRoute(seed: number) {
+  // Every variant moves deeper into the museum. The previous arbitrary
+  // shuffle could send Whiskers back through a gallery the player had just
+  // cleared, making replay variance feel like busywork rather than discovery.
+  const forwardGalleryVariants = [
+    [0, 1, 2, 3, 5],
+    [0, 1, 2, 4, 5],
+    [0, 1, 3, 4, 5],
+    [0, 2, 3, 4, 5],
+  ] as const;
+  let value = seed >>> 0;
+  value = Math.imul(value ^ value >>> 16, 0x7feb352d);
+  value = Math.imul(value ^ value >>> 15, 0x846ca68b);
+  const variantIndex = ((value ^ value >>> 16) >>> 0) % forwardGalleryVariants.length;
+  const variant = forwardGalleryVariants[variantIndex];
+  return Object.freeze([...variant]);
+}
+
+function createWhiskersPawprint(material: THREE.MeshStandardMaterial, name: string) {
+  const paw = new THREE.Group();
+  paw.name = name;
+  const pad = new THREE.Mesh(new THREE.CircleGeometry(.11, 16), material.clone());
+  pad.rotation.x = -Math.PI / 2; pad.scale.set(1, 1.25, 1); paw.add(pad);
+  for (let toe = 0; toe < 4; toe++) {
+    const toeMark = new THREE.Mesh(new THREE.CircleGeometry(.035, 12), material.clone());
+    toeMark.rotation.x = -Math.PI / 2;
+    toeMark.position.set((toe - 1.5) * .055, .002, -.13 - Math.abs(toe - 1.5) * .018);
+    paw.add(toeMark);
+  }
+  return paw;
+}
 
 function canvasTexture(width: number, height: number, draw: (context: CanvasRenderingContext2D) => void) {
   if (typeof document === "undefined") {
@@ -217,6 +273,21 @@ function addArchitecture(root: THREE.Group, textures: GameTextures, ownedTexture
   glass.forceSinglePass = true;
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(96, 290), new THREE.MeshStandardMaterial({ color: "#aa9e87", map: textures.stone, roughness: .7, metalness: .05 }));
   floor.name = "museum-polished-stone-floor"; floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, -90); root.add(floor);
+  const galleryRunner = new THREE.Mesh(
+    new THREE.PlaneGeometry(18.5, 228),
+    new THREE.MeshStandardMaterial({ color: "#675f52", map: textures.stone, roughness: .74, metalness: .04 }),
+  );
+  galleryRunner.name = "museum-continuous-warm-terrazzo-gallery-runner";
+  galleryRunner.rotation.x = -Math.PI / 2;
+  galleryRunner.position.set(0, .018, -106);
+  root.add(galleryRunner);
+  const galleryBrass = new THREE.MeshStandardMaterial({ color: "#9c8147", metalness: .62, roughness: .42 });
+  for (const x of [-9.15, 9.15]) {
+    const inlay = new THREE.Mesh(new RoundedBoxGeometry(.11, .026, 228, 2, .012), galleryBrass);
+    inlay.name = "museum-continuous-brass-floor-inlay";
+    inlay.position.set(x, .035, -106);
+    root.add(inlay);
+  }
   const plaza = new THREE.Mesh(new THREE.PlaneGeometry(126, 66), new THREE.MeshStandardMaterial({ color: "#8c887d", map: textures.stone, roughness: .9 })); plaza.rotation.x = -Math.PI / 2; plaza.position.set(0, -.02, 47); root.add(plaza);
   const park = new THREE.Mesh(new THREE.PlaneGeometry(80, 70), new THREE.MeshStandardMaterial({ color: "#425d39", map: textures.ground, roughness: 1 })); park.rotation.x = -Math.PI / 2; park.position.set(83, -.03, 45); root.add(park);
   const facade = new THREE.Group(); facade.name = "american-museum-central-park-west-facade";
@@ -320,7 +391,11 @@ function addArchitecture(root: THREE.Group, textures: GameTextures, ownedTexture
   const wall = new THREE.MeshStandardMaterial({ color: "#d2c9b7", roughness: .88 });
   const darkWall = new THREE.MeshStandardMaterial({ color: "#32423c", roughness: .9 });
   const addWall = (name: string, x: number, y: number, z: number, width: number, height: number, depth: number, surface = wall) => {
-    const mesh = new THREE.Mesh(new RoundedBoxGeometry(width, height, depth, 4, .08), surface); mesh.name = name; mesh.position.set(x, y, z); root.add(mesh); return mesh;
+    const mesh = new THREE.Mesh(new RoundedBoxGeometry(width, height, depth, 4, .08), surface); mesh.name = name; mesh.position.set(x, y, z); root.add(mesh);
+    // Every floor-touching architectural wall must share its footprint with
+    // player and companion collision. Overhead lintels remain passable.
+    if (y - height * .5 <= .08) boxes.push({ minX: x - width * .5, maxX: x + width * .5, minZ: z - depth * .5, maxZ: z + depth * .5 });
+    return mesh;
   };
   addWall("roosevelt-rotunda-west-wall", -45, 5.5, -8, 3, 11, 48);
   addWall("roosevelt-rotunda-east-wall", 45, 5.5, -8, 3, 11, 48);
@@ -335,6 +410,34 @@ function addArchitecture(root: THREE.Group, textures: GameTextures, ownedTexture
     addWall("museum-cross-gallery-west-partition", -33, 4.4, z, 22, 8.8, 2.1, wall);
     addWall("museum-cross-gallery-east-partition", 33, 4.4, z, 22, 8.8, 2.1, wall);
   }
+  // A repeating architectural frame gives the 230-metre gallery a readable
+  // human scale. Previously its distant signs floated against fog because the
+  // only longitudinal walls sat beyond the first-person camera's field of
+  // view.
+  const galleryFrames = [8, -31, -61, -92, -122, -153, -183, -218];
+  galleryFrames.forEach((z, index) => {
+    const surface = index % 2 ? darkWall : wall;
+    for (const x of [-13.5, 13.5]) {
+      addWall("museum-central-gallery-grounded-pilaster", x, 4.6, z, 1.15, 9.2, 1.2, surface);
+      const base = new THREE.Mesh(new RoundedBoxGeometry(1.65, .34, 1.65, 4, .06), galleryBrass);
+      base.name = "museum-central-gallery-pilaster-brass-foot";
+      base.position.set(x, .17, z);
+      root.add(base);
+    }
+    addWall("museum-central-gallery-overhead-lintel", 0, 9.15, z, 28.15, 1.05, 1.2, surface);
+    const medallion = new THREE.Mesh(new THREE.RingGeometry(2.45, 2.62, 56), galleryBrass);
+    medallion.name = "museum-brass-floor-medallion";
+    medallion.rotation.x = -Math.PI / 2;
+    medallion.position.set(0, .052, z + 2.1);
+    root.add(medallion);
+    const pendant = new THREE.Mesh(
+      new THREE.SphereGeometry(.3, 18, 12),
+      new THREE.MeshStandardMaterial({ color: "#f5dfaa", emissive: "#e1ac55", emissiveIntensity: 1.15, roughness: .28 }),
+    );
+    pendant.name = "museum-central-gallery-warm-pendant";
+    pendant.position.set(0, 8.35, z + 1.1);
+    root.add(pendant);
+  });
   const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(92, 220), new THREE.MeshStandardMaterial({ color: "#e4ddcf", roughness: .96, side: THREE.DoubleSide })); ceiling.rotation.x = Math.PI / 2; ceiling.position.set(0, 11.2, -105); root.add(ceiling);
   for (let z = 9; z > -220; z -= 26) for (const x of [-24, 0, 24]) {
     const fixture = new THREE.Mesh(new THREE.CylinderGeometry(.28, .5, .18, 12), new THREE.MeshStandardMaterial({ color: "#eee2bd", emissive: "#ffe2a2", emissiveIntensity: 1.25 })); fixture.position.set(x, 8.8, z); root.add(fixture);
@@ -1183,7 +1286,7 @@ const MEGATHERIUM_VIEWING_HALF_SPAN = 9.5;
 // Build one deliberately distributed cohort during the existing offscreen
 // museum prewarm. Creating new premium rigs as the player crossed each hall
 // caused the repeatable multi-second hitches reported on the museum approach.
-const MUSEUM_RESIDENT_GUEST_INDEXES = [0, 1, 2, 6, 10, 4, 7, 11] as const;
+const MUSEUM_RESIDENT_GUEST_INDEXES = [0, 1, 2, 6, 10, 4, 7, 11, 3, 5, 12, 16] as const;
 
 export class NaturalHistoryMuseumWorld {
   readonly root = new THREE.Group();
@@ -1206,8 +1309,32 @@ export class NaturalHistoryMuseumWorld {
   private readonly boxes: BoxObstacle[] = [];
   private readonly circles: CircleObstacle[] = [];
   private readonly guests: AmbientHumanAgent[] = [];
+  private readonly guestUpdateScheduler = new VisibilityAwareUpdateScheduler();
   private readonly ownedTextures: THREE.Texture[] = [];
   private readonly scooters: PersonalMobilityVehicle[] = [];
+  private readonly whiskers: ZooAnimalRig;
+  private readonly whiskersMomentLight: THREE.PointLight;
+  private readonly whiskersOrder: readonly number[];
+  private readonly whiskersPawprints: THREE.Group[] = [];
+  private readonly whiskersFreshTrail: THREE.Group[] = [];
+  private readonly whiskersPrevious = new THREE.Vector3();
+  private readonly whiskersResolveVelocity = new THREE.Vector3();
+  private readonly whiskersFollowTarget = new THREE.Vector3();
+  private readonly whiskersLightOffset = new THREE.Vector3(0, 1.45, 0);
+  private readonly whiskersPrints: Array<{ print: THREE.Group; emissiveMaterials: THREE.MeshStandardMaterial[] }> = [];
+  private whiskersStateValue: WhiskersQuestState = "AVAILABLE";
+  private whiskersWaypointIndex = 0;
+  private whiskersTravelActive = false;
+  private readonly whiskersTravelSamples: THREE.Vector3[] = [];
+  private readonly whiskersTravelCumulative: number[] = [];
+  private whiskersTravelProgress = 0;
+  private whiskersTravelDistance = 1;
+  private whiskersWaitingForPlayer = false;
+  private whiskersFollowing = false;
+  private whiskersTrustProgressValue = 0;
+  private whiskersTrustStateValue: WhiskersTrustState = "APPROACH";
+  private whiskersCelebrationUntil = 0;
+  private pendingWhiskersEvent: WhiskersQuestEvent | null = null;
   private readonly megatheriumProximityTarget = new THREE.Vector3();
   private readonly scooterPrevious = new THREE.Vector3();
   private scooterConvoyActive = false;
@@ -1215,9 +1342,32 @@ export class NaturalHistoryMuseumWorld {
   private disposed = false;
   private readonly quality: number;
 
-  constructor(scene: THREE.Scene, textures: GameTextures, quality = 1, riderCount = 6) {
+  constructor(scene: THREE.Scene, textures: GameTextures, quality = 1, riderCount = 6, sessionSeed = Math.floor(Math.random() * 0x7fffffff)) {
     this.quality = quality;
+    this.whiskersOrder = whiskersRoute(sessionSeed);
     this.root.name = "american-museum-of-natural-history-exploration-level"; scene.add(this.root);
+    // The museum owns its complete light rig. Relying on station or shuttle
+    // lights made the galleries briefly look correct during a transition and
+    // then collapse into a gray fog void as soon as the previous world was
+    // disposed. These fixtures leave with this root and cannot leak between
+    // streamed scenes.
+    const museumHemisphere = new THREE.HemisphereLight("#f4ead5", "#313932", 1.45);
+    museumHemisphere.name = "museum-scene-owned-warm-hemisphere-light";
+    const museumFill = new THREE.AmbientLight("#f0ddbd", .34);
+    museumFill.name = "museum-scene-owned-conservation-fill-light";
+    const museumKey = new THREE.DirectionalLight("#fff0d0", 1.65);
+    museumKey.name = "museum-scene-owned-skylight-key";
+    museumKey.position.set(-18, 28, 34);
+    museumKey.target.position.set(0, 1.5, -98);
+    museumKey.castShadow = quality > .72;
+    museumKey.shadow.mapSize.set(quality > .86 ? 2048 : 1024, quality > .86 ? 2048 : 1024);
+    this.root.add(museumHemisphere, museumFill, museumKey, museumKey.target);
+    for (const z of [9, -49, -108, -167, -214]) {
+      const galleryLight = new THREE.PointLight("#ffe2ae", quality > .58 ? 34 : 25, 48, 1.55);
+      galleryLight.name = "museum-scene-owned-gallery-pool-light";
+      galleryLight.position.set(0, 8.1, z);
+      this.root.add(galleryLight);
+    }
     const bone = new THREE.MeshStandardMaterial({ color: "#d5c6a2", roughness: .8, metalness: .02 });
     addArchitecture(this.root, textures, this.ownedTextures, quality, this.boxes);
     addGalleryFixtures(this.root, textures, this.ownedTextures, quality);
@@ -1230,6 +1380,17 @@ export class NaturalHistoryMuseumWorld {
     addOfficialPermanentHallMoments(this.root, textures, this.ownedTextures, quality, this.circles);
     addSlothEvolutionGallery(this.root, textures, this.ownedTextures, bone, quality, this.circles);
     addMegatherium(this.root, this.ownedTextures, bone, this.circles);
+    this.whiskers = createWhiskersCat(textures, quality);
+    this.whiskers.root.position.copy(WHISKERS_HIDEOUTS[this.whiskersOrder[0]].position);
+    this.whiskers.root.position.y = this.floorHeight(this.whiskers.root.position.x, this.whiskers.root.position.z);
+    this.whiskers.root.userData.questRole = "resident-gallery-cat";
+    this.root.add(this.whiskers.root);
+    this.whiskersMomentLight = new THREE.PointLight("#f0c36c", .14, 6.5, 1.8);
+    this.whiskersMomentLight.name = "whiskers-restrained-gallery-story-pool-light";
+    this.whiskersMomentLight.position.copy(this.whiskers.root.position).add(this.whiskersLightOffset);
+    this.root.add(this.whiskersMomentLight);
+    this.whiskersPrevious.copy(this.whiskers.root.position);
+    this.addWhiskersTrailPresentation();
     const scooterCapacity = Math.max(1, Math.floor(riderCount));
     const scooterColumns = Math.min(6, scooterCapacity);
     for (let index = 0; index < scooterCapacity; index++) {
@@ -1304,16 +1465,265 @@ export class NaturalHistoryMuseumWorld {
       const hero = this.root.getObjectByName(heroName);
       if (hero) setShadows(hero, quality > .62);
     }
+    batchStaticMeshes(this.root, {
+      cellSize: 34,
+      exclude: [
+        this.whiskers.root,
+        this.whiskersMomentLight,
+        ...this.whiskersPawprints,
+        ...this.whiskersFreshTrail,
+        ...this.scooters.map(scooter => scooter.root),
+        ...this.guests.map(guest => guest.root),
+      ],
+    });
   }
 
   private createResidentGuests() {
-    const count = this.quality < .58 ? 4 : this.quality < .82 ? 6 : MUSEUM_RESIDENT_GUEST_INDEXES.length;
+    const count = this.quality < .58 ? 5 : this.quality < .82 ? 8 : MUSEUM_RESIDENT_GUEST_INDEXES.length;
+    const exhibitAttentionPoints = [
+      new THREE.Vector3(0, 2.4, 7), new THREE.Vector3(-21, 2.2, -45), new THREE.Vector3(27, 2.2, -70),
+      new THREE.Vector3(-22, 2.2, -104), new THREE.Vector3(22, 2.2, -130), new THREE.Vector3(-18, 2.2, -162),
+      new THREE.Vector3(0, 2.8, -198),
+    ];
     MUSEUM_RESIDENT_GUEST_INDEXES.slice(0, count).forEach((index, cohortIndex) => {
       const [x, z] = MUSEUM_GUEST_SPAWNS[index];
       const docent = cohortIndex === count - 1;
-      const result = createPremiumHuman({ role: docent ? "attendant" : "visitor", quality: this.quality, variant: 61 + index, faceVariant: 9 + index, coat: ["#4d6d78", "#8b5b42", "#6a5b82", "#65744e"][index % 4], trousers: ["#30363c", "#403c38", "#292d35"][index % 3], skin: ["#b57959", "#77503e", "#d1a17d", "#906047"][index % 4], outfit: index % 3 === 1 ? "knit-chinos" : "cotton-denim", accessory: index % 4 === 0 ? "camera" : index % 4 === 1 ? "tote" : "backpack", pose: index % 4 === 0 ? "photographing" : "neutral" });
+      const result = createPremiumHuman({ role: docent ? "attendant" : "visitor", quality: this.quality, variant: 61 + index, faceVariant: 9 + index, clothingVariant: 17 + index * 3, coat: ["#4d6d78", "#8b5b42", "#6a5b82", "#65744e", "#875f67", "#4d7468"][index % 6], trousers: ["#30363c", "#403c38", "#292d35", "#4b453d"][index % 4], skin: ["#b57959", "#77503e", "#d1a17d", "#906047", "#583d32", "#c18c6a"][index % 6], outfit: index % 3 === 0 ? "silk-leggings" : index % 3 === 1 ? "knit-chinos" : "cotton-denim", accessory: index % 5 === 0 ? "camera" : index % 5 === 1 ? "tote" : index % 5 === 2 ? "none" : "backpack", pose: index % 5 === 0 ? "photographing" : index % 5 === 2 ? "checking-map" : "neutral" });
       result.root.name = docent ? "fossil-mammal-hall-docent" : "amnh-wandering-museum-visitor-" + (index + 1); result.root.position.set(x, 0, z); this.root.add(result.root); this.ownedTextures.push(...result.ownedTextures);
-      this.guests.push(createAmbientHumanAgent(result.root, { axis: Math.abs(x) > 18 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(index % 2 ? 1 : -1, 0, .3), travel: docent ? .4 : 2.5 + index % 4, speed: .7 + index % 3 * .06, pauseSeconds: 2.6 + index % 3, phase: index * 1.9 }));
+      const axis = (Math.abs(x) > 18 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(index % 2 ? 1 : -1, 0, .3)).normalize();
+      const right = new THREE.Vector3(-axis.z, 0, axis.x), origin = result.root.position.clone();
+      const travel = docent ? .65 : 3.2 + index % 4;
+      const attentionTarget = exhibitAttentionPoints.reduce((nearest, target) =>
+        target.distanceToSquared(origin) < nearest.distanceToSquared(origin) ? target : nearest);
+      const pauseActivity = docent ? "conversation" : index % 5 === 0 ? "photographing" : index % 5 === 2 ? "checking-route" : "observing";
+      this.guests.push(createAmbientHumanAgent(result.root, {
+        axis,
+        waypoints: [origin, origin.clone().addScaledVector(axis, travel * .55), origin.clone().addScaledVector(axis, travel).addScaledVector(right, 1 + index % 3 * .28), origin.clone().addScaledVector(right, .8)],
+        speed: docent ? .46 : .68 + index % 3 * .06,
+        pauseSeconds: docent ? 5.2 : 2.6 + index % 3,
+        pauseCount: docent ? 2 : 3,
+        pauseActivities: docent ? ["conversation", "observing"] : [pauseActivity, "observing", pauseActivity],
+        pauseTargets: [attentionTarget],
+        pauseVariance: docent ? .12 : .18 + index % 3 * .055,
+        paceVariation: docent ? .05 : .08 + index % 3 * .025,
+        phase: index * 1.9,
+        lookAround: docent ? .28 : .12 + index % 4 * .04,
+      }));
+    });
+  }
+
+  private addWhiskersTrailPresentation() {
+    const tagTexture = exhibitTexture("WHISKERS", "TAN & WHITE RESIDENT GALLERY CAT · LOOK FOR FRESH BRASS PAWPRINTS", "#e5bd72");
+    this.ownedTextures.push(tagTexture);
+    const sign = new THREE.Mesh(new RoundedBoxGeometry(5.8, 1.55, .18, 5, .055), new THREE.MeshBasicMaterial({ map: tagTexture, toneMapped: false }));
+    sign.name = "amnh-whiskers-resident-gallery-cat-introduction-sign"; sign.position.set(-10.5, 2.15, 29); sign.rotation.y = .08; this.root.add(sign);
+    for (const x of [-12.8, -8.2]) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(.045, .07, 1.5, 10), new THREE.MeshStandardMaterial({ color: "#5e4d2d", metalness: .68, roughness: .34 }));
+      post.position.set(x, .75, 29.05); this.root.add(post);
+    }
+    this.circles.push({ x: -10.5, z: 29, radius: .55 });
+
+    const brass = new THREE.MeshStandardMaterial({ color: "#d6af5d", emissive: "#664a13", emissiveIntensity: .08, metalness: .46, roughness: .38, transparent: true, opacity: .74 });
+    this.whiskersOrder.forEach((hideoutIndex, routeIndex) => {
+      const hideout = WHISKERS_HIDEOUTS[hideoutIndex], trail = new THREE.Group();
+      trail.name = `whiskers-brass-pawprint-waypoint-${routeIndex + 1}`;
+      trail.position.copy(hideout.position).add(new THREE.Vector3(routeIndex % 2 ? -.85 : .85, .022, .72));
+      trail.rotation.y = routeIndex % 2 ? -.32 : .28;
+      for (let print = 0; print < 3; print++) {
+        const paw = createWhiskersPawprint(brass, `whiskers-waypoint-paw-${routeIndex + 1}-${print + 1}`);
+        paw.position.set((print % 2 ? -.18 : .18), 0, print * .5);
+        trail.add(paw);
+      }
+      trail.visible = routeIndex === 0;
+      this.whiskersPawprints.push(trail); this.root.add(trail); this.registerWhiskersPrint(trail);
+    });
+    for (let index = 0; index < 16; index++) {
+      const paw = createWhiskersPawprint(brass, `whiskers-fresh-route-paw-${index + 1}`);
+      paw.scale.setScalar(.78);
+      paw.visible = false;
+      this.whiskersFreshTrail.push(paw);
+      this.root.add(paw);
+      this.registerWhiskersPrint(paw);
+    }
+  }
+
+  private registerWhiskersPrint(print: THREE.Group) {
+    const emissiveMaterials: THREE.MeshStandardMaterial[] = [];
+    print.traverse(object => {
+      if (!(object instanceof THREE.Mesh)) return;
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      materials.forEach(surface => {
+        if (surface instanceof THREE.MeshStandardMaterial && !emissiveMaterials.includes(surface)) emissiveMaterials.push(surface);
+      });
+    });
+    this.whiskersPrints.push({ print, emissiveMaterials });
+  }
+
+  get whiskersQuestState() { return this.whiskersStateValue; }
+  get isWhiskersQuestActive() { return this.whiskersStateValue === "TRAIL"; }
+  get isWhiskersQuestComplete() { return this.whiskersStateValue === "COMPLETE"; }
+  get isWhiskersWaitingForPlayer() { return this.whiskersWaitingForPlayer; }
+  get isWhiskersTrustMoment() {
+    return this.whiskersStateValue === "TRAIL" && !this.whiskersTravelActive && !this.whiskersFollowing;
+  }
+  get whiskersTrust() {
+    return {
+      active: this.isWhiskersTrustMoment,
+      instruction: whiskersTrustInstruction(this.whiskersTrustStateValue),
+      progress: this.whiskersTrustProgressValue,
+      state: this.whiskersTrustStateValue,
+    };
+  }
+  consumeWhiskersEvent() {
+    const event = this.pendingWhiskersEvent;
+    this.pendingWhiskersEvent = null;
+    return event;
+  }
+  get whiskersProgress() {
+    return {
+      current: this.whiskersStateValue === "COMPLETE" ? this.whiskersOrder.length : this.whiskersWaypointIndex,
+      total: this.whiskersOrder.length,
+    };
+  }
+  get whiskersObjectiveTarget() {
+    if (this.whiskersTravelActive) return this.whiskers.root.position.clone().add(new THREE.Vector3(0, 1.48, 0));
+    const hideout = WHISKERS_HIDEOUTS[this.whiskersOrder[this.whiskersWaypointIndex]];
+    return hideout.position.clone().setY(1.48);
+  }
+  get whiskersObjectiveLabel() {
+    if (this.whiskersStateValue === "COMPLETE") return "Whiskers found · continue to Megatherium";
+    const hideout = WHISKERS_HIDEOUTS[this.whiskersOrder[this.whiskersWaypointIndex]];
+    if (this.whiskersStateValue === "AVAILABLE") return "Meet Whiskers, the museum's tan and white cat";
+    if (this.isWhiskersTrustMoment) return `Give Whiskers a quiet moment near ${hideout.location}`;
+    return this.whiskersWaitingForPlayer
+      ? `Whiskers is waiting near ${hideout.location}`
+      : `Follow Whiskers toward ${hideout.location}`;
+  }
+  whiskersInteractionHint(player: THREE.Vector3): WhiskersInteractionHint | null {
+    // Only the introduction is a button interaction. Every later gallery beat
+    // is earned in the world by settling at a respectful distance and keeping
+    // the actual cat in view.
+    if (this.whiskersStateValue !== "AVAILABLE" || this.whiskersFollowing || this.whiskersTravelActive) return null;
+    const distance = Math.hypot(player.x - this.whiskers.root.position.x, player.z - this.whiskers.root.position.z);
+    // A small cat can disappear behind a fossil plinth or a companion even at
+    // conversational distance. Keep discovery local, but give the encounter
+    // enough room to survive the museum's real exhibit collision footprints.
+    if (distance > 5.2) return null;
+    const hideout = WHISKERS_HIDEOUTS[this.whiskersOrder[this.whiskersWaypointIndex]];
+    return { label: hideout.label, target: this.whiskers.root.position.clone().setY(1.48), distance };
+  }
+  interactWhiskers(player: THREE.Vector3, elapsed: number): WhiskersQuestEvent | null {
+    if (!this.whiskersInteractionHint(player)) return null;
+    return this.beginWhiskersTrail(elapsed);
+  }
+  beginWhiskersTrail(elapsed: number) {
+    if (this.whiskersStateValue !== "AVAILABLE") return null;
+    const hideout = WHISKERS_HIDEOUTS[this.whiskersOrder[0]];
+    this.whiskersStateValue = "TRAIL";
+    this.whiskersWaypointIndex = 1;
+    this.whiskersTrustProgressValue = 0;
+    this.whiskersTrustStateValue = "APPROACH";
+    this.beginWhiskersTravel(elapsed);
+    return {
+      kind: "WHISKERS_TRAIL_STARTED" as const,
+      progress: this.whiskersWaypointIndex,
+      total: this.whiskersOrder.length,
+      message: `${hideout.moment} Follow the fresh brass pawprints · ${this.whiskersWaypointIndex} / ${this.whiskersOrder.length}.`,
+    };
+  }
+  /** Deterministic review staging for the embodied gallery interaction. */
+  stageWhiskersTrustMoment() {
+    this.whiskersStateValue = "TRAIL";
+    this.whiskersWaypointIndex = Math.min(1, this.whiskersOrder.length - 1);
+    this.whiskersTravelActive = false;
+    this.whiskersTravelProgress = 1;
+    this.whiskersWaitingForPlayer = false;
+    this.whiskersFollowing = false;
+    this.whiskersTrustProgressValue = 0;
+    this.whiskersTrustStateValue = "APPROACH";
+    const hideout = WHISKERS_HIDEOUTS[this.whiskersOrder[this.whiskersWaypointIndex]];
+    this.whiskers.root.position.copy(hideout.position);
+    this.whiskers.root.position.y = this.floorHeight(this.whiskers.root.position.x, this.whiskers.root.position.z);
+    this.whiskersPrevious.copy(this.whiskers.root.position);
+    this.whiskers.root.userData.animationState = "idle";
+    this.whiskersPawprints.forEach((print, index) => { print.visible = index === this.whiskersWaypointIndex; });
+    this.whiskersFreshTrail.forEach(print => { print.visible = false; });
+  }
+  private advanceWhiskersTrail(elapsed: number) {
+    const hideout = WHISKERS_HIDEOUTS[this.whiskersOrder[this.whiskersWaypointIndex]];
+    if (this.whiskersWaypointIndex >= this.whiskersOrder.length - 1) {
+      this.whiskersStateValue = "COMPLETE";
+      this.whiskersFollowing = true;
+      this.whiskersCelebrationUntil = elapsed + .9;
+      this.whiskersTrustProgressValue = 1;
+      this.whiskersTrustStateValue = "READY";
+      this.whiskers.root.userData.animationState = "pounce";
+      this.whiskersPawprints.forEach(print => { print.visible = false; });
+      this.whiskersFreshTrail.forEach(print => { print.visible = false; });
+      this.pendingWhiskersEvent = {
+        kind: "WHISKERS_FOUND",
+        progress: this.whiskersOrder.length,
+        total: this.whiskersOrder.length,
+        message: hideout.moment,
+      };
+      return;
+    }
+    this.whiskersWaypointIndex++;
+    this.whiskersTrustProgressValue = 0;
+    this.whiskersTrustStateValue = "APPROACH";
+    this.beginWhiskersTravel(elapsed);
+    this.pendingWhiskersEvent = {
+      kind: "WHISKERS_TRAIL_ADVANCED",
+      progress: this.whiskersWaypointIndex,
+      total: this.whiskersOrder.length,
+      message: `${hideout.moment} Fresh pawprints continue · ${this.whiskersWaypointIndex} / ${this.whiskersOrder.length}.`,
+    };
+  }
+  private sampleWhiskersTravel(amount: number, target: THREE.Vector3) {
+    if (this.whiskersTravelSamples.length < 2 || this.whiskersTravelCumulative.length !== this.whiskersTravelSamples.length) return target.copy(this.whiskers.root.position);
+    const routeDistance = THREE.MathUtils.clamp(amount, 0, 1) * this.whiskersTravelDistance;
+    let index = 0;
+    while (index < this.whiskersTravelCumulative.length - 2 && this.whiskersTravelCumulative[index + 1] < routeDistance) index++;
+    const startDistance = this.whiskersTravelCumulative[index], endDistance = this.whiskersTravelCumulative[index + 1];
+    return target.lerpVectors(
+      this.whiskersTravelSamples[index],
+      this.whiskersTravelSamples[index + 1],
+      (routeDistance - startDistance) / Math.max(endDistance - startDistance, .001),
+    );
+  }
+  private beginWhiskersTravel(_elapsed: number) {
+    const from = this.whiskers.root.position.clone(), to = WHISKERS_HIDEOUTS[this.whiskersOrder[this.whiskersWaypointIndex]].position.clone();
+    this.whiskersTravelSamples.length = 0;
+    this.whiskersTravelCumulative.length = 0;
+    const route = planMuseumCompanionPath(from, to, this.boxes, this.circles, .28);
+    route.forEach(point => {
+      const position = new THREE.Vector3(point.x, this.floorHeight(point.x, point.z), point.z);
+      this.whiskersTravelSamples.push(position);
+      const previous = this.whiskersTravelSamples.at(-2);
+      this.whiskersTravelCumulative.push((this.whiskersTravelCumulative.at(-1) ?? 0) + (previous ? previous.distanceTo(position) : 0));
+    });
+    this.whiskersTravelActive = this.whiskersTravelSamples.length >= 2;
+    this.whiskersTravelProgress = 0;
+    this.whiskersTrustProgressValue = 0;
+    this.whiskersTrustStateValue = "APPROACH";
+    // Cumulative floor distance keeps speed constant across every routed bend
+    // without smoothing a corner back through the obstacle it was avoiding.
+    this.whiskersTravelDistance = Math.max(1, this.whiskersTravelCumulative.at(-1) ?? 0);
+    this.whiskersWaitingForPlayer = false;
+    this.whiskers.root.userData.animationState = "walk";
+    this.whiskersPawprints.forEach((print, index) => { print.visible = index === this.whiskersWaypointIndex; });
+    this.whiskersFreshTrail.forEach((paw, index) => {
+      const amount = (index + 1) / (this.whiskersFreshTrail.length + 1);
+      this.sampleWhiskersTravel(amount, paw.position);
+      paw.position.x += index % 2 ? -.16 : .16;
+      this.whiskersResolveVelocity.set(0, 0, 0);
+      this.resolveCompanion(paw.position, this.whiskersResolveVelocity, .08);
+      paw.position.y += .022;
+      const previous = this.sampleWhiskersTravel(Math.max(0, amount - .008), new THREE.Vector3());
+      const next = this.sampleWhiskersTravel(Math.min(1, amount + .008), new THREE.Vector3());
+      const tangent = next.sub(previous);
+      paw.rotation.y = Math.atan2(-tangent.x, -tangent.z) + (index % 2 ? -.08 : .08);
+      paw.visible = false;
     });
   }
 
@@ -1398,20 +1808,133 @@ export class NaturalHistoryMuseumWorld {
     position.y = this.floorHeight(position.x, position.z);
   }
 
-  update(elapsed: number, delta: number, player?: THREE.Vector3) {
+  update(elapsed: number, delta: number, player?: THREE.Vector3, playerYaw = 0, playerSpeed = 0) {
     if (this.disposed) return;
-    // Static gallery content remains resident after the offscreen compile and
-    // uses Three's frustum culling. Runtime visibility streaming caused cold
-    // geometry and texture uploads every few metres, presenting as freezes.
+    // Keep the complete gallery resident and visible so turning around never
+    // reveals a streaming pop. Only clearly off-camera animation mixers are
+    // coalesced; every potentially visible guest remains full-rate.
     this.guests.forEach(agent => {
-      const nearby = !player || Math.abs(agent.root.position.z - player.z) < 76;
-      agent.root.visible = nearby;
-      if (nearby) updateAmbientHumanAgent(agent, elapsed, delta);
+      const scheduledDelta = this.guestUpdateScheduler.deltaFor(agent.root, elapsed, delta, player, playerYaw, {
+        fullRateDistance: 48,
+        backgroundHz: 10,
+        forwardDistance: 220,
+      });
+      if (scheduledDelta !== null) updateAmbientHumanAgent(agent, elapsed, scheduledDelta);
     });
+    this.updateWhiskers(elapsed, delta, player, playerYaw, playerSpeed);
+  }
+
+  private updateWhiskers(elapsed: number, delta: number, player?: THREE.Vector3, playerYaw = 0, playerSpeed = 0) {
+    this.whiskersPrevious.copy(this.whiskers.root.position);
+    if (this.whiskersTravelActive) {
+      const playerDistance = player ? Math.hypot(player.x - this.whiskers.root.position.x, player.z - this.whiskers.root.position.z) : Infinity;
+      if (this.whiskersWaitingForPlayer ? playerDistance < 7.5 : playerDistance > 11.5) {
+        this.whiskersWaitingForPlayer = !this.whiskersWaitingForPlayer;
+      }
+      if (!this.whiskersWaitingForPlayer && player) {
+        if (!Number.isFinite(this.whiskersTravelDistance) || this.whiskersTravelDistance < 1) this.whiskersTravelDistance = 1;
+        if (!Number.isFinite(this.whiskersTravelProgress)) this.whiskersTravelProgress = 0;
+        // Three.Timer can report a tiny negative delta on the first frame
+        // after a route/fullscreen resume. Catmull-Rom does not accept a
+        // negative parameter, so clamp both the step and accumulated amount.
+        const travelDelta = Number.isFinite(delta) ? Math.max(0, delta) : 0;
+        const nextProgress = this.whiskersTravelProgress + travelDelta * 3.35 / this.whiskersTravelDistance;
+        this.whiskersTravelProgress = THREE.MathUtils.clamp(
+          Number.isFinite(nextProgress) ? nextProgress : 0,
+          0,
+          1,
+        );
+        this.sampleWhiskersTravel(this.whiskersTravelProgress, this.whiskers.root.position);
+        this.whiskersResolveVelocity.set(0, 0, 0);
+        this.resolveCompanion(this.whiskers.root.position, this.whiskersResolveVelocity, .28);
+      }
+      this.whiskers.root.userData.animationState = this.whiskersWaitingForPlayer ? "idle" : "walk";
+      this.whiskersFreshTrail.forEach((paw, index) => {
+        const amount = (index + 1) / (this.whiskersFreshTrail.length + 1);
+        paw.visible = amount <= this.whiskersTravelProgress && amount >= Math.max(0, this.whiskersTravelProgress - .34);
+      });
+      if (this.whiskersWaitingForPlayer && player) {
+        const lookYaw = Math.atan2(
+          this.whiskers.root.position.x - player.x,
+          this.whiskers.root.position.z - player.z,
+        );
+        const lookError = Math.atan2(Math.sin(lookYaw - this.whiskers.root.rotation.y), Math.cos(lookYaw - this.whiskers.root.rotation.y));
+        this.whiskers.root.rotation.y += lookError * (1 - Math.exp(-delta * 4.5));
+      }
+      if (this.whiskersTravelProgress >= 1) {
+        this.whiskersTravelActive = false;
+        this.whiskersWaitingForPlayer = false;
+        this.whiskersTrustProgressValue = 0;
+        this.whiskersTrustStateValue = "APPROACH";
+        this.whiskers.root.userData.animationState = "idle";
+        this.whiskersFreshTrail.forEach(paw => { paw.visible = false; });
+      }
+    } else if (this.isWhiskersTrustMoment && player) {
+      const dx = this.whiskers.root.position.x - player.x;
+      const dz = this.whiskers.root.position.z - player.z;
+      const distance = Math.hypot(dx, dz);
+      const alignment = distance > .001
+        ? dx / distance * -Math.sin(playerYaw) + dz / distance * -Math.cos(playerYaw)
+        : -1;
+      const trust = advanceWhiskersTrust(this.whiskersTrustProgressValue, delta, {
+        alignment,
+        distance,
+        playerSpeed,
+      });
+      this.whiskersTrustProgressValue = trust.progress;
+      this.whiskersTrustStateValue = trust.state;
+      this.whiskers.root.userData.animationState = "idle";
+      const lookYaw = Math.atan2(
+        this.whiskers.root.position.x - player.x,
+        this.whiskers.root.position.z - player.z,
+      );
+      const lookError = Math.atan2(Math.sin(lookYaw - this.whiskers.root.rotation.y), Math.cos(lookYaw - this.whiskers.root.rotation.y));
+      this.whiskers.root.rotation.y += lookError * (1 - Math.exp(-delta * 5.2));
+      if (trust.state === "READY") this.advanceWhiskersTrail(elapsed);
+    } else if (this.whiskersFollowing && player) {
+      if (elapsed < this.whiskersCelebrationUntil) {
+        this.whiskers.root.userData.animationState = "pounce";
+      } else {
+        const target = this.whiskersFollowTarget.set(player.x + 1.3, player.y - 1.48, player.z + 2.25);
+        const dx = target.x - this.whiskers.root.position.x, dz = target.z - this.whiskers.root.position.z, distance = Math.hypot(dx, dz);
+        if (distance > .08) {
+          const step = Math.min(distance, delta * 4.2 * THREE.MathUtils.clamp(distance * .5, .75, 1.8));
+          this.whiskers.root.position.x += dx / distance * step;
+          this.whiskers.root.position.z += dz / distance * step;
+        }
+        this.whiskersResolveVelocity.set(0, 0, 0);
+        this.resolveCompanion(this.whiskers.root.position, this.whiskersResolveVelocity, .28);
+        this.whiskers.root.userData.animationState = distance > .22 ? "walk" : "idle";
+      }
+    }
+    this.whiskers.root.userData.whiskersTrustActive = this.isWhiskersTrustMoment;
+    this.whiskers.root.userData.whiskersTrustProgress = this.whiskersTrustProgressValue;
+    this.whiskers.root.userData.whiskersTrustState = this.whiskersTrustStateValue;
+    this.whiskersMomentLight.position.copy(this.whiskers.root.position).add(this.whiskersLightOffset);
+    this.whiskersMomentLight.intensity = this.isWhiskersTrustMoment
+      ? .48 + this.whiskersTrustProgressValue * .42
+      : this.whiskersStateValue === "TRAIL"
+        ? .24
+        : this.whiskersStateValue === "AVAILABLE"
+          ? .14
+          : .08;
+    const movedX = this.whiskers.root.position.x - this.whiskersPrevious.x, movedZ = this.whiskers.root.position.z - this.whiskersPrevious.z;
+    if (Math.hypot(movedX, movedZ) > .001) {
+      const yaw = Math.atan2(-movedX, -movedZ), error = Math.atan2(Math.sin(yaw - this.whiskers.root.rotation.y), Math.cos(yaw - this.whiskers.root.rotation.y));
+      this.whiskers.root.rotation.y += error * (1 - Math.exp(-delta * 8));
+    }
+    this.whiskersPrints.forEach(({ print, emissiveMaterials }, index) => {
+      if (!print.visible) return;
+      const activeWaypoint = print === this.whiskersPawprints[this.whiskersWaypointIndex];
+      const trustWarmth = this.isWhiskersTrustMoment && activeWaypoint ? this.whiskersTrustProgressValue * .24 : 0;
+      const pulse = .08 + Math.sin(elapsed * 2.2 + index) * .035 + trustWarmth;
+      emissiveMaterials.forEach(surface => { surface.emissiveIntensity = pulse; });
+    });
+    this.whiskers.update(elapsed, delta);
   }
 
   dispose() {
-    if (this.disposed) return; this.disposed = true; markPremiumCharactersDisposed(this.root); this.root.removeFromParent();
+    if (this.disposed) return; this.disposed = true; markAuthoredZooAnimalDisposed(this.whiskers.root); markPremiumCharactersDisposed(this.root); this.root.removeFromParent();
     const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
     this.root.traverse(object => { if (!(object instanceof THREE.Mesh)) return; geometries.add(object.geometry); (Array.isArray(object.material) ? object.material : [object.material]).forEach(surface => materials.add(surface)); });
     geometries.forEach(geometry => geometry.dispose()); materials.forEach(surface => surface.dispose()); this.ownedTextures.forEach(texture => texture.dispose());

@@ -53,6 +53,39 @@ function textureSet(THREE) {
   };
 }
 
+function calibrateActiveHabitat(world) {
+  for (let step = 0; step < 80 && !world.activeSideQuestProgress?.calibrated; step++) {
+    const status = world.activeSideQuestProgress?.control?.status ?? "";
+    if (status.startsWith("HARMONIC ")) world.handleHabitatControl("KeyD");
+    else if (status.startsWith("CURRENT ")) {
+      world.handleHabitatControl(status.includes("← PORT") ? "KeyD" : status.includes("STARBOARD →") ? "KeyA" : "KeyW");
+    } else if (status.startsWith("TENSION ")) world.handleHabitatControl("KeyE");
+    else if (status.startsWith("PROFILE ")) world.handleHabitatControl(status.endsWith("LEFT") ? "KeyA" : "KeyD");
+    else if (status.startsWith("VANE ") || status.startsWith("MIRROR ")) world.handleHabitatControl("KeyD");
+    else if (status.startsWith("WATER ")) {
+      const readings = status.match(/WATER (\d+) · SALT (\d+)/);
+      assert.ok(readings, "the wetland station should publish both physical readings");
+      const water = Number(readings[1]), salinity = Number(readings[2]);
+      const code = salinity > 57
+        ? "Digit2"
+        : water < 46
+          ? "Digit1"
+          : water > 59
+            ? "Digit3"
+            : salinity < 42
+              ? water > 52 ? "Digit3" : "Digit1"
+              : "Digit2";
+      world.handleHabitatControl(code);
+    } else if (status.startsWith("AIM ")) {
+      const survey = status.match(/AIM (-?\d+)→(-?\d+)° · SPRING (\d+)→(\d+)%/);
+      assert.ok(survey, "the seed launcher should publish its live survey bearing and spring charge");
+      const angle = Number(survey[1]), targetAngle = Number(survey[2]), power = Number(survey[3]), targetPower = Number(survey[4]);
+      world.handleHabitatControl(angle < targetAngle ? "KeyD" : angle > targetAngle ? "KeyA" : power < targetPower ? "KeyW" : "KeyS");
+    } else assert.fail(`Unknown habitat calibration status: ${status}`);
+  }
+  assert.equal(world.activeSideQuestProgress?.calibrated, true, "the authored field controls should always have a recoverable solution");
+}
+
 test("visitor paths use terrain-following drainage edges instead of detached box kerbs", async () => {
   const [source, { BronxZooWorld, THREE }] = await Promise.all([
     readSource("../app/game/world/BronxZooWorld.ts"),
@@ -107,12 +140,406 @@ test("Gary's follower footprint clears his authored shoulders and hips", async (
   assert.match(source, /this\.scooterMode \? 1\.2 : 1\.35/);
 });
 
-test("full-screen zoo mechanics stop hidden world rendering and keep extreme targets in-frame", async () => {
-  const [game, screen] = await Promise.all([
+test("habitat research stays in the live zoo and starts across each enclosure edge", async () => {
+  const [game, quests, zoo, { BronxZooWorld, THREE }] = await Promise.all([
     readSource("../app/game/SubwayGame.tsx"),
-    readSource("../app/game/ZooSideQuestScreen.tsx"),
+    readSource("../app/game/world/InWorldZooQuests.ts"),
+    readSource("../app/game/world/BronxZooWorld.ts"),
+    loadBronxZooHarness(),
   ]);
-  assert.match(game, /if \(zooOverlayPaused\) \{[\s\S]{0,220}overlayBackdropRendered = true;[\s\S]{0,80}return;/);
-  assert.match(screen, /clamp\(50 \+ point\.x \* 6\.2, 12, 88\)/);
-  assert.match(screen, /clamp\(96 - point\.y \* 7, 10, 88\)/);
+  assert.doesNotMatch(game, /ZooSideQuestScreen/);
+  assert.match(game, /data-side-quest="in-world"/);
+  assert.match(game, /zooOverlayPaused = transitStage === "BRONX_ZOO" && lockPickingRef\.current/);
+  assert.match(game, /event\.kind\.startsWith\("ANIMAL_QUEST_"\)/);
+  assert.match(quests, /covers the whole visitor edge of its enclosure/);
+  assert.match(quests, /createInWorldZooQuestOrder/);
+  assert.match(zoo, /bronx-zoo-physical-in-world-habitat-quest-equipment/);
+  assert.match(zoo, /bronx-zoo-continuous-world-ground-beyond-visitor-boundary/);
+  assert.match(zoo, /bronx-zoo-perimeter-woodland-trunks-to-fog/);
+  assert.match(zoo, /bronx-zoo-perimeter-woodland-canopy-to-fog/);
+  assert.match(zoo, /bronx-zoo-perimeter-understory-to-fog/);
+  assert.match(zoo, /bronx-zoo-sightline-safe-conservation-rail/);
+  assert.match(zoo, /bronx-zoo-fine-upper-safety-cable/);
+  assert.match(zoo, /habitatResearchStreak\+\+/);
+  assert.match(game, /reviewWorld\.beginAnimalQuest\(qaZooSideQuest\.questId\)/);
+  assert.match(game, /setZooPhase\(activeHabitatQuest \? `IN_WORLD_QUEST_/);
+  assert.match(game, /activeHabitatQuest[\s\S]{0,120}"Active habitat research station"/);
+  assert.doesNotMatch(game, /player\.copy\(reviewWorld\.objectiveTarget\)/, "a review checkpoint must never spawn inside its physical research station");
+  assert.match(game, /bronxquestbirds:[^{]+\{ questId: "aviary-voices", position: \[-26, -40\]/);
+  assert.match(game, /bronxquestredpanda:[^{]+\{ questId: "red-panda-scent-wind", position: \[-24, -135\]/);
+  assert.match(game, /bronxquesttortoise:[^{]+\{ questId: "tortoise-sun-trail", position: \[24, -135\]/);
+  assert.match(game, /bronxquestflamingo:[^{]+\{ questId: "flamingo-wetland-balance", position: \[-71, -67\]/);
+  assert.match(game, /bronxquestbison:[^{]+\{ questId: "bison-prairie-seeding", position: \[59, -107\]/);
+
+  const world = new BronxZooWorld(new THREE.Scene(), textureSet(THREE), .22, 73021);
+  const liveResponses = [];
+  world.root.traverse(object => {
+    if (object.userData.embeddedHabitatResponse) liveResponses.push(object);
+  });
+  assert.equal(liveResponses.length, 24, "every physical field station should own a response inside its habitat");
+  assert.deepEqual(
+    [...new Set(liveResponses.map(response => response.userData.responseKind))].sort(),
+    ["bird-perch", "buoy-dock", "rope-anchor", "scent-vane", "seed-plot", "solar-mirror", "stripe-scanner", "wetland-valve"],
+  );
+  assert.ok(liveResponses.every(response => !response.visible), "habitat responses should appear only when their equipment is operated");
+  for (const habitatDetail of [
+    "bronx-zoo-layered-zebra-grassland-habitat",
+    "zebra-grounded-stone-water-trough",
+    "zebra-weathered-field-shade-roof",
+    "bronx-zoo-layered-aldabra-tortoise-yard",
+    "tortoise-low-weather-shelter-roof",
+    "tortoise-shallow-hydration-wallow",
+  ]) assert.ok(world.root.getObjectByName(habitatDetail), `${habitatDetail} should be present in the live habitat`);
+  const anywhereAlongAviaryEdge = new THREE.Vector3(-56, 1.48, -51);
+  const hint = world.interactionHint(anywhereAlongAviaryEdge);
+  assert.equal(hint?.kind, "ANIMAL_QUEST");
+  assert.equal(hint?.questId, "aviary-voices");
+  const started = world.interact(anywhereAlongAviaryEdge);
+  assert.equal(started?.kind, "ANIMAL_QUEST_STARTED");
+  assert.equal(world.activeSideQuestProgress?.total, 3);
+  assert.ok(world.objectiveTarget.distanceTo(anywhereAlongAviaryEdge) > 2, "the first task should point at physical habitat equipment, not an overlay");
+  world.dispose();
+
+  const reviewWorld = new BronxZooWorld(new THREE.Scene(), textureSet(THREE), .22, 73021);
+  const reviewStart = reviewWorld.beginAnimalQuest("flamingo-wetland-balance");
+  assert.equal(reviewStart?.kind, "ANIMAL_QUEST_STARTED");
+  assert.equal(reviewStart?.questId, "flamingo-wetland-balance");
+  assert.equal(reviewWorld.activeSideQuestProgress?.total, 3);
+  assert.equal(reviewWorld.beginAnimalQuest("flamingo-wetland-balance"), null, "one world cannot start a second copy of an active route");
+  reviewWorld.dispose();
+});
+
+test("habitat research requires live first-person focus, preserves zoo animals, and supports field replays", async () => {
+  const { BronxZooWorld, THREE } = await loadBronxZooHarness();
+  const world = new BronxZooWorld(new THREE.Scene(), textureSet(THREE), .22, 73021);
+  const mangoHabitatRoot = world.root.getObjectByName("sun-conure-hero-bird");
+  assert.ok(mangoHabitatRoot, "the live aviary should own Mango's habitat rig");
+  const mangoVisibilityBeforeResearch = mangoHabitatRoot.visible;
+  const start = world.beginAnimalQuest("aviary-voices");
+  assert.equal(start?.kind, "ANIMAL_QUEST_STARTED");
+  const firstRouteTarget = world.objectiveTarget.clone();
+
+  let completion;
+  for (let stationIndex = 0; stationIndex < 3; stationIndex++) {
+    const player = world.objectiveTarget.clone();
+    const habitatCenter = new THREE.Vector3(-43, player.y, -51);
+    const direction = habitatCenter.sub(player);
+    const alignedYaw = Math.atan2(-direction.x, -direction.z);
+    if (stationIndex === 0) {
+      const wrongWay = world.interact(player, alignedYaw + Math.PI);
+      assert.equal(wrongWay?.kind, "ANIMAL_QUEST_FOCUS_REQUIRED");
+      assert.equal(world.activeSideQuestProgress?.operation, 0, "a blind button press must not advance live habitat research");
+    }
+    const operation = world.interact(player, alignedYaw);
+    assert.equal(operation?.kind, "ANIMAL_QUEST_OPERATION_STARTED");
+    assert.equal(world.activeSideQuestProgress?.operation, 0);
+    assert.equal(world.activeSideQuestProgress?.operationActive, true);
+    assert.ok(world.activeHabitatResponseTarget, "operating a station should produce a physical response inside the enclosure");
+    calibrateActiveHabitat(world);
+
+    const responseStart = world.activeHabitatResponseTarget.clone();
+    let result;
+    for (let frame = 0; frame < 360 && !result; frame++) {
+      const liveTarget = world.activeHabitatResponseTarget;
+      assert.ok(liveTarget, "the live response should remain in-world until the observation completes");
+      const responseDirection = liveTarget.clone().sub(player);
+      const trackingYaw = Math.atan2(-responseDirection.x, -responseDirection.z);
+      world.update(frame / 60, 1 / 60, player, trackingYaw);
+      result = world.consumeHabitatEvent();
+    }
+    if (stationIndex === 0) {
+      assert.ok(world.root.getObjectByName("live-habitat-response-aviary-voices-mango"));
+      assert.ok(responseStart.distanceTo(firstRouteTarget) > 3, "the response must happen inside the habitat, away from its control post");
+    }
+    assert.ok(result, "sustained focus should finish the active physical station");
+    if (stationIndex < 2) assert.equal(result.kind, "ANIMAL_QUEST_ADVANCED");
+    else completion = result;
+  }
+
+  assert.equal(completion?.kind, "ANIMAL_QUEST_COMPLETED");
+  assert.equal(completion?.firstCompletion, true);
+  assert.equal(mangoHabitatRoot.visible, mangoVisibilityBeforeResearch, "Mango's live aviary visibility must not change when an ambassador joins");
+
+  const aviaryEdge = new THREE.Vector3(-56, 1.48, -51);
+  const replayHint = world.interactionHint(aviaryEdge);
+  assert.equal(replayHint?.kind, "ANIMAL_QUEST");
+  assert.match(replayHint?.label ?? "", /REVISIT MANGO'S CANOPY CHORUS/);
+  const replay = world.interact(aviaryEdge);
+  assert.equal(replay?.kind, "ANIMAL_QUEST_STARTED");
+  assert.equal(world.activeSideQuestProgress?.replay, true);
+  assert.match(replay?.message ?? "", /field replay started with a new route/i);
+  assert.ok(world.objectiveTarget.distanceTo(firstRouteTarget) > 1, "a replay must not open on the same station order as the previous route");
+  world.dispose();
+});
+
+test("all eight habitat routes require distinct live equipment controls", async () => {
+  const { BronxZooWorld, THREE } = await loadBronxZooHarness();
+  const scenarios = [
+    { center: [-43, -51], codes: ["KeyA", "KeyD"], kind: "bird-harmonic", quest: "aviary-voices" },
+    { center: [0, -76], codes: ["KeyA", "KeyW", "KeyD"], kind: "current-trim", quest: "sea-lion-current" },
+    { center: [-43, -101], codes: ["KeyE"], kind: "rope-tension", quest: "monkey-canopy-rig" },
+    { center: [43, -101], codes: ["KeyA", "KeyD"], kind: "stripe-alignment", quest: "zebra-stripe-scan" },
+    { center: [-36, -132], codes: ["KeyA", "KeyD"], kind: "scent-vane", quest: "red-panda-scent-wind" },
+    { center: [36, -132], codes: ["KeyA", "KeyD"], kind: "solar-mirror", quest: "tortoise-sun-trail" },
+    { center: [-71, -55], codes: ["Digit1", "Digit2", "Digit3"], kind: "wetland-balance", quest: "flamingo-wetland-balance" },
+    { center: [72, -105], codes: ["KeyA", "KeyD", "KeyW", "KeyS"], kind: "seed-launcher", quest: "bison-prairie-seeding" },
+  ];
+
+  for (const [index, scenario] of scenarios.entries()) {
+    const world = new BronxZooWorld(new THREE.Scene(), textureSet(THREE), .22, 119021 + index);
+    world.beginAnimalQuest(scenario.quest);
+    const player = world.objectiveTarget.clone();
+    const centerDirection = new THREE.Vector3(scenario.center[0], player.y, scenario.center[1]).sub(player);
+    const centerYaw = Math.atan2(-centerDirection.x, -centerDirection.z);
+    assert.equal(world.interact(player, centerYaw)?.kind, "ANIMAL_QUEST_OPERATION_STARTED");
+    assert.deepEqual(world.activeSideQuestProgress.control.options.map(option => option.code), scenario.codes);
+    assert.equal(world.activeSideQuestProgress.calibrated, false, `${scenario.quest} should open out of calibration`);
+
+    for (let frame = 0; frame < 90; frame++) {
+      const target = world.activeHabitatResponseTarget;
+      const direction = target.clone().sub(player);
+      world.update(frame / 60, 1 / 60, player, Math.atan2(-direction.x, -direction.z));
+    }
+    assert.equal(world.activeSideQuestProgress.operation, 0, `${scenario.quest} must not advance from camera tracking alone`);
+
+    calibrateActiveHabitat(world);
+
+    const liveTarget = world.activeHabitatResponseTarget;
+    const trackingDirection = liveTarget.clone().sub(player);
+    world.update(2, 1 / 60, player, Math.atan2(-trackingDirection.x, -trackingDirection.z));
+    let activeStation;
+    world.root.traverse(object => {
+      if (object.userData.questStationState === "active" && object.userData.fieldCalibrationKind === scenario.kind) activeStation = object;
+    });
+    assert.ok(activeStation, `${scenario.quest} should publish its live physical calibration state on the station`);
+    assert.equal(activeStation.userData.fieldCalibrationReady, true);
+
+    for (let frame = 1; frame <= 45; frame++) {
+      if (scenario.kind === "rope-tension" && frame === 30) world.handleHabitatControl("KeyE");
+      const target = world.activeHabitatResponseTarget;
+      const direction = target.clone().sub(player);
+      world.update(2 + frame / 60, 1 / 60, player, Math.atan2(-direction.x, -direction.z));
+    }
+    assert.ok(world.activeSideQuestProgress.operation > 0, `${scenario.quest} should advance only after its equipment and live response agree`);
+    world.dispose();
+  }
+});
+
+test("zebra scanning follows a live animal and tortoise mirrors illuminate physical basking shelves", async () => {
+  const { BronxZooWorld, THREE } = await loadBronxZooHarness();
+  const zebraWorld = new BronxZooWorld(new THREE.Scene(), textureSet(THREE), .22, 73021);
+  zebraWorld.beginAnimalQuest("zebra-stripe-scan");
+  const zebraPlayer = zebraWorld.objectiveTarget.clone();
+  const zebraCenterDirection = new THREE.Vector3(43, zebraPlayer.y, -101).sub(zebraPlayer);
+  const zebraCenterYaw = Math.atan2(-zebraCenterDirection.x, -zebraCenterDirection.z);
+  assert.equal(zebraWorld.interact(zebraPlayer, zebraCenterYaw)?.kind, "ANIMAL_QUEST_OPERATION_STARTED");
+  zebraWorld.update(0, 1 / 60, zebraPlayer, zebraCenterYaw);
+  const zebraTargetStart = zebraWorld.activeHabitatResponseTarget.clone();
+  const zebraRoots = [
+    zebraWorld.root.getObjectByName("bronx-zoo-plains-zebra-1"),
+    zebraWorld.root.getObjectByName("bronx-zoo-plains-zebra-2"),
+  ].filter(Boolean);
+  assert.equal(zebraRoots.length, 2);
+  const nearestZebraStart = Math.min(...zebraRoots.map(zebra => Math.hypot(zebra.position.x - zebraTargetStart.x, zebra.position.z - zebraTargetStart.z)));
+  assert.ok(nearestZebraStart > .05 && nearestZebraStart < .8, "the open profile band should be visibly misaligned but remain attached to a live zebra");
+  calibrateActiveHabitat(zebraWorld);
+  zebraWorld.update(1 / 60, 1 / 60, zebraPlayer, zebraCenterYaw);
+  const alignedZebraTarget = zebraWorld.activeHabitatResponseTarget.clone();
+  const alignedZebraDistance = Math.min(...zebraRoots.map(zebra => Math.hypot(zebra.position.x - alignedZebraTarget.x, zebra.position.z - alignedZebraTarget.z)));
+  assert.ok(alignedZebraDistance < .05, "the physical scanner controls should center the profile band on the live zebra");
+  let activeScanResponse;
+  zebraWorld.root.traverse(object => {
+    if (object.visible && object.userData.embeddedHabitatResponse && object.userData.responseKind === "stripe-scanner") activeScanResponse = object;
+  });
+  assert.match(activeScanResponse?.userData.liveAnimalTarget ?? "", /^bronx-zoo-plains-zebra-/);
+  for (let frame = 1; frame < 100; frame++) {
+    const target = zebraWorld.activeHabitatResponseTarget;
+    const direction = target.clone().sub(zebraPlayer);
+    zebraWorld.update(frame / 60, 1 / 60, zebraPlayer, Math.atan2(-direction.x, -direction.z));
+  }
+  assert.ok(zebraWorld.activeHabitatResponseTarget.distanceTo(zebraTargetStart) > .08, "the live scan should move with the walking zebra");
+  zebraWorld.dispose();
+
+  const tortoiseWorld = new BronxZooWorld(new THREE.Scene(), textureSet(THREE), .22, 73021);
+  tortoiseWorld.beginAnimalQuest("tortoise-sun-trail");
+  const tortoisePlayer = tortoiseWorld.objectiveTarget.clone();
+  const tortoiseCenterDirection = new THREE.Vector3(36, tortoisePlayer.y, -132).sub(tortoisePlayer);
+  const tortoiseCenterYaw = Math.atan2(-tortoiseCenterDirection.x, -tortoiseCenterDirection.z);
+  assert.equal(tortoiseWorld.interact(tortoisePlayer, tortoiseCenterYaw)?.kind, "ANIMAL_QUEST_OPERATION_STARTED");
+  tortoiseWorld.update(0, 1 / 60, tortoisePlayer, tortoiseCenterYaw);
+  const activeBeams = [];
+  tortoiseWorld.root.traverse(object => {
+    if (object.name.startsWith("tortoise-physical-mirror-beam-") && object.visible) activeBeams.push(object);
+  });
+  assert.equal(activeBeams.length, 1, "only the operated mirror should cast a physical beam");
+  const beamPositions = activeBeams[0].geometry.getAttribute("position");
+  assert.ok(Math.hypot(
+    beamPositions.getX(1) - beamPositions.getX(0),
+    beamPositions.getY(1) - beamPositions.getY(0),
+    beamPositions.getZ(1) - beamPositions.getZ(0),
+  ) > 4, "the beam should bridge the real mirror and habitat sun spot");
+  assert.ok(tortoiseWorld.root.getObjectByName("tortoise-sun-trail-basking-shelf-1"));
+  assert.ok(tortoiseWorld.root.getObjectByName("tortoise-sun-trail-basking-shelf-2"));
+  assert.ok(tortoiseWorld.root.getObjectByName("tortoise-sun-trail-basking-shelf-3"));
+  const tortoise = tortoiseWorld.root.getObjectByName("bronx-zoo-aldabra-giant-tortoise");
+  assert.ok(tortoise, "the live Aldabra tortoise should remain in the habitat");
+  const tortoiseStart = tortoise.position.clone();
+  for (let frame = 1; frame <= 90; frame++) {
+    const target = tortoiseWorld.activeHabitatResponseTarget;
+    const direction = target.clone().sub(tortoisePlayer);
+    tortoiseWorld.update(frame / 60, 1 / 60, tortoisePlayer, Math.atan2(-direction.x, -direction.z));
+  }
+  assert.equal(tortoise.userData.enrichmentActive, true, "the tortoise should respond to the live sun spot");
+  assert.equal(tortoise.userData.animationState, "walk", "the warming response should use the tortoise's authored walk cycle");
+  assert.ok(tortoise.position.distanceTo(tortoiseStart) > .12, "the tortoise should visibly approach the warming trail");
+  tortoiseWorld.dispose();
+});
+
+test("red pandas, flamingos, and bison physically follow their live habitat responses", async () => {
+  const { BronxZooWorld, THREE } = await loadBronxZooHarness();
+  const scenarios = [
+    {
+      center: [-36, -132],
+      detail: "red-panda-supported-live-scent-route",
+      grounded: false,
+      quest: "red-panda-scent-wind",
+      roots: ["bronx-zoo-red-panda"],
+    },
+    {
+      center: [-71, -55],
+      detail: "bronx-zoo-american-flamingo-wetland",
+      grounded: true,
+      quest: "flamingo-wetland-balance",
+      roots: ["bronx-zoo-american-flamingo-1", "bronx-zoo-american-flamingo-2", "bronx-zoo-american-flamingo-3"],
+    },
+    {
+      center: [72, -105],
+      detail: "bison-physical-native-prairie-restoration-plots",
+      grounded: true,
+      quest: "bison-prairie-seeding",
+      roots: ["bronx-zoo-american-bison-1", "bronx-zoo-american-bison-2"],
+    },
+  ];
+
+  for (const [scenarioIndex, scenario] of scenarios.entries()) {
+    const world = new BronxZooWorld(new THREE.Scene(), textureSet(THREE), .22, 84031 + scenarioIndex);
+    assert.ok(world.root.getObjectByName(scenario.detail), `${scenario.quest} should have a physical habitat response destination`);
+    world.beginAnimalQuest(scenario.quest);
+    const player = world.objectiveTarget.clone();
+    const centerDirection = new THREE.Vector3(scenario.center[0], player.y, scenario.center[1]).sub(player);
+    const centerYaw = Math.atan2(-centerDirection.x, -centerDirection.z);
+    assert.equal(world.interact(player, centerYaw)?.kind, "ANIMAL_QUEST_OPERATION_STARTED");
+    world.update(0, 1 / 60, player, centerYaw);
+    const roots = scenario.roots.map(name => world.root.getObjectByName(name));
+    assert.ok(roots.every(Boolean), `${scenario.quest} should retain every authored habitat animal`);
+    if (scenario.quest === "flamingo-wetland-balance") {
+      assert.ok(roots.every(root => Math.abs(root.scale.y - .56) < .001), "the live flock should use believable adult flamingo scale");
+    }
+    if (scenario.quest === "bison-prairie-seeding") {
+      assert.ok(roots.every(root => Math.abs(root.scale.y - .72) < .001), "the live herd should use believable adult bison scale");
+    }
+    const starts = roots.map(root => root.position.clone());
+    for (let frame = 1; frame <= 100; frame++) {
+      const target = world.activeHabitatResponseTarget;
+      const direction = target.clone().sub(player);
+      world.update(frame / 60, 1 / 60, player, Math.atan2(-direction.x, -direction.z));
+    }
+    roots.forEach((root, index) => {
+      assert.equal(root.userData.enrichmentActive, true, `${root.name} should respond to the live habitat event`);
+      assert.equal(root.userData.animationState, "walk", `${root.name} should use its authored walk cycle while following`);
+      assert.match(root.userData.enrichmentTargetName ?? "", /^live-habitat-response-/);
+      assert.ok(root.position.distanceTo(starts[index]) > .1, `${root.name} should physically change position with the habitat response`);
+      if (scenario.grounded) {
+        assert.ok(Math.abs(root.position.y - world.floorHeight(root.position.x, root.position.z)) < .16, `${root.name} should remain grounded while following`);
+      }
+    });
+    world.dispose();
+  }
+});
+
+test("monkey rig operations drive contact-safe live climb and swing behavior", async () => {
+  const { BronxZooWorld, THREE } = await loadBronxZooHarness();
+  const world = new BronxZooWorld(new THREE.Scene(), textureSet(THREE), .22, 51519);
+  world.beginAnimalQuest("monkey-canopy-rig");
+  const player = world.objectiveTarget.clone();
+  const centerDirection = new THREE.Vector3(-43, player.y, -101).sub(player);
+  const centerYaw = Math.atan2(-centerDirection.x, -centerDirection.z);
+  assert.equal(world.interact(player, centerYaw)?.kind, "ANIMAL_QUEST_OPERATION_STARTED");
+  world.update(0, 1 / 60, player, centerYaw);
+  const canopyMonkey = world.root.getObjectByName("spider-monkey-1");
+  assert.ok(canopyMonkey, "the measured-support canopy monkey should remain in the live habitat");
+  const fixedContactRoot = canopyMonkey.position.clone();
+  const activeCables = [];
+  world.root.traverse(object => {
+    if (object.name.startsWith("monkey-physical-tension-cable-") && object.visible) activeCables.push(object);
+  });
+  assert.equal(activeCables.length, 1, "only the operated anchor should tension a physical cable");
+  const cablePositions = activeCables[0].geometry.getAttribute("position");
+  assert.ok(Math.hypot(
+    cablePositions.getX(1) - cablePositions.getX(0),
+    cablePositions.getY(1) - cablePositions.getY(0),
+    cablePositions.getZ(1) - cablePositions.getZ(0),
+  ) > 8, "the live cable should connect field equipment to the canopy rig");
+  for (let frame = 1; frame <= 100; frame++) {
+    const target = world.activeHabitatResponseTarget;
+    const direction = target.clone().sub(player);
+    world.update(frame / 60, 1 / 60, player, Math.atan2(-direction.x, -direction.z));
+  }
+  assert.equal(canopyMonkey.userData.enrichmentActive, true);
+  assert.match(canopyMonkey.userData.enrichmentTargetName ?? "", /^live-habitat-response-monkey-canopy-rig-/);
+  assert.match(canopyMonkey.userData.animationState ?? "", /^(climb|swing)$/);
+  assert.equal(canopyMonkey.userData.activeContactSupport, "measured-climb-rope-and-foot-rung");
+  assert.ok(canopyMonkey.position.distanceTo(fixedContactRoot) < .001, "the live response must preserve measured support contact at the fixed root");
+  world.dispose();
+});
+
+test("sea-lion enrichment follows the moving buoy rather than a generic pool-center timer", async () => {
+  const { BronxZooWorld, THREE } = await loadBronxZooHarness();
+  const world = new BronxZooWorld(new THREE.Scene(), textureSet(THREE), .22, 99117);
+  world.beginAnimalQuest("sea-lion-current");
+  const player = world.objectiveTarget.clone();
+  const poolCenter = new THREE.Vector3(0, player.y, -76);
+  const centerDirection = poolCenter.clone().sub(player);
+  const centerYaw = Math.atan2(-centerDirection.x, -centerDirection.z);
+  assert.equal(world.interact(player, centerYaw)?.kind, "ANIMAL_QUEST_OPERATION_STARTED");
+
+  const responseStart = world.activeHabitatResponseTarget.clone();
+  const seaLionOne = world.root.getObjectByName("bronx-zoo-sea-lion-1");
+  const seaLionTwo = world.root.getObjectByName("bronx-zoo-sea-lion-2");
+  assert.ok(seaLionOne && seaLionTwo, "the live pool should retain both authored sea lions");
+  let maximumBuoyTravel = 0;
+  for (let frame = 0; frame < 110; frame++) {
+    world.update(frame / 60, 1 / 60, player, centerYaw);
+    maximumBuoyTravel = Math.max(maximumBuoyTravel, world.activeHabitatResponseTarget.distanceTo(responseStart));
+  }
+  assert.equal(seaLionOne.userData.enrichmentActive, true);
+  assert.equal(seaLionTwo.userData.enrichmentActive, true);
+  assert.match(seaLionOne.userData.enrichmentTargetName, /^live-habitat-response-sea-lion-current-/);
+  assert.equal(seaLionOne.userData.enrichmentTarget, undefined, "Object3D targets must stay outside serializable Three.js userData");
+  assert.equal(seaLionOne.userData.animationState, "swim");
+  assert.equal(seaLionTwo.userData.animationState, "surface");
+  assert.ok(seaLionOne.position.distanceTo(world.activeHabitatResponseTarget) < 2.3, "the lead sea lion should pursue the physical buoy");
+  assert.ok(seaLionTwo.position.distanceTo(world.activeHabitatResponseTarget) < 3.4, "the second sea lion should surface in the buoy's trailing wake");
+  for (let frame = 110; frame < 420; frame++) {
+    world.update(frame / 60, 1 / 60, player, centerYaw);
+    maximumBuoyTravel = Math.max(maximumBuoyTravel, world.activeHabitatResponseTarget.distanceTo(responseStart));
+  }
+  assert.equal(world.consumeHabitatEvent(), null, "staring at the pool center must not complete a moving-buoy observation");
+  assert.ok((world.activeSideQuestProgress?.operation ?? 0) < .92);
+  calibrateActiveHabitat(world);
+
+  let completion;
+  for (let frame = 0; frame < 420 && !completion; frame++) {
+    const target = world.activeHabitatResponseTarget;
+    const direction = target.clone().sub(player);
+    const trackingYaw = Math.atan2(-direction.x, -direction.z);
+    world.update(8 + frame / 60, 1 / 60, player, trackingYaw);
+    maximumBuoyTravel = Math.max(maximumBuoyTravel, world.activeHabitatResponseTarget?.distanceTo(responseStart) ?? maximumBuoyTravel);
+    completion = world.consumeHabitatEvent();
+  }
+  assert.equal(completion?.kind, "ANIMAL_QUEST_ADVANCED", "following the actual buoy should complete the station");
+  assert.ok(maximumBuoyTravel > 6, "the released buoy should visibly cross the pool while it is tracked");
+  assert.equal(seaLionOne.userData.enrichmentActive, false, "sea lions should blend back to ambient pool behavior between stations");
+  assert.equal(seaLionTwo.userData.enrichmentActive, false);
+  world.dispose();
 });

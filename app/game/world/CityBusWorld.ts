@@ -1255,6 +1255,38 @@ function addMuseumArrivalCampus(root: THREE.Group, ownedTextures: THREE.Texture[
     arrival.add(tree);
   }
 
+  const parkPathMaterial = new THREE.MeshStandardMaterial({ color: "#b9ab8e", map: textures.gravel, bumpMap: textures.gravel, bumpScale: .025, roughness: .95 });
+  const parkPath = new THREE.Mesh(new RoundedBoxGeometry(7.5, .14, 225, 4, .05), parkPathMaterial);
+  parkPath.name = "central-park-west-parallel-pedestrian-greenway"; parkPath.position.set(-25.5, .08, -108); arrival.add(parkPath);
+  const parkWallMaterial = new THREE.MeshStandardMaterial({ color: "#8f8876", map: textures.stone, bumpMap: textures.stone, bumpScale: .05, roughness: .94 });
+  const parkWall = new THREE.Mesh(new RoundedBoxGeometry(1.25, 1.05, 235, 5, .14), parkWallMaterial);
+  parkWall.name = "central-park-west-continuous-rusticated-boundary-wall"; parkWall.position.set(-15.9, .5, -108); arrival.add(parkWall);
+  for (let benchIndex = 0; benchIndex < 8; benchIndex++) {
+    const bench = new THREE.Group(); bench.name = "central-park-west-arrival-greenway-bench"; bench.position.set(-30.5, .16, 0 - benchIndex * 27.5); bench.rotation.y = Math.PI / 2;
+    for (let slat = 0; slat < 4; slat++) {
+      const board = new THREE.Mesh(new RoundedBoxGeometry(3.2, .11, .18, 3, .03), new THREE.MeshStandardMaterial({ color: "#745338", map: textures.bark, roughness: .9 }));
+      board.position.set(0, slat < 2 ? .58 + slat * .12 : .94 + (slat - 2) * .22, slat < 2 ? -.12 + slat * .26 : .38); bench.add(board);
+    }
+    for (const x of [-1.25, 1.25]) { const leg = new THREE.Mesh(new RoundedBoxGeometry(.1, .65, .1, 2, .02), bronze); leg.position.set(x, .33, 0); bench.add(leg); }
+    arrival.add(bench);
+  }
+  for (let rockIndex = 0; rockIndex < 18; rockIndex++) {
+    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(.7 + rockIndex % 4 * .18, 1), parkWallMaterial);
+    rock.name = "central-park-west-natural-schist-outcrop"; rock.position.set(-41 - rockIndex % 3 * 8, .4 + rockIndex % 2 * .12, 5 - Math.floor(rockIndex / 3) * 34); rock.scale.set(1.5, .62, 1); rock.rotation.set(rockIndex * .11, rockIndex * 1.27, 0); arrival.add(rock);
+  }
+
+  const crosswalkMaterial = new THREE.MeshStandardMaterial({ color: "#ddd9cc", roughness: .76 });
+  for (let stripeIndex = 0; stripeIndex < 9; stripeIndex++) {
+    const stripe = new THREE.Mesh(new RoundedBoxGeometry(1.65, .028, 17.5, 2, .01), crosswalkMaterial);
+    stripe.name = "amnh-central-park-west-signalized-crosswalk"; stripe.position.set(-6.8 + stripeIndex * 2.1, .04, -37.8); arrival.add(stripe);
+  }
+  const bikeDock = new THREE.Group(); bikeDock.name = "amnh-central-park-west-bicycle-dock"; bikeDock.position.set(-11.8, .12, -9);
+  for (let bikeIndex = 0; bikeIndex < 7; bikeIndex++) {
+    const rack = new THREE.Mesh(new THREE.TorusGeometry(.34, .045, 10, 22, Math.PI), bronze); rack.position.set(0, .36, bikeIndex * 1.15); rack.rotation.y = Math.PI / 2; bikeDock.add(rack);
+    const bike = new THREE.Mesh(new RoundedBoxGeometry(1.2, .11, .09, 3, .025), new THREE.MeshStandardMaterial({ color: bikeIndex % 2 ? "#4c7a92" : "#385e72", metalness: .34, roughness: .48 })); bike.position.set(-.15, .62, bikeIndex * 1.15); bike.rotation.z = -.18; bikeDock.add(bike);
+  }
+  arrival.add(bikeDock);
+
   // Carry the avenue beyond the playable bay with lower-detail, full-volume
   // neighborhood blocks. They close the destination horizon without adding
   // another streamed gameplay district or expensive character simulation.
@@ -1265,6 +1297,19 @@ function addMuseumArrivalCampus(root: THREE.Group, ownedTextures: THREE.Texture[
     const roofline = new THREE.Mesh(new RoundedBoxGeometry(27 + block % 2 * 7, .45, depth + .6, 3, .055), bronze); roofline.position.copy(building.position); roofline.position.y += height * .5 + .08; arrival.add(roofline);
     for (let floor = 0; floor < 3; floor++) for (let bay = 0; bay < 3; bay++) {
       const window = new THREE.Mesh(new RoundedBoxGeometry(.12, 2.65, 3.8, 4, .04), warmDark); window.name = "central-park-west-post-museum-recessed-window"; window.position.set(15.85, 4.1 + floor * 4.4, building.position.z - 9 + bay * 8.5); arrival.add(window);
+    }
+  }
+  // Cross streets remain visible on both sides of the museum block. These
+  // corner volumes prevent the destination from collapsing into one facade
+  // surrounded by fog when the player looks away from the bus bay.
+  for (let sideBlock = 0; sideBlock < 6; sideBlock++) {
+    const height = 25 + sideBlock % 4 * 8, width = 24 + sideBlock % 3 * 5, depth = 28 + sideBlock % 2 * 9;
+    const building = new THREE.Mesh(new RoundedBoxGeometry(width, height, depth, 4, .17), sideBlock % 2 ? redStone : limestone);
+    building.name = "upper-west-side-amnh-surrounding-corner-building"; building.position.set(50 + sideBlock % 2 * 12, height * .5, 18 - sideBlock * 42); arrival.add(building);
+    const base = new THREE.Mesh(new RoundedBoxGeometry(width + .3, 3.6, depth + .25, 4, .07), sideBlock % 2 ? limestone : redStone); base.position.copy(building.position); base.position.y = 1.8; arrival.add(base);
+    const cornice = new THREE.Mesh(new RoundedBoxGeometry(width + .7, .44, depth + .7, 3, .055), bronze); cornice.position.copy(building.position); cornice.position.y = height + .12; arrival.add(cornice);
+    for (let floor = 0; floor < 4; floor++) for (let bay = 0; bay < 3; bay++) {
+      const window = new THREE.Mesh(new RoundedBoxGeometry(.13, 2.5, 3.2, 3, .04), warmDark); window.name = "upper-west-side-amnh-surrounding-recessed-window"; window.position.set(building.position.x - width * .5 - .08, 4.5 + floor * 4.7, building.position.z - depth * .28 + bay * depth * .26); arrival.add(window);
     }
   }
   for (let lampIndex = 0; lampIndex < 7; lampIndex++) {
@@ -1416,10 +1461,25 @@ export class CityBusWorld {
     const pedestrianCount = quality < .58 ? 6 : quality < .82 ? 10 : 14;
     for (let index = 0; index < pedestrianCount; index++) {
       const progress = 16 + index / Math.max(1, pedestrianCount - 1) * (CITY_BUS_ROUTE_LENGTH - 32), atMuseum = progress > CROSSTOWN_START, frame = routeFrame(progress), side = index % 2 ? 1 : -1;
-      const result = createPremiumHuman({ role: "visitor", quality, variant: 40 + index, faceVariant: 7 + index, coat: ["#476779", "#8a5143", "#596846", "#7a668c"][index % 4], trousers: "#30363c", skin: skins[index % skins.length], outfit: index % 2 ? "knit-chinos" : "cotton-denim", accessory: index % 3 === 1 ? "tote" : "backpack", pose: "neutral" });
+      const result = createPremiumHuman({ role: "visitor", quality, variant: 40 + index, faceVariant: 7 + index, clothingVariant: 9 + index * 2, coat: ["#476779", "#8a5143", "#596846", "#7a668c", "#9a7350", "#466b67"][index % 6], trousers: ["#30363c", "#453d36", "#272c35"][index % 3], skin: skins[index % skins.length], outfit: index % 3 === 0 ? "silk-leggings" : index % 3 === 1 ? "knit-chinos" : "cotton-denim", accessory: index % 4 === 0 ? "camera" : index % 4 === 1 ? "tote" : index % 4 === 2 ? "none" : "backpack", pose: index % 4 === 0 ? "photographing" : "neutral" });
       result.root.name = atMuseum ? "central-park-west-pedestrian-" + index : "southern-boulevard-pedestrian-" + index;
       result.root.position.copy(frame.center).addScaledVector(frame.right, side * 13.2); result.root.position.y += .2; this.root.add(result.root); this.ownedTextures.push(...result.ownedTextures);
-      this.pedestrians.push(createAmbientHumanAgent(result.root, { axis: frame.tangent, travel: 3.5 + index % 3, speed: .76 + index % 2 * .08, pauseSeconds: 2.2 + index % 3, phase: index * 2.4 }));
+      const origin = result.root.position.clone(), tangent = frame.tangent.clone().setY(0).normalize(), sidewalkIn = frame.right.clone().multiplyScalar(-side * .65);
+      const storefrontAttention = origin.clone().addScaledVector(frame.right, side * 8).setY(origin.y + 1.4);
+      const pauseActivity = index % 4 === 0 ? "photographing" : index % 4 === 1 ? "checking-route" : index % 5 === 0 ? "conversation" : "observing";
+      this.pedestrians.push(createAmbientHumanAgent(result.root, {
+        axis: tangent,
+        waypoints: [origin, origin.clone().addScaledVector(tangent, 3.2 + index % 3), origin.clone().addScaledVector(tangent, 6.4 + index % 3).add(sidewalkIn), origin.clone().add(sidewalkIn)],
+        speed: .72 + index % 3 * .07,
+        pauseSeconds: 2.2 + index % 3,
+        pauseCount: 3,
+        pauseActivities: [pauseActivity, "observing", pauseActivity],
+        pauseTargets: [storefrontAttention],
+        pauseVariance: .17 + index % 4 * .045,
+        paceVariation: .08 + index % 4 * .02,
+        phase: index * 2.4,
+        lookAround: .12 + index % 4 * .035,
+      }));
     }
     this.sun = new THREE.DirectionalLight("#fff0cf", 2.75); this.sun.castShadow = quality > .58; this.sun.shadow.mapSize.set(quality > .82 ? 2048 : 1024, quality > .82 ? 2048 : 1024); this.root.add(this.sun, this.sun.target);
     const ambient = new THREE.HemisphereLight("#c7dde3", "#45493c", 1.72); ambient.name = "city-evening-hemisphere-light"; this.root.add(ambient);

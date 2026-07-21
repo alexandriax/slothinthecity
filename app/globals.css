@@ -149,6 +149,13 @@ button { font: inherit; }
 .touch-pause { right:max(134px,calc(env(safe-area-inset-right) + 118px)); bottom:max(18px,calc(env(safe-area-inset-bottom) + 12px)); width:44px; height:44px; color:rgba(242,240,223,.52); font-size:7px; }
 .touch-gears { position:absolute; right:max(78px,calc(env(safe-area-inset-right) + 62px)); bottom:max(14px,calc(env(safe-area-inset-bottom) + 8px)); z-index:4; display:grid; gap:5px; pointer-events:none; }
 .touch-gears button { width:56px; height:34px; border:1px solid rgba(252,204,10,.46); border-radius:4px; background:rgba(5,9,9,.78); color:#fccc0a; box-shadow:0 8px 20px rgba(0,0,0,.28); backdrop-filter:blur(10px); font-size:8px; font-weight:850; letter-spacing:.08em; text-transform:uppercase; }
+.touch-field-controls { position:absolute; right:max(14px,env(safe-area-inset-right)); bottom:max(18px,calc(env(safe-area-inset-bottom) + 12px)); z-index:4; display:block; pointer-events:none; }
+.touch-field-readout { position:absolute; right:0; bottom:calc(100% + 7px); width:max-content; max-width:min(260px,calc(100vw - 118px)); box-sizing:border-box; padding:7px 10px; overflow:hidden; border:1px solid rgba(var(--transit-accent-rgb,217,239,139),.28); border-radius:3px; background:rgba(5,14,10,.76); color:rgba(242,240,223,.82); box-shadow:0 8px 22px rgba(0,0,0,.24); backdrop-filter:blur(11px); font-size:7px; font-weight:800; letter-spacing:.08em; line-height:1.25; text-overflow:ellipsis; text-transform:uppercase; white-space:nowrap; }
+.touch-field-buttons { display:flex; align-items:end; gap:7px; }
+.touch-field-controls button { min-width:62px; height:44px; padding:0 10px; border:1px solid rgba(var(--transit-accent-rgb,217,239,139),.48); border-radius:4px; background:linear-gradient(155deg,rgba(12,24,19,.88),rgba(5,11,9,.78)); color:var(--transit-accent,var(--acid)); box-shadow:0 10px 24px rgba(0,0,0,.28),inset 0 1px rgba(255,255,255,.04); backdrop-filter:blur(12px); font-size:8px; font-weight:850; letter-spacing:.08em; text-transform:uppercase; }
+.touch-field-buttons.count-4 { gap:5px; }
+.touch-field-buttons.count-4 button { width:52px; min-width:52px; padding:0 4px; font-size:6.5px; }
+.touch-field-controls button:active { border-color:rgba(255,230,139,.82); background:rgba(44,57,36,.92); transform:translateY(1px); }
 
 @media(max-width:760px){
   .screen-content{grid-template-columns:1fr;align-items:center}.briefing{display:none}.field-note{display:none}.hero-copy{margin-top:28px}.hero-title{font-size:20vw}.screen{background:rgba(3,10,8,.9)}
@@ -164,7 +171,7 @@ button { font: inherit; }
   .desktop-hud{display:none}.mobile-hud{display:block}.touch-ui{display:block}.mouse-resume{display:none}
   .goal-wayfinder{top:max(64px,calc(env(safe-area-inset-top) + 56px));width:min(232px,calc(100vw - 124px));min-width:0;max-width:calc(100vw - 124px);height:32px;padding:3px 10px 3px 5px;gap:7px}.goal-wayfinder-arrow{width:24px;height:24px}.goal-wayfinder-arrow i{width:9px;height:13px}
   .toast{top:max(103px,calc(env(safe-area-inset-top) + 95px)); max-width:calc(100vw - 24px); padding:7px 11px; border-radius:999px; font-family:inherit; font-size:10px; line-height:1.25; box-shadow:0 10px 26px rgba(0,0,0,.22)}
-  .game-shell[data-buds="5"] .toast{top:max(103px,calc(env(safe-area-inset-top) + 95px))}
+  .game-shell[data-buds="3"] .toast{top:max(103px,calc(env(safe-area-inset-top) + 95px))}
 }
 @media(max-width:430px) and (orientation:portrait){
   .mobile-telemetry{grid-template-columns:minmax(46px,.72fr) minmax(82px,1.45fr) minmax(48px,.75fr);gap:5px;padding-right:94px}
@@ -185,11 +192,12 @@ button { font: inherit; }
   .touch-action{right:max(10px,env(safe-area-inset-right));bottom:max(64px,calc(env(safe-area-inset-bottom) + 56px));width:56px;height:56px}
   .touch-grip{right:max(12px,env(safe-area-inset-right));bottom:max(8px,env(safe-area-inset-bottom));width:48px;height:48px}
   .touch-down{right:max(70px,calc(env(safe-area-inset-right) + 58px));bottom:max(62px,calc(env(safe-area-inset-bottom) + 54px));width:46px;height:46px}
+  .touch-field-controls{right:max(10px,env(safe-area-inset-right));bottom:max(8px,env(safe-area-inset-bottom));gap:5px}.touch-field-buttons{gap:5px}.touch-field-controls button{min-width:56px;height:38px;padding:0 8px;font-size:7px}.touch-field-readout{max-width:min(230px,calc(100vw - 108px));padding:5px 8px;font-size:6px}
   .touch-sense{right:max(72px,calc(env(safe-area-inset-right) + 60px));bottom:max(10px,env(safe-area-inset-bottom));width:44px;height:44px}
   .touch-pause{right:max(124px,calc(env(safe-area-inset-right) + 112px));bottom:max(10px,env(safe-area-inset-bottom));width:44px;height:44px}
 }
-@media(max-height:500px) and (orientation:landscape) and (max-width:900px), (max-height:500px) and (orientation:landscape) and (pointer:coarse){.toast{top:max(48px,calc(env(safe-area-inset-top) + 43px))}.game-shell[data-buds="5"] .toast{top:max(82px,calc(env(safe-area-inset-top) + 77px))}}
-@media(max-height:500px) and (orientation:landscape){.game-shell[data-touch-capable="true"] .toast{top:max(48px,calc(env(safe-area-inset-top) + 43px))}.game-shell[data-touch-capable="true"][data-buds="5"] .toast{top:max(82px,calc(env(safe-area-inset-top) + 77px))}}
+@media(max-height:500px) and (orientation:landscape) and (max-width:900px), (max-height:500px) and (orientation:landscape) and (pointer:coarse){.toast{top:max(48px,calc(env(safe-area-inset-top) + 43px))}.game-shell[data-buds="3"] .toast{top:max(82px,calc(env(safe-area-inset-top) + 77px))}}
+@media(max-height:500px) and (orientation:landscape){.game-shell[data-touch-capable="true"] .toast{top:max(48px,calc(env(safe-area-inset-top) + 43px))}.game-shell[data-touch-capable="true"][data-buds="3"] .toast{top:max(82px,calc(env(safe-area-inset-top) + 77px))}}
 @media(prefers-reduced-motion:reduce){.grain,.game-shell[data-hawk-phase="DIVING"] .world-vignette{animation:none}.meter-fill,.scent-overlay,.primary{transition:none}}
 
 /* Subway campaign — enamel wayfinding, fluorescent platform light, and route-color telemetry. */
@@ -224,8 +232,18 @@ button { font: inherit; }
     linear-gradient(180deg,rgba(197,226,231,.035),rgba(4,14,16,.12));
   mix-blend-mode:screen;
 }
+.subway-shell[data-level="central-park"] .world-grade {
+  opacity:1;
+  background:
+    radial-gradient(circle at 62% 16%,rgba(255,217,141,.12),transparent 32%),
+    linear-gradient(180deg,rgba(14,35,28,.05),rgba(4,9,7,.22));
+  mix-blend-mode:soft-light;
+}
 .subway-shell .world-vignette {
   box-shadow:inset 0 0 15vw 2vw rgba(0,0,0,.7),inset 0 -18vh 18vh -12vh rgba(0,0,0,.7);
+}
+.subway-shell[data-level="central-park"] .world-vignette {
+  box-shadow:inset 0 0 14vw 2vw rgba(0,0,0,.5),inset 0 -15vh 18vh -13vh rgba(0,0,0,.34);
 }
 .subway-shell .grain { opacity:.032; mix-blend-mode:soft-light; }
 .subway-shell .eyebrow {
@@ -463,19 +481,43 @@ button { font: inherit; }
 
 .experience-settings {
   position:fixed !important;
-  top:max(100px,calc(env(safe-area-inset-top) + 84px));
-  right:max(18px,env(safe-area-inset-right));
+  top:max(96px,calc(env(safe-area-inset-top) + 88px));
+  right:max(24px,env(safe-area-inset-right));
   z-index:160;
 }
-.experience-settings > button { backdrop-filter:blur(14px); }
-.experience-settings-trigger { display:flex; align-items:center; justify-content:center; gap:8px; }
-.experience-settings-trigger-label { font-size:9px; text-transform:uppercase; }
-body:has(.game-shell[data-side-quest]:not([data-side-quest="none"])) .experience-settings,
-body:has(.game-shell[data-side-quest]:not([data-side-quest="none"])) .debug-jump-menu,
-body.zoo-side-quest-open .experience-settings,
-body.zoo-side-quest-open .debug-jump-menu {
-  display:none !important;
+.experience-settings-trigger {
+  display:grid;
+  place-items:center;
+  width:44px;
+  min-width:44px !important;
+  height:44px;
+  min-height:44px !important;
+  padding:0 !important;
+  overflow:hidden;
+  backdrop-filter:blur(14px);
+  transition:border-color .18s ease,background .18s ease,box-shadow .18s ease,transform .18s ease;
 }
+.experience-settings-trigger:hover,
+.experience-settings-trigger:focus-visible,
+.experience-settings-trigger[aria-expanded="true"] {
+  border-color:rgba(217,239,139,.58) !important;
+  background:rgba(18,34,25,.94) !important;
+  box-shadow:0 10px 30px rgba(0,0,0,.34),0 0 0 1px rgba(217,239,139,.08) !important;
+}
+.experience-settings-trigger:hover { transform:translateY(-1px); }
+.experience-settings-trigger:focus-visible { outline:2px solid rgba(217,239,139,.78); outline-offset:3px; }
+.experience-settings-gear {
+  width:21px;
+  height:21px;
+  stroke:currentColor;
+  stroke-width:1.65;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+  transition:transform .28s cubic-bezier(.2,.8,.2,1);
+}
+.experience-settings-trigger[aria-expanded="true"] .experience-settings-gear { transform:rotate(45deg); }
+.experience-settings-panel { scrollbar-gutter:stable; overscroll-behavior:contain; }
+.experience-settings-close { padding:0 !important; font-size:20px !important; font-weight:400 !important; line-height:1 !important; }
 .debug-jump-menu {
   position:fixed;
   z-index:240;
@@ -628,9 +670,8 @@ body.zoo-side-quest-open .debug-jump-menu {
 }
 
 @media(max-width:900px), (pointer:coarse) {
-  .experience-settings { top:max(8px,env(safe-area-inset-top)); right:max(60px,calc(env(safe-area-inset-right) + 48px)); }
-  .experience-settings > button { width:40px !important; min-width:40px !important; height:40px; min-height:40px !important; }
-  .experience-settings-trigger-label { display:none; }
+  .experience-settings { top:max(10px,calc(env(safe-area-inset-top) + 2px)); right:max(64px,calc(env(safe-area-inset-right) + 54px)); }
+  .experience-settings-panel { max-height:calc(100dvh - max(74px,calc(env(safe-area-inset-top) + 66px))) !important; }
   .debug-jump-menu { right:max(10px,env(safe-area-inset-right)); bottom:max(10px,env(safe-area-inset-bottom)); width:min(366px,calc(100vw - 20px)); }
   .debug-jump-grid { max-height:55vh; }
   .world-transition strong { max-width:85vw; font-size:26px; }
@@ -818,8 +859,16 @@ body.zoo-side-quest-open .debug-jump-menu {
   .lockpick-workbench { grid-template-columns:105px minmax(330px,1fr) 150px; width:calc(100% - 28px); padding:6px 0; }.lockpick-tension-panel,.lockpick-readout { padding:8px; }.lockpick-gauge { min-height:115px; height:30vh; margin:8px auto; }.lockpick-lock { min-height:300px; }.lockpick-cylinder { min-height:230px; height:58vh; margin-top:12%; }.lockpick-shackle { height:45%; border-width:24px; }.lockpick-tension-panel>p,.lockpick-readout>small { display:none; }.lockpick-readout ol { gap:3px; margin:7px 0; }.lockpick-instructions { gap:3px; padding:6px 0; }.lockpick-status { min-height:36px; padding-block:6px; }
 }
 
+@media(max-height:500px) and (orientation:landscape) and (max-width:900px),
+       (max-height:500px) and (orientation:landscape) and (pointer:coarse) {
+  .experience-settings { top:max(3px,env(safe-area-inset-top)); right:max(57px,calc(env(safe-area-inset-right) + 48px)); }
+  .experience-settings-trigger { width:40px; min-width:40px !important; height:40px; min-height:40px !important; }
+  .experience-settings-panel { max-height:calc(100dvh - max(55px,calc(env(safe-area-inset-top) + 49px))) !important; }
+}
+
 @media(prefers-reduced-motion:reduce) {
   .subway-shell .goal-wayfinder-arrow { transition:none; }
   .world-transition,.world-transition i:after { animation-duration:.01ms; }
   .lockpick-cylinder,.lockpick-shackle,.lockpick-gauge-fill,.lockpick-gauge-needle,.lockpick-driver,.lockpick-key-pin { transition:none; }
+  .experience-settings-trigger,.experience-settings-gear { transition:none; }
 }

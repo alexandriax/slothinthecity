@@ -89,7 +89,7 @@ Shipping guardrails are:
 
 LOD0 and LOD2 are required for each initial archetype. LOD1 is an optional later output; if added, use the same basename and `-lod1.glb` suffix.
 
-The current rebuild spans 60,644–77,360 triangles and 388,536–460,232 bytes at LOD0, and 17,215–21,896 triangles and 170,908–200,784 bytes at LOD2. These ranges are enforced by `tests/authored-human-assets.test.mjs`; update the documented contract and test deliberately if the art direction changes.
+The current rebuild spans 61,536–76,226 triangles and 321,548–386,952 bytes at LOD0, and 20,168–24,619 triangles and 157,316–188,680 bytes at LOD2. These ranges are enforced by `tests/authored-human-assets.test.mjs`; update the documented contract and test deliberately if the art direction changes.
 
 ## Stable asset interface
 

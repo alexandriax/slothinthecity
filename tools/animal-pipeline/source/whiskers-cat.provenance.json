@@ -1,0 +1,18 @@
+{
+  "generatedSourceBlend": "tools/animal-pipeline/source/whiskers-cat-source.blend",
+  "license": "Original-Project-Asset",
+  "referenceUse": "Anatomy, proportion, coat breakup, and locomotion study only; no geometry, pixels, rig, or animation copied.",
+  "review": {
+    "clayGate": "Retained fixed-camera three-quarter, profile, face, and paw-contact clay renders generated for visual sign-off.",
+    "freshImportCount": 1,
+    "liveShowroomGate": "Fresh Hero and Mobile showroom inspection remains required after generation.",
+    "texturedGate": "Retained fixed-camera idle, walk, pounce, face, and paw-contact renders generated for visual sign-off."
+  },
+  "source": "tools/animal-pipeline/build_whiskers_cat.py",
+  "speciesId": "whiskers-cat",
+  "thirdPartyAssets": [],
+  "visualReferences": [
+    "https://icatcare.org/advice/cat-anatomy/",
+    "https://www.vet.cornell.edu/departments-centers-and-institutes/cornell-feline-health-center"
+  ]
+}

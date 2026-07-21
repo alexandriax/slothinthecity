@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState, useSyncExternalStore, type CSSProperties } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import type { PremiumAudioDirector } from "../audio/PremiumAudioDirector";
 import type { AdaptiveQualityManager, QualityMode } from "../quality/AdaptiveQualityManager";
 
@@ -66,31 +66,62 @@ const QUALITY_OPTIONS: { value: QualityMode; label: string; detail: string }[] =
 export function AudioQualitySettings({ audio, quality, className, defaultOpen = false }: AudioQualitySettingsProps) {
   const [open, setOpen] = useState(defaultOpen);
   const panelId = useId();
+  const titleId = useId();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const audioState = useSyncExternalStore(audio.subscribe, audio.getSnapshot, audio.getSnapshot);
   const qualityState = useSyncExternalStore(quality.subscribe, quality.getSnapshot, quality.getSnapshot);
 
-  return <div className={className} style={{ position: "relative", pointerEvents: "auto" }}>
+  useEffect(() => {
+    if (!open) return;
+    const dismissOutside = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const dismissWithEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", dismissOutside);
+    document.addEventListener("keydown", dismissWithEscape);
+    return () => {
+      document.removeEventListener("pointerdown", dismissOutside);
+      document.removeEventListener("keydown", dismissWithEscape);
+    };
+  }, [open]);
+
+  return <div ref={rootRef} className={className} style={{ position: "relative", pointerEvents: "auto" }}>
     <button
+      ref={triggerRef}
       type="button"
       aria-controls={panelId}
       aria-expanded={open}
       aria-label={open ? "Close audio and graphics settings" : "Open audio and graphics settings"}
+      title="Audio & graphics settings"
       onClick={() => { audio.playUiConfirm(); setOpen(value => !value); }}
       className="experience-settings-trigger"
-      style={{ ...buttonStyle, paddingInline: 13 }}
+      style={buttonStyle}
     >
-      <span aria-hidden="true">{open ? "×" : "⚙"}</span>
-      <span className="experience-settings-trigger-label">{open ? "Close" : "Settings"}</span>
+      <svg className="experience-settings-gear" aria-hidden="true" viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="5.25" />
+        <circle cx="12" cy="12" r="1.75" />
+        <path d="M12 2.75v2.2M12 19.05v2.2M2.75 12h2.2M19.05 12h2.2M5.46 5.46l1.56 1.56M16.98 16.98l1.56 1.56M18.54 5.46l-1.56 1.56M7.02 16.98l-1.56 1.56" />
+      </svg>
     </button>
-    {open && <section id={panelId} aria-label="Audio and graphics settings" style={panelStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
+    {open && <section id={panelId} role="dialog" aria-modal="false" aria-labelledby={titleId} className="experience-settings-panel" style={panelStyle}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
         <div>
           <div style={{ color: "#d9ef8b", fontSize: 10, fontWeight: 800, letterSpacing: ".2em", textTransform: "uppercase" }}>Experience</div>
-          <div style={{ marginTop: 4, fontFamily: "Georgia, serif", fontSize: 21 }}>Audio & graphics</div>
+          <div id={titleId} style={{ marginTop: 4, fontFamily: "Georgia, serif", fontSize: 21 }}>Audio & graphics</div>
         </div>
-        <button type="button" onClick={() => audio.toggleMuted()} style={{ ...buttonStyle, minHeight: 34, paddingInline: 12 }}>
-          {audioState.muted ? "UNMUTE" : "MUTE"}
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <button type="button" onClick={() => audio.toggleMuted()} style={{ ...buttonStyle, minHeight: 34, paddingInline: 12 }}>
+            {audioState.muted ? "UNMUTE" : "MUTE"}
+          </button>
+          <button type="button" aria-label="Close settings" title="Close" onClick={() => setOpen(false)} className="experience-settings-close" style={{ ...buttonStyle, minWidth: 34, minHeight: 34 }}>
+            <span aria-hidden="true">×</span>
+          </button>
+        </div>
       </div>
 
       {!audioState.unlocked && <button

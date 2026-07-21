@@ -10,6 +10,7 @@ import {
   createAmericanBison,
   createAmericanFlamingo,
   createBlueAndGoldMacaw,
+  createEasternGraySquirrel,
   createGaryPolarBear,
   createGreenAracari,
   createMallard,
@@ -18,6 +19,7 @@ import {
   createSeaLion,
   createSpiderMonkey,
   createSunConure,
+  createWhiskersCat,
   createZebra,
   measureZooAnimalGeometry,
   type ZooAnimalGeometryMetrics,
@@ -38,9 +40,11 @@ type AnimalDefinition = {
 };
 
 const ANIMALS: AnimalDefinition[] = [
-  { label: "Central Park mallard", family: "Waterfowl", factory: createMallard },
+  { label: "Whiskers", family: "Tan & white domestic cat", factory: createWhiskersCat },
+  { label: "Tanner", family: "Central Park mallard", factory: createMallard },
+  { label: "Zap", family: "Eastern gray squirrel", factory: createEasternGraySquirrel },
   { label: "Gary", family: "Polar bear", factory: createGaryPolarBear },
-  { label: "Sun conure", family: "Parrot", factory: createSunConure },
+  { label: "Mango", family: "Sun conure", factory: createSunConure },
   { label: "Blue & gold", family: "Macaw", factory: createBlueAndGoldMacaw },
   { label: "Scarlet ibis", family: "Wading bird", factory: createScarletIbis },
   { label: "Green aracari", family: "Toucan", factory: createGreenAracari },

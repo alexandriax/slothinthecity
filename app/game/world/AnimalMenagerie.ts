@@ -5,6 +5,7 @@ import {
   createAmericanBison,
   createAmericanFlamingo,
   createBlueAndGoldMacaw,
+  createEasternGraySquirrel,
   createGreenAracari,
   createMallard,
   createRedPanda,
@@ -28,6 +29,7 @@ import { createElectricScooter, rollPersonalMobility, type PersonalMobilityVehic
 
 export type OptionalCompanionId =
   | "central-park-mallard"
+  | "central-park-squirrel"
   | "sun-conure"
   | "blue-and-gold-macaw"
   | "scarlet-ibis"
@@ -55,6 +57,7 @@ type CompanionDefinition = {
 
 const COMPANION_DEFINITIONS: readonly CompanionDefinition[] = [
   { id: "central-park-mallard", radius: .38, scale: 1, riderScale: .88, groundOffset: .03, rideY: 1.39, ridePitch: 0, movingMotion: "walk", idleMotion: "idle", factory: createMallard },
+  { id: "central-park-squirrel", radius: .32, scale: 1, riderScale: .84, groundOffset: .02, rideY: 1.42, ridePitch: 0, movingMotion: "walk", idleMotion: "idle", factory: createEasternGraySquirrel },
   { id: "sun-conure", radius: .3, scale: 1.08, riderScale: .92, groundOffset: .72, rideY: 1.39, ridePitch: 0, movingMotion: "short-flight", idleMotion: "perch", factory: createSunConure },
   { id: "blue-and-gold-macaw", radius: .36, scale: 1, riderScale: .82, groundOffset: .78, rideY: 1.37, ridePitch: 0, movingMotion: "short-flight", idleMotion: "perch", factory: createBlueAndGoldMacaw },
   { id: "scarlet-ibis", radius: .34, scale: 1.04, riderScale: .82, groundOffset: .68, rideY: 1.36, ridePitch: 0, movingMotion: "short-flight", idleMotion: "perch", factory: createScarletIbis },
