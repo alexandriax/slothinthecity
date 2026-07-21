@@ -938,6 +938,10 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
           if (duckInteraction) { prompt = duckInteraction.label; promptKey = "E"; }
           else if (squirrelInteraction) { prompt = squirrelInteraction.label; promptKey = "E"; }
           else if (activeBoat && duckQuest.isMannersActive) { prompt = duckQuest.instruction; promptKey = duckQuest.state === "WAITING_FOR_YIELD" || duckQuest.state === "CROSSING" ? "SPACE" : ""; }
+          else if (squirrelQuest.state === "SEEKING_ACORN" && branchRoute?.id === squirrelQuest.branch.id) {
+            const acornDistance = player.distanceTo(squirrelQuest.acornPosition);
+            prompt = acornDistance < 4.2 ? "ZAP'S ACORN IS JUST AHEAD" : "FOLLOW THE BRANCH · FIND ZAP'S ACORN";
+          }
           const nearbyTree = drivingCart || activeBoat || climbingTree || branchRoute || controlledDescent || swimming || hawkEvent?.kind === "SNATCH" ? null : (groundTreeTarget ?? nearestTree(player, 1.35));
           if (!prompt && nearbyTree) { prompt = "CLIMB TRUNK"; promptKey = "E"; }
           if (climbingTree && !prompt) { prompt = branchTarget ? "STEP ONTO BRANCH" : "W / S CLIMB · SHIFT GRIP · CTRL DESCEND"; promptKey = branchTarget ? "E" : ""; }

@@ -88,6 +88,8 @@ export class LakeDuckQuest {
   private stateValue: LakeDuckQuestState = "ROAMING";
   private stateStartedAt = 0;
   private yieldedSeconds = 0;
+  private crossingProgressValue = 0;
+  private clearedDucksValue = 0;
   private lastWakeWarningAt = -Infinity;
   private passengerSeated = false;
   private passengerBoardingStartedAt = 0;
@@ -134,13 +136,15 @@ export class LakeDuckQuest {
 
   get state() { return this.stateValue; }
   get progress() { return Math.round(THREE.MathUtils.clamp(this.yieldedSeconds / this.requiredYieldSeconds, 0, 1) * 100); }
+  get crossingProgress() { return Math.round(this.crossingProgressValue * 100); }
+  get ducksCleared() { return this.clearedDucksValue; }
   get isComplete() { return this.stateValue === "FOLLOWING"; }
   get isMannersActive() { return this.stateValue === "WAITING_FOR_YIELD" || this.stateValue === "CROSSING" || this.stateValue === "HONORED"; }
   get duckPosition() { return this.duck.root.position; }
   get currentTarget() { return this.stateValue === "ROAMING" ? this.duck.root.position : CROSSING_MIDPOINT; }
   get instruction() {
-    if (this.stateValue === "WAITING_FOR_YIELD") return "HOLD SPACE · LET TANNER'S FAMILY PASS";
-    if (this.stateValue === "CROSSING") return "HOLD POSITION · DUCKS HAVE RIGHT OF WAY";
+    if (this.stateValue === "WAITING_FOR_YIELD") return `HOLD BRAKE · LET TANNER'S FAMILY PASS · ${this.progress}%`;
+    if (this.stateValue === "CROSSING") return `HOLD POSITION · DUCKS HAVE RIGHT OF WAY · ${this.clearedDucksValue} / ${this.family.length} CLEAR`;
     if (this.stateValue === "HONORED") return "THANK YOU · TANNER NOTICED YOUR MANNERS";
     return "";
   }
@@ -159,6 +163,8 @@ export class LakeDuckQuest {
     this.stateValue = "WAITING_FOR_YIELD";
     this.stateStartedAt = elapsed;
     this.yieldedSeconds = 0;
+    this.crossingProgressValue = 0;
+    this.clearedDucksValue = 0;
     this.placeFamily(CROSSING_START, elapsed);
     const event: LakeDuckQuestEvent = {
       kind: "DUCK_CALLED",
@@ -173,6 +179,8 @@ export class LakeDuckQuest {
     this.stateValue = "FOLLOWING";
     this.stateStartedAt = 0;
     this.yieldedSeconds = this.requiredYieldSeconds;
+    this.crossingProgressValue = 1;
+    this.clearedDucksValue = this.family.length;
     this.passengerSeated = false;
     this.passengerBoardingStartedAt = 0;
     this.family.slice(1).forEach(member => { member.root.visible = false; });
@@ -227,9 +235,12 @@ export class LakeDuckQuest {
   private updateCrossing(elapsed: number, context: LakeDuckUpdateContext) {
     const raw = THREE.MathUtils.clamp((elapsed - this.stateStartedAt) / CROSSING_DURATION, 0, 1);
     const eased = raw * raw * (3 - 2 * raw);
+    this.crossingProgressValue = raw;
+    this.clearedDucksValue = 0;
     this.family.forEach((member, index) => {
       const stagger = index * .055;
       const amount = THREE.MathUtils.clamp((eased - stagger) / (1 - stagger), 0, 1);
+      if (amount >= .96) this.clearedDucksValue += 1;
       member.root.position.lerpVectors(CROSSING_START, CROSSING_END, amount).add(FAMILY_OFFSETS[index]);
       member.root.position.y = WATER_Y + Math.sin(elapsed * 2.2 + index) * .007;
       member.root.rotation.y = Math.atan2(-(CROSSING_END.x - CROSSING_START.x), -(CROSSING_END.z - CROSSING_START.z));
@@ -243,6 +254,8 @@ export class LakeDuckQuest {
         this.stateValue = "WAITING_FOR_YIELD";
         this.stateStartedAt = elapsed;
         this.yieldedSeconds = 0;
+        this.crossingProgressValue = 0;
+        this.clearedDucksValue = 0;
         this.placeFamily(CROSSING_START, elapsed);
         this.events.push({ kind: "MANNERS_RESET", progress: 0, message: "A wake breaks the crossing. Tanner circles back—good manners mean waiting until the last tail feather is clear." });
         return;

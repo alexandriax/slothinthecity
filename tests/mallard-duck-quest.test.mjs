@@ -41,15 +41,19 @@ test("Tanner rewards yielding to his family and becomes a persistent companion",
   assert.equal(quest.state, "WAITING_FOR_YIELD");
   assert.equal(quest.consumeEvent()?.kind, "DUCK_CALLED");
   assert.match(quest.instruction, /LET TANNER'S FAMILY PASS/);
+  assert.match(quest.instruction, /0%/);
 
   const respectfulBoatPosition = quest.currentTarget.clone().add(new THREE.Vector3(0, 0, 10));
   quest.update(.1, .1, { player: respectfulBoatPosition, locomotion: "rowboat", rowboatPosition: respectfulBoatPosition, rowboatSpeedMetersPerSecond: 0 });
   quest.update(.2, .1, { player: respectfulBoatPosition, locomotion: "rowboat", rowboatPosition: respectfulBoatPosition, rowboatSpeedMetersPerSecond: 0 });
   assert.equal(quest.state, "CROSSING", "holding outside the path should let the family begin crossing");
   assert.equal(quest.consumeEvent()?.kind, "DUCKS_CROSSING");
+  assert.match(quest.instruction, /DUCKS HAVE RIGHT OF WAY · 0 \/ 4 CLEAR/);
 
   quest.update(6, 1 / 60, { player: respectfulBoatPosition, locomotion: "rowboat", rowboatPosition: respectfulBoatPosition, rowboatSpeedMetersPerSecond: 0 });
   assert.equal(quest.state, "HONORED");
+  assert.equal(quest.crossingProgress, 100);
+  assert.equal(quest.ducksCleared, 4);
   assert.equal(quest.consumeEvent()?.kind, "DUCKS_PASSED");
   const passenger = {
     position: new THREE.Vector3(12, 3.25, -8),

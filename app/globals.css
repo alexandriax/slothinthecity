@@ -463,13 +463,43 @@ button { font: inherit; }
 
 .experience-settings {
   position:fixed !important;
-  top:max(100px,calc(env(safe-area-inset-top) + 84px));
-  right:max(18px,env(safe-area-inset-right));
+  top:max(96px,calc(env(safe-area-inset-top) + 88px));
+  right:max(24px,env(safe-area-inset-right));
   z-index:160;
 }
-.experience-settings > button { backdrop-filter:blur(14px); }
-.experience-settings-trigger { display:flex; align-items:center; justify-content:center; gap:8px; }
-.experience-settings-trigger-label { font-size:9px; text-transform:uppercase; }
+.experience-settings-trigger {
+  display:grid;
+  place-items:center;
+  width:44px;
+  min-width:44px !important;
+  height:44px;
+  min-height:44px !important;
+  padding:0 !important;
+  overflow:hidden;
+  backdrop-filter:blur(14px);
+  transition:border-color .18s ease,background .18s ease,box-shadow .18s ease,transform .18s ease;
+}
+.experience-settings-trigger:hover,
+.experience-settings-trigger:focus-visible,
+.experience-settings-trigger[aria-expanded="true"] {
+  border-color:rgba(217,239,139,.58) !important;
+  background:rgba(18,34,25,.94) !important;
+  box-shadow:0 10px 30px rgba(0,0,0,.34),0 0 0 1px rgba(217,239,139,.08) !important;
+}
+.experience-settings-trigger:hover { transform:translateY(-1px); }
+.experience-settings-trigger:focus-visible { outline:2px solid rgba(217,239,139,.78); outline-offset:3px; }
+.experience-settings-gear {
+  width:21px;
+  height:21px;
+  stroke:currentColor;
+  stroke-width:1.65;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+  transition:transform .28s cubic-bezier(.2,.8,.2,1);
+}
+.experience-settings-trigger[aria-expanded="true"] .experience-settings-gear { transform:rotate(45deg); }
+.experience-settings-panel { scrollbar-gutter:stable; overscroll-behavior:contain; }
+.experience-settings-close { padding:0 !important; font-size:20px !important; font-weight:400 !important; line-height:1 !important; }
 body:has(.game-shell[data-side-quest]:not([data-side-quest="none"])) .experience-settings,
 body:has(.game-shell[data-side-quest]:not([data-side-quest="none"])) .debug-jump-menu,
 body.zoo-side-quest-open .experience-settings,
@@ -628,9 +658,8 @@ body.zoo-side-quest-open .debug-jump-menu {
 }
 
 @media(max-width:900px), (pointer:coarse) {
-  .experience-settings { top:max(8px,env(safe-area-inset-top)); right:max(60px,calc(env(safe-area-inset-right) + 48px)); }
-  .experience-settings > button { width:40px !important; min-width:40px !important; height:40px; min-height:40px !important; }
-  .experience-settings-trigger-label { display:none; }
+  .experience-settings { top:max(10px,calc(env(safe-area-inset-top) + 2px)); right:max(64px,calc(env(safe-area-inset-right) + 54px)); }
+  .experience-settings-panel { max-height:calc(100dvh - max(74px,calc(env(safe-area-inset-top) + 66px))) !important; }
   .debug-jump-menu { right:max(10px,env(safe-area-inset-right)); bottom:max(10px,env(safe-area-inset-bottom)); width:min(366px,calc(100vw - 20px)); }
   .debug-jump-grid { max-height:55vh; }
   .world-transition strong { max-width:85vw; font-size:26px; }
@@ -818,8 +847,16 @@ body.zoo-side-quest-open .debug-jump-menu {
   .lockpick-workbench { grid-template-columns:105px minmax(330px,1fr) 150px; width:calc(100% - 28px); padding:6px 0; }.lockpick-tension-panel,.lockpick-readout { padding:8px; }.lockpick-gauge { min-height:115px; height:30vh; margin:8px auto; }.lockpick-lock { min-height:300px; }.lockpick-cylinder { min-height:230px; height:58vh; margin-top:12%; }.lockpick-shackle { height:45%; border-width:24px; }.lockpick-tension-panel>p,.lockpick-readout>small { display:none; }.lockpick-readout ol { gap:3px; margin:7px 0; }.lockpick-instructions { gap:3px; padding:6px 0; }.lockpick-status { min-height:36px; padding-block:6px; }
 }
 
+@media(max-height:500px) and (orientation:landscape) and (max-width:900px),
+       (max-height:500px) and (orientation:landscape) and (pointer:coarse) {
+  .experience-settings { top:max(3px,env(safe-area-inset-top)); right:max(57px,calc(env(safe-area-inset-right) + 48px)); }
+  .experience-settings-trigger { width:40px; min-width:40px !important; height:40px; min-height:40px !important; }
+  .experience-settings-panel { max-height:calc(100dvh - max(55px,calc(env(safe-area-inset-top) + 49px))) !important; }
+}
+
 @media(prefers-reduced-motion:reduce) {
   .subway-shell .goal-wayfinder-arrow { transition:none; }
   .world-transition,.world-transition i:after { animation-duration:.01ms; }
   .lockpick-cylinder,.lockpick-shackle,.lockpick-gauge-fill,.lockpick-gauge-needle,.lockpick-driver,.lockpick-key-pin { transition:none; }
+  .experience-settings-trigger,.experience-settings-gear { transition:none; }
 }

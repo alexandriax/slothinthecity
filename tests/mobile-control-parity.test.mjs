@@ -16,6 +16,9 @@ test("every contextual keyboard prompt is forwarded to the mobile action resolve
   assert.match(subway, /promptKey=\{hud\.promptKey\}/);
   assert.match(touch, /resolveTouchAction\(prompt, promptKey, vehicle\)/);
   assert.match(touch, /prompt\.includes\("RECOVER"\) \|\| prompt\.includes\("TICKET"\) \? "Take"/);
+  assert.match(touch, /prompt\.includes\("NOTICE WHAT ZAP"\) \? "Observe"/);
+  assert.match(touch, /prompt\.includes\("DISLODGE ZAP"\) \? "Nudge"/);
+  assert.match(touch, /prompt\.includes\("GREET TANNER"\) \? "Greet"/);
   assert.match(touch, /data-input-code=\{action\.code\}/);
   assert.match(touch, /return \{ code, label: label \|\| "Use" \}/);
 });
@@ -30,6 +33,7 @@ test("mobile park controls preserve scent, braking, descending, pausing, and int
   assert.doesNotMatch(touch, /!vehicle && showSense/);
   assert.match(touch, /emitKey\("KeyC", true\)/);
   assert.match(touch, /setHeld\(vehicle \? "Space" : "ShiftLeft", true\)/);
+  assert.match(touch, /yieldingToTanner \? "Yield"/);
   assert.match(touch, /emitKey\("ControlLeft", true\)/);
   assert.match(touch, /showPause && <button className="touch-pause"/);
   assert.match(touch, /emitKey\("KeyP", true\)/);
