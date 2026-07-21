@@ -1574,16 +1574,6 @@ export class NaturalHistoryMuseumWorld {
   }
 
   private addWhiskersTrailPresentation() {
-    const tagTexture = exhibitTexture("WHISKERS", "TAN & WHITE RESIDENT GALLERY CAT · LOOK FOR FRESH BRASS PAWPRINTS", "#e5bd72");
-    this.ownedTextures.push(tagTexture);
-    const sign = new THREE.Mesh(new RoundedBoxGeometry(5.8, 1.55, .18, 5, .055), new THREE.MeshBasicMaterial({ map: tagTexture, toneMapped: false }));
-    sign.name = "amnh-whiskers-resident-gallery-cat-introduction-sign"; sign.position.set(-10.5, 2.15, 29); sign.rotation.y = .08; this.root.add(sign);
-    for (const x of [-12.8, -8.2]) {
-      const post = new THREE.Mesh(new THREE.CylinderGeometry(.045, .07, 1.5, 10), new THREE.MeshStandardMaterial({ color: "#5e4d2d", metalness: .68, roughness: .34 }));
-      post.position.set(x, .75, 29.05); this.root.add(post);
-    }
-    this.circles.push({ x: -10.5, z: 29, radius: .55 });
-
     const brass = new THREE.MeshStandardMaterial({ color: "#d6af5d", emissive: "#664a13", emissiveIntensity: .08, metalness: .46, roughness: .38, transparent: true, opacity: .74 });
     this.whiskersOrder.forEach((hideoutIndex, routeIndex) => {
       const hideout = WHISKERS_HIDEOUTS[hideoutIndex], trail = new THREE.Group();
@@ -1654,7 +1644,7 @@ export class NaturalHistoryMuseumWorld {
   get whiskersObjectiveLabel() {
     if (this.whiskersStateValue === "COMPLETE") return "Whiskers found · continue to Megatherium";
     const hideout = WHISKERS_HIDEOUTS[this.whiskersOrder[this.whiskersWaypointIndex]];
-    if (this.whiskersStateValue === "AVAILABLE") return "Meet Whiskers, the museum's tan and white cat";
+    if (this.whiskersStateValue === "AVAILABLE") return "Meet the planetarium's manager Skye's cat Whiskers";
     if (this.isWhiskersTrustMoment) return `Give Whiskers a quiet moment near ${hideout.location}`;
     return this.whiskersWaitingForPlayer
       ? `Whiskers is waiting near ${hideout.location}`
