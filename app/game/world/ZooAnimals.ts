@@ -20,6 +20,33 @@ export type ZooHabitatMotionOptions = {
   floorHeight?: (x: number, z: number) => number;
 };
 
+export type ZooAnimalEnrichmentDirective = {
+  heading?: readonly [number, number];
+  motion: "swim" | "surface";
+  offset: readonly [number, number, number];
+  responsiveness?: number;
+  target: THREE.Object3D;
+};
+
+const zooAnimalEnrichmentDirectives = new WeakMap<THREE.Object3D, ZooAnimalEnrichmentDirective>();
+
+/**
+ * Temporarily hands an autonomous habitat animal a live world target without
+ * putting an Object3D reference in userData (which would make Three.js scene
+ * serialization recursive). Clearing the directive lets the animal blend
+ * back onto its authored ambient route.
+ */
+export function setZooAnimalEnrichmentDirective(rig: ZooAnimalRig, directive: ZooAnimalEnrichmentDirective | null) {
+  if (!directive) {
+    zooAnimalEnrichmentDirectives.delete(rig.root);
+    rig.root.userData.enrichmentActive = false;
+    delete rig.root.userData.enrichmentTargetName;
+    return;
+  }
+  zooAnimalEnrichmentDirectives.set(rig.root, directive);
+  rig.root.userData.enrichmentTargetName = directive.target.name;
+}
+
 type BirdPalette = {
   breast: string;
   crown: string;
@@ -171,14 +198,16 @@ export function configureAutonomousZooAnimal(rig: ZooAnimalRig, options: ZooHabi
   const radius = Math.max(.12, options.radius), verticalRange = options.verticalRange ?? 1.8;
   let travelClock = phase * .17;
   let initialized = false;
+  let enrichmentBlend = 0;
   const tangent = new THREE.Vector3(), next = new THREE.Vector3();
+  const enrichmentTarget = new THREE.Vector3(), enrichmentDesired = new THREE.Vector3();
   return {
     root: rig.root,
     ownedTextures: rig.ownedTextures,
     update(elapsed, delta) {
       const cycle = ((elapsed + phase) % 18 + 18) % 18;
       const locomoting = options.mode === "aquatic" ? cycle < 13.2 : options.mode === "arboreal" ? cycle > 3.1 && cycle < 12.8 : options.mode === "perch" ? cycle > 11.6 && cycle < 14.4 : cycle > 3.4 && cycle < 12.7;
-      const state = options.mode === "aquatic"
+      let state = options.mode === "aquatic"
         ? locomoting ? "swim" : cycle < 15.2 ? "surface" : "dive"
         : options.mode === "arboreal"
           ? locomoting ? "swing" : cycle < 3.1 ? "perch" : "forage"
@@ -222,6 +251,27 @@ export function configureAutonomousZooAnimal(rig: ZooAnimalRig, options: ZooHabi
         tangent.copy(next).sub(rig.root.position);
         if (tangent.lengthSq() > .00001) rig.root.rotation.y = Math.atan2(-tangent.x, -tangent.z);
       } else rig.root.rotation.y += Math.atan2(Math.sin(baseYaw - rig.root.rotation.y), Math.cos(baseYaw - rig.root.rotation.y)) * (1 - Math.exp(-delta * 2.4));
+      const enrichment = zooAnimalEnrichmentDirectives.get(rig.root);
+      const enrichmentTargetBlend = enrichment ? 1 : 0;
+      const responseRate = enrichment?.responsiveness ?? 2.25;
+      enrichmentBlend += (enrichmentTargetBlend - enrichmentBlend) * (1 - Math.exp(-delta * responseRate));
+      if (enrichment && enrichmentBlend > .001) {
+        enrichment.target.getWorldPosition(enrichmentTarget);
+        enrichmentDesired.copy(enrichmentTarget);
+        enrichmentDesired.x += enrichment.offset[0];
+        enrichmentDesired.y += enrichment.offset[1];
+        enrichmentDesired.z += enrichment.offset[2];
+        rig.root.position.lerp(enrichmentDesired, enrichmentBlend);
+        if (enrichment.heading) rig.root.rotation.y = Math.atan2(-enrichment.heading[0], -enrichment.heading[1]);
+        else {
+          tangent.copy(enrichmentTarget).sub(rig.root.position).setY(0);
+          if (tangent.lengthSq() > .00001) rig.root.rotation.y = Math.atan2(-tangent.x, -tangent.z);
+        }
+        state = enrichment.motion;
+      }
+      rig.root.userData.animationState = state;
+      rig.root.userData.enrichmentActive = Boolean(enrichment) && enrichmentBlend > .08;
+      rig.root.userData.enrichmentBlend = enrichmentBlend;
       // Locomotion speed controls the habitat route; clip speed is a separate
       // authored-behavior choice so nearby animals do not march in lockstep.
       rig.root.userData.animationSpeed = THREE.MathUtils.clamp(options.animationSpeed ?? 1, .35, 1.8);

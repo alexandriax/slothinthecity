@@ -241,10 +241,28 @@ test("sea-lion enrichment follows the moving buoy rather than a generic pool-cen
   assert.equal(world.interact(player, centerYaw)?.kind, "ANIMAL_QUEST_OPERATION_STARTED");
 
   const responseStart = world.activeHabitatResponseTarget.clone();
-  for (let frame = 0; frame < 420; frame++) world.update(frame / 60, 1 / 60, player, centerYaw);
+  const seaLionOne = world.root.getObjectByName("bronx-zoo-sea-lion-1");
+  const seaLionTwo = world.root.getObjectByName("bronx-zoo-sea-lion-2");
+  assert.ok(seaLionOne && seaLionTwo, "the live pool should retain both authored sea lions");
+  let maximumBuoyTravel = 0;
+  for (let frame = 0; frame < 110; frame++) {
+    world.update(frame / 60, 1 / 60, player, centerYaw);
+    maximumBuoyTravel = Math.max(maximumBuoyTravel, world.activeHabitatResponseTarget.distanceTo(responseStart));
+  }
+  assert.equal(seaLionOne.userData.enrichmentActive, true);
+  assert.equal(seaLionTwo.userData.enrichmentActive, true);
+  assert.match(seaLionOne.userData.enrichmentTargetName, /^live-habitat-response-sea-lion-current-/);
+  assert.equal(seaLionOne.userData.enrichmentTarget, undefined, "Object3D targets must stay outside serializable Three.js userData");
+  assert.equal(seaLionOne.userData.animationState, "swim");
+  assert.equal(seaLionTwo.userData.animationState, "surface");
+  assert.ok(seaLionOne.position.distanceTo(world.activeHabitatResponseTarget) < 2.3, "the lead sea lion should pursue the physical buoy");
+  assert.ok(seaLionTwo.position.distanceTo(world.activeHabitatResponseTarget) < 3.4, "the second sea lion should surface in the buoy's trailing wake");
+  for (let frame = 110; frame < 420; frame++) {
+    world.update(frame / 60, 1 / 60, player, centerYaw);
+    maximumBuoyTravel = Math.max(maximumBuoyTravel, world.activeHabitatResponseTarget.distanceTo(responseStart));
+  }
   assert.equal(world.consumeHabitatEvent(), null, "staring at the pool center must not complete a moving-buoy observation");
   assert.ok((world.activeSideQuestProgress?.operation ?? 0) < .92);
-  assert.ok(world.activeHabitatResponseTarget.distanceTo(responseStart) > 1.5, "the released buoy should visibly travel through the pool");
 
   let completion;
   for (let frame = 0; frame < 420 && !completion; frame++) {
@@ -252,8 +270,12 @@ test("sea-lion enrichment follows the moving buoy rather than a generic pool-cen
     const direction = target.clone().sub(player);
     const trackingYaw = Math.atan2(-direction.x, -direction.z);
     world.update(8 + frame / 60, 1 / 60, player, trackingYaw);
+    maximumBuoyTravel = Math.max(maximumBuoyTravel, world.activeHabitatResponseTarget?.distanceTo(responseStart) ?? maximumBuoyTravel);
     completion = world.consumeHabitatEvent();
   }
   assert.equal(completion?.kind, "ANIMAL_QUEST_ADVANCED", "following the actual buoy should complete the station");
+  assert.ok(maximumBuoyTravel > 6, "the released buoy should visibly cross the pool while it is tracked");
+  assert.equal(seaLionOne.userData.enrichmentActive, false, "sea lions should blend back to ambient pool behavior between stations");
+  assert.equal(seaLionTwo.userData.enrichmentActive, false);
   world.dispose();
 });

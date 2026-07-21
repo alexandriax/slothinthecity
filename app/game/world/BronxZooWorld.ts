@@ -30,6 +30,7 @@ import {
   createSpiderMonkey,
   createSunConure,
   createZebra,
+  setZooAnimalEnrichmentDirective,
   type ZooHabitatMotionOptions,
   type ZooAnimalRig,
 } from "./ZooAnimals";
@@ -43,6 +44,7 @@ import {
   createInWorldZooQuestOrder,
   habitatQuestAt,
   type ActiveInWorldZooQuest,
+  type HabitatQuestStation,
   type HabitatQuestStationKind,
 } from "./InWorldZooQuests";
 
@@ -838,7 +840,9 @@ function placeAnimal(
   rig.root.position.set(x, terrainHeight(x, z) + yOffset, z);
   rig.root.rotation.y = yaw;
   root.add(rig.root);
-  animals.push(motion ? configureAutonomousZooAnimal(rig, { ...motion, floorHeight: terrainHeight }) : rig);
+  const placed = motion ? configureAutonomousZooAnimal(rig, { ...motion, floorHeight: terrainHeight }) : rig;
+  animals.push(placed);
+  return placed;
 }
 
 function addMuseumShuttleBus(root: THREE.Group, materials: ZooMaterials, ownedTextures: THREE.Texture[], quality: number) {
@@ -1066,7 +1070,7 @@ function habitatResponseHeight(kind: HabitatQuestStationKind) {
 function addHabitatQuestResponse(
   parent: THREE.Group,
   definition: (typeof IN_WORLD_ZOO_QUESTS)[ZooSideQuestId],
-  station: (typeof definition.stations)[number],
+  station: HabitatQuestStation,
   stationIndex: number,
   quality: number,
 ) {
@@ -1200,17 +1204,24 @@ function addHabitatQuestResponse(
   const stationPosition = new THREE.Vector2(station.position[0], station.position[1]);
   const outward = stationPosition.clone().sub(center).normalize();
   const tangent = new THREE.Vector2(-outward.y, outward.x).multiplyScalar(stationIndex % 2 ? -1 : 1);
-  const responseHeight = habitatResponseHeight(station.kind);
-  const startXZ = center.clone().addScaledVector(outward, 6.2);
-  const endXZ = center.clone().addScaledVector(outward, -4.7).addScaledVector(tangent, 3.4);
+  const responseHeight = station.responseHeight ?? habitatResponseHeight(station.kind);
+  const startXZ = station.responsePath
+    ? new THREE.Vector2(station.responsePath[0][0], station.responsePath[0][1])
+    : center.clone().addScaledVector(outward, 6.2);
+  const endXZ = station.responsePath
+    ? new THREE.Vector2(station.responsePath[1][0], station.responsePath[1][1])
+    : center.clone().addScaledVector(outward, -4.7).addScaledVector(tangent, 3.4);
   const start = new THREE.Vector3(startXZ.x, terrainHeight(startXZ.x, startXZ.y) + responseHeight, startXZ.y);
   const end = new THREE.Vector3(endXZ.x, terrainHeight(endXZ.x, endXZ.y) + responseHeight, endXZ.y);
   if (station.kind === "buoy-dock") {
     start.y = terrainHeight(definition.center[0], definition.center[1]) + 1.02;
     end.y = start.y;
   }
-  const pathBend = new THREE.Vector3(tangent.x, 0, tangent.y).multiplyScalar(4.6);
+  const pathBend = new THREE.Vector3(tangent.x, 0, tangent.y).multiplyScalar(station.responseBend ?? 4.6);
   const facingYaw = Math.atan2(outward.x, outward.y);
+  const travelX = end.x - start.x, travelZ = end.z - start.z;
+  const travelLength = Math.hypot(travelX, travelZ) || 1;
+  root.userData.responseTravelDirection = [travelX / travelLength, travelZ / travelLength];
   root.position.copy(start);
   root.rotation.y = facingYaw;
   root.traverse(object => {
@@ -1965,6 +1976,8 @@ export class BronxZooWorld {
   private ownedTextures: THREE.Texture[] = [];
   private readonly guestAgents: AmbientHumanAgent[] = [];
   private readonly animals: ZooAnimalRig[] = [];
+  private readonly seaLionRigs: ZooAnimalRig[] = [];
+  private seaLionEnrichmentTarget: THREE.Object3D | null = null;
   private readonly captiveSlothMotion: CaptiveSlothMotion[] = [];
   private readonly obstacles: Obstacle[] = [];
   private readonly entryGateLeaves: THREE.Group[] = [];
@@ -2619,6 +2632,29 @@ export class BronxZooWorld {
         else visual.mechanism.rotation.z = Math.sin(elapsed * 7.2) * .06 * motion;
       }
     });
+    const seaLionResponse = this.activeAnimalQuest?.id === "sea-lion-current" && this.activeHabitatOperation
+      ? this.questStationVisuals.get(this.activeHabitatOperation.key)?.response.root ?? null
+      : null;
+    this.updateSeaLionEnrichmentTarget(seaLionResponse);
+  }
+
+  private updateSeaLionEnrichmentTarget(target: THREE.Object3D | null) {
+    if (target === this.seaLionEnrichmentTarget) return;
+    this.seaLionEnrichmentTarget = target;
+    const travel = target?.userData.responseTravelDirection as [number, number] | undefined;
+    const directionX = travel?.[0] ?? 0, directionZ = travel?.[1] ?? -1;
+    const rightX = -directionZ, rightZ = directionX;
+    this.seaLionRigs.forEach((rig, index) => {
+      const lateral = index === 0 ? -.72 : .72;
+      const trailing = index === 0 ? .68 : 2.72;
+      setZooAnimalEnrichmentDirective(rig, target ? {
+        heading: [directionX, directionZ],
+        motion: index === 0 ? "swim" : "surface",
+        offset: [rightX * lateral - directionX * trailing, index === 0 ? -.9 : -.84, rightZ * lateral - directionZ * trailing],
+        responsiveness: index === 0 ? 2.45 : 2.05,
+        target,
+      } : null);
+    });
   }
 
   private updateGarySandwich(delta: number, player?: THREE.Vector3) {
@@ -2648,6 +2684,7 @@ export class BronxZooWorld {
   }
 
   dispose() {
+    this.updateSeaLionEnrichmentTarget(null);
     markAuthoredZooAnimalsDisposed(this.root);
     markPremiumCharactersDisposed(this.root);
     this.root.removeFromParent();
@@ -2955,8 +2992,10 @@ export class BronxZooWorld {
     water.position.set(0, terrainHeight(0, -76) + .66, -76);
     pool.add(water);
     this.root.add(pool);
-    placeAnimal(this.root, this.animals, createSeaLion(textures, quality, 0), -2.5, -76, .7, .75, { mode: "aquatic", radius: 2.8, speed: .34, phase: .7 });
-    placeAnimal(this.root, this.animals, createSeaLion(textures, quality, 1), 3.2, -78.5, -1.4, .75, { mode: "aquatic", radius: 2.2, speed: .29, phase: 4.1 });
+    this.seaLionRigs.push(
+      placeAnimal(this.root, this.animals, createSeaLion(textures, quality, 0), -2.5, -76, .7, .12, { mode: "aquatic", radius: 2.8, speed: .34, phase: .7 }),
+      placeAnimal(this.root, this.animals, createSeaLion(textures, quality, 1), 3.2, -78.5, -1.4, .18, { mode: "aquatic", radius: 2.2, speed: .29, phase: 4.1 }),
+    );
     addHabitatLabel(this.root, this.ownedTextures, materials, "SEA LION POOL", "CALIFORNIA SEA LIONS", -9, -65, -.2, this.obstacles);
     this.obstacles.push({ kind: "circle", x: 0, z: -76, radius: 11.4 });
   }

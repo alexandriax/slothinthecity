@@ -14,6 +14,9 @@ export type HabitatQuestStationKind =
 export type HabitatQuestStation = {
   id: string;
   position: readonly [number, number];
+  responseBend?: number;
+  responseHeight?: number;
+  responsePath?: readonly [readonly [number, number], readonly [number, number]];
   action: string;
   confirmation: string;
   kind: HabitatQuestStationKind;
@@ -65,9 +68,9 @@ export const IN_WORLD_ZOO_QUESTS: Record<ZooSideQuestId, InWorldZooQuestDefiniti
     startPrompt: "LISTEN FOR MANGO'S CANOPY CHORUS",
     routeLabel: "Mango's canopy chorus",
     stations: [
-      { id: "mango", position: [-29.6, -43.5], action: "ECHO MANGO'S SUN CONURE CALL", confirmation: "Mango answers from the high contact perch.", kind: "bird-perch" },
-      { id: "ibis", position: [-37.5, -66.1], action: "ANSWER THE IBIS WETLAND CALL", confirmation: "The ibis folds its long call into the chorus.", kind: "bird-perch" },
-      { id: "aracari", position: [-55.8, -39.9], action: "COMPLETE THE ARACARI CANOPY PHRASE", confirmation: "The aracari crosses the aviary and lands on cue.", kind: "bird-perch" },
+      { id: "mango", position: [-29.6, -43.5], responsePath: [[-46, -49], [-39, -52]], responseBend: .7, responseHeight: 4.7, action: "ECHO MANGO'S SUN CONURE CALL", confirmation: "Mango answers from the high contact perch.", kind: "bird-perch" },
+      { id: "ibis", position: [-37.5, -66.1], responsePath: [[-45, -56], [-46, -49]], responseBend: .85, responseHeight: 3.6, action: "ANSWER THE IBIS WETLAND CALL", confirmation: "The ibis folds its long call into the chorus.", kind: "bird-perch" },
+      { id: "aracari", position: [-55.8, -39.9], responsePath: [[-40, -45], [-47, -46.5]], responseBend: 1.1, responseHeight: 4.55, action: "COMPLETE THE ARACARI CANOPY PHRASE", confirmation: "The aracari crosses the aviary and lands on cue.", kind: "bird-perch" },
     ],
   },
   "sea-lion-current": {
@@ -77,9 +80,9 @@ export const IN_WORLD_ZOO_QUESTS: Record<ZooSideQuestId, InWorldZooQuestDefiniti
     startPrompt: "BEGIN THE SEA LION CURRENT RUN",
     routeLabel: "Sea lion enrichment current",
     stations: [
-      { id: "west", position: [-12.6, -72.4], action: "RELEASE THE WEST CURRENT BUOY", confirmation: "The first buoy catches the current and the sea lions turn with it.", kind: "buoy-dock" },
-      { id: "south", position: [0, -90.1], action: "SEND THE SOUTH BUOY ACROSS THE POOL", confirmation: "A sea lion surfaces beside the moving buoy.", kind: "buoy-dock" },
-      { id: "east", position: [12.5, -77.2], action: "FINISH THE ENRICHMENT CURRENT", confirmation: "The pair completes the current circuit together.", kind: "buoy-dock" },
+      { id: "west", position: [-12.6, -72.4], responsePath: [[-2.4, -70.2], [2.1, -81.1]], responseBend: 1.15, action: "RELEASE THE WEST CURRENT BUOY", confirmation: "The first buoy catches the current and the sea lions turn with it.", kind: "buoy-dock" },
+      { id: "south", position: [0, -90.1], responsePath: [[-6.1, -77.4], [6.1, -74.6]], responseBend: 1.05, action: "SEND THE SOUTH BUOY ACROSS THE POOL", confirmation: "A sea lion surfaces beside the moving buoy.", kind: "buoy-dock" },
+      { id: "east", position: [12.5, -77.2], responsePath: [[2.2, -81.8], [-2.1, -70.9]], responseBend: 1.1, action: "FINISH THE ENRICHMENT CURRENT", confirmation: "The pair completes the current circuit together.", kind: "buoy-dock" },
     ],
   },
   "monkey-canopy-rig": {
