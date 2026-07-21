@@ -81,6 +81,15 @@ test("Whiskers is a project-original, spatial museum quest with a variable galle
   assert.match(museum, /new THREE\.CatmullRomCurve3/);
   assert.match(museum, /whiskers-brass-pawprint-waypoint/);
   assert.match(museum, /WHISKERS_FOUND/);
+  assert.match(museum, /museum-continuous-warm-terrazzo-gallery-runner/);
+  assert.match(museum, /museum-central-gallery-grounded-pilaster/);
+  assert.match(museum, /museum-central-gallery-overhead-lintel/);
+  assert.match(museum, /museum-central-gallery-warm-pendant/);
+  assert.match(museum, /museum-scene-owned-warm-hemisphere-light/);
+  assert.match(museum, /museum-scene-owned-conservation-fill-light/);
+  assert.match(museum, /museum-scene-owned-skylight-key/);
+  assert.match(museum, /museum-scene-owned-gallery-pool-light/);
+  assert.match(museum, /current: this\.whiskersStateValue === "COMPLETE" \? this\.whiskersOrder\.length : this\.whiskersWaypointIndex/);
   assert.match(animals, /createWhiskersCat/);
   assert.match(generator, /ASSET_ID = "whiskers-cat"/);
   assert.match(generator, /CLIP_NAMES = \("CatIdle", "CatWalk", "CatPounce"\)/);

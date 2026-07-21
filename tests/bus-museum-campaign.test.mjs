@@ -232,6 +232,12 @@ test("the canonical first-person fur sampler becomes ready in every scene", asyn
   assert.match(game, /qaInput === "busmissedexit"\s*\?\s*"missed-exit"/);
 });
 
+test("the Whiskers review checkpoint starts inside the playable encounter", async () => {
+  const game = await readSource("../app/game/SubwayGame.tsx");
+  assert.match(game, /qaInput === "museumwhiskers"[\s\S]{0,260}player\.set\(-7, reviewMuseum\.floorHeight\(-7, 17\) \+ 1\.48, 17\)/);
+  assert.match(game, /player\.set\(-7, reviewMuseum\.floorHeight\(-7, 17\) \+ 1\.48, 17\);[\s\S]{0,80}yaw = 0/);
+});
+
 test("mobile shuttle controls expose both sequential gear shifts", async () => {
   const touch = await readSource("../app/game/mobile/TouchControls.tsx");
 

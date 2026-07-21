@@ -1708,7 +1708,10 @@ export function SubwayGame({
                   : "megatherium",
         );
         if (qaInput === "museumwhiskers" && reviewMuseum) {
-          player.set(-7, reviewMuseum.floorHeight(-7, 20) + 1.48, 20);
+          // Stage within Whiskers' actual interaction radius, looking through
+          // the rotunda toward her first hideout instead of into the empty
+          // threshold between the exterior ramp and the gallery floor.
+          player.set(-7, reviewMuseum.floorHeight(-7, 17) + 1.48, 17);
           yaw = 0;
         }
         if (

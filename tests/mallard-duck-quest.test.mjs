@@ -42,6 +42,10 @@ test("Tanner rewards yielding to his family and becomes a persistent companion",
   assert.equal(quest.consumeEvent()?.kind, "DUCK_CALLED");
   assert.match(quest.instruction, /LET TANNER'S FAMILY PASS/);
   assert.match(quest.instruction, /0%/);
+  const ripples = quest.root.children.filter(child => child.name === "tanner-family-diegetic-crossing-ripple");
+  assert.equal(ripples.length, 6, "Tanner's route should read through restrained water movement rather than a floating checkpoint ribbon");
+  quest.update(.01, .01, { player: encounter, locomotion: "rowboat", rowboatPosition: encounter, rowboatSpeedMetersPerSecond: 0 });
+  assert.ok(ripples.every(ripple => ripple.visible), "crossing ripples should appear only once Tanner asks the player to yield");
 
   const respectfulBoatPosition = quest.currentTarget.clone().add(new THREE.Vector3(0, 0, 10));
   quest.update(.1, .1, { player: respectfulBoatPosition, locomotion: "rowboat", rowboatPosition: respectfulBoatPosition, rowboatSpeedMetersPerSecond: 0 });

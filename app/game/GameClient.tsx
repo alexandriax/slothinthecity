@@ -452,9 +452,11 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
             } else if (qaInput === "squirrelacorn") {
               squirrelQuest.interact(squirrelQuest.squirrel.root.position);
               branchRoute = squirrelQuest.branch;
-              branchProgress = .72;
+              branchProgress = .58;
               branchPose(squirrelQuest.branch, branchProgress, player);
-              yaw = Math.atan2(-(squirrelQuest.acornPosition.x - player.x), -(squirrelQuest.acornPosition.z - player.z));
+              const acornDirection = squirrelQuest.acornPosition.clone().sub(player);
+              yaw = Math.atan2(-acornDirection.x, -acornDirection.z);
+              pitch = Math.atan2(acornDirection.y, Math.hypot(acornDirection.x, acornDirection.z));
             } else {
               squirrelRecruited = true;
               player.copy(squirrelQuest.treePosition).add(new THREE.Vector3(5.2, 1.48, 3.4));

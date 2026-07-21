@@ -102,3 +102,10 @@ test("Zap's production asset retains original source, PBR, LOD, review, and runt
   assert.ok(manifest.species.some(species => species.id === "eastern-gray-squirrel"));
   assert.match(runtime, /"eastern-gray-squirrel"/);
 });
+
+test("Zap's direct acorn checkpoint frames the actual branch objective", async () => {
+  const game = await readFile(new URL("../app/game/GameClient.tsx", import.meta.url), "utf8");
+  assert.match(game, /qaInput === "squirrelacorn"[\s\S]{0,420}branchProgress = \.58/);
+  assert.match(game, /const acornDirection = squirrelQuest\.acornPosition\.clone\(\)\.sub\(player\)/);
+  assert.match(game, /pitch = Math\.atan2\(acornDirection\.y, Math\.hypot\(acornDirection\.x, acornDirection\.z\)\)/);
+});

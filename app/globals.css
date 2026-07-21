@@ -500,12 +500,6 @@ button { font: inherit; }
 .experience-settings-trigger[aria-expanded="true"] .experience-settings-gear { transform:rotate(45deg); }
 .experience-settings-panel { scrollbar-gutter:stable; overscroll-behavior:contain; }
 .experience-settings-close { padding:0 !important; font-size:20px !important; font-weight:400 !important; line-height:1 !important; }
-body:has(.game-shell[data-side-quest]:not([data-side-quest="none"])) .experience-settings,
-body:has(.game-shell[data-side-quest]:not([data-side-quest="none"])) .debug-jump-menu,
-body.zoo-side-quest-open .experience-settings,
-body.zoo-side-quest-open .debug-jump-menu {
-  display:none !important;
-}
 .debug-jump-menu {
   position:fixed;
   z-index:240;

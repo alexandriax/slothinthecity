@@ -40,8 +40,11 @@ export type LakeDuckQuestOptions = {
 
 const WATER_Y = THE_LAKE_SURFACE_Y + .065;
 const ROAM_CENTER = new THREE.Vector3(55, WATER_Y, -203);
-const CROSSING_START = new THREE.Vector3(51, WATER_Y, -202);
-const CROSSING_END = new THREE.Vector3(72, WATER_Y, -230);
+// Keep Tanner's waiting family centered in the approaching rower's view. The
+// former west-bank origin pushed three ducks outside the camera frustum the
+// moment the encounter began, making the right-of-way lesson feel abstract.
+const CROSSING_START = new THREE.Vector3(56.5, WATER_Y, -203);
+const CROSSING_END = new THREE.Vector3(70.5, WATER_Y, -229);
 const CROSSING_MIDPOINT = CROSSING_START.clone().lerp(CROSSING_END, .5);
 const CROSSING_DURATION = 5.2;
 const FAMILY_OFFSETS = [
@@ -75,6 +78,7 @@ export class LakeDuckQuest {
   readonly duck: ZooAnimalRig;
   readonly family: readonly ZooAnimalRig[];
   private readonly events: LakeDuckQuestEvent[] = [];
+  private readonly crossingRipples: THREE.Mesh[] = [];
   private readonly encounterRadius: number;
   private readonly requiredYieldSeconds: number;
   private readonly previous = new THREE.Vector3();
@@ -131,6 +135,23 @@ export class LakeDuckQuest {
       reed.rotation.z = Math.sin(index * 2.1) * .07;
       reed.scale.y = .72 + (index % 4) * .16;
       this.root.add(reed);
+    }
+
+    // Subtle surface disturbances communicate the ducks' physical route
+    // without a glowing checkpoint ribbon. They appear only during the
+    // manners encounter and move gently with the water.
+    for (let index = 0; index < 6; index++) {
+      const ripple = new THREE.Mesh(
+        new THREE.RingGeometry(.34 + index % 2 * .08, .39 + index % 2 * .08, 28),
+        new THREE.MeshBasicMaterial({ color: "#c7d4b0", transparent: true, opacity: .11, depthWrite: false, side: THREE.DoubleSide }),
+      );
+      ripple.name = "tanner-family-diegetic-crossing-ripple";
+      ripple.position.lerpVectors(CROSSING_START, CROSSING_END, (index + .55) / 6.4);
+      ripple.position.y = WATER_Y + .012;
+      ripple.rotation.x = -Math.PI / 2;
+      ripple.visible = false;
+      this.crossingRipples.push(ripple);
+      this.root.add(ripple);
     }
   }
 
@@ -198,6 +219,15 @@ export class LakeDuckQuest {
     else if (this.stateValue === "CROSSING") this.updateCrossing(elapsed, context);
     else if (this.stateValue === "HONORED") this.updateHonored(elapsed, context);
     else this.updateFollowing(elapsed, delta, context);
+    const crossingVisible = this.stateValue === "WAITING_FOR_YIELD" || this.stateValue === "CROSSING";
+    this.crossingRipples.forEach((ripple, index) => {
+      ripple.visible = crossingVisible;
+      if (!crossingVisible) return;
+      const pulse = 1 + Math.sin(elapsed * 1.7 - index * .72) * .16;
+      ripple.scale.setScalar(pulse);
+      const material = ripple.material as THREE.MeshBasicMaterial;
+      material.opacity = .075 + (Math.sin(elapsed * 1.7 - index * .72) + 1) * .03;
+    });
     this.family.forEach(member => { if (member.root.visible) member.update(elapsed, delta); });
   }
 

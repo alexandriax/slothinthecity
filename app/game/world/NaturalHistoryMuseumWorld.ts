@@ -249,6 +249,21 @@ function addArchitecture(root: THREE.Group, textures: GameTextures, ownedTexture
   glass.forceSinglePass = true;
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(96, 290), new THREE.MeshStandardMaterial({ color: "#aa9e87", map: textures.stone, roughness: .7, metalness: .05 }));
   floor.name = "museum-polished-stone-floor"; floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, -90); root.add(floor);
+  const galleryRunner = new THREE.Mesh(
+    new THREE.PlaneGeometry(18.5, 228),
+    new THREE.MeshStandardMaterial({ color: "#675f52", map: textures.stone, roughness: .74, metalness: .04 }),
+  );
+  galleryRunner.name = "museum-continuous-warm-terrazzo-gallery-runner";
+  galleryRunner.rotation.x = -Math.PI / 2;
+  galleryRunner.position.set(0, .018, -106);
+  root.add(galleryRunner);
+  const galleryBrass = new THREE.MeshStandardMaterial({ color: "#9c8147", metalness: .62, roughness: .42 });
+  for (const x of [-9.15, 9.15]) {
+    const inlay = new THREE.Mesh(new RoundedBoxGeometry(.11, .026, 228, 2, .012), galleryBrass);
+    inlay.name = "museum-continuous-brass-floor-inlay";
+    inlay.position.set(x, .035, -106);
+    root.add(inlay);
+  }
   const plaza = new THREE.Mesh(new THREE.PlaneGeometry(126, 66), new THREE.MeshStandardMaterial({ color: "#8c887d", map: textures.stone, roughness: .9 })); plaza.rotation.x = -Math.PI / 2; plaza.position.set(0, -.02, 47); root.add(plaza);
   const park = new THREE.Mesh(new THREE.PlaneGeometry(80, 70), new THREE.MeshStandardMaterial({ color: "#425d39", map: textures.ground, roughness: 1 })); park.rotation.x = -Math.PI / 2; park.position.set(83, -.03, 45); root.add(park);
   const facade = new THREE.Group(); facade.name = "american-museum-central-park-west-facade";
@@ -367,6 +382,35 @@ function addArchitecture(root: THREE.Group, textures: GameTextures, ownedTexture
     addWall("museum-cross-gallery-west-partition", -33, 4.4, z, 22, 8.8, 2.1, wall);
     addWall("museum-cross-gallery-east-partition", 33, 4.4, z, 22, 8.8, 2.1, wall);
   }
+  // A repeating architectural frame gives the 230-metre gallery a readable
+  // human scale. Previously its distant signs floated against fog because the
+  // only longitudinal walls sat beyond the first-person camera's field of
+  // view.
+  const galleryFrames = [8, -31, -61, -92, -122, -153, -183, -218];
+  galleryFrames.forEach((z, index) => {
+    const surface = index % 2 ? darkWall : wall;
+    for (const x of [-13.5, 13.5]) {
+      addWall("museum-central-gallery-grounded-pilaster", x, 4.6, z, 1.15, 9.2, 1.2, surface);
+      boxes.push({ minX: x - .575, maxX: x + .575, minZ: z - .6, maxZ: z + .6 });
+      const base = new THREE.Mesh(new RoundedBoxGeometry(1.65, .34, 1.65, 4, .06), galleryBrass);
+      base.name = "museum-central-gallery-pilaster-brass-foot";
+      base.position.set(x, .17, z);
+      root.add(base);
+    }
+    addWall("museum-central-gallery-overhead-lintel", 0, 9.15, z, 28.15, 1.05, 1.2, surface);
+    const medallion = new THREE.Mesh(new THREE.RingGeometry(2.45, 2.62, 56), galleryBrass);
+    medallion.name = "museum-brass-floor-medallion";
+    medallion.rotation.x = -Math.PI / 2;
+    medallion.position.set(0, .052, z + 2.1);
+    root.add(medallion);
+    const pendant = new THREE.Mesh(
+      new THREE.SphereGeometry(.3, 18, 12),
+      new THREE.MeshStandardMaterial({ color: "#f5dfaa", emissive: "#e1ac55", emissiveIntensity: 1.15, roughness: .28 }),
+    );
+    pendant.name = "museum-central-gallery-warm-pendant";
+    pendant.position.set(0, 8.35, z + 1.1);
+    root.add(pendant);
+  });
   const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(92, 220), new THREE.MeshStandardMaterial({ color: "#e4ddcf", roughness: .96, side: THREE.DoubleSide })); ceiling.rotation.x = Math.PI / 2; ceiling.position.set(0, 11.2, -105); root.add(ceiling);
   for (let z = 9; z > -220; z -= 26) for (const x of [-24, 0, 24]) {
     const fixture = new THREE.Mesh(new THREE.CylinderGeometry(.28, .5, .18, 12), new THREE.MeshStandardMaterial({ color: "#eee2bd", emissive: "#ffe2a2", emissiveIntensity: 1.25 })); fixture.position.set(x, 8.8, z); root.add(fixture);
@@ -1261,6 +1305,28 @@ export class NaturalHistoryMuseumWorld {
     this.quality = quality;
     this.whiskersOrder = whiskersRoute(sessionSeed);
     this.root.name = "american-museum-of-natural-history-exploration-level"; scene.add(this.root);
+    // The museum owns its complete light rig. Relying on station or shuttle
+    // lights made the galleries briefly look correct during a transition and
+    // then collapse into a gray fog void as soon as the previous world was
+    // disposed. These fixtures leave with this root and cannot leak between
+    // streamed scenes.
+    const museumHemisphere = new THREE.HemisphereLight("#f4ead5", "#313932", 1.45);
+    museumHemisphere.name = "museum-scene-owned-warm-hemisphere-light";
+    const museumFill = new THREE.AmbientLight("#f0ddbd", .34);
+    museumFill.name = "museum-scene-owned-conservation-fill-light";
+    const museumKey = new THREE.DirectionalLight("#fff0d0", 1.65);
+    museumKey.name = "museum-scene-owned-skylight-key";
+    museumKey.position.set(-18, 28, 34);
+    museumKey.target.position.set(0, 1.5, -98);
+    museumKey.castShadow = quality > .72;
+    museumKey.shadow.mapSize.set(quality > .86 ? 2048 : 1024, quality > .86 ? 2048 : 1024);
+    this.root.add(museumHemisphere, museumFill, museumKey, museumKey.target);
+    for (const z of [9, -49, -108, -167, -214]) {
+      const galleryLight = new THREE.PointLight("#ffe2ae", quality > .58 ? 34 : 25, 48, 1.55);
+      galleryLight.name = "museum-scene-owned-gallery-pool-light";
+      galleryLight.position.set(0, 8.1, z);
+      this.root.add(galleryLight);
+    }
     const bone = new THREE.MeshStandardMaterial({ color: "#d5c6a2", roughness: .8, metalness: .02 });
     addArchitecture(this.root, textures, this.ownedTextures, quality, this.boxes);
     addGalleryFixtures(this.root, textures, this.ownedTextures, quality);
@@ -1411,7 +1477,12 @@ export class NaturalHistoryMuseumWorld {
   get whiskersQuestState() { return this.whiskersStateValue; }
   get isWhiskersQuestActive() { return this.whiskersStateValue === "TRAIL"; }
   get isWhiskersQuestComplete() { return this.whiskersStateValue === "COMPLETE"; }
-  get whiskersProgress() { return { current: Math.min(this.whiskersWaypointIndex + 1, this.whiskersOrder.length), total: this.whiskersOrder.length }; }
+  get whiskersProgress() {
+    return {
+      current: this.whiskersStateValue === "COMPLETE" ? this.whiskersOrder.length : this.whiskersWaypointIndex,
+      total: this.whiskersOrder.length,
+    };
+  }
   get whiskersObjectiveTarget() {
     const hideout = WHISKERS_HIDEOUTS[this.whiskersOrder[this.whiskersWaypointIndex]];
     return hideout.position.clone().setY(1.48);
