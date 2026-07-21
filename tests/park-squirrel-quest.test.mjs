@@ -105,7 +105,10 @@ test("Zap's production asset retains original source, PBR, LOD, review, and runt
 
 test("Zap's direct acorn checkpoint frames the actual branch objective", async () => {
   const game = await readFile(new URL("../app/game/GameClient.tsx", import.meta.url), "utf8");
-  assert.match(game, /qaInput === "squirrelacorn"[\s\S]{0,420}branchProgress = \.58/);
+  assert.match(game, /qaInput === "squirrelacorn"[\s\S]{0,520}distanceTo\(squirrelQuest\.acornPosition\) > 1\.46/);
   assert.match(game, /const acornDirection = squirrelQuest\.acornPosition\.clone\(\)\.sub\(player\)/);
   assert.match(game, /pitch = Math\.atan2\(acornDirection\.y, Math\.hypot\(acornDirection\.x, acornDirection\.z\)\)/);
+  assert.match(game, /Find out what Zap is watching/);
+  assert.match(game, /Help Zap recover his favorite acorn/);
+  assert.match(game, /targetActive: !localQuestCopy && parkStage !== "FORAGE"/);
 });

@@ -234,8 +234,12 @@ test("the canonical first-person fur sampler becomes ready in every scene", asyn
 
 test("the Whiskers review checkpoint starts inside the playable encounter", async () => {
   const game = await readSource("../app/game/SubwayGame.tsx");
-  assert.match(game, /qaInput === "museumwhiskers"[\s\S]{0,260}player\.set\(-7, reviewMuseum\.floorHeight\(-7, 17\) \+ 1\.48, 17\)/);
-  assert.match(game, /player\.set\(-7, reviewMuseum\.floorHeight\(-7, 17\) \+ 1\.48, 17\);[\s\S]{0,80}yaw = 0/);
+  assert.match(game, /qaInput === "museumwhiskers"[\s\S]{0,360}const whiskersTarget = reviewMuseum\.whiskersObjectiveTarget/);
+  assert.match(game, /reviewMuseum\.resolvePlayer\(candidate, candidateVelocity\)/);
+  assert.match(game, /reviewMuseum\.whiskersInteractionHint\(candidate\)/);
+  assert.match(game, /reviewMuseum\.beginWhiskersTrail\(gameTime\)/);
+  assert.match(game, /whiskersStoryVisible = pursuingWhiskers \|\| Boolean\(whiskersHint\)/);
+  assert.match(game, /wayfinding: pursuingWhiskers \|\| !whiskersStoryVisible/);
 });
 
 test("mobile shuttle controls expose both sequential gear shifts", async () => {

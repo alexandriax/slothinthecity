@@ -66,6 +66,7 @@ export class ParkSquirrelQuest {
   readonly tree: ClimbableTree;
   readonly branch: BranchRoute;
   readonly acorn = new THREE.Group();
+  readonly acornLight = new THREE.PointLight("#f2c67e", 0, 2.35, 2);
   readonly acornPosition = new THREE.Vector3();
   readonly treePosition = new THREE.Vector3();
   private readonly events: ParkSquirrelQuestEvent[] = [];
@@ -90,6 +91,12 @@ export class ParkSquirrelQuest {
     this.branch = favoriteBranch(world, this.tree);
     this.treePosition.set(this.tree.x, this.tree.baseY, this.tree.z);
     this.acornPosition.lerpVectors(this.branch.start, this.branch.end, .72);
+    const branchDirection = this.branch.end.clone().sub(this.branch.start).setY(0).normalize();
+    const branchSide = new THREE.Vector3(-branchDirection.z, 0, branchDirection.x);
+    // Seat the shell against the upper shoulder of the limb instead of on its
+    // centerline. From the climb approach the silhouette now reads beside the
+    // branch while remaining physically wedged against its bark.
+    this.acornPosition.addScaledVector(branchSide, .18);
     this.acornPosition.y += this.branch.radius + .12;
 
     this.squirrel = createEasternGraySquirrel(textures, quality);
@@ -110,7 +117,7 @@ export class ParkSquirrelQuest {
 
     const shell = new THREE.Mesh(
       new THREE.SphereGeometry(.16, 20, 14),
-      new THREE.MeshStandardMaterial({ color: "#80512c", roughness: .79, metalness: 0 }),
+      new THREE.MeshStandardMaterial({ color: "#80512c", emissive: "#241307", emissiveIntensity: .14, roughness: .79, metalness: 0 }),
     );
     shell.name = "zap-favorite-acorn-shell";
     shell.scale.set(.84, 1.25, .84);
@@ -133,7 +140,9 @@ export class ParkSquirrelQuest {
     this.acorn.position.copy(this.acornPosition);
     this.acorn.rotation.set(.28, .7, -.22);
     this.acorn.userData.questObject = "favorite-acorn";
-    this.root.add(this.acorn);
+    this.acornLight.name = "zap-favorite-acorn-warm-canopy-glint";
+    this.acornLight.position.copy(this.acornPosition).add(new THREE.Vector3(0, .12, 0));
+    this.root.add(this.acorn, this.acornLight);
 
     // A few broken cup fragments at the roots hint at Zap's habit without a
     // quest beacon or explanatory sign.
@@ -219,6 +228,9 @@ export class ParkSquirrelQuest {
     } else if (this.stateValue === "ACORN_FALLING") this.updateFalling(delta, context);
     else if (this.stateValue === "REUNITING") this.updateReunion(delta, context);
     else this.updateFollowing(delta, context);
+    const acornFocused = this.acorn.visible && this.stateValue !== "AVAILABLE" && this.stateValue !== "FOLLOWING";
+    this.acornLight.position.copy(this.acorn.position).add(new THREE.Vector3(0, .12, 0));
+    this.acornLight.intensity = acornFocused ? 3.2 + Math.sin(elapsed * 2.7) * .45 : 0;
     this.squirrel.update(elapsed, delta);
   }
 

@@ -88,6 +88,8 @@ test("Whiskers is a project-original, spatial museum quest with a variable galle
   assert.match(museum, /museum's tan and white cat/);
   assert.match(museum, /resident-gallery-cat/);
   assert.match(museum, /function whiskersRoute\(seed: number\)/);
+  assert.match(museum, /if \(distance > 5\.2\) return null/);
+  assert.match(museum, /beginWhiskersTrail\(elapsed: number\)/);
   assert.match(museum, /new THREE\.CatmullRomCurve3/);
   assert.match(museum, /whiskers-brass-pawprint-waypoint/);
   assert.match(museum, /WHISKERS_FOUND/);

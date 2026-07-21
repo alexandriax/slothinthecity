@@ -1495,7 +1495,10 @@ export class NaturalHistoryMuseumWorld {
   whiskersInteractionHint(player: THREE.Vector3): WhiskersInteractionHint | null {
     if (this.whiskersFollowing || this.whiskersTravelCurve) return null;
     const distance = Math.hypot(player.x - this.whiskers.root.position.x, player.z - this.whiskers.root.position.z);
-    if (distance > 3.1) return null;
+    // A small cat can disappear behind a fossil plinth or a companion even at
+    // conversational distance. Keep discovery local, but give the encounter
+    // enough room to survive the museum's real exhibit collision footprints.
+    if (distance > 5.2) return null;
     const hideout = WHISKERS_HIDEOUTS[this.whiskersOrder[this.whiskersWaypointIndex]];
     return { label: hideout.label, target: this.whiskers.root.position.clone().setY(1.48), distance };
   }
@@ -1515,6 +1518,19 @@ export class NaturalHistoryMuseumWorld {
     this.beginWhiskersTravel(elapsed);
     return {
       kind: first ? "WHISKERS_TRAIL_STARTED" : "WHISKERS_TRAIL_ADVANCED",
+      progress: this.whiskersWaypointIndex,
+      total: this.whiskersOrder.length,
+      message: `${hideout.moment} Follow the glowing brass pawprints · ${this.whiskersWaypointIndex} / ${this.whiskersOrder.length}.`,
+    };
+  }
+  beginWhiskersTrail(elapsed: number) {
+    if (this.whiskersStateValue !== "AVAILABLE") return null;
+    const hideout = WHISKERS_HIDEOUTS[this.whiskersOrder[0]];
+    this.whiskersStateValue = "TRAIL";
+    this.whiskersWaypointIndex = 1;
+    this.beginWhiskersTravel(elapsed);
+    return {
+      kind: "WHISKERS_TRAIL_STARTED" as const,
       progress: this.whiskersWaypointIndex,
       total: this.whiskersOrder.length,
       message: `${hideout.moment} Follow the glowing brass pawprints · ${this.whiskersWaypointIndex} / ${this.whiskersOrder.length}.`,

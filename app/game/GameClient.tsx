@@ -25,7 +25,7 @@ type ParkStage = "FORAGE" | "BOW_BRIDGE" | "LAKE_TICKET" | "SUBWAY_ENTRANCE";
 type VehicleKind = "cart" | "rowboat" | null;
 type MotionState = "ON GROUND" | "SWIMMING" | "DRIVING" | "ROWING" | "CLIMBING" | "ON BRANCH" | "REACHING" | "LOWERING" | "DESCENDING" | "CAUGHT" | "HAWK DIVE" | "SNATCHED" | "PATH BLOCKED";
 type HawkPhase = "PATROL" | "WATCHING" | "DIVING" | "SNATCHED" | "RECOVERING";
-type HudState = { energy: number; alert: number; buds: number; ticketCollected: boolean; objective: string; objectiveShort: string; prompt: string; promptKey: string; heading: string; motion: MotionState; hint: string; threat: string; hawkPhase: HawkPhase; swimming: boolean; driving: boolean; speed: number; x: number; y: number; z: number; branchId: number; branchProgress: number; arboreal: boolean; goalDistance: number; goalBearing: number; parkStage: ParkStage; targetActive: boolean; vehicle: VehicleKind; waypointLabel: string };
+type HudState = { energy: number; alert: number; buds: number; ticketCollected: boolean; objective: string; objectiveShort: string; objectiveDetail: string; objectiveValue: string; prompt: string; promptKey: string; heading: string; motion: MotionState; hint: string; threat: string; hawkPhase: HawkPhase; swimming: boolean; driving: boolean; speed: number; x: number; y: number; z: number; branchId: number; branchProgress: number; arboreal: boolean; goalDistance: number; goalBearing: number; parkStage: ParkStage; targetActive: boolean; vehicle: VehicleKind; waypointLabel: string };
 type HawkEvent = { kind: "DIVE" | "SNATCH"; started: number; duration: number; from: THREE.Vector3; target: THREE.Vector3; rescue: THREE.Vector3; willSnatch: boolean };
 
 function hasTouchInput() {
@@ -51,7 +51,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
   const [mouseCaptured, setMouseCaptured] = useState(false);
   const [touchCapable, setTouchCapable] = useState(false);
   const [pointerLockAvailable] = useState(() => typeof window !== "undefined" && !hasTouchInput() && typeof HTMLCanvasElement.prototype.requestPointerLock === "function" && matchMedia("(pointer: fine)").matches && !isAutomatedQaSession(location.search, location.hostname));
-  const [hud, setHud] = useState<HudState>({ energy: 100, alert: 6, buds: 0, ticketCollected: false, objective: "Forage five buds across trail and canopy", objectiveShort: "FORAGE", prompt: "", promptKey: "", heading: "N", motion: "ON GROUND", hint: "E climbs a nearby trunk · W / S moves · Shift grips", threat: "PATROL DISTANT", hawkPhase: "PATROL", swimming: false, driving: false, speed: 0, x: START.x, y: 0, z: START.z, branchId: -1, branchProgress: 0, arboreal: false, goalDistance: Math.hypot(BOW_BRIDGE_TARGET.x - START.x, BOW_BRIDGE_TARGET.z - START.z), goalBearing: 0, parkStage: "FORAGE", targetActive: false, vehicle: null, waypointLabel: "Bow Bridge" });
+  const [hud, setHud] = useState<HudState>({ energy: 100, alert: 6, buds: 0, ticketCollected: false, objective: "Forage five buds across trail and canopy", objectiveShort: "FORAGE", objectiveDetail: "0 / 5 tender buds foraged", objectiveValue: "0 / 5", prompt: "", promptKey: "", heading: "N", motion: "ON GROUND", hint: "E climbs a nearby trunk · W / S moves · Shift grips", threat: "PATROL DISTANT", hawkPhase: "PATROL", swimming: false, driving: false, speed: 0, x: START.x, y: 0, z: START.z, branchId: -1, branchProgress: 0, arboreal: false, goalDistance: Math.hypot(BOW_BRIDGE_TARGET.x - START.x, BOW_BRIDGE_TARGET.z - START.z), goalBearing: 0, parkStage: "FORAGE", targetActive: false, vehicle: null, waypointLabel: "Bow Bridge" });
   const setPhase = useCallback((next: Phase) => {
     phaseRef.current = next;
     setPhaseState(next);
@@ -446,13 +446,23 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
           } else if (["squirrelquest", "squirrelacorn", "squirrelfollowing"].includes(qaInput ?? "")) {
             alert = 5; nextHawkPassAt = Number.POSITIVE_INFINITY;
             if (qaInput === "squirrelquest") {
-              player.copy(squirrelQuest.squirrel.root.position).add(new THREE.Vector3(0, 1.48, 3.1));
+              const outward = squirrelQuest.squirrel.root.position.clone().sub(squirrelQuest.treePosition).setY(0).normalize();
+              const side = new THREE.Vector3(-outward.z, 0, outward.x);
+              player.copy(squirrelQuest.squirrel.root.position).addScaledVector(outward, 2).addScaledVector(side, 1.25);
               player.y = groundHeight(player.x, player.z);
-              yaw = Math.atan2(-(squirrelQuest.squirrel.root.position.x - player.x), -(squirrelQuest.squirrel.root.position.z - player.z));
+              const squirrelDirection = squirrelQuest.squirrel.root.position.clone().add(new THREE.Vector3(0, .32, 0)).sub(player);
+              yaw = Math.atan2(-squirrelDirection.x, -squirrelDirection.z);
+              pitch = Math.atan2(squirrelDirection.y, Math.hypot(squirrelDirection.x, squirrelDirection.z));
             } else if (qaInput === "squirrelacorn") {
               squirrelQuest.interact(squirrelQuest.squirrel.root.position);
               branchRoute = squirrelQuest.branch;
-              branchProgress = .58;
+              const reviewPose = new THREE.Vector3();
+              branchProgress = .7;
+              for (let amount = .08; amount <= .7; amount += .01) {
+                if (branchPose(squirrelQuest.branch, amount, reviewPose).distanceTo(squirrelQuest.acornPosition) > 1.46) continue;
+                branchProgress = amount;
+                break;
+              }
               branchPose(squirrelQuest.branch, branchProgress, player);
               const acornDirection = squirrelQuest.acornPosition.clone().sub(player);
               yaw = Math.atan2(-acornDirection.x, -acornDirection.z);
@@ -965,13 +975,25 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
           const hint = activeBoat ? `${Math.round(Math.abs(vehicleSpeed) * 3.6)} km/h · W / S row · A / D steer · Space brake · ${duckInteraction ? "E greet Tanner" : "E exit"}` : drivingCart ? `${Math.round(Math.abs(vehicleSpeed) * 3.6)} km/h · W / S drive · A / D steer · Space brake · E exit` : hawkEvent?.kind === "SNATCH" ? "Recoverable snatch · the hawk will drop you beneath nearby cover" : hawkEvent?.kind === "DIVE" ? "Break its line of sight: reach canopy or enter the water" : gameTime < caughtUntil ? "Lower branch caught · grip secure" : transfer ? (transfer.kind === "DROP" ? "Lowering to the highlighted branch" : "Reaching hand-over-hand") : branchRoute ? (branchRoute.corridorId ? "Hold W for continuous tree-to-tree travel · look or steer at junctions" : "W / S crawl · endpoint branches auto-grab · Ctrl or Space descends") : climbingTree ? (energy < 18 ? "Rest in place to recover energy · Ctrl descends" : "W / S climb · E enters a branch · Ctrl descends") : controlledDescent ? "A safe descent is active · Shift slows the lowering motion" : swimming ? (energy < 20 ? "Rest on the surface to recover · swimming never stops completely" : "Slower strokes · water cools hawk awareness · rest to recover energy") : blockedBy === "TREE" ? "Solid trunk · face its marker and press E to climb" : blockedBy === "LANDMARK" ? "Solid park structure · use or steer around it" : gameTime < gripHintUntil ? "Move within arm’s reach of a marked trunk, then press E" : energy < 20 ? (moving ? "Low energy slows you, but never freezes movement" : "Resting — energy recovering quickly") : moving ? "Walking drains energy · stop to recover or forage a bud" : "Resting restores energy · tender buds restore 30";
           const threat = hawkPhase === "SNATCHED" ? "SNATCHED · RECOVERING" : hawkPhase === "DIVING" ? "DIVE PASS INBOUND" : hawkPhase === "RECOVERING" ? "DISORIENTED · SAFE" : drivingCart ? "CART ROOF COVER" : activeBoat || swimming ? "WATER SHELTER" : alert >= 85 ? "DANGER · FIND COVER" : hawkPhase === "WATCHING" ? "HAWK WATCHING" : "PATROL DISTANT";
           const campaignCopy = parkStage === "FORAGE"
-            ? { objective: "Forage five buds across trail and canopy", short: "FORAGE", value: `${Math.min(collected.current.size, 5)} / 5 BUDS`, label: "Bow Bridge" }
+            ? { objective: "Forage five buds across trail and canopy", short: "FORAGE", detail: `${Math.min(collected.current.size, 5)} / 5 tender buds foraged`, value: `${Math.min(collected.current.size, 5)} / 5`, label: "Bow Bridge" }
             : parkStage === "BOW_BRIDGE"
-              ? { objective: "Head south to Bow Bridge on The Lake", short: "BRIDGE", value: `${Math.round(goalDistance)} M`, label: "Bow Bridge" }
+              ? { objective: "Head south to Bow Bridge on The Lake", short: "BRIDGE", detail: `${Math.round(goalDistance)} m to Bow Bridge`, value: `${Math.round(goalDistance)} M`, label: "Bow Bridge" }
               : parkStage === "LAKE_TICKET"
-                ? { objective: "Recover your Bronx Zoo ticket from the island in The Lake", short: "ISLAND", value: `${Math.round(goalDistance)} M`, label: "Bronx Zoo ticket" }
-                : { objective: "Descend into the 5 Av / 59 St subway for the Bronx Zoo", short: "SUBWAY", value: `${Math.round(goalDistance)} M`, label: "5 Av / 59 St stairs" };
-          setHud({ energy, alert, buds: Math.min(collected.current.size, 5), ticketCollected, objective: campaignCopy.objective, objectiveShort: campaignCopy.short, prompt, promptKey, heading: directions[Math.round(head / (Math.PI / 4)) % 8], motion, hint, threat, hawkPhase, swimming, driving: Boolean(drivingCart || activeBoat), speed: vehicleSpeed, x: player.x, y: player.y, z: player.z, branchId: branchRoute?.id ?? -1, branchProgress, arboreal: Boolean(climbingTree || branchRoute || transfer || controlledDescent || dropVelocity < 0), goalDistance, goalBearing, parkStage, targetActive: parkStage !== "FORAGE", vehicle: activeBoat ? "rowboat" : drivingCart ? "cart" : null, waypointLabel: campaignCopy.label });
+                ? { objective: "Recover your Bronx Zoo ticket from the island in The Lake", short: "ISLAND", detail: ticketCollected ? "Zoo admission secured" : "Zoo ticket awaiting recovery", value: `${Math.round(goalDistance)} M`, label: "Bronx Zoo ticket" }
+                : { objective: "Descend into the 5 Av / 59 St subway for the Bronx Zoo", short: "SUBWAY", detail: ticketCollected ? "Zoo admission secured" : "Zoo ticket awaiting recovery", value: `${Math.round(goalDistance)} M`, label: "5 Av / 59 St stairs" };
+          const localQuestCopy = squirrelInteraction || squirrelQuest.state === "SEEKING_ACORN" || squirrelQuest.state === "ACORN_FALLING" || squirrelQuest.state === "REUNITING"
+            ? squirrelQuest.state === "AVAILABLE"
+              ? { objective: "Find out what Zap is watching", short: "ZAP", detail: "Optional park story · no global waypoint", value: "NEARBY", label: "Zap · favorite acorn" }
+              : squirrelQuest.state === "SEEKING_ACORN"
+                ? { objective: "Help Zap recover his favorite acorn", short: "ZAP", detail: "Climb the trunk · follow the real branch · dislodge the acorn", value: "ACORN", label: "Zap · favorite acorn" }
+                : { objective: "Stay with Zap while he retrieves his acorn", short: "ZAP", detail: squirrelQuest.instruction, value: "REUNITING", label: "Zap · favorite acorn" }
+            : duckInteraction || duckQuest.isMannersActive
+              ? duckQuest.state === "ROAMING"
+                ? { objective: "Meet Tanner and ask to cross", short: "TANNER", detail: "Optional lake encounter · greet him from the rowboat", value: "NEARBY", label: "Tanner · family crossing" }
+                : { objective: "Give Tanner's family the right of way", short: "TANNER", detail: duckQuest.instruction, value: duckQuest.state === "CROSSING" ? `${duckQuest.ducksCleared} / ${duckQuest.family.length}` : `${duckQuest.progress}%`, label: "Tanner · family crossing" }
+              : null;
+          const objectiveCopy = localQuestCopy ?? campaignCopy;
+          setHud({ energy, alert, buds: Math.min(collected.current.size, 5), ticketCollected, objective: objectiveCopy.objective, objectiveShort: objectiveCopy.short, objectiveDetail: objectiveCopy.detail, objectiveValue: objectiveCopy.value, prompt, promptKey, heading: directions[Math.round(head / (Math.PI / 4)) % 8], motion, hint, threat, hawkPhase, swimming, driving: Boolean(drivingCart || activeBoat), speed: vehicleSpeed, x: player.x, y: player.y, z: player.z, branchId: branchRoute?.id ?? -1, branchProgress, arboreal: Boolean(climbingTree || branchRoute || transfer || controlledDescent || dropVelocity < 0), goalDistance, goalBearing, parkStage, targetActive: !localQuestCopy && parkStage !== "FORAGE", vehicle: activeBoat ? "rowboat" : drivingCart ? "cart" : null, waypointLabel: objectiveCopy.label });
         }
       } else {
         carts.forEach(candidate => candidate.animate(gameTime)); rowboats.forEach(boat => boat.animate(gameTime)); world.animate(gameTime, player, scentRef.current, collected.current);
@@ -1027,14 +1049,14 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
     <div ref={mount} className="viewport" aria-label="3D game viewport" />
     <div className="world-grade"/><div className="world-vignette"/><div className="grain"/>
     {phase !== "intro" && <div className="hud desktop-hud">
-      <section className="mission"><div className="eyebrow">Current objective</div><h2>{hud.objective}</h2><p>{hud.parkStage === "FORAGE" || hud.parkStage === "BOW_BRIDGE" ? `${hud.buds} / 5 tender buds foraged` : hud.ticketCollected ? "Zoo admission secured" : "Zoo ticket awaiting recovery"}</p></section>
+      <section className="mission"><div className="eyebrow">Current objective</div><h2>{hud.objective}</h2><p>{hud.objectiveDetail}</p></section>
       <div className="compass"><div className="eyebrow">The Ramble · 6:42 PM</div><div className="compass-line"><span>W</span><span className="active">{hud.heading}</span><span>E</span></div></div>
       <div className="status"><div className="eyebrow">Hawk status · {Math.round(hud.alert)}%</div><strong>{hud.threat}</strong></div>
       <div className="meters"><div className={`motion-state ${hud.motion === "PATH BLOCKED" || hud.motion === "HAWK DIVE" || hud.motion === "SNATCHED" ? "warning" : ""}`}><span>{hud.motion}</span><small>{hud.hint}</small></div><div className="meter-row"><span>Energy</span><div className="meter-track"><div className="meter-fill" style={{ width: `${hud.energy}%` }}/></div><span>{Math.round(hud.energy)}</span></div><div className="meter-row"><span>Threat</span><div className="meter-track"><div className="meter-fill alert" style={{ width: `${hud.alert}%` }}/></div><span>{Math.round(hud.alert)}</span></div></div>
       {hud.prompt && <div className="interaction">{hud.promptKey && <span className="key">{hud.promptKey}</span>}{hud.prompt}</div>}
       <div className="controls-strip">{hud.vehicle === "rowboat" ? <><span>W / S Row</span><span>A / D Steer</span><span>Space Brake</span><span>{hud.promptKey === "E" && !hud.prompt.includes("EXIT") ? "E Interact" : "E Exit"}</span></> : hud.vehicle === "cart" ? <><span>W / S Drive</span><span>A / D Steer</span><span>Space Brake</span><span>E Exit</span></> : <><span>W / S Move / Auto-flow</span><span>Shift Hold Grip</span><span>E Interact</span><span>Ctrl / Space Descend</span></>}<span>P Pause</span><span>C Scent</span><span>M {audioState.muted ? "Unmute" : "Mute"}</span></div>
     </div>}
-    {phase !== "intro" && <MobileHud alert={hud.alert} buds={hud.buds} driving={hud.driving} energy={hud.energy} hawkPhase={hud.hawkPhase} motion={hud.motion} objectiveShort={hud.objectiveShort} objectiveValue={hud.parkStage === "FORAGE" ? `${hud.buds} / 5` : `${Math.round(hud.goalDistance)} M`} showMotion={!toast && hud.parkStage === "FORAGE"} speed={hud.speed} swimming={hud.swimming}/>}
+    {phase !== "intro" && <MobileHud alert={hud.alert} buds={hud.buds} driving={hud.driving} energy={hud.energy} hawkPhase={hud.hawkPhase} motion={hud.motion} objectiveShort={hud.objectiveShort} objectiveValue={hud.objectiveValue} showMotion={!toast && hud.parkStage === "FORAGE"} speed={hud.speed} swimming={hud.swimming}/>}
     {phase === "playing" && <GoalWayfinder active={hud.targetActive} bearing={hud.goalBearing} distance={hud.goalDistance} label={hud.waypointLabel}/>}
     {phase !== "intro" && <div className={`crosshair ${hud.promptKey === "E" ? "targeted" : hud.promptKey === "CTRL" ? "drop-targeted" : ""}`}/>}
     {phase !== "intro" && <div className="sr-only" role="status" aria-live="assertive" aria-atomic="true">{hud.hawkPhase === "DIVING" ? "Hawk diving. Find cover." : hud.hawkPhase === "SNATCHED" ? "The hawk caught you." : hud.motion === "PATH BLOCKED" ? "Path blocked. Choose another route." : ""}</div>}

@@ -125,6 +125,53 @@ function sidewalkWithStairOpeningGeometry() {
   const geometry = new THREE.ShapeGeometry(shape, 4); geometry.rotateX(-Math.PI / 2); geometry.computeVertexNormals(); return geometry;
 }
 
+function addGroundUnderlayPanels(
+  root: THREE.Group,
+  name: string,
+  material: THREE.Material,
+  bounds: { minX: number; maxX: number; minZ: number; maxZ: number },
+  y: number,
+  thickness: number,
+) {
+  const opening = {
+    minX: -SUBWAY_STAIR_CUTOUT.halfWidth - .45,
+    maxX: SUBWAY_STAIR_CUTOUT.halfWidth + .45,
+    minZ: SUBWAY_STAIR_CUTOUT.bottomZ - .45,
+    maxZ: SUBWAY_STAIR_CUTOUT.topZ + .55,
+  };
+  const cut = {
+    minX: Math.max(bounds.minX, opening.minX),
+    maxX: Math.min(bounds.maxX, opening.maxX),
+    minZ: Math.max(bounds.minZ, opening.minZ),
+    maxZ: Math.min(bounds.maxZ, opening.maxZ),
+  };
+  const panels = cut.minX < cut.maxX && cut.minZ < cut.maxZ
+    ? [
+        { minX: bounds.minX, maxX: bounds.maxX, minZ: bounds.minZ, maxZ: cut.minZ },
+        { minX: bounds.minX, maxX: bounds.maxX, minZ: cut.maxZ, maxZ: bounds.maxZ },
+        { minX: bounds.minX, maxX: cut.minX, minZ: cut.minZ, maxZ: cut.maxZ },
+        { minX: cut.maxX, maxX: bounds.maxX, minZ: cut.minZ, maxZ: cut.maxZ },
+      ]
+    : [bounds];
+  const group = new THREE.Group();
+  group.name = name;
+  group.userData.stairOpeningPreserved = true;
+  panels
+    .filter(panel => panel.maxX - panel.minX > .02 && panel.maxZ - panel.minZ > .02)
+    .forEach((panel, index) => {
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(panel.maxX - panel.minX, thickness, panel.maxZ - panel.minZ),
+        material,
+      );
+      mesh.name = `${name}-panel-${index + 1}`;
+      mesh.position.set((panel.minX + panel.maxX) / 2, y, (panel.minZ + panel.maxZ) / 2);
+      mesh.receiveShadow = true;
+      group.add(mesh);
+    });
+  root.add(group);
+  return group;
+}
+
 function addSouthboundParkPath(root: THREE.Group, textures: GameTextures, heightAt: (x: number, z: number) => number) {
   const subwayApproach = [
     BOW_BRIDGE_TARGET.clone(), new THREE.Vector3(-18, 0, -105), new THREE.Vector3(38, 0, -96), new THREE.Vector3(105, 0, -98),
@@ -307,24 +354,33 @@ function addFifthAvenueStreetscape(root: THREE.Group, textures: GameTextures, ow
   // and gaps behind the stair as clear sky. These underlay slabs continue
   // beyond the camera far plane so every lateral view resolves into ground,
   // trees, or architecture instead of a bright world boundary.
-  const parkGround = new THREE.Mesh(
-    new RoundedBoxGeometry(160, .2, 380, 4, .05),
+  addGroundUnderlayPanels(
+    district,
+    "fifth-avenue-continuous-central-park-ground-underlay",
     new THREE.MeshStandardMaterial({ map: textures.ground, bumpMap: textures.ground, bumpScale: .045, color: "#3f5737", roughness: .98 }),
+    { minX: -150, maxX: -10.75, minZ: -190, maxZ: 190 },
+    -.12,
+    .2,
   );
-  parkGround.name = "fifth-avenue-continuous-central-park-ground-underlay";
-  parkGround.position.set(-70, -.12, 0);
-  parkGround.receiveShadow = true;
-  district.add(parkGround);
-  const urbanUnderlay = new THREE.Mesh(new RoundedBoxGeometry(156, .18, 380, 4, .05), concrete);
-  urbanUnderlay.name = "fifth-avenue-continuous-urban-ground-underlay";
-  urbanUnderlay.position.set(66, -.13, 0);
-  urbanUnderlay.receiveShadow = true;
-  district.add(urbanUnderlay);
-  const parkPromenade = new THREE.Mesh(new RoundedBoxGeometry(8.5, .12, 350, 4, .045), concrete);
-  parkPromenade.name = "fifth-avenue-park-edge-continuous-pedestrian-promenade";
-  parkPromenade.position.set(-6.5, .015, 0);
-  parkPromenade.receiveShadow = true;
-  district.add(parkPromenade);
+  addGroundUnderlayPanels(
+    district,
+    "fifth-avenue-continuous-urban-ground-underlay",
+    concrete,
+    { minX: -2.25, maxX: 144, minZ: -190, maxZ: 190 },
+    -.13,
+    .18,
+  );
+  // The promenade fills the seam without overlapping the two broad ground
+  // slabs. Its surface stays below the entrance's authored sidewalk so the
+  // return stair never flickers or reads as a plugged tunnel.
+  addGroundUnderlayPanels(
+    district,
+    "fifth-avenue-park-edge-continuous-pedestrian-promenade",
+    concrete,
+    { minX: -10.75, maxX: -2.25, minZ: -175, maxZ: 175 },
+    -.045,
+    .08,
+  );
 
   for (const segment of [
     { z: -103, depth: 174 },

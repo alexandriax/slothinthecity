@@ -115,3 +115,11 @@ test("mallard production source and runtime contract retain original authored pr
   assert.ok(manifest.species.some(species => species.id === "mallard-duck"));
   assert.match(runtime, /"mallard-duck"/);
 });
+
+test("Tanner's local story temporarily owns the objective card without becoming a global waypoint", async () => {
+  const game = await readFile(new URL("../app/game/GameClient.tsx", import.meta.url), "utf8");
+  assert.match(game, /Meet Tanner and ask to cross/);
+  assert.match(game, /Give Tanner's family the right of way/);
+  assert.match(game, /Optional lake encounter · greet him from the rowboat/);
+  assert.match(game, /targetActive: !localQuestCopy && parkStage !== "FORAGE"/);
+});
