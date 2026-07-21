@@ -259,9 +259,18 @@ export function createZooSideQuestConfig(id: ZooSideQuestId, random = Math.rando
       };
     case "bison-prairie-seeding": {
       const wind = -.14 + random() * .28;
-      const targets = Array.from({ length: 3 }, (_, index) => {
-        const solutionAngle = -25 + randomInt(random, 0, 10) * 5;
-        const solutionPower = 40 + randomInt(random, 0, 6) * 8;
+      // Give every numbered restoration plot its own readable lateral lane.
+      // Independent random angle/power pairs could land almost exactly on top
+      // of one another, hiding an entire target and making the puzzle appear
+      // broken. Shuffle the three lanes so their order still changes per
+      // session while their screen-space footprints never overlap.
+      const solutionAngles = [-35, 0, 35];
+      for (let index = solutionAngles.length - 1; index > 0; index--) {
+        const swap = randomInt(random, 0, index);
+        [solutionAngles[index], solutionAngles[swap]] = [solutionAngles[swap], solutionAngles[index]];
+      }
+      const targets = solutionAngles.map((solutionAngle, index) => {
+        const solutionPower = 56 + randomInt(random, 0, 3) * 8;
         const landing = prairieLanding(solutionAngle, solutionPower, wind);
         return { ...landing, radius: .78 + index * .08, solutionAngle, solutionPower };
       });

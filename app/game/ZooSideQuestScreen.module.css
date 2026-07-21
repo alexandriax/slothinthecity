@@ -19,6 +19,7 @@
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   overscroll-behavior: contain;
 }
+.screen button { touch-action: manipulation; }
 
 .canopy { --accent: #f3c95e; --accent-rgb: 243, 201, 94; --deep: #07160f; }
 .water { --accent: #73e4e9; --accent-rgb: 115, 228, 233; --deep: #06151b; }
@@ -304,7 +305,7 @@
 
 @media (max-width: 620px) {
   .screen { grid-template-rows:auto minmax(0,1fr) auto; }
-  .questHeader { gap:8px; }.questHeader > div { max-width:calc(100vw - 118px); }.questHeader span { font-size:7px; }.questHeader h2 { margin-top:2px; font-size:clamp(25px,9vw,34px); }.questHeader p { display:block; max-width:62ch; overflow:hidden; font-size:9px; line-height:1.25; text-overflow:ellipsis; white-space:nowrap; }.questHeader button { min-height:36px; min-width:98px; padding:0 7px; font-size:8px; }
+  .questHeader { gap:8px; }.questHeader > div { max-width:calc(100vw - 118px); }.questHeader span { font-size:7px; }.questHeader h2 { margin-top:2px; font-size:clamp(25px,9vw,34px); }.questHeader p { display:block; max-width:62ch; overflow:hidden; font-size:9px; line-height:1.25; text-overflow:ellipsis; white-space:nowrap; }.questHeader button { min-height:44px; min-width:98px; padding:0 7px; font-size:8px; }
   .briefing { grid-template-columns:260px 180px 230px; max-height:76px; overflow:auto; padding:7px 9px; }.briefing p { font-size:9px; line-height:1.35; }.briefing strong { font-size:9px; }
   .mechanicShell { padding-bottom:env(safe-area-inset-bottom); }
   .voicesLayout,.currentLayout,.scentLayout,.sunLayout,.prairieLayout,.stripeLayout { min-height:100%; grid-template:minmax(270px,1fr) auto auto / minmax(0,1fr); }
@@ -314,31 +315,62 @@
   .currentLayout .directionPad { grid-row:2; grid-column:1; }
   .currentLayout .readoutPanel { grid-row:3; grid-column:1; display:grid; }
   .currentLayout .questStatus { grid-row:4; }
-  .aviaryStage { min-height:270px; }.perchGrid { inset:20% 1.5% 18%; gap:1px; }.birdPerch { min-height:142px; }.birdPortrait { width:56px; height:82px; transform:scale(.78); margin-bottom:-1px; }.birdPerch small { display:block; font-size:6px; }.phraseRail { top:8%; width:78%; }
-  .rigLayout,.wetlandLayout { grid-template:minmax(250px,1fr) auto / 105px minmax(190px,1fr); }.tensionTower { padding:8px; }.tensionTower > strong { font-size:21px; }.verticalGauge { height:160px; width:48px; }.primaryButton { min-height:40px; font-size:7px; }.anchorBank { gap:7px; padding:7px; }.anchorLine { min-height:54px; grid-template-columns:20px minmax(90px,1fr); padding:5px; }.anchorLine > strong { display:none; }
-  .zebraScanner { grid-template-columns:1fr; align-content:start; min-height:0; padding:8px; }.zebraSilhouette { display:none; }.stripeBand { grid-template:auto 56px auto / 1fr; }.stripeWindow { min-height:56px; }.stripeBand footer button { min-height:34px; }
+  .aviaryStage,.currentLayout .poolGrid { min-height:270px; }.perchGrid { inset:20% 1.5% 18%; gap:1px; }.birdPerch { min-height:142px; }.birdPortrait { width:56px; height:82px; transform:scale(.78); margin-bottom:-1px; }.birdPerch small { display:block; font-size:6px; }.phraseRail { top:8%; width:78%; }
+  .currentGate { width:52px; height:24px; border-width:3px; }
+  .rigLayout,.wetlandLayout { grid-template:minmax(250px,1fr) auto / 105px minmax(190px,1fr); }.tensionTower { padding:8px; }.tensionTower > strong { font-size:21px; }.verticalGauge { height:160px; width:48px; }.primaryButton,.secondaryButton { min-height:44px; font-size:7px; }.anchorBank { gap:7px; padding:7px; }.anchorLine { min-height:54px; grid-template-columns:20px minmax(90px,1fr); padding:5px; }.anchorLine > strong { display:none; }
+  .zebraScanner { grid-template-columns:1fr; align-content:start; min-height:0; padding:8px; }.zebraSilhouette { display:none; }.stripeBand { grid-template:auto 56px auto / 1fr; }.stripeWindow { min-height:56px; }.stripeBand footer button { min-height:44px; }
   .wetlandGauges { gap:12px; padding:10px; }.valveBank button { min-height:66px; grid-template-columns:34px 1fr 24px; padding:7px; }.valveBank button i { width:31px; height:31px; }.valveBank button span { display:none; }
   .windVane { width:58px; height:86px; left:calc(5% + var(--vane-index) * 24%); }.redPandaNest { font-size:36px; }
-  .mirrorStation { left:calc(17% + var(--mirror-index) * 28%); }.warmingStone { width:64px; right:0; }
+  .mirrorStation { left:calc(16% + var(--mirror-index) * 27%); }.mirrorStation > div button { width:44px; height:44px; }.warmingStone { width:60px; right:0; bottom:3%; }
   .launchControls { padding:11px; }.launchControls section button { min-height:44px; }.launchButton { min-height:48px; }
   .questStatus { min-height:42px; padding:7px 10px; }.questStatus p { font-size:9px; }
+}
+
+@media (max-width: 360px) {
+  .voicesLayout { grid-template:minmax(240px,1fr) auto auto / minmax(0,1fr); }
+  .aviaryStage { min-height:240px; }
+  .birdPerch { min-height:124px; }
+  .rigLayout { grid-template:minmax(250px,1fr) auto / 82px minmax(0,1fr); gap:6px; }
+  .tensionTower,.anchorBank { min-width:0; }
+  .anchorLine { grid-template-columns:18px minmax(0,1fr); gap:5px; }
+  .wetlandLayout { grid-template:auto auto auto / minmax(0,1fr); gap:8px; }
+  .wetlandGauges { grid-row:1; min-width:0; gap:9px; padding:9px; }
+  .wetlandGauge header strong { font-size:23px; }
+  .valveBank { grid-row:2; min-width:0; }
+  .valveBank button { min-height:58px; grid-template:1fr / 34px minmax(0,1fr) 30px; padding:7px 9px; }
+  .valveBank button i { grid-row:1; grid-column:1; }
+  .valveBank button strong { grid-row:1; grid-column:2; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .valveBank button kbd { grid-row:1; grid-column:3; }
+  .wetlandLayout .questStatus { grid-row:3; }
 }
 
 @media (max-height: 520px) and (orientation: landscape) {
   .screen { gap:6px; padding:7px max(9px,env(safe-area-inset-right)) 6px max(9px,env(safe-area-inset-left)); }
   .questHeader { padding-bottom:5px; }.questHeader h2 { font-size:27px; }.questHeader p { display:none; }
   .briefing { max-height:54px; grid-template-columns:minmax(250px,1.7fr) 190px 220px; padding:5px 8px; }.briefing p { font-size:8px; line-height:1.2; }
-  .voicesLayout,.currentLayout,.scentLayout,.sunLayout,.prairieLayout { grid-template:minmax(230px,1fr) auto / minmax(0,1fr) minmax(180px,220px); }
-  .aviaryStage,.poolGrid,.mountainCanopy,.solarYard,.prairieField { min-height:230px; }
-  .currentLayout { grid-template:185px 57px / minmax(0,1fr) minmax(180px,220px); }
-  .currentLayout .poolGrid { grid-row:1; grid-column:1; min-height:185px; }
+  .voicesLayout,.scentLayout,.sunLayout,.prairieLayout { grid-template:minmax(205px,1fr) auto / minmax(0,1fr) minmax(180px,220px); }
+  .aviaryStage,.mountainCanopy,.solarYard,.prairieField { min-height:205px; }
+  .currentLayout { grid-template:148px 93px / minmax(0,1fr) minmax(180px,220px); }
+  .currentLayout .poolGrid { grid-row:1; grid-column:1; min-height:148px; }
+  .currentLayout .currentGate { width:56px; height:22px; border-width:3px; }
   .currentLayout .buoy { transform:translate(-50%,-50%) scale(.82); }
-  .currentLayout .directionPad { grid-row:2; grid-column:1; grid-template:repeat(2,25px) / repeat(3,46px); align-self:start; gap:3px; }
+  .currentLayout .directionPad { grid-row:2; grid-column:1; grid-template:repeat(2,44px) / repeat(3,46px); align-self:start; gap:3px; }
   .currentLayout .readoutPanel { grid-row:1; grid-column:2; }
-  .currentLayout .questStatus { grid-row:2; grid-column:2; min-height:57px; }
+  .currentLayout .questStatus { grid-row:2; grid-column:2; min-height:93px; }
   .readoutPanel { padding:8px; gap:6px; }.readoutPanel p { display:none; }
   .birdPerch { min-height:128px; }.birdPortrait { transform:scale(.72); margin-bottom:-8px; }
+  .rigLayout { grid-template:minmax(205px,1fr) auto / minmax(115px,.34fr) minmax(270px,1fr); }
+  .tensionTower { padding:6px; gap:4px; }.tensionTower > strong { font-size:21px; }.verticalGauge { width:46px; height:105px; }.anchorBank { gap:5px; padding:6px; }.anchorLine { min-height:54px; padding:5px 8px; }
+  .stripeLayout { grid-template-rows:minmax(205px,1fr) auto; gap:6px; }.zebraScanner { min-height:205px; padding:31px 6px 6px; }.stripeBand { gap:4px; padding:6px; }.stripeWindow { min-height:76px; }
+  .wetlandLayout { grid-template:minmax(205px,1fr) auto / minmax(300px,1fr) minmax(230px,.7fr); }
+  .wetlandGauges { grid-template-columns:1fr 1fr; align-content:center; gap:8px 12px; padding:10px; }.wetlandGauge { gap:4px; }.wetlandGauge header strong { font-size:21px; }.wetlandGauge > div { height:27px; }.stabilityClock { grid-column:1 / -1; }
+  .valveBank { gap:5px; }.valveBank button { min-height:60px; grid-template:1fr / 38px minmax(0,1fr) 28px; padding:6px 8px; }.valveBank button i { grid-row:1; grid-column:1; }.valveBank button strong { grid-row:1; grid-column:2; }.valveBank button kbd { grid-row:1; grid-column:3; }.valveBank button span { display:none; }
   .questStatus { min-height:36px; }
+}
+
+@media (pointer: coarse) {
+  .questHeader button,.primaryButton,.secondaryButton,.directionPad button,.stripeBand footer button,.mirrorStation > div button,.launchControls section button { min-height:44px; }
+  .mirrorStation > div button { width:44px; height:44px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

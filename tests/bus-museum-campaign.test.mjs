@@ -33,7 +33,9 @@ test("zoo circulation uses habitat overlooks and routes around the sea-lion pool
   assert.match(zoo, /\[0, -52\], \[18\.5, -62\], \[18\.5, -87\], \[0, -97\]/);
   assert.match(zoo, /const ZOO_PATH_JUNCTIONS/);
   assert.match(zoo, /atJunction\(start\) \? Math\.min\(width \* \.64/);
-  assert.match(zoo, /kerbLength = Math\.max\(\.35, length - startTrim - endTrim\)/);
+  assert.match(zoo, /function addPathDrainageEdges/);
+  assert.match(zoo, /pathPointNormal\(points, segmentIndex \+ 1\)/);
+  assert.match(zoo, /const endAmount = THREE\.MathUtils\.clamp\(1 - endTrim \/ length, \.55, 1\)/);
 });
 
 test("museum shuttle is drivable through signed NYC traffic rather than a cutscene", async () => {
