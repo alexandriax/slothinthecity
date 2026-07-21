@@ -2,11 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
-import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
-import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
-import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { GoalWayfinder } from "./GoalWayfinder";
+import { AdaptiveRenderPipeline } from "./rendering/AdaptiveRenderPipeline";
 import { SlothLockPick } from "./SlothLockPick";
 import { ZooSideQuestScreen } from "./ZooSideQuestScreen";
 import type { ZooSideQuestId } from "./zooSideQuestLogic";
@@ -284,16 +281,7 @@ export function SubwayGame({
     renderer.toneMappingExposure = 1.18;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     host.appendChild(renderer.domElement);
-    let composer: EffectComposer | null = null;
-    if (budget.postProcessing && innerWidth * innerHeight < 1_750_000) {
-      composer = new EffectComposer(renderer);
-      composer.setPixelRatio(budget.pixelRatio);
-      composer.addPass(new RenderPass(scene, camera));
-      const gtao = new GTAOPass(scene, camera, innerWidth, innerHeight);
-      gtao.blendIntensity = 0.58;
-      composer.addPass(gtao);
-      composer.addPass(new OutputPass());
-    }
+    const renderPipeline = new AdaptiveRenderPipeline({ renderer, scene, camera });
     const museumRendering = () =>
       transitStage === "MUSEUM" ||
       (transitStage === "COMPLETE" && Boolean(museumWorld));
@@ -301,8 +289,7 @@ export function SubwayGame({
     // full-screen GTAO pass. On high-DPI displays that pass was the dominant
     // frame cost and made walking and scooter travel visibly choppy.
     const renderFrame = () => {
-      if (composer && !museumRendering()) composer.render();
-      else renderer.render(scene, camera);
+      renderPipeline.render(!museumRendering());
     };
     const textures = loadGameTextures(renderer, () => undefined),
       subwayDetail = worldQuality(quality.getSnapshot().activeLevel);
@@ -320,6 +307,9 @@ export function SubwayGame({
     const player = stationWorld.spawn.clone(),
       playerBeforeMovement = new THREE.Vector3(),
       velocity = new THREE.Vector3(),
+      movementForward = new THREE.Vector3(),
+      movementRight = new THREE.Vector3(),
+      movementWish = new THREE.Vector3(),
       keys = new Set<string>();
     previousStreetMix = stationWorld.streetEnvironmentMix(player);
     const sloth = createSlothRig(textures.fur);
@@ -539,22 +529,16 @@ export function SubwayGame({
       const pixelRatio = museumRendering()
         ? Math.min(next.pixelRatio, 1.25)
         : next.pixelRatio;
-      renderer.setPixelRatio(pixelRatio);
-      renderer.shadowMap.enabled = next.shadows;
-      renderer.shadowMap.type = THREE.PCFShadowMap;
-      if (composer) {
-        composer.setPixelRatio(pixelRatio);
-        composer.setSize(innerWidth, innerHeight);
-      }
+      renderPipeline.apply(next, innerWidth, innerHeight, pixelRatio);
     };
     const unsubscribeQuality = quality.subscribe(applyBudget);
+    applyBudget();
     const resize = () => {
       quality.refreshDeviceProfile();
       camera.aspect = innerWidth / innerHeight;
       camera.updateProjectionMatrix();
-      applyBudget();
       renderer.setSize(innerWidth, innerHeight);
-      composer?.setSize(innerWidth, innerHeight);
+      applyBudget();
       layoutSloth();
     };
     renderer.domElement.addEventListener("pointerdown", pointerDown);
@@ -661,6 +645,7 @@ export function SubwayGame({
               ? "LEXINGTON"
               : "WEST_FARMS";
       setTransitStage(nextStage);
+      applyBudget();
       setReturnLeg(travelDirection === "RETURN" ? station : "OUTBOUND");
       // Publish the checkpoint's real service immediately. Debug jumps and
       // streamed station arrivals must never flash the previous leg's route
@@ -1359,6 +1344,7 @@ export function SubwayGame({
         yaw,
       );
       setTransitStage("CENTRAL_PARK");
+      applyBudget();
       setReturnLeg("CENTRAL_PARK");
       setZooPhase("HOME_GROVE");
       audio.setScene("central-park", {
@@ -1814,6 +1800,7 @@ export function SubwayGame({
     let overlayBackdropRendered = false;
     function frame(timestamp?: number) {
       raf = requestAnimationFrame(frame);
+      if (document.hidden) { timer.update(timestamp); return; }
       const zooOverlayPaused = transitStage === "BRONX_ZOO" && Boolean(lockPickingRef.current || sideQuestRef.current);
       if (timestamp !== undefined && !zooOverlayPaused) quality.reportFrame(timestamp);
       timer.update(timestamp);
@@ -1832,9 +1819,9 @@ export function SubwayGame({
       }
       overlayBackdropRendered = false;
       if (transitStage === "RIDING" && interiorWorld) {
-        const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)),
-          right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)),
-          wish = new THREE.Vector3();
+        const forward = movementForward.set(-Math.sin(yaw), 0, -Math.cos(yaw)),
+          right = movementRight.set(Math.cos(yaw), 0, -Math.sin(yaw)),
+          wish = movementWish.set(0, 0, 0);
         if (keys.has("KeyW") || keys.has("ArrowUp")) wish.add(forward);
         if (keys.has("KeyS") || keys.has("ArrowDown")) wish.sub(forward);
         if (keys.has("KeyD") || keys.has("ArrowRight")) wish.add(right);
@@ -2005,9 +1992,9 @@ export function SubwayGame({
         }
         previousTrainPhase = stationWorld.trainPhase;
         previousDoorsOpen = stationWorld.doorsOpen;
-        const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)),
-          right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)),
-          wish = new THREE.Vector3();
+        const forward = movementForward.set(-Math.sin(yaw), 0, -Math.cos(yaw)),
+          right = movementRight.set(Math.cos(yaw), 0, -Math.sin(yaw)),
+          wish = movementWish.set(0, 0, 0);
         if (keys.has("KeyW") || keys.has("ArrowUp")) wish.add(forward);
         if (keys.has("KeyS") || keys.has("ArrowDown")) wish.sub(forward);
         if (keys.has("KeyD") || keys.has("ArrowRight")) wish.add(right);
@@ -2246,9 +2233,9 @@ export function SubwayGame({
           // session updating crowds, animals, shadows, and post-processing.
           return;
         }
-        const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)),
-          right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)),
-          wish = new THREE.Vector3();
+        const forward = movementForward.set(-Math.sin(yaw), 0, -Math.cos(yaw)),
+          right = movementRight.set(Math.cos(yaw), 0, -Math.sin(yaw)),
+          wish = movementWish.set(0, 0, 0);
         if (keys.has("KeyW") || keys.has("ArrowUp")) wish.add(forward);
         if (keys.has("KeyS") || keys.has("ArrowDown")) wish.sub(forward);
         if (keys.has("KeyD") || keys.has("ArrowRight")) wish.add(right);
@@ -2624,9 +2611,9 @@ export function SubwayGame({
           });
         }
       } else if (transitStage === "MUSEUM" && museumWorld) {
-        const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)),
-          right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)),
-          wish = new THREE.Vector3();
+        const forward = movementForward.set(-Math.sin(yaw), 0, -Math.cos(yaw)),
+          right = movementRight.set(Math.cos(yaw), 0, -Math.sin(yaw)),
+          wish = movementWish.set(0, 0, 0);
         if (keys.has("KeyW") || keys.has("ArrowUp")) wish.add(forward);
         if (keys.has("KeyS") || keys.has("ArrowDown")) wish.sub(forward);
         if (keys.has("KeyD") || keys.has("ArrowRight")) wish.add(right);
@@ -2788,9 +2775,9 @@ export function SubwayGame({
           });
         }
       } else if (transitStage === "CENTRAL_PARK" && parkReturnWorld) {
-        const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)),
-          right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)),
-          wish = new THREE.Vector3();
+        const forward = movementForward.set(-Math.sin(yaw), 0, -Math.cos(yaw)),
+          right = movementRight.set(Math.cos(yaw), 0, -Math.sin(yaw)),
+          wish = movementWish.set(0, 0, 0);
         if (keys.has("KeyW") || keys.has("ArrowUp")) wish.add(forward);
         if (keys.has("KeyS") || keys.has("ArrowDown")) wish.sub(forward);
         if (keys.has("KeyD") || keys.has("ArrowRight")) wish.add(right);
@@ -2964,7 +2951,7 @@ export function SubwayGame({
       rescuedParty.dispose();
       garyCompanion.dispose();
       animalMenagerie.dispose();
-      composer?.dispose();
+      renderPipeline.dispose();
       renderer.dispose();
       if (host.contains(renderer.domElement))
         host.removeChild(renderer.domElement);

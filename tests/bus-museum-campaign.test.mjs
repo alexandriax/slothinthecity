@@ -211,7 +211,7 @@ test("museum shuttle is drivable through signed NYC traffic rather than a cutsce
   assert.match(game, /new NaturalHistoryMuseumWorld\(\s*museumPreloadScene/);
   assert.match(game, /renderer\.compile\(museumPreloadScene, preloadCamera\)/);
   assert.match(game, /Math\.min\(next\.pixelRatio, 1\.25\)/);
-  assert.match(game, /composer && !museumRendering\(\)/);
+  assert.match(game, /renderPipeline\.render\(!museumRendering\(\)\)/);
 });
 
 test("the canonical first-person fur sampler becomes ready in every scene", async () => {
