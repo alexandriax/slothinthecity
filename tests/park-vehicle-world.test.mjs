@@ -91,6 +91,8 @@ test("Bow Bridge and each timber pier provide dry, elevated player support", asy
   assert.match(world, /shoreInset === 0 && \(bowBridgeSupportsPlayer\(x, z\) \|\| lakeDockSurfaceHeightAt\(x, z\) !== null\)/);
   assert.match(world, /dummy\.position\.y = dockTopAt\(definition, amount\) - \.0525/);
   assert.match(world, /return lakeDockSurfaceHeightAt\(x, z\) \?\? baseTerrainY\(x, z\)/);
+  assert.match(world, /new THREE\.Vector3\(-23\.55, THE_LAKE_SURFACE_Y - \.04, -137\.85\)/);
+  assert.doesNotMatch(world, /new THREE\.Vector3\(-23\.8, THE_LAKE_SURFACE_Y - \.04, -134\.7\)/);
   assert.match(world, /new THREE\.Vector3\(-20\.1, THE_LAKE_SURFACE_Y - \.04, -138\.2\)/);
   assert.match(world, /new THREE\.Vector3\(194\.7, THE_LAKE_SURFACE_Y - \.04, -295\.8\)/);
 });

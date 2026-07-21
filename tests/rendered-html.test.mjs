@@ -113,6 +113,11 @@ test("foraging opens the Bow Bridge, Bronx Zoo island ticket, and direct subway 
   assert.doesNotMatch(game, /tender buds?|Tender buds?/);
   const sproutBlock = world.match(/export const LEAF_SPROUTS = \[([\s\S]*?)\];/)?.[1] ?? "";
   assert.ok((sproutBlock.match(/new THREE\.Vector3/g) ?? []).length >= 10, "expected an expanded opening leaf-sprout route");
+  const sproutPoints = [...sproutBlock.matchAll(/new THREE\.Vector3\((-?\d+(?:\.\d+)?), 0, (-?\d+(?:\.\d+)?)\)/g)]
+    .map(([, x, z]) => ({ x: Number(x), z: Number(z) }));
+  const start = { x: -43, z: 54 };
+  assert.ok(sproutPoints.filter(point => Math.hypot(point.x - start.x, point.z - start.z) < 14).length <= 1, "opening sprouts should teach one pickup rather than form a spawn cluster");
+  assert.ok(sproutPoints.some(point => point.z <= -80), "added sprouts should continue down the trail toward Bow Bridge");
   assert.match(game, /parkStage === "BOW_BRIDGE"[\s\S]{0,800}parkStage = "LAKE_TICKET"/);
   assert.match(game, /actionRequested && ticketNearby[\s\S]{0,300}parkStage = "SUBWAY_ENTRANCE"/);
   assert.match(game, /RECOVER BRONX ZOO TICKET/);

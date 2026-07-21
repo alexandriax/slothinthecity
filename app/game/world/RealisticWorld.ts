@@ -14,9 +14,12 @@ import {
 } from "./CampaignLandmarks";
 
 export const LEAF_SPROUTS = [
-  new THREE.Vector3(-39.5, 0, 50), new THREE.Vector3(-35, 0, 45),
-  new THREE.Vector3(-30.5, 0, 39), new THREE.Vector3(-24, 0, 32),
-  new THREE.Vector3(-18, 0, 25),
+  // One early pickup teaches the interaction; the added sprouts then follow
+  // the southbound trail at readable intervals instead of forming a cluster
+  // around the spawn. Later placements naturally lead toward Bow Bridge.
+  new THREE.Vector3(-39, 0, 48), new THREE.Vector3(-23, 0, 31),
+  new THREE.Vector3(10, 0, -14), new THREE.Vector3(5, 0, -39),
+  new THREE.Vector3(-12, 0, -82),
   new THREE.Vector3(-12, 0, 14), new THREE.Vector3(17, 0, -4),
   new THREE.Vector3(18, 0, -20), new THREE.Vector3(-1, 0, -47),
   new THREE.Vector3(-24, 0, -58), new THREE.Vector3(-45, 0, -28),
@@ -1272,7 +1275,9 @@ export function buildRealisticWorld(scene: THREE.Scene, textures: GameTextures, 
   ticket.userData.anchorY = ticket.position.y;
 
   const rowboatSpawns: RowboatSpawn[] = [
-    { position: new THREE.Vector3(-23.8, THE_LAKE_SURFACE_Y - .04, -134.7), rotationY: .08, boatNumber: 5, name: "Bow Bridge checkpoint rowboat 5" },
+    // The center sits beyond the pier by more than the hull's 2.65 m
+    // half-length. Its entry point remains within reach of the dock end.
+    { position: new THREE.Vector3(-23.55, THE_LAKE_SURFACE_Y - .04, -137.85), rotationY: .08, boatNumber: 5, name: "Bow Bridge checkpoint rowboat 5" },
     { position: new THREE.Vector3(-20.1, THE_LAKE_SURFACE_Y - .04, -138.2), rotationY: -.18, boatNumber: 7, name: "Bow Bridge rowboat 7" },
     { position: new THREE.Vector3(-17.15, THE_LAKE_SURFACE_Y - .04, -140.4), rotationY: -.28, boatNumber: 12, name: "Bow Bridge rowboat 12" },
     { position: new THREE.Vector3(190.2, THE_LAKE_SURFACE_Y - .04, -293.2), rotationY: 2.36, boatNumber: 18, name: "Southeast shore rowboat 18" },
