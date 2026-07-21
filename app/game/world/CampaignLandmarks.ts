@@ -130,8 +130,9 @@ function addGroundUnderlayPanels(
   name: string,
   material: THREE.Material,
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number },
-  y: number,
-  thickness: number,
+  surface:
+    | { kind: "flat"; y: number; thickness: number }
+    | { kind: "terrain"; heightAt: (x: number, z: number) => number; offset: number },
 ) {
   const opening = {
     minX: -SUBWAY_STAIR_CUTOUT.halfWidth - .45,
@@ -156,15 +157,28 @@ function addGroundUnderlayPanels(
   const group = new THREE.Group();
   group.name = name;
   group.userData.stairOpeningPreserved = true;
+  group.userData.terrainFollowing = surface.kind === "terrain";
   panels
     .filter(panel => panel.maxX - panel.minX > .02 && panel.maxZ - panel.minZ > .02)
     .forEach((panel, index) => {
-      const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(panel.maxX - panel.minX, thickness, panel.maxZ - panel.minZ),
-        material,
-      );
+      const width = panel.maxX - panel.minX, depth = panel.maxZ - panel.minZ;
+      const centerX = (panel.minX + panel.maxX) / 2, centerZ = (panel.minZ + panel.maxZ) / 2;
+      let geometry: THREE.BufferGeometry;
+      if (surface.kind === "terrain") {
+        geometry = new THREE.PlaneGeometry(width, depth, Math.ceil(width / 6), Math.ceil(depth / 6));
+        geometry.rotateX(-Math.PI / 2);
+        const positions = geometry.getAttribute("position");
+        for (let vertex = 0; vertex < positions.count; vertex++) {
+          positions.setY(vertex, surface.heightAt(centerX + positions.getX(vertex), centerZ + positions.getZ(vertex)) + surface.offset);
+        }
+        positions.needsUpdate = true;
+        geometry.computeVertexNormals();
+      } else {
+        geometry = new THREE.BoxGeometry(width, surface.thickness, depth);
+      }
+      const mesh = new THREE.Mesh(geometry, material);
       mesh.name = `${name}-panel-${index + 1}`;
-      mesh.position.set((panel.minX + panel.maxX) / 2, y, (panel.minZ + panel.maxZ) / 2);
+      mesh.position.set(centerX, surface.kind === "flat" ? surface.y : 0, centerZ);
       mesh.receiveShadow = true;
       group.add(mesh);
     });
@@ -338,7 +352,7 @@ function addSubwayEntrance(root: THREE.Group, textures: GameTextures, heightAt: 
   root.add(entrance); return entrance;
 }
 
-function addFifthAvenueStreetscape(root: THREE.Group, textures: GameTextures, ownedTextures: THREE.Texture[], quality: number): CampaignObstacle[] {
+function addFifthAvenueStreetscape(root: THREE.Group, textures: GameTextures, ownedTextures: THREE.Texture[], heightAt: (x: number, z: number) => number, quality: number): CampaignObstacle[] {
   const district = new THREE.Group();
   district.name = "fifth-avenue-59-street-complete-urban-edge";
   district.position.set(SUBWAY_TARGET.x, 0, SUBWAY_TARGET.z);
@@ -351,24 +365,26 @@ function addFifthAvenueStreetscape(root: THREE.Group, textures: GameTextures, ow
 
   // The subway sits at the seam between Central Park and the avenue. The
   // original landmark geometry covered only the roads, leaving the park side
-  // and gaps behind the stair as clear sky. These underlay slabs continue
-  // beyond the camera far plane so every lateral view resolves into ground,
-  // trees, or architecture instead of a bright world boundary.
+  // and gaps behind the stair as clear sky. The park underlay follows the same
+  // authored terrain as the playable approach and stays below it; a flat slab
+  // here can rise above the cart camera wherever the park rolls downhill.
   addGroundUnderlayPanels(
     district,
     "fifth-avenue-continuous-central-park-ground-underlay",
     new THREE.MeshStandardMaterial({ map: textures.ground, bumpMap: textures.ground, bumpScale: .045, color: "#3f5737", roughness: .98 }),
     { minX: -150, maxX: -10.75, minZ: -190, maxZ: 190 },
-    -.12,
-    .2,
+    {
+      kind: "terrain",
+      heightAt: (localX, localZ) => heightAt(SUBWAY_TARGET.x + localX, SUBWAY_TARGET.z + localZ),
+      offset: -.32,
+    },
   );
   addGroundUnderlayPanels(
     district,
     "fifth-avenue-continuous-urban-ground-underlay",
     concrete,
     { minX: -2.25, maxX: 144, minZ: -190, maxZ: 190 },
-    -.13,
-    .18,
+    { kind: "flat", y: -.13, thickness: .18 },
   );
   // The promenade fills the seam without overlapping the two broad ground
   // slabs. Its surface stays below the entrance's authored sidewalk so the
@@ -378,8 +394,7 @@ function addFifthAvenueStreetscape(root: THREE.Group, textures: GameTextures, ow
     "fifth-avenue-park-edge-continuous-pedestrian-promenade",
     concrete,
     { minX: -10.75, maxX: -2.25, minZ: -175, maxZ: 175 },
-    -.045,
-    .08,
+    { kind: "flat", y: -.045, thickness: .08 },
   );
 
   for (const segment of [
@@ -625,7 +640,7 @@ export function createCampaignLandmarks(scene: THREE.Scene, textures: GameTextur
   addSouthboundParkPath(root, textures, heightAt);
   const { bridge: bowBridge, surface: bowBridgeSurface } = addBowBridge(root, textures, heightAt, ownedTextures);
   const subwayEntrance = addSubwayEntrance(root, textures, heightAt, ownedTextures, quality);
-  obstacles.push(...addFifthAvenueStreetscape(root, textures, ownedTextures, quality));
+  obstacles.push(...addFifthAvenueStreetscape(root, textures, ownedTextures, heightAt, quality));
   bowBridge.updateMatrixWorld(true);
   for (const end of [-1, 1]) for (const side of [-1, 1]) {
     const abutment = bowBridge.localToWorld(new THREE.Vector3(end * (BOW_BRIDGE_LENGTH / 2 + .6), 0, side * (BOW_BRIDGE_WIDTH / 2 + .46)));
