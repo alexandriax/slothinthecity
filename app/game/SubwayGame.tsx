@@ -1737,6 +1737,7 @@ export function SubwayGame({
         "museumentry",
         "museumwhiskers",
         "museumwhiskerstrail",
+        "museumwhiskerstrust",
         "museumscooters",
         "museumgaryscooter",
         "museumrotunda",
@@ -1798,6 +1799,7 @@ export function SubwayGame({
           qaInput === "museumentry" ||
             qaInput === "museumwhiskers" ||
             qaInput === "museumwhiskerstrail" ||
+            qaInput === "museumwhiskerstrust" ||
             qaInput === "museumscooters" ||
             qaInput === "museumgaryscooter"
             ? "entry"
@@ -1809,15 +1811,27 @@ export function SubwayGame({
                   ? "african"
                   : "megatherium",
         );
-        if ((qaInput === "museumwhiskers" || qaInput === "museumwhiskerstrail") && reviewMuseum) {
+        if ((qaInput === "museumwhiskers" || qaInput === "museumwhiskerstrail" || qaInput === "museumwhiskerstrust") && reviewMuseum) {
           // This authored rotunda sightline is collision-clear and keeps the
           // cat, architecture, entrance sign, and interaction prompt in view.
           // The former target-offset fallback could place the camera inside a
           // dinosaur plinth, producing a fog-gray void in the review scene.
+          if (qaInput === "museumwhiskerstrust") reviewMuseum.stageWhiskersTrustMoment();
           const whiskersTarget = reviewMuseum.whiskersObjectiveTarget;
-          player.set(-1.9, reviewMuseum.floorHeight(-1.9, 15) + 1.48, 15);
+          if (qaInput === "museumwhiskerstrust") {
+            player.copy(whiskersTarget).add(new THREE.Vector3(4.2, 0, 1.8));
+            player.y = reviewMuseum.floorHeight(player.x, player.z) + 1.48;
+            reviewMuseum.resolvePlayer(player, velocity);
+          } else {
+            player.set(-1.9, reviewMuseum.floorHeight(-1.9, 15) + 1.48, 15);
+          }
           const whiskersDirection = whiskersTarget.clone().sub(player);
           yaw = Math.atan2(-whiskersDirection.x, -whiskersDirection.z);
+          // Keep Whiskers visible at the edge of the trust-review frame without
+          // auto-solving the gaze condition while the reviewer is still
+          // waiting for the world to compile. A small deliberate look brings
+          // her to centre and proves the live interaction.
+          if (qaInput === "museumwhiskerstrust") yaw += innerWidth <= 600 ? .4 : .58;
           pitch = -0.16;
           if (qaInput === "museumwhiskerstrail") {
             const whiskersEvent = reviewMuseum.beginWhiskersTrail(gameTime);
@@ -1827,6 +1841,7 @@ export function SubwayGame({
             // live trail objective instead of waiting on the shared HUD clock.
             lastHud = Number.NEGATIVE_INFINITY;
           }
+          if (qaInput === "museumwhiskerstrust") lastHud = Number.NEGATIVE_INFINITY;
         }
         if (
           (qaInput === "museumscooters" || qaInput === "museumgaryscooter") &&
@@ -2775,7 +2790,7 @@ export function SubwayGame({
         );
         player.addScaledVector(velocity, delta);
         museumWorld.resolvePlayer(player, velocity);
-        museumWorld.update(gameTime, delta, player);
+        museumWorld.update(gameTime, delta, player, yaw, velocity.length());
         const movementYaw =
             velocity.lengthSq() > 0.02
               ? Math.atan2(-velocity.x, -velocity.z)
@@ -2815,6 +2830,12 @@ export function SubwayGame({
           );
         }
         actionRequested = false;
+        const whiskersEvent = museumWorld.consumeWhiskersEvent();
+        if (whiskersEvent) {
+          if (whiskersEvent.kind === "WHISKERS_FOUND") audio.playQuestComplete();
+          else audio.playUiConfirm();
+          showToast(whiskersEvent.message, whiskersEvent.kind === "WHISKERS_FOUND" ? 6800 : 5200);
+        }
         museumWorld.updateScooter(player, movementYaw);
         if (scooterRiding) player.y += 0.22;
         rescuedParty.update(
@@ -2850,6 +2871,7 @@ export function SubwayGame({
         }
         const pursuingWhiskers = museumWorld.isWhiskersQuestActive,
           whiskersStoryVisible = pursuingWhiskers || Boolean(whiskersHint),
+          whiskersTrust = museumWorld.whiskersTrust,
           target = whiskersStoryVisible
             ? museumWorld.whiskersObjectiveTarget
             : museumWorld.nearestMegatheriumViewingTarget(player, museumGatheringTarget),
@@ -2883,6 +2905,8 @@ export function SubwayGame({
             whiskersProgress = museumWorld.whiskersProgress,
             prompt = whiskersHint
               ? whiskersHint.label
+              : whiskersTrust.active
+                ? `${whiskersTrust.instruction} · ${Math.round(whiskersTrust.progress * 100)}%`
               : gathering
               ? `GATHER ${friendCountLabel(count).toUpperCase()} AT THE EXHIBIT`
               : scooterRiding
@@ -2894,6 +2918,9 @@ export function SubwayGame({
           setHud({
             bearing,
             distance,
+            fieldStatus: whiskersTrust.active
+              ? `${whiskersTrust.instruction} · ${Math.round(whiskersTrust.progress * 100)}%`
+              : undefined,
             motion: scooterRiding
               ? moving
                 ? "SCOOTER CONVOY"
@@ -2906,7 +2933,7 @@ export function SubwayGame({
               : `Find Megatherium and bring ${friendCountLabel(count)} to the giant ground sloth`,
             objectiveShort: whiskersStoryVisible ? "WHISKERS" : "MEGATHERIUM",
             prompt,
-            promptKey: whiskersHint ? "E" : gathering ? "" : scooterRiding || scooterNear ? "E" : "",
+            promptKey: whiskersHint ? "E" : whiskersTrust.active || gathering ? "" : scooterRiding || scooterNear ? "E" : "",
             station:
               player.z > 20
                 ? "AMNH · CENTRAL PARK WEST ENTRANCE"
@@ -2920,15 +2947,17 @@ export function SubwayGame({
               : pursuingWhiskers
                 ? museumWorld.isWhiskersWaitingForPlayer
                   ? "WHISKERS WAITING · FOLLOW THE FRESH PRINTS"
+                  : whiskersTrust.active
+                    ? `QUIET TRUST · ${Math.round(whiskersTrust.progress * 100)}% · ${whiskersTrust.instruction}`
                   : `WHISKERS TRAIL · ${whiskersProgress.current} / ${whiskersProgress.total}`
                 : whiskersHint
                   ? "WHISKERS NEARBY · OPTIONAL STORY"
               : gathering
                 ? "MEGATHERIUM FOUND · MENAGERIE GATHERING"
                 : companionStatus(count),
-            value: `${Math.round(distance)}M`,
-            waypoint: whiskersStoryVisible ? "Whiskers · moving gallery trail" : "Megatherium · Giant Ground Sloth",
-            wayfinding: pursuingWhiskers || !whiskersStoryVisible,
+            value: whiskersTrust.active ? `${Math.round(whiskersTrust.progress * 100)}%` : `${Math.round(distance)}M`,
+            waypoint: whiskersTrust.active ? "Whiskers · quiet gallery moment" : whiskersStoryVisible ? "Whiskers · moving gallery trail" : "Megatherium · Giant Ground Sloth",
+            wayfinding: pursuingWhiskers ? !whiskersTrust.active : !whiskersStoryVisible,
           });
         }
       } else if (transitStage === "CENTRAL_PARK" && parkReturnWorld) {
@@ -3320,10 +3349,10 @@ export function SubwayGame({
           driving={stage === "BUS_DRIVE" || Boolean(mobilityMode)}
           energy={stage === "BUS_DRIVE" ? busIntegrity : 100}
           hawkPhase="PATROL"
-          motion={hud.motion}
+          motion={stage === "MUSEUM" && hud.fieldStatus ? hud.fieldStatus : hud.motion}
           objectiveShort={hud.objectiveShort}
           objectiveValue={hud.value}
-          showMotion={stage === "BUS_DRIVE" || Boolean(mobilityMode)}
+          showMotion={stage === "BUS_DRIVE" || Boolean(mobilityMode) || (stage === "MUSEUM" && Boolean(hud.fieldStatus))}
           speed={vehicleSpeed}
           swimming={false}
         />
