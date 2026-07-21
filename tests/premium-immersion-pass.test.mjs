@@ -99,6 +99,15 @@ test("Whiskers is a project-original, spatial museum quest with a variable galle
   assert.match(museum, /beginWhiskersTrail\(elapsed: number\)/);
   assert.match(museum, /new THREE\.CatmullRomCurve3/);
   assert.match(museum, /whiskers-brass-pawprint-waypoint/);
+  assert.match(museum, /forwardGalleryVariants/);
+  assert.match(museum, /const travelDelta = Number\.isFinite\(delta\) \? Math\.max\(0, delta\) : 0/);
+  assert.match(museum, /whiskersTravelProgress \+ travelDelta \* 3\.35/);
+  assert.match(museum, /sampleWhiskersTravel\(this\.whiskersTravelProgress, this\.whiskers\.root\.position\)/);
+  assert.match(museum, /if \(!Number\.isFinite\(this\.whiskersTravelProgress\)\) this\.whiskersTravelProgress = 0/);
+  assert.match(museum, /playerDistance < 7\.5 : playerDistance > 11\.5/);
+  assert.match(museum, /if \(this\.whiskersTravelCurve\) return this\.whiskers\.root\.position\.clone\(\)/);
+  assert.match(museum, /whiskers-fresh-route-paw/);
+  assert.match(museum, /this\.resolveCompanion\(this\.whiskers\.root\.position, this\.whiskersResolveVelocity, \.28\)/);
   assert.match(museum, /WHISKERS_FOUND/);
   assert.match(museum, /museum-continuous-warm-terrazzo-gallery-runner/);
   assert.match(museum, /museum-central-gallery-grounded-pilaster/);

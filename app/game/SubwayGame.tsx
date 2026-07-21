@@ -1709,6 +1709,7 @@ export function SubwayGame({
         "busarrival",
         "museumentry",
         "museumwhiskers",
+        "museumwhiskerstrail",
         "museumscooters",
         "museumgaryscooter",
         "museumrotunda",
@@ -1769,6 +1770,7 @@ export function SubwayGame({
         const reviewMuseum = enterMuseum(
           qaInput === "museumentry" ||
             qaInput === "museumwhiskers" ||
+            qaInput === "museumwhiskerstrail" ||
             qaInput === "museumscooters" ||
             qaInput === "museumgaryscooter"
             ? "entry"
@@ -1780,35 +1782,24 @@ export function SubwayGame({
                   ? "african"
                   : "megatherium",
         );
-        if (qaInput === "museumwhiskers" && reviewMuseum) {
-          // Resolve several authored viewing offsets through the real museum
-          // collision field. This keeps the review camera beside Whiskers even
-          // if the selected hideout or nearby exhibit footprint changes.
+        if ((qaInput === "museumwhiskers" || qaInput === "museumwhiskerstrail") && reviewMuseum) {
+          // This authored rotunda sightline is collision-clear and keeps the
+          // cat, architecture, entrance sign, and interaction prompt in view.
+          // The former target-offset fallback could place the camera inside a
+          // dinosaur plinth, producing a fog-gray void in the review scene.
           const whiskersTarget = reviewMuseum.whiskersObjectiveTarget;
-          const candidate = new THREE.Vector3();
-          const candidateVelocity = new THREE.Vector3();
-          for (const offset of [
-            new THREE.Vector3(0, 0, 2.45),
-            new THREE.Vector3(2.45, 0, 0),
-            new THREE.Vector3(-2.45, 0, 0),
-            new THREE.Vector3(0, 0, -2.45),
-          ]) {
-            candidate.copy(whiskersTarget).add(offset);
-            candidate.y = reviewMuseum.floorHeight(candidate.x, candidate.z) + 1.48;
-            candidateVelocity.set(0, 0, 0);
-            reviewMuseum.resolvePlayer(candidate, candidateVelocity);
-            if (!reviewMuseum.whiskersInteractionHint(candidate)) continue;
-            player.copy(candidate);
-            break;
-          }
-          if (!reviewMuseum.whiskersInteractionHint(player)) {
-            player.copy(whiskersTarget);
-            player.y = reviewMuseum.floorHeight(player.x, player.z) + 1.48;
-          }
+          player.set(-1.9, reviewMuseum.floorHeight(-1.9, 15) + 1.48, 15);
           const whiskersDirection = whiskersTarget.clone().sub(player);
           yaw = Math.atan2(-whiskersDirection.x, -whiskersDirection.z);
           pitch = -0.16;
-          reviewMuseum.beginWhiskersTrail(gameTime);
+          if (qaInput === "museumwhiskerstrail") {
+            const whiskersEvent = reviewMuseum.beginWhiskersTrail(gameTime);
+            if (whiskersEvent) showToast(whiskersEvent.message, 5200);
+            // enterMuseum has just published its Megatherium overview. Force
+            // the next animation frame to replace that staging copy with the
+            // live trail objective instead of waiting on the shared HUD clock.
+            lastHud = Number.NEGATIVE_INFINITY;
+          }
         }
         if (
           (qaInput === "museumscooters" || qaInput === "museumgaryscooter") &&
@@ -2898,14 +2889,16 @@ export function SubwayGame({
             status: scooterRiding
               ? `${riderCountLabel(count).toUpperCase()} · ELECTRIC SCOOTER CONVOY`
               : pursuingWhiskers
-                ? `WHISKERS TRAIL · ${whiskersProgress.current} / ${whiskersProgress.total}`
+                ? museumWorld.isWhiskersWaitingForPlayer
+                  ? "WHISKERS WAITING · FOLLOW THE FRESH PRINTS"
+                  : `WHISKERS TRAIL · ${whiskersProgress.current} / ${whiskersProgress.total}`
                 : whiskersHint
                   ? "WHISKERS NEARBY · OPTIONAL STORY"
               : gathering
                 ? "MEGATHERIUM FOUND · MENAGERIE GATHERING"
                 : companionStatus(count),
             value: `${Math.round(distance)}M`,
-            waypoint: whiskersStoryVisible ? "Whiskers · brass pawprint trail" : "Megatherium · Giant Ground Sloth",
+            waypoint: whiskersStoryVisible ? "Whiskers · moving gallery trail" : "Megatherium · Giant Ground Sloth",
             wayfinding: pursuingWhiskers || !whiskersStoryVisible,
           });
         }

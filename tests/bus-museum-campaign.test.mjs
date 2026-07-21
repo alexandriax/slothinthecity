@@ -232,12 +232,16 @@ test("the canonical first-person fur sampler becomes ready in every scene", asyn
   assert.match(game, /qaInput === "busmissedexit"\s*\?\s*"missed-exit"/);
 });
 
-test("the Whiskers review checkpoint starts inside the playable encounter", async () => {
-  const game = await readSource("../app/game/SubwayGame.tsx");
-  assert.match(game, /qaInput === "museumwhiskers"[\s\S]{0,360}const whiskersTarget = reviewMuseum\.whiskersObjectiveTarget/);
-  assert.match(game, /reviewMuseum\.resolvePlayer\(candidate, candidateVelocity\)/);
-  assert.match(game, /reviewMuseum\.whiskersInteractionHint\(candidate\)/);
-  assert.match(game, /reviewMuseum\.beginWhiskersTrail\(gameTime\)/);
+test("the Whiskers review checkpoints use a safe discovery sightline and separate active trail", async () => {
+  const [game, checkpoints] = await Promise.all([
+    readSource("../app/game/SubwayGame.tsx"),
+    readSource("../app/game/debugCheckpoints.ts"),
+  ]);
+  assert.match(checkpoints, /"museum-whiskers-trail": "museumwhiskerstrail"/);
+  assert.match(game, /qaInput === "museumwhiskers" \|\| qaInput === "museumwhiskerstrail"/);
+  assert.match(game, /player\.set\(-1\.9, reviewMuseum\.floorHeight\(-1\.9, 15\) \+ 1\.48, 15\)/);
+  assert.match(game, /if \(qaInput === "museumwhiskerstrail"\)[\s\S]{0,220}reviewMuseum\.beginWhiskersTrail\(gameTime\)/);
+  assert.match(game, /lastHud = Number\.NEGATIVE_INFINITY/);
   assert.match(game, /whiskersStoryVisible = pursuingWhiskers \|\| Boolean\(whiskersHint\)/);
   assert.match(game, /wayfinding: pursuingWhiskers \|\| !whiskersStoryVisible/);
 });

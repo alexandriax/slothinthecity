@@ -113,7 +113,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
     const layoutSloth = () => layoutCanonicalSlothViewmodel(sloth, innerWidth);
     layoutSloth(); camera.add(sloth.root); scene.add(camera);
     let yaw = -.35, pitch = -.04, energy = 100, alert = 5, lastHud = 0, gameTime = 0, dragging = false, lastTouchX = 0, lastTouchY = 0;
-    let blockedBy: "" | "TREE" | "LANDMARK" = "", climbingTree: ClimbableTree | null = null, climbAngle = 0, climbHeight = 1.48;
+    let blockedBy: "" | "TREE" | "LANDMARK" = "", climbingTree: ClimbableTree | null = null, climbAngle = 0, climbHeight = 1.48, trunkBaseDescentSeconds = 0;
     let branchRoute: BranchRoute | null = null, branchProgress = 0, branchForwardSign: 1 | -1 = 1, actionRequested = false, dropRequested = false, gripHintUntil = 0, dropVelocity = 0, controlledDescent = false, descentIgnoreRouteId = -1, qaPrepared = false, qaStage = 0, caughtUntil = 0, queuedZapRockDirection: -1 | 0 | 1 = 0;
     let transfer: { from: THREE.Vector3; to: THREE.Vector3; route: BranchRoute; progress: number; forwardSign: 1 | -1; started: number; duration: number; kind: "REACH" | "DROP" } | null = null;
     let swimming = false, wasSwimming = false, hawkPhase: HawkPhase = "PATROL", hawkEvent: HawkEvent | null = null, hawkPasses = 0, nextHawkPassAt = 8, recoveryUntil = 0;
@@ -624,7 +624,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
           groundTreeTarget = nearestTree(player, 1.35);
           if (groundTreeTarget) {
             climbingTree = groundTreeTarget; climbAngle = Math.atan2(player.z - groundTreeTarget.z, player.x - groundTreeTarget.x);
-            climbHeight = THREE.MathUtils.clamp(player.y - groundTreeTarget.baseY, 1.48, groundTreeTarget.height - .65); velocity.set(0, 0, 0); dropVelocity = 0;
+            climbHeight = THREE.MathUtils.clamp(player.y - groundTreeTarget.baseY, 1.48, groundTreeTarget.height - .65); trunkBaseDescentSeconds = 0; velocity.set(0, 0, 0); dropVelocity = 0;
           } else gripHintUntil = gameTime + 2.2;
           actionRequested = false;
         }
@@ -702,10 +702,20 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
           // choices without clipping into a dark wall of bark.
           const gripRadius = climbingTree.radius + 1.18;
           player.set(climbingTree.x + Math.cos(climbAngle) * gripRadius, climbingTree.baseY + climbHeight, climbingTree.z + Math.sin(climbAngle) * gripRadius);
+          // Pulling down at the base must finish the climb. Previously the
+          // height clamp held the player at 1.48m forever, which looked like
+          // the sloth had become embedded in the trunk on touch controls.
+          trunkBaseDescentSeconds = backHeld && !forwardHeld && climbHeight <= 1.485
+            ? trunkBaseDescentSeconds + delta
+            : 0;
           const inCanopy = player.y >= climbingTree.canopyY - .8; branchTarget = inCanopy ? branchFromTree(climbingTree) : null;
           if (["autobranch", "autotransfer", "autodrop"].includes(qaInput ?? "") && qaStage === 0 && branchTarget) { actionRequested = true; qaStage = 1; }
           if (actionRequested && branchTarget) transfer = { from: player.clone(), to: branchTarget.point.clone(), route: branchTarget.route, progress: branchTarget.amount, forwardSign: branchTarget.amount <= .5 ? 1 : -1, started: gameTime, duration: .82, kind: "REACH" };
-          if (dropRequested) { climbingTree = null; controlledDescent = false; descentIgnoreRouteId = -1; dropVelocity = -4.2; }
+          if (dropRequested) { climbingTree = null; trunkBaseDescentSeconds = 0; controlledDescent = false; descentIgnoreRouteId = -1; dropVelocity = -4.2; }
+          else if (trunkBaseDescentSeconds >= .18) {
+            climbingTree = null; trunkBaseDescentSeconds = 0; controlledDescent = false; descentIgnoreRouteId = -1; dropVelocity = 0;
+            player.y = groundHeight(player.x, player.z);
+          }
           energy = THREE.MathUtils.clamp(energy + (moving ? -(gripping ? 2.2 : 3.25) : gripping ? 4.6 : 2.8) * delta, 0, 100);
         } else if (branchRoute) {
           swimming = false;
@@ -754,7 +764,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
             }
             if (!transfer && atBackwardExit && backHeld) {
               const treeIndex = branchProgress <= .5 ? branchRoute.treeIndex : (branchRoute.destinationTreeIndex ?? branchRoute.treeIndex), tree = world.trees[treeIndex];
-              branchRoute = null; climbingTree = tree; climbHeight = THREE.MathUtils.clamp(player.y - tree.baseY, 1.48, tree.height - .65); climbAngle = Math.atan2(player.z - tree.z, player.x - tree.x);
+              branchRoute = null; climbingTree = tree; climbHeight = THREE.MathUtils.clamp(player.y - tree.baseY, 1.48, tree.height - .65); trunkBaseDescentSeconds = 0; climbAngle = Math.atan2(player.z - tree.z, player.x - tree.x);
             }
           }
           energy = THREE.MathUtils.clamp(energy + (moving ? -(gripping ? .92 : 1.35) : gripping ? 4.8 : 3.2) * delta, 0, 100);
@@ -765,7 +775,10 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
             if (controlledDescent) dropVelocity = gripping ? -.72 : -1.15;
             else dropVelocity -= 6.2 * delta;
             player.y += dropVelocity * delta; velocity.multiplyScalar(.9);
-            if (!catchFallingBranch(previousY, controlledDescent ? descentIgnoreRouteId : -1) && player.y <= supportY) { player.y = supportY; dropVelocity = 0; controlledDescent = false; descentIgnoreRouteId = -1; swimming = overWater; }
+            // Always exclude the branch the player intentionally released.
+            // Conditioning this on controlledDescent let a normal mobile Down
+            // tap recapture the same route on the next frame indefinitely.
+            if (!catchFallingBranch(previousY, descentIgnoreRouteId) && player.y <= supportY) { player.y = supportY; dropVelocity = 0; controlledDescent = false; descentIgnoreRouteId = -1; swimming = overWater; }
           } else {
             if (forwardHeld) wish.add(forward); if (backHeld) wish.sub(forward); if (rightHeld) wish.add(right); if (leftHeld) wish.sub(right);
             moving = wish.lengthSq() > 0; swimming = overWater;

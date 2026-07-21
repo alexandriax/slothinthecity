@@ -152,6 +152,20 @@ test("mobile vehicle braking emits Space and cart audio follows pause and resume
   assert.match(game, /cartMotorState\.speed = traversalSpeed/);
 });
 
+test("mobile canopy descent cannot recatch the released branch or stick at the trunk base", async () => {
+  const [game, touch] = await Promise.all([
+    readFile(new URL("../app/game/GameClient.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/game/mobile/TouchControls.tsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(game, /catchFallingBranch\(previousY, descentIgnoreRouteId\)/);
+  assert.doesNotMatch(game, /controlledDescent \? descentIgnoreRouteId : -1/);
+  assert.match(game, /backHeld && !forwardHeld && climbHeight <= 1\.485/);
+  assert.match(game, /trunkBaseDescentSeconds >= \.18/);
+  assert.match(touch, /className="touch-down" data-input-code="ControlLeft"/);
+  assert.match(touch, /aria-label="Descend safely toward ground" onPointerDown=/);
+});
+
 test("cart and rowboat expose live grip transforms that remain camera-relative during free-look", () => {
   const texture = new THREE.Texture();
   const textures = new Proxy({}, { get: () => texture });
