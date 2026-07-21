@@ -45,6 +45,17 @@ test("the expanded Bronx backdrop preserves entrance grounding and deterministic
   assert.match(zoo, /bronx-corridor-recessed-storefront-door-network/);
   assert.match(zoo, /bronx-corridor-human-scale-blade-sign-network/);
   assert.match(zoo, /bronx-building-south-north-window-frame-depth-field/);
+  assert.match(zoo, /bronx-neighborhood-masonry-floor-and-spandrel-bands/);
+  assert.match(zoo, /bronx-neighborhood-ground-floor-storefront-frame-network/);
+  assert.match(zoo, /bronx-neighborhood-ground-floor-glazing-and-interior-light/);
+  assert.match(zoo, /bronx-neighborhood-luminous-storefront-signage/);
+  assert.match(zoo, /bronx-arrival-plaza-grounded-stone-planter/);
+  assert.match(zoo, /bronx-arrival-city-newsbox-and-litter-bin-network/);
+  assert.match(zoo, /bronx-arrival-curbside-parking-meter-network/);
+  assert.match(zoo, /bronx-arrival-sidewalk-grounded-bicycle-rack/);
+  assert.match(zoo, /bronx-animated-context-traffic-ground-contact-wheel/);
+  assert.match(zoo, /bronx-animated-context-traffic-headlamp/);
+  assert.match(zoo, /bronx-animated-context-traffic-tail-lamp/);
   assert.match(zoo, /west-farms-human-scale-green-station-canopy/);
   assert.match(zoo, /bronx-corridor-curbside-grounded-parked-vehicle/);
   assert.match(zoo, /bronx-corridor-parked-vehicle-ground-contact-wheel/);

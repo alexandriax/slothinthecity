@@ -33,6 +33,13 @@ test("the premium pass implements at least 25 additional improvements", async ()
       "bronx-corridor-human-scale-blade-sign-network",
       "bronx-building-south-north-window-frame-depth-field",
       "bronx-corridor-curbside-grounded-parked-vehicle",
+      "bronx-neighborhood-ground-floor-glazing-and-interior-light",
+      "bronx-neighborhood-luminous-storefront-signage",
+      "bronx-neighborhood-masonry-floor-and-spandrel-bands",
+      "bronx-arrival-plaza-grounded-stone-planter",
+      "bronx-arrival-city-newsbox-and-litter-bin-network",
+      "bronx-arrival-sidewalk-grounded-bicycle-rack",
+      "bronx-animated-context-traffic-ground-contact-wheel",
     ].map(marker => [bronx, marker]),
     ...[
       "fifth-avenue-continuous-roadway",

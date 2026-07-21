@@ -155,6 +155,34 @@ function signTexture(title: string, subtitle: string, accent = "#d7e9a6") {
   });
 }
 
+function storefrontSignTexture(title: string, subtitle: string, paletteIndex: number) {
+  const palettes = [
+    ["#762f2a", "#281514", "#f3cf7a"],
+    ["#245044", "#0d241f", "#d8df9d"],
+    ["#315374", "#111d2b", "#e8d6a0"],
+    ["#6d4d22", "#251b0e", "#f4d38a"],
+  ] as const;
+  const [top, bottom, accent] = palettes[paletteIndex % palettes.length];
+  return canvasTexture(1280, 320, (context, width, height) => {
+    const gradient = context.createLinearGradient(0, 0, width, height);
+    gradient.addColorStop(0, top);
+    gradient.addColorStop(1, bottom);
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, width, height);
+    context.strokeStyle = accent;
+    context.lineWidth = 12;
+    context.strokeRect(18, 18, width - 36, height - 36);
+    context.fillStyle = "#fff8e8";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.font = "800 86px Helvetica, Arial, sans-serif";
+    context.fillText(title, width / 2, 125);
+    context.fillStyle = accent;
+    context.font = "700 34px Helvetica, Arial, sans-serif";
+    context.fillText(subtitle, width / 2, 232);
+  });
+}
+
 function shuttleStopTexture() {
   return canvasTexture(640, 960, (context, width, height) => {
     const gradient = context.createLinearGradient(0, 0, 0, height);
@@ -1169,9 +1197,16 @@ function addZooArrivalDistrictBackdrop(root: THREE.Group, materials: ZooMaterial
   trunks.castShadow = quality > .7; crowns.castShadow = quality > .82; district.add(trunks, crowns);
 
   for (let carIndex = 0; carIndex < 4; carIndex++) {
-    const car = new THREE.Group(); car.name = "bronx-zoo-arrival-context-parked-city-vehicle"; car.position.set(carIndex % 2 ? 11 : 25, 1.36, 59 + carIndex * 13); car.rotation.y = carIndex % 2 ? Math.PI : 0;
+    const car = new THREE.Group(); car.name = "bronx-zoo-arrival-context-parked-city-vehicle"; car.position.set(carIndex % 2 ? 11 : 25, 1.02, 59 + carIndex * 13); car.rotation.y = carIndex % 2 ? Math.PI : 0;
     const body = new THREE.Mesh(new RoundedBoxGeometry(2.05, .72, 4.4, 6, .18), new THREE.MeshPhysicalMaterial({ color: ["#516c78", "#7e4e45", "#d1c3a8", "#3e5548"][carIndex], roughness: .53, clearcoat: .34 })); body.position.y = .62; car.add(body);
     const cabin = new THREE.Mesh(new RoundedBoxGeometry(1.72, .72, 2.15, 6, .16), windowMaterial); cabin.position.set(0, 1.16, .12); car.add(cabin);
+    for (const wheelX of [-1.03, 1.03]) for (const wheelZ of [-1.43, 1.43]) {
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(.31, .31, .18, quality > .72 ? 14 : 9), materials.iron);
+      wheel.name = "bronx-arrival-context-parked-vehicle-ground-contact-wheel";
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(wheelX, .35, wheelZ);
+      car.add(wheel);
+    }
     district.add(car);
   }
 
@@ -1277,6 +1312,19 @@ function addZooArrivalDistrictBackdrop(root: THREE.Group, materials: ZooMaterial
   const awningSpecs: InstanceSpec[] = [];
   const storefrontDoorSpecs: InstanceSpec[] = [];
   const storefrontBladeSignSpecs: InstanceSpec[] = [];
+  const storefrontGlazingSpecs: InstanceSpec[] = [];
+  const facadeBandSpecs: InstanceSpec[] = [];
+  const storefrontSignAnchors: Array<{ x: number; y: number; z: number; title: string; subtitle: string; palette: number }> = [];
+  const storefrontDirectory = [
+    ["TREMONT BAKERY", "BREAD · COFFEE · PASTRIES"],
+    ["SOUTHERN MARKET", "FRUIT · DELI · GROCERY"],
+    ["BRONX BIKE SHOP", "REPAIRS · PARTS · SERVICE"],
+    ["BOTANICA", "HERBS · CANDLES · GIFTS"],
+    ["CAFÉ 1899", "BREAKFAST · COFFEE · LUNCH"],
+    ["NEIGHBORHOOD BOOKS", "NEW · USED · LOCAL"],
+    ["PHARMACY", "PRESCRIPTIONS · HEALTH"],
+    ["FLOWER & ROOT", "PLANTS · BOUQUETS · SOIL"],
+  ] as const;
   const urbanRandom = seeded(7211904);
   const facadeColors = ["#86634f", "#a08b72", "#776f69", "#a8785c", "#b0a58d", "#6f7c78", "#927967", "#c0b69f"];
   let blockIndex = 0;
@@ -1304,6 +1352,14 @@ function addZooArrivalDistrictBackdrop(root: THREE.Group, materials: ZooMaterial
         buildingSpecs.push({ x, y: 1.1 + height * .5, z, sx: width, sy: height, sz: depth, color });
         corniceSpecs.push({ x, y: 1.25 + height, z, sx: width + .75, sy: .48, sz: depth + .72 });
         storefrontSpecs.push({ x, y: 2.7, z, sx: width + .22, sy: 3.25, sz: depth + .16, color: buildingIndex % 2 ? "#6d6257" : "#82725f" });
+        const storefrontBayCount = Math.min(5, Math.max(2, Math.floor(width / 4.6)));
+        const entryX = x + (buildingIndex % 2 ? -1 : 1) * width * .28;
+        for (let bay = 0; bay < storefrontBayCount; bay++) {
+          const glassX = x - width * .37 + bay * (width * .74 / Math.max(1, storefrontBayCount - 1));
+          if (Math.abs(glassX - entryX) > 1.35) storefrontGlazingSpecs.push({ x: glassX, y: 2.55, z: z - depth * .5 - .2, sx: Math.min(2.7, width / storefrontBayCount * .72), sy: 2.35, sz: .12 });
+          storefrontGlazingSpecs.push({ x: glassX, y: 2.55, z: z + depth * .5 + .2, sx: Math.min(2.7, width / storefrontBayCount * .72), sy: 2.35, sz: .12 });
+        }
+        storefrontDoorSpecs.push({ x: entryX, y: 2.35, z: z - depth * .5 - .23, sx: 1.55, sy: 2.85, sz: .16, color: buildingIndex % 3 === 0 ? "#244f47" : buildingIndex % 3 === 1 ? "#6f3e35" : "#2c3432" });
         if (buildingIndex % 2 === 0) rooftopUnitSpecs.push({ x: x + width * .17, y: height + 2, z: z - depth * .16, sx: 2.4, sy: 1.35, sz: 2.1 });
         const floorCount = Math.min(10, Math.max(3, Math.floor((height - 4) / 4.15)));
         const bayCount = Math.min(7, Math.max(2, Math.floor(width / 4.25)));
@@ -1316,6 +1372,11 @@ function addZooArrivalDistrictBackdrop(root: THREE.Group, materials: ZooMaterial
             const lit = (floor + bay + buildingIndex) % 5 === 0 ? "#b89a62" : "#26383a";
             southNorthWindowSpecs.push({ x: wx, y, z: z - depth * .5 - .07, sx: 1.18, sy: 1.75, sz: .12, color: lit });
             southNorthWindowSpecs.push({ x: wx, y, z: z + depth * .5 + .07, sx: 1.18, sy: 1.75, sz: .12, color: lit });
+          }
+          if (floor > 0 && z < 360) {
+            const bandY = 3.86 + floor * 4.05;
+            facadeBandSpecs.push({ x, y: bandY, z: z - depth * .5 - .11, sx: width + .28, sy: .16, sz: .18 });
+            facadeBandSpecs.push({ x, y: bandY, z: z + depth * .5 + .11, sx: width + .28, sy: .16, sz: .18 });
           }
           if (z < 360) for (let bay = 0; bay < sideBayCount; bay++) {
             const wz = z - depth * .36 + bay * (depth * .72 / Math.max(1, sideBayCount - 1));
@@ -1368,12 +1429,28 @@ function addZooArrivalDistrictBackdrop(root: THREE.Group, materials: ZooMaterial
           eastWestWindowSpecs.push({ x: x - width * .5 - .08, y: 5 + floor * 4.02, z: wz, sx: 1.2, sy: 1.76, sz: .12, rotationY: Math.PI / 2, color: lit });
           eastWestWindowSpecs.push({ x: x + width * .5 + .08, y: 5 + floor * 4.02, z: wz, sx: 1.2, sy: 1.76, sz: .12, rotationY: Math.PI / 2, color: lit });
         }
+        if (floor > 0) {
+          const bandY = 3.84 + floor * 4.02;
+          facadeBandSpecs.push({ x, y: bandY, z: z - depth * .5 - .11, sx: width + .3, sy: .16, sz: .18 });
+          facadeBandSpecs.push({ x, y: bandY, z: z + depth * .5 + .11, sx: width + .3, sy: .16, sz: .18 });
+        }
       }
       if (streetSide > 0 && corridorIndex % 2 === 0) awningSpecs.push({ x, y: 3.75, z: z - depth * .5 - .95, sx: Math.min(8.5, width * .58), sy: .24, sz: 1.8, color: corridorIndex % 4 ? "#315b4d" : "#8a493f" });
       const roadFacingZ = z + (streetSide < 0 ? depth * .5 + .1 : -depth * .5 - .1);
       const doorX = x + (corridorIndex % 2 ? -1 : 1) * width * .24;
       storefrontDoorSpecs.push({ x: doorX, y: 2.22, z: roadFacingZ, sx: 1.55, sy: 2.72, sz: .14, color: corridorIndex % 3 === 0 ? "#244f47" : corridorIndex % 3 === 1 ? "#6f3e35" : "#2c3432" });
       storefrontBladeSignSpecs.push({ x: x - direction * width * .38, y: 4.45, z: roadFacingZ + (streetSide < 0 ? .6 : -.6), sx: .2, sy: 1.2, sz: .78, color: corridorIndex % 2 ? "#d0b663" : "#d9d2bf" });
+      const glazingBays = Math.min(6, Math.max(3, Math.floor(width / 4.35)));
+      for (let bay = 0; bay < glazingBays; bay++) {
+        const glassX = x - width * .38 + bay * (width * .76 / Math.max(1, glazingBays - 1));
+        if (Math.abs(glassX - doorX) < 1.35) continue;
+        storefrontGlazingSpecs.push({ x: glassX, y: 2.45, z: roadFacingZ + (streetSide < 0 ? .12 : -.12), sx: Math.min(2.75, width / glazingBays * .72), sy: 2.25, sz: .12 });
+      }
+      if (corridorIndex < (quality < .58 ? 3 : 6) && streetSide === (corridorIndex % 2 ? -1 : 1)) {
+        const directoryIndex = (corridorIndex + (direction > 0 ? 0 : 4)) % storefrontDirectory.length;
+        const [title, subtitle] = storefrontDirectory[directoryIndex];
+        storefrontSignAnchors.push({ x, y: 4.55, z: roadFacingZ + (streetSide < 0 ? .18 : -.18), title, subtitle, palette: directoryIndex });
+      }
     }
   }
   addInstances("bronx-city-block-raised-sidewalk-islands", new THREE.BoxGeometry(1, 1, 1), sidewalkMaterial, sidewalkSpecs).receiveShadow = true;
@@ -1384,19 +1461,39 @@ function addZooArrivalDistrictBackdrop(root: THREE.Group, materials: ZooMaterial
   addInstances("bronx-building-articulated-storefront-plinths", new THREE.BoxGeometry(1, 1, 1), buildingMaterial, storefrontSpecs);
   addInstances("bronx-rooftop-hvac-and-service-units", new RoundedBoxGeometry(1, 1, 1, 3, .06), roofMaterial, rooftopUnitSpecs);
   const boroughWindowMaterial = new THREE.MeshStandardMaterial({ color: "#ffffff", emissive: "#725d3e", emissiveIntensity: .18, roughness: .38, metalness: .14, vertexColors: true });
-  const windowFrameMaterial = new THREE.MeshStandardMaterial({ color: "#b9aa91", roughness: .77, metalness: .05 });
+  const windowFrameMaterial = new THREE.MeshStandardMaterial({ color: "#d0c2a8", roughness: .74, metalness: .05 });
   addInstances("bronx-building-south-north-window-frame-depth-field", new THREE.BoxGeometry(1, 1, 1), windowFrameMaterial, southNorthWindowSpecs.map(spec => ({ ...spec, sx: spec.sx + .38, sy: spec.sy + .34, sz: .08 })));
   addInstances("bronx-building-east-west-window-frame-depth-field", new THREE.BoxGeometry(1, 1, 1), windowFrameMaterial, eastWestWindowSpecs.map(spec => ({ ...spec, sx: spec.sx + .38, sy: spec.sy + .34, sz: .08 })));
   addInstances("bronx-building-south-north-window-depth-field", new THREE.BoxGeometry(1, 1, 1), boroughWindowMaterial, southNorthWindowSpecs);
   addInstances("bronx-building-east-west-window-depth-field", new THREE.BoxGeometry(1, 1, 1), boroughWindowMaterial, eastWestWindowSpecs);
+  const facadeBandMaterial = new THREE.MeshStandardMaterial({ color: "#b7aa90", map: textures.stone, roughness: .86 });
+  addInstances("bronx-neighborhood-masonry-floor-and-spandrel-bands", new THREE.BoxGeometry(1, 1, 1), facadeBandMaterial, facadeBandSpecs);
   addInstances("bronx-fire-escape-platform-network", new THREE.BoxGeometry(1, 1, 1), fireEscapeMaterial, fireEscapeDeckSpecs);
   addInstances("bronx-fire-escape-ladder-network", new THREE.BoxGeometry(1, 1, 1), fireEscapeMaterial, fireEscapeLadderSpecs);
   const awningMaterial = new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: .72, vertexColors: true });
   addInstances("bronx-neighborhood-storefront-awning-network", new THREE.BoxGeometry(1, 1, 1), awningMaterial, awningSpecs);
   const storefrontDoorMaterial = new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: .48, metalness: .18, vertexColors: true });
   addInstances("bronx-corridor-recessed-storefront-door-network", new RoundedBoxGeometry(1, 1, 1, 3, .03), storefrontDoorMaterial, storefrontDoorSpecs);
+  addInstances("bronx-neighborhood-ground-floor-storefront-frame-network", new RoundedBoxGeometry(1, 1, 1, 3, .035), windowFrameMaterial, storefrontGlazingSpecs.map(spec => ({ ...spec, sx: spec.sx + .3, sy: spec.sy + .3, sz: .09 })));
+  const storefrontGlassMaterial = new THREE.MeshStandardMaterial({ color: "#294545", emissive: "#8a6d3d", emissiveIntensity: .34, roughness: .28, metalness: .18 });
+  addInstances("bronx-neighborhood-ground-floor-glazing-and-interior-light", new RoundedBoxGeometry(1, 1, 1, 3, .025), storefrontGlassMaterial, storefrontGlazingSpecs);
   const bladeSignMaterial = new THREE.MeshStandardMaterial({ color: "#ffffff", emissive: "#54451f", emissiveIntensity: .16, roughness: .44, metalness: .22, vertexColors: true });
   addInstances("bronx-corridor-human-scale-blade-sign-network", new RoundedBoxGeometry(1, 1, 1, 3, .04), bladeSignMaterial, storefrontBladeSignSpecs);
+  storefrontSignAnchors.forEach((anchor, index) => {
+    const texture = storefrontSignTexture(anchor.title, anchor.subtitle, anchor.palette);
+    ownedTextures.push(texture);
+    const sign = new THREE.Mesh(new RoundedBoxGeometry(8.8, 1.5, .22, 4, .045), new THREE.MeshBasicMaterial({ map: texture, toneMapped: false }));
+    sign.name = "bronx-neighborhood-luminous-storefront-signage";
+    sign.position.set(anchor.x, anchor.y, anchor.z);
+    sign.userData.storefront = anchor.title;
+    borough.add(sign);
+    if (index % 3 === 0) {
+      const downlight = new THREE.PointLight("#f0cf88", .42, 7.5, 2);
+      downlight.name = "bronx-storefront-restrained-sign-downlight";
+      downlight.position.set(anchor.x, anchor.y - .75, anchor.z);
+      borough.add(downlight);
+    }
+  });
 
   const roofTankSpecs: InstanceSpec[] = [];
   buildingSpecs.forEach((building, index) => {
@@ -1511,6 +1608,42 @@ function addZooArrivalDistrictBackdrop(root: THREE.Group, materials: ZooMaterial
   const hydrantMaterial = new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: .58, metalness: .42, vertexColors: true });
   addInstances("bronx-curbside-fire-hydrant-network", new THREE.CylinderGeometry(.18, .25, .62, 10), hydrantMaterial, hydrantSpecs);
 
+  // The first intersection needs close-range life as much as it needs a far
+  // skyline. Planters, bins, news boxes, meters, and bike racks give the broad
+  // arrival pavement human scale without blocking the playable gate route.
+  const planterCenters = [-72, -48, 48, 72].map((x, index) => ({ x, y: 1.27, z: 48 + index % 2 * 7, sx: 3.2, sy: .55, sz: 1.15 }));
+  addInstances("bronx-arrival-plaza-grounded-stone-planter", new RoundedBoxGeometry(1, 1, 1, 4, .08), sidewalkMaterial, planterCenters);
+  const planterFoliageSpecs: InstanceSpec[] = [];
+  planterCenters.forEach((planter, index) => {
+    for (let tuft = 0; tuft < 5; tuft++) planterFoliageSpecs.push({
+      x: planter.x - 1.18 + tuft * .58,
+      y: 1.9 + (tuft % 2) * .16,
+      z: planter.z + (tuft % 3 - 1) * .18,
+      sx: .48 + (tuft % 2) * .12,
+      sy: .62 + (tuft % 3) * .08,
+      sz: .42 + (tuft % 2) * .1,
+      color: (index + tuft) % 3 === 0 ? "#567a43" : (index + tuft) % 3 === 1 ? "#3e653c" : "#6d7f3e",
+    });
+  });
+  addInstances("bronx-arrival-plaza-layered-planter-foliage", new THREE.IcosahedronGeometry(1, quality > .72 ? 2 : 1), streetLeafMaterial, planterFoliageSpecs);
+
+  const furnitureSpecs: InstanceSpec[] = [];
+  for (const x of [-236, -172, -108, 108, 172, 236]) {
+    furnitureSpecs.push({ x, y: 1.58, z: x < 0 ? 27.2 : 44.3, sx: .72, sy: 1.12, sz: .66, color: x % 3 ? "#284d43" : "#7b493b" });
+  }
+  const furnitureMaterial = new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: .58, metalness: .26, vertexColors: true });
+  addInstances("bronx-arrival-city-newsbox-and-litter-bin-network", new RoundedBoxGeometry(1, 1, 1, 4, .08), furnitureMaterial, furnitureSpecs);
+  const meterSpecs: InstanceSpec[] = [];
+  for (const x of [-286, -222, -158, -94, 94, 158, 222, 286]) meterSpecs.push({ x, y: 1.72, z: x < 0 ? 45.2 : 26.1, sx: 1, sy: 1, sz: 1 });
+  addInstances("bronx-arrival-curbside-parking-meter-network", new THREE.CylinderGeometry(.07, .1, 1.48, 9), fireEscapeMaterial, meterSpecs);
+  const bikeRackMaterial = new THREE.MeshStandardMaterial({ color: "#5d6966", roughness: .42, metalness: .72 });
+  for (const [rackX, rackZ] of [[-198, 27.1], [-194.5, 27.1], [196, 44.5], [199.5, 44.5]] as const) {
+    const rack = new THREE.Mesh(new THREE.TorusGeometry(.68, .055, 8, 20, Math.PI), bikeRackMaterial);
+    rack.name = "bronx-arrival-sidewalk-grounded-bicycle-rack";
+    rack.position.set(rackX, 1.05, rackZ);
+    borough.add(rack);
+  }
+
   const shelterPositions = [[34, 113], [-92, 180], [106, 244], [178, 320], [-164, 398]] as const;
   shelterPositions.slice(0, quality < .58 ? 3 : shelterPositions.length).forEach(([x, z], index) => {
     const shelter = new THREE.Group(); shelter.name = `bronx-neighborhood-bus-shelter-${index + 1}`; shelter.position.set(x, 1.02, z);
@@ -1561,12 +1694,33 @@ function addZooArrivalDistrictBackdrop(root: THREE.Group, materials: ZooMaterial
   const trafficMotions: ArrivalVehicleMotion[] = [];
   const trafficRandom = seeded(930177);
   const carMaterials = ["#536f7a", "#8d4f43", "#d7c74a", "#ddd4c2", "#304b40", "#222727", "#7b6b85", "#a9a8a0"].map(color => new THREE.MeshPhysicalMaterial({ color, roughness: .48, clearcoat: .38, clearcoatRoughness: .32 }));
+  const trafficHeadlampMaterial = new THREE.MeshStandardMaterial({ color: "#f2e1ab", emissive: "#ffe2a0", emissiveIntensity: 1.35, roughness: .22 });
+  const trafficTailLampMaterial = new THREE.MeshStandardMaterial({ color: "#8c1c18", emissive: "#d82f25", emissiveIntensity: .82, roughness: .28 });
   const carCount = quality < .58 ? 10 : quality < .82 ? 15 : 22;
   for (let carIndex = 0; carIndex < carCount; carIndex++) {
     const car = new THREE.Group(); car.name = "bronx-animated-context-traffic";
     const delivery = carIndex % 7 === 0;
     const body = new THREE.Mesh(new RoundedBoxGeometry(delivery ? 2.25 : 2, delivery ? 1.55 : .7, delivery ? 5.5 : 4.25, 5, .16), carMaterials[carIndex % carMaterials.length]); body.position.y = delivery ? 1.04 : .64; car.add(body);
     const cabin = new THREE.Mesh(new RoundedBoxGeometry(delivery ? 1.95 : 1.7, delivery ? .85 : .7, delivery ? 1.65 : 2.05, 5, .14), windowMaterial); cabin.position.set(0, delivery ? 1.78 : 1.16, delivery ? -1.5 : .05); car.add(cabin);
+    const axleX = delivery ? 1.12 : 1.03;
+    const axleZ = delivery ? 1.9 : 1.43;
+    for (const wheelX of [-axleX, axleX]) for (const wheelZ of [-axleZ, axleZ]) {
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(.31, .31, .18, quality > .72 ? 14 : 9), materials.iron);
+      wheel.name = "bronx-animated-context-traffic-ground-contact-wheel";
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(wheelX, .35, wheelZ);
+      car.add(wheel);
+    }
+    for (const lightX of [-.61, .61]) {
+      const headlamp = new THREE.Mesh(new RoundedBoxGeometry(.34, .18, .08, 3, .035), trafficHeadlampMaterial);
+      headlamp.name = "bronx-animated-context-traffic-headlamp";
+      headlamp.position.set(lightX, delivery ? .96 : .67, delivery ? 2.78 : 2.16);
+      car.add(headlamp);
+      const tailLamp = new THREE.Mesh(new RoundedBoxGeometry(.32, .17, .08, 3, .03), trafficTailLampMaterial);
+      tailLamp.name = "bronx-animated-context-traffic-tail-lamp";
+      tailLamp.position.set(lightX, delivery ? .96 : .67, delivery ? -2.78 : -2.16);
+      car.add(tailLamp);
+    }
     const axis: "x" | "z" = carIndex < Math.ceil(carCount * .65) ? "z" : "x";
     const direction: 1 | -1 = carIndex % 2 ? -1 : 1;
     const lane = axis === "z" ? [14.2, 21.8, 86.8, 93.2, -39.2, -32.8, 158.8, 165.2][carIndex % 8] : [124.5, 131.5, 186.5, 193.5, 254.5, 261.5, 328.5, 335.5][carIndex % 8];
