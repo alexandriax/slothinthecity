@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
 import * as THREE from "three";
+import { EducationOverlay } from "./EducationOverlay";
 import { GoalWayfinder } from "./GoalWayfinder";
 import { DebugJumpMenu } from "./mobile/DebugJumpMenu";
 import { MobileHud } from "./mobile/MobileHud";
@@ -13,6 +14,7 @@ import { loadGameTextures } from "./rendering/textures";
 import { AudioQualitySettings, createAdaptiveQualityManager, createPremiumAudioDirector, type AdaptiveQualityManager, type PremiumAudioDirector } from "./systems";
 import { SubwayGame } from "./SubwayGame";
 import { checkpointUsesSubway, DEBUG_LOOK_REQUEST_EVENT, debugMenuRequested, debugSceneName, isAutomatedQaSession, requestedGameCheckpoint } from "./debugCheckpoints";
+import { educationContextForParkStage } from "./educationFacts";
 import { BOW_BRIDGE_TARGET, createCampaignLandmarks, SUBWAY_TARGET } from "./world/CampaignLandmarks";
 import { createParkRowboat, ROWBOAT_ROOT_WATERLINE_OFFSET, type ParkRowboat } from "./world/ParkRowboat";
 import { createParkUtilityCart, type ParkUtilityCart } from "./world/ParkUtilityCart";
@@ -1106,6 +1108,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
   useEffect(() => () => {
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
   }, []);
+  const educationContext = educationContextForParkStage(hud.parkStage);
   return <main className="game-shell" data-game-state={phase} data-park-stage={hud.parkStage} data-ticket-collected={hud.ticketCollected ? "true" : "false"} data-vehicle={hud.vehicle ?? "none"} data-touch-capable={touchCapable ? "true" : "false"} data-motion={hud.motion} data-energy={hud.energy.toFixed(1)} data-threat={hud.alert.toFixed(1)} data-hawk-phase={hud.hawkPhase} data-swimming={hud.swimming ? "true" : "false"} data-driving={hud.driving ? "true" : "false"} data-speed={hud.speed.toFixed(2)} data-position={`${hud.x.toFixed(2)},${hud.z.toFixed(2)}`} data-altitude={hud.y.toFixed(2)} data-branch={hud.branchId} data-branch-progress={hud.branchProgress.toFixed(3)} data-buds={hud.buds} data-goal-distance={hud.goalDistance.toFixed(1)} data-goal-bearing={hud.goalBearing.toFixed(1)}>
     <div ref={mount} className="viewport" aria-label="3D game viewport" />
     <div className="world-grade"/><div className="world-vignette"/><div className="grain"/>
@@ -1122,6 +1125,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
     {phase !== "intro" && <div className={`crosshair ${hud.promptKey === "E" ? "targeted" : hud.promptKey === "CTRL" ? "drop-targeted" : ""}`}/>}
     {phase !== "intro" && <div className="sr-only" role="status" aria-live="assertive" aria-atomic="true">{hud.hawkPhase === "DIVING" ? "Hawk diving. Find cover." : hud.hawkPhase === "SNATCHED" ? "The hawk caught you." : hud.motion === "PATH BLOCKED" ? "Path blocked. Choose another route." : ""}</div>}
     <div className={`scent-overlay ${scent ? "on" : ""}`}/>{toast && <div className="toast" role="status" aria-live="polite">{toast}</div>}
+    {phase === "playing" && <EducationOverlay key={educationContext} context={educationContext} viewportRef={mount}/>}
     {phase === "playing" && pointerLockAvailable && !mouseCaptured && <button className="mouse-resume" onClick={safeLock}><span>Mouse free</span>Click to look</button>}
     {(phase === "intro" || exiting) && <section className={`screen intro-screen ${exiting ? "exiting" : ""}`}>
       <Image className="intro-art" src="/game/splash-city.webp" alt="" aria-hidden="true" fill priority sizes="100vw" unoptimized/>
