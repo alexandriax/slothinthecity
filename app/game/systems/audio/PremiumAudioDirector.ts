@@ -66,6 +66,40 @@ type SceneLayer = {
 };
 
 const DEFAULT_MIX: AudioMix = { master: 0.78, music: 0.64, ambience: 0.58, sfx: 0.86 };
+const AUDIO_PREFERENCES_VERSION = 1;
+export const AUDIO_PREFERENCES_STORAGE_KEY = "slothpark-audio-preferences-v1";
+
+type AudioPreferences = AudioMix & {
+  muted: boolean;
+};
+
+function defaultAudioPreferences(): AudioPreferences {
+  return { ...DEFAULT_MIX, muted: false };
+}
+
+function loadAudioPreferences(): AudioPreferences {
+  const fallback = defaultAudioPreferences();
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(AUDIO_PREFERENCES_STORAGE_KEY);
+    if (!raw) return fallback;
+    const stored = JSON.parse(raw) as Record<string, unknown>;
+    if (stored.version !== AUDIO_PREFERENCES_VERSION) return fallback;
+    const volume = (key: keyof AudioMix) => typeof stored[key] === "number" && Number.isFinite(stored[key])
+      ? clamp01(stored[key])
+      : fallback[key];
+    return {
+      master: volume("master"),
+      music: volume("music"),
+      ambience: volume("ambience"),
+      sfx: volume("sfx"),
+      muted: typeof stored.muted === "boolean" ? stored.muted : fallback.muted,
+    };
+  } catch {
+    // Storage can be unavailable or contain data from an interrupted write.
+    return fallback;
+  }
+}
 
 /**
  * The authored score is deliberately ordered here rather than selected by
@@ -198,10 +232,9 @@ export class PremiumAudioDirector {
   private lastVehicleImpactAt = -1;
   private disposed = false;
   private snapshot: AudioDirectorSnapshot = {
-    ...DEFAULT_MIX,
+    ...loadAudioPreferences(),
     scene: "central-park",
     intensity: 0.5,
-    muted: false,
     unlocked: false,
     suspended: false,
   };
@@ -284,26 +317,31 @@ export class PremiumAudioDirector {
 
   setMasterVolume(value: number) {
     this.setSnapshot({ master: clamp01(value) });
+    this.persistPreferences();
     this.applyMix();
   }
 
   setMusicVolume(value: number) {
     this.setSnapshot({ music: clamp01(value) });
+    this.persistPreferences();
     this.applyMix();
   }
 
   setAmbienceVolume(value: number) {
     this.setSnapshot({ ambience: clamp01(value) });
+    this.persistPreferences();
     this.applyMix();
   }
 
   setSfxVolume(value: number) {
     this.setSnapshot({ sfx: clamp01(value) });
+    this.persistPreferences();
     this.applyMix();
   }
 
   setMuted(muted: boolean) {
     this.setSnapshot({ muted });
+    this.persistPreferences();
     this.applyMix(0.08);
   }
 
@@ -918,6 +956,23 @@ export class PremiumAudioDirector {
     ramp(this.musicBus, equalPower(this.snapshot.music) * (this.announcementSource ? .38 : 1));
     ramp(this.ambienceBus, equalPower(this.snapshot.ambience));
     ramp(this.sfxBus, equalPower(this.snapshot.sfx));
+  }
+
+  private persistPreferences() {
+    if (typeof window === "undefined") return;
+    try {
+      const { master, music, ambience, sfx, muted } = this.snapshot;
+      window.localStorage.setItem(AUDIO_PREFERENCES_STORAGE_KEY, JSON.stringify({
+        version: AUDIO_PREFERENCES_VERSION,
+        master,
+        music,
+        ambience,
+        sfx,
+        muted,
+      }));
+    } catch {
+      // Private browsing and hardened embeds may reject local storage writes.
+    }
   }
 
   private setSnapshot(update: Partial<AudioDirectorSnapshot>) {
