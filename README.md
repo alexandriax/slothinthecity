@@ -4,15 +4,18 @@
 
 **[Play Sloth in the City](https://www.slothinthecity.com/)**
 
+> **A New York City adventure with a Field Guide built in.** Learn about Central Park, the subway, the Bronx Zoo, the city streets, the American Museum of Natural History, and the animals who become your friends as you travel. Field Guide discoveries unfold in context throughout the adventure; open it with `i` or the **Learn** button for the full story and a Wikipedia source.
+
 > **Built with ChatGPT Codex.** ChatGPT Codex was used to build this entire app, from code and gameplay through asset production. Codex used Computer Use to coordinate sound effects, generate and refine Blender models, and repeatedly play, inspect, and self-QA the experience.
 
-Sloth in the City is a cinematic, first-person browser adventure built with Three.js and Next.js. You play as a displaced sloth making a slow, improbable journey across New York City: forage and climb through Central Park, cross The Lake, navigate the subway, find your friends at the Bronx Zoo, and lead the growing group home through the American Museum of Natural History.
+Sloth in the City is a cinematic, educational first-person browser adventure built with Three.js and Next.js. You play as a displaced sloth making a slow, improbable journey across New York City: forage and climb through Central Park, cross The Lake, navigate the subway, find your friends at the Bronx Zoo, and lead the growing group home through the American Museum of Natural History.
 
 The game is designed to run directly in a modern browser on desktop or touch devices. No account, API key, database, or other external service is required for local development.
 
 ## What is in the game?
 
 - A continuous story spanning Central Park, the subway, the Bronx Zoo, Manhattan streets, the museum, and a homecoming finale.
+- A contextual Field Guide with 100 source-linked discoveries about New York City, its landmarks, transit, museum collections, and animal companions.
 - Sloth-specific traversal with climbing, gripping, branch transfers, controlled descents, swimming, and scent vision.
 - Rowboats, a park utility cart, the subway, a skateboard, a museum shuttle, and electric scooters.
 - Optional animal encounters and companions that can join the campaign.
@@ -51,6 +54,7 @@ No environment variables are required. `SITE_URL` is optional and only overrides
 | Scent vision | `C` | **Sense** |
 | Pause | `P` | **Pause** |
 | Mute or unmute | `M` | Audio settings |
+| Open or close the Field Guide | `i` | **Learn** |
 
 Vehicle prompts appear in the HUD. Most vehicles use `W` / `S` for throttle, `A` / `D` to steer, `Space` to brake, and `E` to exit.
 
