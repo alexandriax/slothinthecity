@@ -21,6 +21,8 @@ test("server-renders the branded game shell", async () => {
   assert.match(html, /property="og:image:height" content="630"/i);
   assert.match(html, /name="twitter:card" content="summary_large_image"/i);
   assert.match(html, /rel="icon" href="\/icon\.svg/i);
+  assert.match(html, /https:\/\/www\.googletagmanager\.com\/gtag\/js\?id=G-5VCGDVQ952/i);
+  assert.match(html, /gaId\\":\\"G-5VCGDVQ952\\"/i);
   assert.match(html, /THE RAMBLE · CENTRAL PARK/);
   assert.match(html, /PREPARING THE PARK|ENTER THE RAMBLE/);
   assert.match(html, /data-game-state="intro"/);
