@@ -1470,6 +1470,8 @@ export class CityBusWorld {
         waypoints: [origin, origin.clone().addScaledVector(tangent, 3.2 + index % 3), origin.clone().addScaledVector(tangent, 6.4 + index % 3).add(sidewalkIn), origin.clone().add(sidewalkIn)],
         speed: .72 + index % 3 * .07,
         pauseSeconds: 2.2 + index % 3,
+        pauseCount: 3,
+        paceVariation: .08 + index % 4 * .02,
         phase: index * 2.4,
         lookAround: .12 + index % 4 * .035,
       }));

@@ -1437,6 +1437,8 @@ export class NaturalHistoryMuseumWorld {
         waypoints: [origin, origin.clone().addScaledVector(axis, travel * .55), origin.clone().addScaledVector(axis, travel).addScaledVector(right, 1 + index % 3 * .28), origin.clone().addScaledVector(right, .8)],
         speed: docent ? .46 : .68 + index % 3 * .06,
         pauseSeconds: docent ? 5.2 : 2.6 + index % 3,
+        pauseCount: docent ? 2 : 3,
+        paceVariation: docent ? .05 : .08 + index % 3 * .025,
         phase: index * 1.9,
         lookAround: docent ? .28 : .12 + index % 4 * .04,
       }));

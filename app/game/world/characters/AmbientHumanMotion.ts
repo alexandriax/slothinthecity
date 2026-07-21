@@ -16,6 +16,8 @@ export type AmbientHumanAgent = {
   routeLength: number;
   closedRoute: boolean;
   lookAround: number;
+  pauseCount: number;
+  paceVariation: number;
 };
 
 export type AmbientHumanAgentOptions = {
@@ -30,6 +32,10 @@ export type AmbientHumanAgentOptions = {
   closedRoute?: boolean;
   /** Small head-and-shoulder orientation changes during deliberate pauses. */
   lookAround?: number;
+  /** Number of distinct overlook/conversation pauses around a closed route. */
+  pauseCount?: number;
+  /** Gentle stride-rate variance; zero is a mechanically constant pace. */
+  paceVariation?: number;
 };
 
 /**
@@ -67,26 +73,58 @@ export function createAmbientHumanAgent(
     routeLength,
     closedRoute,
     lookAround: options.lookAround ?? .18,
+    pauseCount: Math.max(1, Math.floor(options.pauseCount ?? Math.min(3, options.waypoints?.length ?? 1))),
+    paceVariation: THREE.MathUtils.clamp(options.paceVariation ?? .1, 0, .22),
   };
 }
 
 /** Advance one ambient route and select walk/idle from actual translation. */
 export function updateAmbientHumanAgent(agent: AmbientHumanAgent, elapsed: number, delta: number) {
   const { walkSeconds, pauseSeconds } = agent;
-  const cycleSeconds = (walkSeconds + pauseSeconds) * 2;
-  const cycle = ((elapsed + agent.phase) % cycleSeconds + cycleSeconds) % cycleSeconds;
   let amount = 0;
   let moving = false;
   let direction = 1;
-  if (cycle < walkSeconds) {
-    amount = cycle / walkSeconds;
-    moving = true;
-  } else if (cycle < walkSeconds + pauseSeconds) {
-    amount = 1;
-  } else if (cycle < walkSeconds * 2 + pauseSeconds) {
-    amount = 1 - (cycle - walkSeconds - pauseSeconds) / walkSeconds;
-    moving = true;
-    direction = -1;
+  let pauseProgress = 0;
+  let stopIndex = 0;
+  if (agent.route && agent.closedRoute) {
+    // A closed promenade advances in one direction and pauses at several
+    // authored points. Reversing the complete loop at one origin made crowds
+    // double back in formation and gather robotically at the same spot.
+    const segmentWalkSeconds = walkSeconds / agent.pauseCount;
+    const segmentSeconds = segmentWalkSeconds + pauseSeconds;
+    const cycleSeconds = segmentSeconds * agent.pauseCount;
+    const cycle = THREE.MathUtils.euclideanModulo(elapsed + agent.phase, cycleSeconds);
+    stopIndex = Math.min(agent.pauseCount - 1, Math.floor(cycle / segmentSeconds));
+    const segmentTime = cycle - stopIndex * segmentSeconds;
+    if (segmentTime < segmentWalkSeconds) {
+      const linearProgress = segmentTime / Math.max(segmentWalkSeconds, .001);
+      // Preserve exact endpoints while varying the middle of each leg. The
+      // phase-derived sign prevents a whole crowd from accelerating together.
+      const variationDirection = Math.sin(agent.phase * 1.71 + stopIndex * 2.13) < 0 ? -1 : 1;
+      const organicProgress = linearProgress
+        + variationDirection * agent.paceVariation * Math.sin(linearProgress * Math.PI * 2) / (Math.PI * 2);
+      amount = (stopIndex + organicProgress) / agent.pauseCount;
+      moving = true;
+    } else {
+      amount = (stopIndex + 1) / agent.pauseCount;
+      pauseProgress = THREE.MathUtils.clamp((segmentTime - segmentWalkSeconds) / Math.max(pauseSeconds, .001), 0, 1);
+    }
+  } else {
+    const cycleSeconds = (walkSeconds + pauseSeconds) * 2;
+    const cycle = ((elapsed + agent.phase) % cycleSeconds + cycleSeconds) % cycleSeconds;
+    if (cycle < walkSeconds) {
+      amount = cycle / walkSeconds;
+      moving = true;
+    } else if (cycle < walkSeconds + pauseSeconds) {
+      amount = 1;
+      pauseProgress = (cycle - walkSeconds) / Math.max(pauseSeconds, .001);
+    } else if (cycle < walkSeconds * 2 + pauseSeconds) {
+      amount = 1 - (cycle - walkSeconds - pauseSeconds) / walkSeconds;
+      moving = true;
+      direction = -1;
+    } else {
+      pauseProgress = (cycle - walkSeconds * 2 - pauseSeconds) / Math.max(pauseSeconds, .001);
+    }
   }
 
   // Closed promenade routes retain pace through bends and pause at a real
@@ -110,7 +148,8 @@ export function updateAmbientHumanAgent(agent: AmbientHumanAgent, elapsed: numbe
     // Authored humans face local -Z at the host level. Aim that axis along
     // the route velocity; the former +Z formula made every pedestrian play a
     // forward walk while visually travelling backward.
-    const pauseLook = moving ? 0 : Math.sin((elapsed + agent.phase) * .62) * agent.lookAround;
+    const lookDirection = Math.sin(agent.phase * 2.37 + stopIndex * 1.91) < 0 ? -1 : 1;
+    const pauseLook = moving ? 0 : Math.sin(pauseProgress * Math.PI) * agent.lookAround * lookDirection;
     const targetYaw = Math.atan2(-facing.x, -facing.z) + pauseLook;
     const yawDelta = Math.atan2(
       Math.sin(targetYaw - agent.root.rotation.y),

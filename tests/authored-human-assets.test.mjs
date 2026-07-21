@@ -275,4 +275,8 @@ test("runtime loader points at the packaged LODs, atlases, Draco decoder, and sk
   assert.match(source, /"HumanWalk"/);
   assert.match(source, /new THREE\.AnimationMixer\(hydrated\)/);
   assert.match(source, /name\.includes\("lip"\)/);
+  assert.match(source, /function identitySilhouette/);
+  assert.match(source, /IDENTITY_HEIGHT/);
+  assert.match(source, /instance\.scale\.x \*= widthScale/);
+  assert.match(source, /authoredHumanSilhouette = silhouette/);
 });

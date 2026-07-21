@@ -1808,6 +1808,8 @@ export class BronxZooWorld {
         ],
         speed: .72 + index * .025,
         pauseSeconds: 2.5 + index * .37,
+        pauseCount: 3,
+        paceVariation: .07 + index % 4 * .025,
         phase: index * 2.1,
         lookAround: .13 + index % 4 * .035,
       }));

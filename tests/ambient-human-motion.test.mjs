@@ -10,6 +10,10 @@ test("ambient humans have explicit walk and pause windows with idle during a sto
   assert.match(source, /walkSeconds: options\.walkSeconds/);
   assert.match(source, /pauseSeconds: options\.pauseSeconds/);
   assert.match(source, /cycle < walkSeconds \+ pauseSeconds/);
+  assert.match(source, /pauseCount: Math\.max/);
+  assert.match(source, /segmentSeconds \* agent\.pauseCount/);
+  assert.match(source, /paceVariation \* Math\.sin/);
+  assert.match(source, /Math\.sin\(pauseProgress \* Math\.PI\)/);
   assert.match(source, /const walking = moving && distance > \.00008/);
   assert.match(source, /walking \? "walk" : "idle"/);
   assert.match(source, /Math\.atan2\(-facing\.x, -facing\.z\)/);
