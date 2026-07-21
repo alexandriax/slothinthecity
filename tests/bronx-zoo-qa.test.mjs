@@ -139,6 +139,16 @@ test("habitat research stays in the live zoo and starts across each enclosure ed
   assert.match(game, /bronxquestbison:[^{]+\{ questId: "bison-prairie-seeding", position: \[59, -107\]/);
 
   const world = new BronxZooWorld(new THREE.Scene(), textureSet(THREE), .22, 73021);
+  const liveResponses = [];
+  world.root.traverse(object => {
+    if (object.userData.embeddedHabitatResponse) liveResponses.push(object);
+  });
+  assert.equal(liveResponses.length, 24, "every physical field station should own a response inside its habitat");
+  assert.deepEqual(
+    [...new Set(liveResponses.map(response => response.userData.responseKind))].sort(),
+    ["bird-perch", "buoy-dock", "rope-anchor", "scent-vane", "seed-plot", "solar-mirror", "stripe-scanner", "wetland-valve"],
+  );
+  assert.ok(liveResponses.every(response => !response.visible), "habitat responses should appear only when their equipment is operated");
   const anywhereAlongAviaryEdge = new THREE.Vector3(-56, 1.48, -51);
   const hint = world.interactionHint(anywhereAlongAviaryEdge);
   assert.equal(hint?.kind, "ANIMAL_QUEST");
@@ -182,9 +192,23 @@ test("habitat research requires live first-person focus, preserves zoo animals, 
     const operation = world.interact(player, alignedYaw);
     assert.equal(operation?.kind, "ANIMAL_QUEST_OPERATION_STARTED");
     assert.equal(world.activeSideQuestProgress?.operation, 0);
+    assert.equal(world.activeSideQuestProgress?.operationActive, true);
+    assert.ok(world.activeHabitatResponseTarget, "operating a station should produce a physical response inside the enclosure");
 
-    for (let frame = 0; frame < 190; frame++) world.update(frame / 60, 1 / 60, player, alignedYaw);
-    const result = world.consumeHabitatEvent();
+    const responseStart = world.activeHabitatResponseTarget.clone();
+    let result;
+    for (let frame = 0; frame < 360 && !result; frame++) {
+      const liveTarget = world.activeHabitatResponseTarget;
+      assert.ok(liveTarget, "the live response should remain in-world until the observation completes");
+      const responseDirection = liveTarget.clone().sub(player);
+      const trackingYaw = Math.atan2(-responseDirection.x, -responseDirection.z);
+      world.update(frame / 60, 1 / 60, player, trackingYaw);
+      result = world.consumeHabitatEvent();
+    }
+    if (stationIndex === 0) {
+      assert.ok(world.root.getObjectByName("live-habitat-response-aviary-voices-mango"));
+      assert.ok(responseStart.distanceTo(firstRouteTarget) > 3, "the response must happen inside the habitat, away from its control post");
+    }
     assert.ok(result, "sustained focus should finish the active physical station");
     if (stationIndex < 2) assert.equal(result.kind, "ANIMAL_QUEST_ADVANCED");
     else completion = result;
@@ -203,5 +227,33 @@ test("habitat research requires live first-person focus, preserves zoo animals, 
   assert.equal(world.activeSideQuestProgress?.replay, true);
   assert.match(replay?.message ?? "", /field replay started with a new route/i);
   assert.ok(world.objectiveTarget.distanceTo(firstRouteTarget) > 1, "a replay must not open on the same station order as the previous route");
+  world.dispose();
+});
+
+test("sea-lion enrichment follows the moving buoy rather than a generic pool-center timer", async () => {
+  const { BronxZooWorld, THREE } = await loadBronxZooHarness();
+  const world = new BronxZooWorld(new THREE.Scene(), textureSet(THREE), .22, 99117);
+  world.beginAnimalQuest("sea-lion-current");
+  const player = world.objectiveTarget.clone();
+  const poolCenter = new THREE.Vector3(0, player.y, -76);
+  const centerDirection = poolCenter.clone().sub(player);
+  const centerYaw = Math.atan2(-centerDirection.x, -centerDirection.z);
+  assert.equal(world.interact(player, centerYaw)?.kind, "ANIMAL_QUEST_OPERATION_STARTED");
+
+  const responseStart = world.activeHabitatResponseTarget.clone();
+  for (let frame = 0; frame < 420; frame++) world.update(frame / 60, 1 / 60, player, centerYaw);
+  assert.equal(world.consumeHabitatEvent(), null, "staring at the pool center must not complete a moving-buoy observation");
+  assert.ok((world.activeSideQuestProgress?.operation ?? 0) < .92);
+  assert.ok(world.activeHabitatResponseTarget.distanceTo(responseStart) > 1.5, "the released buoy should visibly travel through the pool");
+
+  let completion;
+  for (let frame = 0; frame < 420 && !completion; frame++) {
+    const target = world.activeHabitatResponseTarget;
+    const direction = target.clone().sub(player);
+    const trackingYaw = Math.atan2(-direction.x, -direction.z);
+    world.update(8 + frame / 60, 1 / 60, player, trackingYaw);
+    completion = world.consumeHabitatEvent();
+  }
+  assert.equal(completion?.kind, "ANIMAL_QUEST_ADVANCED", "following the actual buoy should complete the station");
   world.dispose();
 });

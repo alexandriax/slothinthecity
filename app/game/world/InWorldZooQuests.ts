@@ -26,19 +26,20 @@ export type HabitatQuestOperation = {
 };
 
 /**
- * Research equipment is only the starting point. Each station asks the player
- * to keep the live habitat response in view while the physical operation
- * completes, turning a single button press into a short first-person field task.
+ * Research equipment is only the starting point. Each station releases a
+ * visible response into the enclosure and asks the player to follow its actual
+ * path. Progress comes from tracking that moving world object, never from
+ * facing a generic enclosure center or waiting out a hidden timer.
  */
 export const HABITAT_QUEST_OPERATIONS: Record<HabitatQuestStationKind, HabitatQuestOperation> = {
-  "bird-perch": { duration: 2.35, focusLabel: "KEEP THE PERCHED FLOCK IN VIEW", objective: "Keep the perched flock in view" },
-  "buoy-dock": { duration: 2.1, focusLabel: "TRACK THE BUOY ACROSS THE POOL", objective: "Track the buoy across the pool" },
-  "rope-anchor": { duration: 2.65, focusLabel: "WATCH THE CANOPY LINE TAKE TENSION", objective: "Watch the canopy line take tension" },
-  "stripe-scanner": { duration: 2.5, focusLabel: "KEEP THE ZEBRA'S LIVE PROFILE CENTERED", objective: "Keep the zebra's live profile centered" },
-  "scent-vane": { duration: 2.25, focusLabel: "FOLLOW THE SCENT RIBBON INTO THE CANOPY", objective: "Follow the scent ribbon into the canopy" },
-  "solar-mirror": { duration: 2.7, focusLabel: "HOLD THE SUNBEAM ON THE BASKING STONE", objective: "Hold the sunbeam on the basking stone" },
-  "wetland-valve": { duration: 2.55, focusLabel: "WATCH THE REED-SHELF WATERLINE", objective: "Watch the reed-shelf waterline" },
-  "seed-plot": { duration: 2.2, focusLabel: "TRACK THE SEED ARC INTO THE PRAIRIE", objective: "Track the seed arc into the prairie" },
+  "bird-perch": { duration: 3.45, focusLabel: "FOLLOW THE CALL PULSE ACROSS THE PERCHES", objective: "Follow the call pulse across the perches" },
+  "buoy-dock": { duration: 3.6, focusLabel: "TRACK THE LIVE BUOY ACROSS THE POOL", objective: "Track the live buoy across the pool" },
+  "rope-anchor": { duration: 3.8, focusLabel: "FOLLOW THE LOAD TROLLEY THROUGH THE CANOPY", objective: "Follow the load trolley through the canopy" },
+  "stripe-scanner": { duration: 3.55, focusLabel: "KEEP THE MOVING PROFILE SCAN CENTERED", objective: "Keep the moving profile scan centered" },
+  "scent-vane": { duration: 3.5, focusLabel: "FOLLOW THE SCENT RIBBON INTO THE CANOPY", objective: "Follow the scent ribbon into the canopy" },
+  "solar-mirror": { duration: 3.85, focusLabel: "FOLLOW THE SUN SPOT TO THE BASKING STONE", objective: "Follow the sun spot to the basking stone" },
+  "wetland-valve": { duration: 3.7, focusLabel: "FOLLOW THE FLOAT ALONG THE REED SHELF", objective: "Follow the float along the reed shelf" },
+  "seed-plot": { duration: 3.4, focusLabel: "TRACK THE SEED ARC INTO THE PRAIRIE", objective: "Track the seed arc into the prairie" },
 };
 
 export type InWorldZooQuestDefinition = {

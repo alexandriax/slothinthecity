@@ -68,6 +68,7 @@ export type BronxZooInteractionHint = {
 type ActiveHabitatOperation = {
   key: string;
   progress: number;
+  tracking: boolean;
 };
 
 type GarySnackState = "NONE" | "CARRIED" | "AIRBORNE" | "LOOSE" | "EATEN";
@@ -985,9 +986,18 @@ type HabitatQuestStationVisual = {
   progressHalo: THREE.Mesh;
   progressMaterial: THREE.MeshBasicMaterial;
   questId: ZooSideQuestId;
+  response: HabitatQuestResponseVisual;
   root: THREE.Group;
   stationId: string;
   stationIndex: number;
+};
+
+type HabitatQuestResponseVisual = {
+  end: THREE.Vector3;
+  facingYaw: number;
+  pathBend: THREE.Vector3;
+  root: THREE.Group;
+  start: THREE.Vector3;
 };
 
 function addHabitatQuestStationTop(group: THREE.Group, kind: HabitatQuestStationKind, materials: ZooMaterials, quality: number) {
@@ -1038,6 +1048,181 @@ function addHabitatQuestStationTop(group: THREE.Group, kind: HabitatQuestStation
   }
 }
 
+function habitatResponseHeight(kind: HabitatQuestStationKind) {
+  if (kind === "bird-perch") return 4.35;
+  if (kind === "rope-anchor") return 5.8;
+  if (kind === "scent-vane") return 4.35;
+  if (kind === "stripe-scanner") return 1.75;
+  if (kind === "buoy-dock") return .78;
+  if (kind === "solar-mirror" || kind === "wetland-valve") return .34;
+  return .72;
+}
+
+/**
+ * Builds the thing the player observes inside the enclosure. These responses
+ * deliberately live away from the control post: operating equipment now
+ * produces an event in the animal's space instead of filling a hidden timer.
+ */
+function addHabitatQuestResponse(
+  parent: THREE.Group,
+  definition: (typeof IN_WORLD_ZOO_QUESTS)[ZooSideQuestId],
+  station: (typeof definition.stations)[number],
+  stationIndex: number,
+  quality: number,
+) {
+  const root = new THREE.Group();
+  root.name = `live-habitat-response-${definition.id}-${station.id}`;
+  root.visible = false;
+  root.userData.embeddedHabitatResponse = true;
+  root.userData.responseKind = station.kind;
+
+  const glow = new THREE.MeshStandardMaterial({
+    color: station.kind === "solar-mirror" ? "#fff3b0" : station.kind === "wetland-valve" ? "#9fe9ed" : "#f1c954",
+    emissive: station.kind === "wetland-valve" ? "#23777d" : "#8d6714",
+    emissiveIntensity: .52,
+    roughness: .31,
+    metalness: .12,
+  });
+  const dark = new THREE.MeshStandardMaterial({ color: "#293a37", roughness: .55, metalness: .32 });
+  const translucent = new THREE.MeshBasicMaterial({
+    color: station.kind === "scent-vane"
+      ? "#d5f09d"
+      : station.kind === "solar-mirror" || station.kind === "bird-perch"
+        ? "#ffe28a"
+        : "#bcebf0",
+    transparent: true,
+    opacity: .58,
+    depthWrite: false,
+    toneMapped: false,
+    side: THREE.DoubleSide,
+  });
+
+  if (station.kind === "bird-perch") {
+    for (let ringIndex = 0; ringIndex < 3; ringIndex++) {
+      const call = new THREE.Mesh(new THREE.TorusGeometry(.42 + ringIndex * .32, .042, 8, quality > .72 ? 32 : 20), translucent.clone());
+      call.name = "aviary-live-call-wave";
+      call.position.z = ringIndex * .09;
+      root.add(call);
+    }
+    const callCore = new THREE.Mesh(new THREE.SphereGeometry(.16, 14, 9), glow);
+    callCore.name = "aviary-live-call-source";
+    root.add(callCore);
+    const contactPerch = new THREE.Mesh(new THREE.CylinderGeometry(.045, .06, 1.05, 10), dark);
+    contactPerch.name = "aviary-live-contact-perch";
+    contactPerch.rotation.z = Math.PI / 2;
+    root.add(contactPerch);
+  } else if (station.kind === "buoy-dock") {
+    const buoyOrange = new THREE.MeshStandardMaterial({ color: "#e95f3c", emissive: "#672010", emissiveIntensity: .2, roughness: .38, metalness: .08 });
+    const buoyWhite = new THREE.MeshStandardMaterial({ color: "#f5efdc", roughness: .34, metalness: .12 });
+    const buoy = new THREE.Mesh(new THREE.SphereGeometry(.42, quality > .72 ? 24 : 16, 12), buoyOrange);
+    buoy.name = "sea-lion-live-current-buoy";
+    root.add(buoy);
+    const safetyBand = new THREE.Mesh(new THREE.TorusGeometry(.37, .07, 8, quality > .72 ? 24 : 16), buoyWhite);
+    safetyBand.name = "sea-lion-buoy-reflective-safety-band";
+    safetyBand.rotation.x = Math.PI / 2;
+    safetyBand.position.y = .04;
+    root.add(safetyBand);
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(.07, .09, .46, 10), buoyOrange);
+    mast.name = "sea-lion-buoy-grab-mast";
+    mast.position.y = .5;
+    root.add(mast);
+    const handle = new THREE.Mesh(new THREE.TorusGeometry(.13, .035, 8, 18, Math.PI * 1.6), buoyWhite);
+    handle.name = "sea-lion-buoy-enrichment-handle";
+    handle.position.y = .77;
+    handle.rotation.z = -.3;
+    root.add(handle);
+    const collar = new THREE.Mesh(new THREE.TorusGeometry(.52, .055, 9, quality > .72 ? 28 : 18), dark);
+    collar.name = "sea-lion-buoy-water-collar";
+    collar.rotation.x = Math.PI / 2;
+    collar.position.y = -.08;
+    root.add(collar);
+    for (let wakeIndex = 0; wakeIndex < 3; wakeIndex++) {
+      const wake = new THREE.Mesh(new THREE.RingGeometry(.62 + wakeIndex * .36, .66 + wakeIndex * .36, quality > .72 ? 28 : 18), translucent.clone());
+      wake.name = "sea-lion-physical-buoy-wake";
+      wake.rotation.x = -Math.PI / 2;
+      wake.position.y = -.22;
+      root.add(wake);
+    }
+  } else if (station.kind === "rope-anchor") {
+    const trolley = new THREE.Mesh(new RoundedBoxGeometry(.68, .28, .34, 4, .06), glow);
+    trolley.name = "monkey-canopy-live-load-trolley";
+    root.add(trolley);
+    for (const side of [-1, 1]) {
+      const wheel = new THREE.Mesh(new THREE.TorusGeometry(.13, .035, 8, 18), dark);
+      wheel.position.set(side * .21, -.19, 0);
+      wheel.rotation.y = Math.PI / 2;
+      root.add(wheel);
+    }
+  } else if (station.kind === "stripe-scanner") {
+    const scanBand = new THREE.Mesh(new RoundedBoxGeometry(.1, 2.5, 2.1, 3, .03), translucent);
+    scanBand.name = "zebra-live-profile-scan-band";
+    root.add(scanBand);
+    const lens = new THREE.Mesh(new RoundedBoxGeometry(.24, .34, .48, 4, .05), dark);
+    lens.name = "zebra-live-profile-tracker";
+    root.add(lens);
+  } else if (station.kind === "scent-vane") {
+    for (let moteIndex = 0; moteIndex < 9; moteIndex++) {
+      const mote = new THREE.Mesh(new THREE.SphereGeometry(.075 + moteIndex % 3 * .018, 8, 6), moteIndex % 2 ? glow : translucent);
+      mote.name = "red-panda-live-scent-ribbon-mote";
+      mote.position.set(-moteIndex * .22, Math.sin(moteIndex * 1.7) * .16, Math.cos(moteIndex * 1.3) * .18);
+      root.add(mote);
+    }
+  } else if (station.kind === "solar-mirror") {
+    const sunSpot = new THREE.Mesh(new THREE.CircleGeometry(.62, quality > .72 ? 32 : 20), translucent);
+    sunSpot.name = "tortoise-live-warming-sun-spot";
+    sunSpot.rotation.x = -Math.PI / 2;
+    root.add(sunSpot);
+    const warmCenter = new THREE.Mesh(new THREE.CircleGeometry(.24, 20), glow);
+    warmCenter.rotation.x = -Math.PI / 2;
+    warmCenter.position.y = .014;
+    root.add(warmCenter);
+  } else if (station.kind === "wetland-valve") {
+    const float = new THREE.Mesh(new THREE.CylinderGeometry(.24, .28, .18, 16), glow);
+    float.name = "flamingo-live-waterline-float";
+    root.add(float);
+    for (let rippleIndex = 0; rippleIndex < 3; rippleIndex++) {
+      const ripple = new THREE.Mesh(new THREE.RingGeometry(.38 + rippleIndex * .31, .415 + rippleIndex * .31, 24), translucent.clone());
+      ripple.name = "flamingo-physical-waterline-ripple";
+      ripple.rotation.x = -Math.PI / 2;
+      ripple.position.y = -.08;
+      root.add(ripple);
+    }
+  } else {
+    for (let seedIndex = 0; seedIndex < 11; seedIndex++) {
+      const seed = new THREE.Mesh(new THREE.SphereGeometry(.055 + seedIndex % 2 * .018, 8, 6), seedIndex % 3 ? glow : dark);
+      seed.name = "bison-live-native-seed-arc";
+      seed.position.set((seedIndex - 5) * .075, Math.abs(seedIndex - 5) * -.035, Math.sin(seedIndex * 2.2) * .09);
+      root.add(seed);
+    }
+  }
+
+  const center = new THREE.Vector2(definition.center[0], definition.center[1]);
+  const stationPosition = new THREE.Vector2(station.position[0], station.position[1]);
+  const outward = stationPosition.clone().sub(center).normalize();
+  const tangent = new THREE.Vector2(-outward.y, outward.x).multiplyScalar(stationIndex % 2 ? -1 : 1);
+  const responseHeight = habitatResponseHeight(station.kind);
+  const startXZ = center.clone().addScaledVector(outward, 6.2);
+  const endXZ = center.clone().addScaledVector(outward, -4.7).addScaledVector(tangent, 3.4);
+  const start = new THREE.Vector3(startXZ.x, terrainHeight(startXZ.x, startXZ.y) + responseHeight, startXZ.y);
+  const end = new THREE.Vector3(endXZ.x, terrainHeight(endXZ.x, endXZ.y) + responseHeight, endXZ.y);
+  if (station.kind === "buoy-dock") {
+    start.y = terrainHeight(definition.center[0], definition.center[1]) + 1.02;
+    end.y = start.y;
+  }
+  const pathBend = new THREE.Vector3(tangent.x, 0, tangent.y).multiplyScalar(4.6);
+  const facingYaw = Math.atan2(outward.x, outward.y);
+  root.position.copy(start);
+  root.rotation.y = facingYaw;
+  root.traverse(object => {
+    if (object instanceof THREE.Mesh) {
+      object.castShadow = quality > .72 && station.kind !== "solar-mirror";
+      object.frustumCulled = false;
+    }
+  });
+  parent.add(root);
+  return { end, facingYaw, pathBend, root, start } satisfies HabitatQuestResponseVisual;
+}
+
 function addInWorldHabitatQuestStations(root: THREE.Group, materials: ZooMaterials, quality: number, obstacles: Obstacle[]) {
   const visuals = new Map<string, HabitatQuestStationVisual>();
   const stationGroup = new THREE.Group();
@@ -1070,6 +1255,7 @@ function addInWorldHabitatQuestStations(root: THREE.Group, materials: ZooMateria
       stationRoot.add(progressHalo);
       stationRoot.traverse(object => { if (object instanceof THREE.Mesh) object.castShadow = quality > .66; });
       stationGroup.add(stationRoot);
+      const response = addHabitatQuestResponse(stationGroup, definition, station, index, quality);
       obstacles.push({ kind: "circle", x: station.position[0], z: station.position[1], radius: .5 });
       visuals.set(`${definition.id}:${station.id}`, {
         indicator,
@@ -1078,6 +1264,7 @@ function addInWorldHabitatQuestStations(root: THREE.Group, materials: ZooMateria
         progressHalo,
         progressMaterial,
         questId: definition.id,
+        response,
         root: stationRoot,
         stationId: station.id,
         stationIndex: index,
@@ -1983,10 +2170,18 @@ export class BronxZooWorld {
     if (!this.activeAnimalQuest) return null;
     return {
       current: this.activeAnimalQuest.step + 1,
+      operationActive: Boolean(this.activeHabitatOperation),
       operation: this.activeHabitatOperation?.progress ?? 0,
       replay: this.activeAnimalQuest.replay,
+      tracking: this.activeHabitatOperation?.tracking ?? false,
       total: this.activeAnimalQuest.order.length,
     };
+  }
+  get activeHabitatResponseTarget() {
+    if (!this.activeAnimalQuest || !this.activeHabitatOperation) return null;
+    const station = activeQuestStation(this.activeAnimalQuest);
+    const visual = this.questStationVisuals.get(`${this.activeAnimalQuest.id}:${station.id}`);
+    return visual?.response.root.getWorldPosition(new THREE.Vector3()) ?? null;
   }
   get researchStreak() { return this.habitatResearchStreak; }
 
@@ -2002,7 +2197,7 @@ export class BronxZooWorld {
       if (this.activeHabitatOperation) {
         const station = activeQuestStation(this.activeAnimalQuest);
         const operation = HABITAT_QUEST_OPERATIONS[station.kind];
-        return `${operation.objective} · ${Math.round(this.activeHabitatOperation.progress * 100)}%`;
+        return `${operation.objective} · ${this.activeHabitatOperation.tracking ? "RESPONSE HELD" : "FIND THE LIVE RESPONSE"}`;
       }
       return activeQuestObjective(this.activeAnimalQuest).objective;
     }
@@ -2044,8 +2239,8 @@ export class BronxZooWorld {
         return {
           kind: "ANIMAL_QUEST_FOCUS",
           questId: this.activeAnimalQuest.id,
-          label: `${operation.focusLabel} · ${Math.round(this.activeHabitatOperation.progress * 100)}%`,
-          target,
+          label: this.activeHabitatOperation.tracking ? operation.focusLabel : `FIND THE LIVE RESPONSE · ${operation.focusLabel}`,
+          target: this.activeHabitatResponseTarget ?? target,
           distance,
         };
       }
@@ -2087,20 +2282,20 @@ export class BronxZooWorld {
       step: 1,
       stepCount: this.activeAnimalQuest.order.length,
       message: replay
-        ? `${quest.title} field replay started with a new route. ${route.objective} Hold each live habitat response in view to extend your research streak.`
-        : `${quest.title} is now live in the habitat. ${route.objective} Follow the glowing research beacon, then hold the live habitat response in view.`,
+        ? `${quest.title} field replay started with a new route. ${route.objective} Follow each physical response through the habitat to extend your research streak.`
+        : `${quest.title} is now live in the habitat. ${route.objective} Follow the numbered field station, then track what its equipment sets in motion.`,
     };
   }
 
-  private habitatFocusAligned(player: THREE.Vector3, yaw: number) {
+  private habitatFocusAligned(player: THREE.Vector3, yaw: number, target?: THREE.Vector3, minimumDot = .5) {
     if (!this.activeAnimalQuest) return false;
     const center = IN_WORLD_ZOO_QUESTS[this.activeAnimalQuest.id].center;
-    const toHabitatX = center[0] - player.x;
-    const toHabitatZ = center[1] - player.z;
+    const toHabitatX = (target?.x ?? center[0]) - player.x;
+    const toHabitatZ = (target?.z ?? center[1]) - player.z;
     const length = Math.hypot(toHabitatX, toHabitatZ) || 1;
     const forwardX = -Math.sin(yaw);
     const forwardZ = -Math.cos(yaw);
-    return (forwardX * toHabitatX + forwardZ * toHabitatZ) / length >= .5;
+    return (forwardX * toHabitatX + forwardZ * toHabitatZ) / length >= minimumDot;
   }
 
   private finishActiveHabitatStation(): BronxZooEvent | null {
@@ -2177,13 +2372,19 @@ export class BronxZooWorld {
       this.activeHabitatOperation = {
         key: `${this.activeAnimalQuest.id}:${station.id}`,
         progress: 0,
+        tracking: true,
       };
+      const response = this.questStationVisuals.get(this.activeHabitatOperation.key)?.response;
+      if (response) {
+        response.root.position.copy(response.start);
+        response.root.visible = true;
+      }
       return {
         kind: "ANIMAL_QUEST_OPERATION_STARTED",
         questId: hint.questId,
         step: this.activeAnimalQuest.step + 1,
         stepCount: this.activeAnimalQuest.order.length,
-        message: `${station.action}. ${operation.objective} while the physical response completes.`,
+        message: `${station.action}. The habitat is responding now — ${operation.objective.toLowerCase()} all the way through.`,
       };
     }
     return { kind: "LOCK_PICKING_STARTED", message: "Keep plug tension between 40% and 60%, then find the six pins in binding order." };
@@ -2333,9 +2534,11 @@ export class BronxZooWorld {
     }
     const operation = HABITAT_QUEST_OPERATIONS[station.kind];
     const distance = Math.hypot(player.x - station.position[0], player.z - station.position[1]);
-    const engaged = distance <= 3.25 && this.habitatFocusAligned(player, yaw);
+    const responseTarget = this.activeHabitatResponseTarget;
+    const engaged = distance <= 3.25 && Boolean(responseTarget) && this.habitatFocusAligned(player, yaw, responseTarget ?? undefined, .955);
+    this.activeHabitatOperation.tracking = engaged;
     this.activeHabitatOperation.progress = THREE.MathUtils.clamp(
-      this.activeHabitatOperation.progress + delta / operation.duration * (engaged ? 1 : -.38),
+      this.activeHabitatOperation.progress + delta / operation.duration * (engaged ? 1 : -.24),
       0,
       1,
     );
@@ -2370,6 +2573,41 @@ export class BronxZooWorld {
       visual.progressHalo.rotation.z = elapsed * .72;
       visual.mechanism.position.y = 0;
       visual.mechanism.rotation.set(0, 0, 0);
+      visual.response.root.visible = operating;
+      visual.response.root.scale.setScalar(1);
+      visual.response.root.rotation.set(0, visual.response.facingYaw, 0);
+      if (operating) {
+        const responseProgress = THREE.MathUtils.smoothstep(progress, 0, 1);
+        visual.response.root.position.lerpVectors(visual.response.start, visual.response.end, responseProgress);
+        visual.response.root.position.addScaledVector(visual.response.pathBend, Math.sin(responseProgress * Math.PI));
+        if (visual.kind === "bird-perch") {
+          visual.response.root.position.y += Math.sin(responseProgress * Math.PI) * 1.05;
+          visual.response.root.scale.setScalar(1 + Math.sin(elapsed * 7.4) * .07);
+          visual.response.root.rotation.y += Math.sin(elapsed * .9) * .08;
+        } else if (visual.kind === "buoy-dock") {
+          visual.response.root.position.y += Math.sin(elapsed * 4.2) * .09;
+          visual.response.root.rotation.y += elapsed * .42;
+        } else if (visual.kind === "rope-anchor") {
+          visual.response.root.position.y += Math.sin(responseProgress * Math.PI) * .5;
+          visual.response.root.rotation.z = Math.sin(elapsed * 6.1) * .045;
+        } else if (visual.kind === "stripe-scanner") {
+          visual.response.root.position.y += Math.sin(responseProgress * Math.PI * 2) * .38;
+          visual.response.root.rotation.y += Math.sin(elapsed * 2.2) * .16;
+        } else if (visual.kind === "scent-vane") {
+          visual.response.root.position.y += Math.sin(responseProgress * Math.PI) * 1.25 + Math.sin(elapsed * 3.1) * .12;
+          visual.response.root.rotation.y += elapsed * .34;
+        } else if (visual.kind === "solar-mirror") {
+          visual.response.root.scale.setScalar(.84 + responseProgress * .34 + Math.sin(elapsed * 5.5) * .04);
+          visual.response.root.rotation.y += elapsed * .18;
+        } else if (visual.kind === "wetland-valve") {
+          visual.response.root.position.y += Math.sin(elapsed * 3.6) * .035;
+          visual.response.root.scale.setScalar(.9 + responseProgress * .22);
+        } else {
+          visual.response.root.position.y += Math.sin(responseProgress * Math.PI) * 3.8;
+          visual.response.root.rotation.z = -responseProgress * Math.PI * 1.2;
+        }
+        visual.response.root.userData.trackingProgress = progress;
+      }
       if (operating || completed) {
         const motion = completed ? 1 : progress;
         const pulse = operating ? Math.sin(elapsed * 8) * .05 : 0;

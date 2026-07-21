@@ -104,6 +104,7 @@ const QA_ZOO_SIDE_QUESTS: Partial<Record<string, { focusCenter?: [number, number
   bronxquestbirds: { questId: "aviary-voices", position: [-26, -40], yaw: 1 },
   bronxquestbirdsfocus: { focusCenter: [-43, -51], questId: "aviary-voices", position: [-26, -40], yaw: 1 },
   bronxquestsealion: { questId: "sea-lion-current", position: [0, -63], yaw: 0 },
+  bronxquestsealionfocus: { focusCenter: [0, -76], questId: "sea-lion-current", position: [0, -63], yaw: 0 },
   bronxquestmonkey: { questId: "monkey-canopy-rig", position: [-24, -98], yaw: 1.4 },
   bronxquestzebra: { questId: "zebra-stripe-scan", position: [26, -98], yaw: -1.2 },
   bronxquestredpanda: { questId: "red-panda-scent-wind", position: [-24, -135], yaw: 1.816 },
@@ -445,7 +446,7 @@ export function SubwayGame({
           : "BRONX ZOO · WILDLIFE CONSERVATION CAMPUS",
         status:
           activeHabitatQuest && habitatProgress
-            ? `IN-WORLD HABITAT WORK · ${habitatProgress.current} / ${habitatProgress.total} · STREAK ${world.researchStreak}`
+            ? `LIVE HABITAT RESPONSE · ${habitatProgress.current} / ${habitatProgress.total}${habitatProgress.operationActive ? habitatProgress.tracking ? " · RESPONSE HELD" : " · FOLLOW IT" : ""} · STREAK ${world.researchStreak}`
             : quest === "ENTER_ZOO"
             ? companionStatus(count)
             : quest === "FIND_SLOTHS"
@@ -1663,8 +1664,8 @@ export function SubwayGame({
               ).normalize();
               const focusSide = new THREE.Vector3(-focusDirection.z, 0, focusDirection.x);
               player.copy(focusTarget)
-                .addScaledVector(focusDirection, -2.22)
-                .addScaledVector(focusSide, .65);
+                .addScaledVector(focusDirection, -1.72)
+                .addScaledVector(focusSide, 1.52);
               player.y = reviewWorld.floorHeight(player.x, player.z) + 1.48;
               const viewDirection = new THREE.Vector3(
                 qaZooSideQuest.focusCenter[0] - player.x,
@@ -2491,7 +2492,7 @@ export function SubwayGame({
             status = skateboarding
               ? "SKATEBOARD · SPACE KICKFLIP"
               : activeHabitatQuest && habitatProgress
-                ? `IN-WORLD HABITAT WORK · ${habitatProgress.current} / ${habitatProgress.total}${habitatProgress.operation > 0 ? ` · FOCUS ${Math.round(habitatProgress.operation * 100)}%` : ""} · STREAK ${zooWorld.researchStreak}`
+                ? `LIVE HABITAT RESPONSE · ${habitatProgress.current} / ${habitatProgress.total}${habitatProgress.operationActive ? habitatProgress.tracking ? " · RESPONSE HELD" : " · FOLLOW IT" : ""} · STREAK ${zooWorld.researchStreak}`
               : quest === "ENTER_ZOO"
                 ? count
                   ? companionStatus(count)
