@@ -250,12 +250,42 @@ function addSubwayEntrance(root: THREE.Group, textures: GameTextures, heightAt: 
     const globePost = new THREE.Mesh(new THREE.CylinderGeometry(.085, .105, 2.55, 14), iron); globePost.position.set(side * 3.7, 1.28, .5); entrance.add(globePost);
     const globe = new THREE.Mesh(new THREE.SphereGeometry(.31, high ? 28 : 18, 16), green); globe.position.set(side * 3.7, 2.7, .5); entrance.add(globe);
   }
-  const canopy = new THREE.Mesh(new RoundedBoxGeometry(7.6, .28, 5.1, 7, .1), iron); canopy.position.set(0, 3.35, -1.7); canopy.castShadow = true; entrance.add(canopy);
+  const canopyGlass = new THREE.MeshPhysicalMaterial({ color: "#9bbdb4", transparent: true, opacity: .24, roughness: .18, transmission: .18, clearcoat: .5, depthWrite: false, side: THREE.DoubleSide });
+  canopyGlass.forceSinglePass = true;
+  const canopy = new THREE.Mesh(new RoundedBoxGeometry(7.25, .16, 4.35, 7, .075), canopyGlass);
+  canopy.name = "fifth-avenue-transparent-human-scale-subway-canopy";
+  canopy.position.set(0, 3.42, -1.7);
+  entrance.add(canopy);
+  for (const z of [-3.82, .42]) {
+    const fascia = new THREE.Mesh(new RoundedBoxGeometry(7.35, .12, .11, 3, .025), iron);
+    fascia.name = "fifth-avenue-slim-subway-canopy-fascia";
+    fascia.position.set(0, 3.42, z);
+    entrance.add(fascia);
+  }
   for (const x of [-3.25, 3.25]) for (const z of [-.15, -3.45]) { const support = new THREE.Mesh(new THREE.CylinderGeometry(.075, .095, 3.25, 12), iron); support.position.set(x, 1.68, z); entrance.add(support); }
-  const subwaySign = new THREE.Mesh(new RoundedBoxGeometry(6.7, 1.3, .25, 5, .08), new THREE.MeshStandardMaterial({ map: subwayTexture, roughness: .48 })); subwaySign.position.set(0, 2.7, .62); entrance.add(subwaySign);
-  const directionSign = new THREE.Mesh(new RoundedBoxGeometry(4.8, 1.02, .14, 4, .055), new THREE.MeshStandardMaterial({ map: directionTexture, roughness: .5 })); directionSign.position.set(0, 2.56, -4.15); directionSign.rotation.x = -.045; entrance.add(directionSign);
+  const subwaySign = new THREE.Mesh(new RoundedBoxGeometry(3.65, .56, .16, 5, .055), new THREE.MeshStandardMaterial({ map: subwayTexture, roughness: .48 }));
+  subwaySign.name = "fifth-avenue-human-scale-overhead-subway-sign";
+  subwaySign.position.set(0, 3.05, -4.55);
+  entrance.add(subwaySign);
+  const directionSign = new THREE.Mesh(new RoundedBoxGeometry(2.95, .5, .12, 4, .045), new THREE.MeshStandardMaterial({ map: directionTexture, roughness: .5 }));
+  directionSign.name = "fifth-avenue-recessive-stair-direction-sign";
+  directionSign.position.set(0, 2.35, -7.5);
+  directionSign.rotation.x = -.045;
+  entrance.add(directionSign);
   const lightMaterial = new THREE.MeshPhysicalMaterial({ map: textures.stone, color: "#fff1c8", emissive: "#ffe8a8", emissiveIntensity: 2.1, roughness: .2 });
-  for (let index = 0; index < (high ? 5 : 3); index++) { const light = new THREE.Mesh(new RoundedBoxGeometry(3.7, .07, .18, 3, .025), lightMaterial); light.position.set(0, 2.7 - index * .48, -2.8 - index * 1.45); light.rotation.x = -.16; entrance.add(light); }
+  for (const side of [-1, 1]) for (let index = 0; index < (high ? 4 : 3); index++) {
+    const light = new THREE.Mesh(new RoundedBoxGeometry(.16, .42, .1, 3, .025), lightMaterial);
+    light.name = "fifth-avenue-subway-stair-wall-sconce";
+    light.position.set(side * 2.72, 1.55 - index * .48, -2.45 - index * 1.75);
+    light.rotation.x = -.16;
+    entrance.add(light);
+  }
+  for (const [z, y] of [[-2.8, 1.55], [-6.35, .25]] as const) {
+    const stairLight = new THREE.PointLight("#ffe8b4", high ? 18 : 12, 8.5, 1.65);
+    stairLight.name = "fifth-avenue-subway-warm-stair-light";
+    stairLight.position.set(0, y, z);
+    entrance.add(stairLight);
+  }
   const newsbox = new THREE.Mesh(new RoundedBoxGeometry(1.05, 1.45, .72, 5, .09), new THREE.MeshStandardMaterial({ map: directionTexture, roughness: .66 })); newsbox.position.set(5.65, .74, 2.3); newsbox.rotation.y = -.12; entrance.add(newsbox);
   texturedShrub(entrance, textures, -6.4, 3, .95, quality); texturedShrub(entrance, textures, 6.8, -.2, .8, quality);
   root.add(entrance); return entrance;
@@ -271,6 +301,52 @@ function addFifthAvenueStreetscape(root: THREE.Group, textures: GameTextures, ow
   const brownstone = new THREE.MeshStandardMaterial({ map: textures.stone, color: "#806057", roughness: .88 });
   const metal = new THREE.MeshStandardMaterial({ color: "#26302e", roughness: .38, metalness: .72 });
   const glass = new THREE.MeshStandardMaterial({ color: "#1d2d32", emissive: "#765a32", emissiveIntensity: .2, roughness: .34, metalness: .12 });
+
+  // The subway sits at the seam between Central Park and the avenue. The
+  // original landmark geometry covered only the roads, leaving the park side
+  // and gaps behind the stair as clear sky. These underlay slabs continue
+  // beyond the camera far plane so every lateral view resolves into ground,
+  // trees, or architecture instead of a bright world boundary.
+  const parkGround = new THREE.Mesh(
+    new RoundedBoxGeometry(160, .2, 380, 4, .05),
+    new THREE.MeshStandardMaterial({ map: textures.ground, bumpMap: textures.ground, bumpScale: .045, color: "#3f5737", roughness: .98 }),
+  );
+  parkGround.name = "fifth-avenue-continuous-central-park-ground-underlay";
+  parkGround.position.set(-70, -.12, 0);
+  parkGround.receiveShadow = true;
+  district.add(parkGround);
+  const urbanUnderlay = new THREE.Mesh(new RoundedBoxGeometry(156, .18, 380, 4, .05), concrete);
+  urbanUnderlay.name = "fifth-avenue-continuous-urban-ground-underlay";
+  urbanUnderlay.position.set(66, -.13, 0);
+  urbanUnderlay.receiveShadow = true;
+  district.add(urbanUnderlay);
+  const parkPromenade = new THREE.Mesh(new RoundedBoxGeometry(8.5, .12, 350, 4, .045), concrete);
+  parkPromenade.name = "fifth-avenue-park-edge-continuous-pedestrian-promenade";
+  parkPromenade.position.set(-6.5, .015, 0);
+  parkPromenade.receiveShadow = true;
+  district.add(parkPromenade);
+
+  for (const segment of [
+    { z: -103, depth: 174 },
+    { z: 101, depth: 166 },
+  ]) {
+    const wall = new THREE.Mesh(new RoundedBoxGeometry(.72, .72, segment.depth, 4, .07), limestone);
+    wall.name = "fifth-avenue-continuous-rusticated-park-boundary-wall";
+    wall.position.set(3.45, .36, segment.z);
+    wall.receiveShadow = true;
+    district.add(wall);
+    const rail = new THREE.Mesh(new RoundedBoxGeometry(.11, .11, segment.depth - 1.2, 3, .025), metal);
+    rail.name = "fifth-avenue-park-boundary-top-rail";
+    rail.position.set(3.45, 1.12, segment.z);
+    district.add(rail);
+    const postCount = Math.max(2, Math.floor(segment.depth / 4.2));
+    for (let index = 0; index < postCount; index++) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(.035, .045, .82, 8), metal);
+      post.name = "fifth-avenue-park-boundary-human-scale-post";
+      post.position.set(3.45, .78, segment.z - segment.depth * .5 + 1.8 + index * ((segment.depth - 3.6) / Math.max(1, postCount - 1)));
+      district.add(post);
+    }
+  }
 
   // Fifth Avenue runs north/south on the park edge; 59th Street crosses the
   // entrance. Long continuations, real curb bands and marked junctions keep
@@ -348,6 +424,125 @@ function addFifthAvenueStreetscape(root: THREE.Group, textures: GameTextures, ow
     understory.position.set(x + (tree % 2 ? 2.3 : -2), 1.1, z + 4.5);
     understory.scale.set(1.65, .8, 1.3);
     district.add(understory);
+  }
+
+  const woodlandRandom = (() => { let value = 0x5f_41_76; return () => ((value = Math.imul(value ^ value >>> 15, 1 | value), value ^= value + Math.imul(value ^ value >>> 7, 61 | value), ((value ^ value >>> 14) >>> 0) / 4294967296)); })();
+  const woodlandCount = quality < .58 ? 26 : 48;
+  const woodlandTrunks = new THREE.InstancedMesh(
+    new THREE.CylinderGeometry(.18, .31, 5.8, quality > .72 ? 10 : 7),
+    new THREE.MeshStandardMaterial({ map: textures.bark, color: "#604a38", roughness: .98 }),
+    woodlandCount,
+  );
+  woodlandTrunks.name = "fifth-avenue-layered-park-woodland-trunks-to-fog";
+  const woodlandCrowns = new THREE.InstancedMesh(
+    new THREE.IcosahedronGeometry(2.6, quality > .72 ? 2 : 1),
+    new THREE.MeshStandardMaterial({ map: textures.foliage, color: "#3d623e", roughness: .96 }),
+    woodlandCount * 2,
+  );
+  woodlandCrowns.name = "fifth-avenue-layered-park-woodland-canopy-to-fog";
+  const woodlandDummy = new THREE.Object3D();
+  for (let index = 0; index < woodlandCount; index++) {
+    const x = -18 - woodlandRandom() * 108;
+    const z = -175 + woodlandRandom() * 350;
+    const scale = .78 + woodlandRandom() * .55;
+    woodlandDummy.position.set(x, 2.9 * scale, z);
+    woodlandDummy.rotation.set(0, woodlandRandom() * Math.PI, 0);
+    woodlandDummy.scale.set(scale, scale, scale);
+    woodlandDummy.updateMatrix();
+    woodlandTrunks.setMatrixAt(index, woodlandDummy.matrix);
+    for (let crownIndex = 0; crownIndex < 2; crownIndex++) {
+      woodlandDummy.position.set(x + (woodlandRandom() - .5) * 2.8, 6.1 * scale + crownIndex * 1.2, z + (woodlandRandom() - .5) * 2.4);
+      woodlandDummy.rotation.set(0, woodlandRandom() * Math.PI, 0);
+      woodlandDummy.scale.set(scale * (1 + crownIndex * .12), scale * .78, scale);
+      woodlandDummy.updateMatrix();
+      woodlandCrowns.setMatrixAt(index * 2 + crownIndex, woodlandDummy.matrix);
+    }
+  }
+  woodlandTrunks.instanceMatrix.needsUpdate = true;
+  woodlandCrowns.instanceMatrix.needsUpdate = true;
+  woodlandTrunks.castShadow = quality > .78;
+  woodlandCrowns.castShadow = quality > .86;
+  district.add(woodlandTrunks, woodlandCrowns);
+
+  const horizonRows = quality < .58 ? 2 : 4;
+  const horizonColumns = quality < .58 ? 11 : 16;
+  const horizonTreeCount = horizonRows * horizonColumns;
+  const horizonTrunks = new THREE.InstancedMesh(
+    new THREE.CylinderGeometry(.2, .34, 6.5, quality > .72 ? 10 : 7),
+    woodlandTrunks.material,
+    horizonTreeCount,
+  );
+  horizonTrunks.name = "fifth-avenue-dense-park-horizon-trunks";
+  const horizonCrowns = new THREE.InstancedMesh(
+    new THREE.IcosahedronGeometry(3.15, quality > .72 ? 2 : 1),
+    woodlandCrowns.material,
+    horizonTreeCount * 3,
+  );
+  horizonCrowns.name = "fifth-avenue-dense-park-horizon-canopy-wall";
+  for (let index = 0; index < horizonTreeCount; index++) {
+    const row = Math.floor(index / horizonColumns);
+    const column = index % horizonColumns;
+    const amount = column / Math.max(1, horizonColumns - 1);
+    const x = -148 + amount * 156 + (row % 2 ? 3.5 : 0) + (woodlandRandom() - .5) * 2.8;
+    const z = -48 - row * 38 + (woodlandRandom() - .5) * 5;
+    const scale = .86 + woodlandRandom() * .38;
+    woodlandDummy.position.set(x, 3.25 * scale, z);
+    woodlandDummy.rotation.set(0, woodlandRandom() * Math.PI, 0);
+    woodlandDummy.scale.set(scale, scale, scale);
+    woodlandDummy.updateMatrix();
+    horizonTrunks.setMatrixAt(index, woodlandDummy.matrix);
+    for (let crownIndex = 0; crownIndex < 3; crownIndex++) {
+      woodlandDummy.position.set(x + (crownIndex - 1) * 2.1 + (woodlandRandom() - .5), 6.6 * scale + (crownIndex % 2) * 1.45, z + (crownIndex - 1) * .9);
+      woodlandDummy.rotation.set(0, woodlandRandom() * Math.PI, 0);
+      woodlandDummy.scale.set(scale * (1.02 + crownIndex * .08), scale * .8, scale);
+      woodlandDummy.updateMatrix();
+      horizonCrowns.setMatrixAt(index * 3 + crownIndex, woodlandDummy.matrix);
+    }
+  }
+  horizonTrunks.instanceMatrix.needsUpdate = true;
+  horizonCrowns.instanceMatrix.needsUpdate = true;
+  horizonTrunks.castShadow = quality > .82;
+  district.add(horizonTrunks, horizonCrowns);
+
+  const horizonShrubCount = quality < .58 ? 32 : 64;
+  const horizonShrubs = new THREE.InstancedMesh(
+    new THREE.IcosahedronGeometry(1, quality > .72 ? 2 : 1),
+    new THREE.MeshStandardMaterial({ map: textures.foliage, color: "#ffffff", roughness: .98, vertexColors: true }),
+    horizonShrubCount,
+  );
+  horizonShrubs.name = "fifth-avenue-dense-park-horizon-understory";
+  for (let index = 0; index < horizonShrubCount; index++) {
+    const size = 1.5 + index % 3 * .22;
+    const row = index % horizonRows;
+    const column = Math.floor(index / horizonRows);
+    const columns = Math.ceil(horizonShrubCount / horizonRows);
+    woodlandDummy.position.set(-148 + column * (156 / Math.max(1, columns - 1)) + (row % 2 ? 2.8 : 0), 1.12 + index % 2 * .16, -42 - row * 39 + index % 3 * 3.4);
+    woodlandDummy.rotation.set(0, index * .71, 0);
+    woodlandDummy.scale.set(size * 1.6, size * .82, size * 1.35);
+    woodlandDummy.updateMatrix();
+    horizonShrubs.setMatrixAt(index, woodlandDummy.matrix);
+    horizonShrubs.setColorAt(index, new THREE.Color(index % 2 ? "#36583a" : "#496b40"));
+  }
+  horizonShrubs.instanceMatrix.needsUpdate = true;
+  if (horizonShrubs.instanceColor) horizonShrubs.instanceColor.needsUpdate = true;
+  district.add(horizonShrubs);
+
+  for (let benchIndex = 0; benchIndex < 8; benchIndex++) {
+    const bench = new THREE.Group();
+    bench.name = "fifth-avenue-park-promenade-bench";
+    bench.position.set(-11.5, .1, -142 + benchIndex * 40);
+    const seat = new THREE.Mesh(new RoundedBoxGeometry(3.2, .16, .62, 4, .045), new THREE.MeshStandardMaterial({ map: textures.bark, color: "#73553d", roughness: .94 }));
+    seat.position.y = .72;
+    bench.add(seat);
+    const back = new THREE.Mesh(new RoundedBoxGeometry(3.2, .72, .13, 4, .035), metal);
+    back.position.set(0, 1.08, .28);
+    bench.add(back);
+    for (const x of [-1.18, 1.18]) {
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(.045, .055, .65, 8), metal);
+      leg.position.set(x, .38, 0);
+      bench.add(leg);
+    }
+    district.add(bench);
   }
 
   const carColors = ["#e0bb27", "#4e6b7a", "#1f2222", "#a8a7a1", "#7f463e", "#d1b72b"];

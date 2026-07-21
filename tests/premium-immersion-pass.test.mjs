@@ -29,6 +29,10 @@ test("the premium pass implements at least 25 additional improvements", async ()
       "bronx-street-tree-network-canopies",
       "bronx-utility-pole-and-wire-network-catenary",
       "bronx-distant-density-skyline-through-fog",
+      "bronx-corridor-recessed-storefront-door-network",
+      "bronx-corridor-human-scale-blade-sign-network",
+      "bronx-building-south-north-window-frame-depth-field",
+      "bronx-corridor-curbside-grounded-parked-vehicle",
     ].map(marker => [bronx, marker]),
     ...[
       "fifth-avenue-continuous-roadway",
@@ -36,6 +40,12 @@ test("the premium pass implements at least 25 additional improvements", async ()
       "fifth-avenue-59-street-zebra-crossing",
       "fifth-avenue-articulated-storefront-base",
       "fifth-avenue-park-edge-newsstand",
+      "fifth-avenue-continuous-central-park-ground-underlay",
+      "fifth-avenue-layered-park-woodland-canopy-to-fog",
+      "fifth-avenue-human-scale-overhead-subway-sign",
+      "fifth-avenue-transparent-human-scale-subway-canopy",
+      "fifth-avenue-dense-park-horizon-canopy-wall",
+      "fifth-avenue-dense-park-horizon-understory",
     ].map(marker => [fifth, marker]),
     ...[
       "central-park-west-parallel-pedestrian-greenway",

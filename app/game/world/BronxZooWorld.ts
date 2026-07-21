@@ -80,7 +80,8 @@ type Obstacle = CircleObstacle | BoxObstacle | OrientedBoxObstacle;
 
 const ZOO_WORLD_MAX_Z = 39.5;
 const BRONX_BACKDROP_MIN_Z = ZOO_WORLD_MAX_Z + 1.5;
-const BRONX_BACKDROP_MAX_Z = 520;
+const BRONX_BACKDROP_MAX_Z = 760;
+const BRONX_CITY_HALF_EXTENT = 760;
 
 const ANIMAL_QUEST_SOURCE_ROOTS: Record<ZooSideQuestId, readonly string[]> = {
   "aviary-voices": ["sun-conure-hero-bird", "blue-and-gold-macaw-bird", "scarlet-ibis-bird", "green-aracari-bird"],
@@ -277,7 +278,7 @@ function addTerrain(root: THREE.Group, textures: GameTextures) {
 function addZooSky(root: THREE.Group) {
   const sky = new Sky();
   sky.name = "bronx-zoo-atmospheric-daylight-sky";
-  sky.scale.setScalar(620);
+  sky.scale.setScalar(820);
   sky.frustumCulled = false;
   sky.onBeforeRender = (_renderer, _scene, camera) => {
     sky.position.copy(camera.position);
@@ -400,6 +401,13 @@ const ZOO_PATH_JUNCTIONS = [
 function addStationExit(root: THREE.Group, materials: ZooMaterials, textures: GameTextures, ownedTextures: THREE.Texture[], quality: number) {
   const exit = new THREE.Group();
   exit.name = "west-farms-station-exit-approach";
+  const stationMetal = new THREE.MeshPhysicalMaterial({
+    color: "#29483d",
+    metalness: .48,
+    roughness: .44,
+    clearcoat: .22,
+    clearcoatRoughness: .52,
+  });
   for (let step = 0; step < 12; step++) {
     const stair = setShadow(new THREE.Mesh(new RoundedBoxGeometry(8.1, .13, .72, 2, .025), materials.stone), false, true);
     stair.position.set(0, .08 + step * .085, 10.4 + step * .69);
@@ -430,7 +438,8 @@ function addStationExit(root: THREE.Group, materials: ZooMaterials, textures: Ga
   }
   const exitTexture = signTexture("WEST FARMS SQ", "2  ·  5   BRONX ZOO / BOSTON ROAD");
   ownedTextures.push(exitTexture);
-  const canopy = setShadow(new THREE.Mesh(new RoundedBoxGeometry(10.3, .38, 5.2, 6, .12), materials.iron));
+  const canopy = setShadow(new THREE.Mesh(new RoundedBoxGeometry(10.3, .38, 5.2, 6, .12), stationMetal));
+  canopy.name = "west-farms-human-scale-green-station-canopy";
   canopy.position.set(0, 4.15, 19.5);
   exit.add(canopy);
   const sign = new THREE.Mesh(new RoundedBoxGeometry(7.7, 1.28, .22, 5, .08), new THREE.MeshBasicMaterial({ map: exitTexture, toneMapped: false }));
@@ -440,7 +449,8 @@ function addStationExit(root: THREE.Group, materials: ZooMaterials, textures: Ga
   sign.position.set(0, 5.18, 20.2);
   exit.add(sign);
   for (const x of [-4.35, 4.35]) for (const z of [18.2, 21.3]) {
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(.085, .11, 3.25, quality > .72 ? 14 : 9), materials.iron);
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(.075, .095, 3.25, quality > .72 ? 14 : 9), stationMetal);
+    post.name = "west-farms-recessive-station-canopy-post";
     post.position.set(x, 2.5, z);
     exit.add(post);
   }
@@ -953,16 +963,19 @@ function addZooArrivalDistrictBackdrop(root: THREE.Group, materials: ZooMaterial
   const brick = new THREE.MeshStandardMaterial({ color: "#845d49", map: textures.stone, roughness: .88 });
   const limestone = new THREE.MeshStandardMaterial({ color: "#c3b9a4", map: textures.stone, roughness: .86 });
   const windowMaterial = new THREE.MeshStandardMaterial({ color: "#182729", emissive: "#836b42", emissiveIntensity: .16, roughness: .44, metalness: .12 });
-  const arrivalRoad = new THREE.Mesh(new RoundedBoxGeometry(25, .16, 430, 4, .05), asphalt);
-  arrivalRoad.name = "bronx-zoo-continuous-southern-boulevard-arrival-road"; arrivalRoad.position.set(18, .94, 229); arrivalRoad.receiveShadow = true; district.add(arrivalRoad);
+  const arrivalCorridorMinZ = 14;
+  const arrivalCorridorDepth = BRONX_BACKDROP_MAX_Z - arrivalCorridorMinZ;
+  const arrivalCorridorCenterZ = arrivalCorridorMinZ + arrivalCorridorDepth * .5;
+  const arrivalRoad = new THREE.Mesh(new RoundedBoxGeometry(25, .16, arrivalCorridorDepth, 4, .05), asphalt);
+  arrivalRoad.name = "bronx-zoo-continuous-southern-boulevard-arrival-road"; arrivalRoad.position.set(18, .94, arrivalCorridorCenterZ); arrivalRoad.receiveShadow = true; district.add(arrivalRoad);
   for (const x of [5.3, 30.7]) {
-    const sidewalk = new THREE.Mesh(new RoundedBoxGeometry(4.2, .2, 430, 4, .05), sidewalkMaterial);
-    sidewalk.name = "bronx-zoo-arrival-road-continuous-sidewalk"; sidewalk.position.set(x, 1.03, 229); sidewalk.receiveShadow = true; district.add(sidewalk);
+    const sidewalk = new THREE.Mesh(new RoundedBoxGeometry(4.2, .2, arrivalCorridorDepth, 4, .05), sidewalkMaterial);
+    sidewalk.name = "bronx-zoo-arrival-road-continuous-sidewalk"; sidewalk.position.set(x, 1.03, arrivalCorridorCenterZ); sidewalk.receiveShadow = true; district.add(sidewalk);
   }
   const centerLineMaterial = new THREE.MeshStandardMaterial({ color: "#e2c861", emissive: "#5f4b0b", emissiveIntensity: .08, roughness: .72 });
-  for (let dash = 0; dash < 47; dash++) {
+  for (let dashZ = 19; dashZ < BRONX_BACKDROP_MAX_Z - 8; dashZ += 8.7) {
     const line = new THREE.Mesh(new RoundedBoxGeometry(.12, .025, 4.8, 2, .01), centerLineMaterial);
-    line.name = "southern-boulevard-arrival-centerline"; line.position.set(18, 1.035, 19 + dash * 8.7); district.add(line);
+    line.name = "southern-boulevard-arrival-centerline"; line.position.set(18, 1.035, dashZ); district.add(line);
   }
   for (let stripe = 0; stripe < 8; stripe++) {
     const crossing = new THREE.Mesh(new RoundedBoxGeometry(1.65, .03, 6.4, 2, .01), limestone);
@@ -1042,6 +1055,31 @@ function addZooArrivalDistrictBackdrop(root: THREE.Group, materials: ZooMaterial
     district.add(car);
   }
 
+  // Parked curbside cars make the first lateral glance read as an inhabited
+  // city block, not an empty debug road. They stay beyond the playable zoo
+  // boundary and use full wheel contact rather than floating body boxes.
+  const corridorParkedCarCount = quality < .58 ? 8 : 14;
+  const corridorCarColors = ["#355b66", "#7b443b", "#d2c3a5", "#334a3f", "#555960", "#b4a33c"];
+  for (let index = 0; index < corridorParkedCarCount; index++) {
+    const direction = index % 2 ? -1 : 1;
+    const distance = 118 + Math.floor(index / 2) * 68;
+    const vehicle = new THREE.Group();
+    vehicle.name = "bronx-corridor-curbside-grounded-parked-vehicle";
+    vehicle.position.set(direction * distance, 1.02, index % 4 < 2 ? 30.1 : 42.2);
+    vehicle.rotation.y = direction > 0 ? Math.PI / 2 : -Math.PI / 2;
+    const bodyMaterial = new THREE.MeshPhysicalMaterial({ color: corridorCarColors[index % corridorCarColors.length], roughness: .5, clearcoat: .34, clearcoatRoughness: .34 });
+    const body = new THREE.Mesh(new RoundedBoxGeometry(2.02, .72, 4.25, 6, .17), bodyMaterial); body.position.y = .65; vehicle.add(body);
+    const cabin = new THREE.Mesh(new RoundedBoxGeometry(1.7, .7, 2.05, 6, .15), windowMaterial); cabin.position.set(0, 1.16, .08); vehicle.add(cabin);
+    for (const wheelX of [-1.03, 1.03]) for (const wheelZ of [-1.4, 1.4]) {
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(.31, .31, .18, quality > .72 ? 14 : 9), materials.iron);
+      wheel.name = "bronx-corridor-parked-vehicle-ground-contact-wheel";
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(wheelX, .35, wheelZ);
+      vehicle.add(wheel);
+    }
+    district.add(vehicle);
+  }
+
   // The arrival is backed by a complete low-rise Bronx district, not a row of
   // scenery cards. Streets, block interiors, the elevated line, traffic,
   // vegetation, utilities, and a distant skyline continue beyond the playable
@@ -1054,7 +1092,7 @@ function addZooArrivalDistrictBackdrop(root: THREE.Group, materials: ZooMaterial
   const roofMaterial = new THREE.MeshStandardMaterial({ color: "#343c3b", roughness: .91, metalness: .08 });
   const fireEscapeMaterial = new THREE.MeshStandardMaterial({ color: "#171b1a", roughness: .54, metalness: .76 });
   const backdropDepth = BRONX_BACKDROP_MAX_Z - BRONX_BACKDROP_MIN_Z;
-  const ground = new THREE.Mesh(new RoundedBoxGeometry(1040, .18, backdropDepth, 3, .04), cityGroundMaterial);
+  const ground = new THREE.Mesh(new RoundedBoxGeometry(BRONX_CITY_HALF_EXTENT * 2, .18, backdropDepth, 3, .04), cityGroundMaterial);
   ground.name = "bronx-borough-scale-urban-ground-to-fog";
   ground.position.set(0, .7, (BRONX_BACKDROP_MIN_Z + BRONX_BACKDROP_MAX_Z) * .5);
   ground.receiveShadow = true;
@@ -1083,11 +1121,11 @@ function addZooArrivalDistrictBackdrop(root: THREE.Group, materials: ZooMaterial
   const crossStreetCenters = [42, 74, 128, 190, 258, 332, 410, 478];
   const roadSpecs: InstanceSpec[] = [];
   avenueCenters.slice(1, -1).filter(x => x !== 18).forEach(x => roadSpecs.push({ x, y: .84, z: 258, sx: 14, sy: .16, sz: 440 }));
-  crossStreetCenters.slice(1, -1).forEach(z => roadSpecs.push({ x: 0, y: .85, z, sx: 1000, sy: .16, sz: 14 }));
+  crossStreetCenters.slice(1, -1).forEach(z => roadSpecs.push({ x: 0, y: .85, z, sx: BRONX_CITY_HALF_EXTENT * 2, sy: .16, sz: 14 }));
   // Continue the authored 176 m station road only beyond its two ends. A
   // second full-width slab over the arrival road created overlapping depth
   // surfaces and visible shimmer across the debug spawn and shuttle apron.
-  const arrivalRoadHalfWidth = 88, boroughRoadHalfWidth = 500;
+  const arrivalRoadHalfWidth = 88, boroughRoadHalfWidth = BRONX_CITY_HALF_EXTENT;
   const outerRoadWidth = boroughRoadHalfWidth - arrivalRoadHalfWidth;
   const outerRoadCenter = arrivalRoadHalfWidth + outerRoadWidth * .5;
   for (const side of [-1, 1]) roadSpecs.push({ x: side * outerRoadCenter, y: .84, z: 35.8, sx: outerRoadWidth, sy: .16, sz: 14.5 });
@@ -1100,7 +1138,7 @@ function addZooArrivalDistrictBackdrop(root: THREE.Group, materials: ZooMaterial
   crossStreetCenters.slice(1, -1).forEach(z => {
     for (let x = -500; x < 505; x += 22) laneSpecs.push({ x, y: .95, z, sx: 7.2, sy: .025, sz: .12, color: "#d9d7c9" });
   });
-  for (let x = -490; x <= 490; x += 20) {
+  for (let x = -750; x <= 750; x += 20) {
     if (Math.abs(x) <= arrivalRoadHalfWidth + 7) continue;
     laneSpecs.push({ x, y: .95, z: 35.8, sx: 6.8, sy: .025, sz: .12, color: "#e4c451" });
   }
@@ -1117,6 +1155,8 @@ function addZooArrivalDistrictBackdrop(root: THREE.Group, materials: ZooMaterial
   const fireEscapeDeckSpecs: InstanceSpec[] = [];
   const fireEscapeLadderSpecs: InstanceSpec[] = [];
   const awningSpecs: InstanceSpec[] = [];
+  const storefrontDoorSpecs: InstanceSpec[] = [];
+  const storefrontBladeSignSpecs: InstanceSpec[] = [];
   const urbanRandom = seeded(7211904);
   const facadeColors = ["#86634f", "#a08b72", "#776f69", "#a8785c", "#b0a58d", "#6f7c78", "#927967", "#c0b69f"];
   let blockIndex = 0;
@@ -1180,7 +1220,7 @@ function addZooArrivalDistrictBackdrop(root: THREE.Group, materials: ZooMaterial
   // Two detailed streetwalls continue the east-west road beyond both sides of
   // the playable zoo. They turn the arrival forecourt into one intersection
   // inside a larger neighborhood instead of a road that ends at the set edge.
-  for (const direction of [-1, 1] as const) for (let corridorIndex = 0; corridorIndex < 13; corridorIndex++) {
+  for (const direction of [-1, 1] as const) for (let corridorIndex = 0; corridorIndex < 18; corridorIndex++) {
     const x = direction * (100 + corridorIndex * 32);
     const width = 27 + urbanRandom() * 3.5;
     for (const streetSide of [-1, 1] as const) {
@@ -1210,6 +1250,10 @@ function addZooArrivalDistrictBackdrop(root: THREE.Group, materials: ZooMaterial
         }
       }
       if (streetSide > 0 && corridorIndex % 2 === 0) awningSpecs.push({ x, y: 3.75, z: z - depth * .5 - .95, sx: Math.min(8.5, width * .58), sy: .24, sz: 1.8, color: corridorIndex % 4 ? "#315b4d" : "#8a493f" });
+      const roadFacingZ = z + (streetSide < 0 ? depth * .5 + .1 : -depth * .5 - .1);
+      const doorX = x + (corridorIndex % 2 ? -1 : 1) * width * .24;
+      storefrontDoorSpecs.push({ x: doorX, y: 2.22, z: roadFacingZ, sx: 1.55, sy: 2.72, sz: .14, color: corridorIndex % 3 === 0 ? "#244f47" : corridorIndex % 3 === 1 ? "#6f3e35" : "#2c3432" });
+      storefrontBladeSignSpecs.push({ x: x - direction * width * .38, y: 4.45, z: roadFacingZ + (streetSide < 0 ? .6 : -.6), sx: .2, sy: 1.2, sz: .78, color: corridorIndex % 2 ? "#d0b663" : "#d9d2bf" });
     }
   }
   addInstances("bronx-city-block-raised-sidewalk-islands", new THREE.BoxGeometry(1, 1, 1), sidewalkMaterial, sidewalkSpecs).receiveShadow = true;
@@ -1220,12 +1264,19 @@ function addZooArrivalDistrictBackdrop(root: THREE.Group, materials: ZooMaterial
   addInstances("bronx-building-articulated-storefront-plinths", new THREE.BoxGeometry(1, 1, 1), buildingMaterial, storefrontSpecs);
   addInstances("bronx-rooftop-hvac-and-service-units", new RoundedBoxGeometry(1, 1, 1, 3, .06), roofMaterial, rooftopUnitSpecs);
   const boroughWindowMaterial = new THREE.MeshStandardMaterial({ color: "#ffffff", emissive: "#725d3e", emissiveIntensity: .18, roughness: .38, metalness: .14, vertexColors: true });
+  const windowFrameMaterial = new THREE.MeshStandardMaterial({ color: "#b9aa91", roughness: .77, metalness: .05 });
+  addInstances("bronx-building-south-north-window-frame-depth-field", new THREE.BoxGeometry(1, 1, 1), windowFrameMaterial, southNorthWindowSpecs.map(spec => ({ ...spec, sx: spec.sx + .38, sy: spec.sy + .34, sz: .08 })));
+  addInstances("bronx-building-east-west-window-frame-depth-field", new THREE.BoxGeometry(1, 1, 1), windowFrameMaterial, eastWestWindowSpecs.map(spec => ({ ...spec, sx: spec.sx + .38, sy: spec.sy + .34, sz: .08 })));
   addInstances("bronx-building-south-north-window-depth-field", new THREE.BoxGeometry(1, 1, 1), boroughWindowMaterial, southNorthWindowSpecs);
   addInstances("bronx-building-east-west-window-depth-field", new THREE.BoxGeometry(1, 1, 1), boroughWindowMaterial, eastWestWindowSpecs);
   addInstances("bronx-fire-escape-platform-network", new THREE.BoxGeometry(1, 1, 1), fireEscapeMaterial, fireEscapeDeckSpecs);
   addInstances("bronx-fire-escape-ladder-network", new THREE.BoxGeometry(1, 1, 1), fireEscapeMaterial, fireEscapeLadderSpecs);
   const awningMaterial = new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: .72, vertexColors: true });
   addInstances("bronx-neighborhood-storefront-awning-network", new THREE.BoxGeometry(1, 1, 1), awningMaterial, awningSpecs);
+  const storefrontDoorMaterial = new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: .48, metalness: .18, vertexColors: true });
+  addInstances("bronx-corridor-recessed-storefront-door-network", new RoundedBoxGeometry(1, 1, 1, 3, .03), storefrontDoorMaterial, storefrontDoorSpecs);
+  const bladeSignMaterial = new THREE.MeshStandardMaterial({ color: "#ffffff", emissive: "#54451f", emissiveIntensity: .16, roughness: .44, metalness: .22, vertexColors: true });
+  addInstances("bronx-corridor-human-scale-blade-sign-network", new RoundedBoxGeometry(1, 1, 1, 3, .04), bladeSignMaterial, storefrontBladeSignSpecs);
 
   const roofTankSpecs: InstanceSpec[] = [];
   buildingSpecs.forEach((building, index) => {
@@ -1326,6 +1377,11 @@ function addZooArrivalDistrictBackdrop(root: THREE.Group, materials: ZooMaterial
   const lampSpecs: InstanceSpec[] = [];
   for (let z = 52; z < 466; z += quality < .58 ? 34 : 22) for (const x of [4.4, 31.6]) lampSpecs.push({ x, y: 3.55, z, sx: 1, sy: 1, sz: 1 });
   for (const z of [128, 190, 258, 332, 410]) for (let x = -320; x <= 322; x += quality < .58 ? 64 : 42) lampSpecs.push({ x, y: 3.55, z: z - 8.5, sx: 1, sy: 1, sz: 1 });
+  for (let x = -620; x <= 620; x += quality < .58 ? 52 : 34) {
+    if (Math.abs(x) < 94) continue;
+    lampSpecs.push({ x, y: 3.55, z: 25.5, sx: 1, sy: 1, sz: 1 });
+    lampSpecs.push({ x: x + 12, y: 3.55, z: 46.2, sx: 1, sy: 1, sz: 1 });
+  }
   addInstances("bronx-streetlight-and-pedestrian-lamp-network", new THREE.CylinderGeometry(.07, .105, 7, 9), materials.iron, lampSpecs);
   const lampBulbMaterial = new THREE.MeshStandardMaterial({ color: "#ffe9b0", emissive: "#e3a94a", emissiveIntensity: 1.35, roughness: .22 });
   addInstances("bronx-streetlight-warm-lantern-network", new THREE.SphereGeometry(.19, 11, 8), lampBulbMaterial, lampSpecs.map(spec => ({ ...spec, y: 7.15, sx: 1, sy: 1, sz: 1 })));
@@ -1372,11 +1428,11 @@ function addZooArrivalDistrictBackdrop(root: THREE.Group, materials: ZooMaterial
 
   const horizonSpecs: InstanceSpec[] = [];
   const horizonRandom = seeded(249851);
-  for (let index = 0; index < (quality < .58 ? 28 : 54); index++) {
+  for (let index = 0; index < (quality < .58 ? 38 : 72); index++) {
     const rim = index % 3;
     const side = index % 2 ? -1 : 1;
-    const x = rim === 0 ? -340 + horizonRandom() * 680 : side * (338 + horizonRandom() * 70);
-    const z = rim === 0 ? 470 + horizonRandom() * 70 : 80 + horizonRandom() * 390;
+    const x = rim === 0 ? -620 + horizonRandom() * 1240 : side * (650 + horizonRandom() * 96);
+    const z = rim === 0 ? 650 + horizonRandom() * 84 : 82 + horizonRandom() * 600;
     const width = 18 + horizonRandom() * 34, depth = 18 + horizonRandom() * 28, height = 32 + horizonRandom() * 72;
     horizonSpecs.push({ x, y: 1 + height * .5, z, sx: width, sy: height, sz: depth, color: facadeColors[index % facadeColors.length] });
   }
@@ -1440,7 +1496,7 @@ export class BronxZooWorld {
   readonly cameraPosition = new THREE.Vector3(0, 4.2, -118);
   readonly cameraTarget = new THREE.Vector3(0, 3.8, -140);
   readonly worldBounds = Object.freeze({ minX: -84, maxX: 84, minZ: -158, maxZ: ZOO_WORLD_MAX_Z });
-  readonly environmentSettings = Object.freeze({ cameraFar: 680, fogDensity: .0036, background: "#95aaa0" });
+  readonly environmentSettings = Object.freeze({ cameraFar: 720, fogDensity: .0038, background: "#95aaa0" });
   readonly attendant: THREE.Group;
   readonly skateboardDonor: THREE.Group;
   readonly captiveSloths: THREE.Group[] = [];
