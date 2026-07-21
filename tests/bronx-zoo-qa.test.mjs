@@ -121,7 +121,22 @@ test("habitat research stays in the live zoo and starts across each enclosure ed
   assert.match(quests, /covers the whole visitor edge of its enclosure/);
   assert.match(quests, /createInWorldZooQuestOrder/);
   assert.match(zoo, /bronx-zoo-physical-in-world-habitat-quest-equipment/);
+  assert.match(zoo, /bronx-zoo-continuous-world-ground-beyond-visitor-boundary/);
+  assert.match(zoo, /bronx-zoo-perimeter-woodland-trunks-to-fog/);
+  assert.match(zoo, /bronx-zoo-perimeter-woodland-canopy-to-fog/);
+  assert.match(zoo, /bronx-zoo-perimeter-understory-to-fog/);
+  assert.match(zoo, /bronx-zoo-sightline-safe-conservation-rail/);
+  assert.match(zoo, /bronx-zoo-fine-upper-safety-cable/);
   assert.match(zoo, /habitatResearchStreak\+\+/);
+  assert.match(game, /reviewWorld\.beginAnimalQuest\(qaZooSideQuest\.questId\)/);
+  assert.match(game, /setZooPhase\(activeHabitatQuest \? `IN_WORLD_QUEST_/);
+  assert.match(game, /activeHabitatQuest[\s\S]{0,120}"Active habitat research station"/);
+  assert.doesNotMatch(game, /player\.copy\(reviewWorld\.objectiveTarget\)/, "a review checkpoint must never spawn inside its physical research station");
+  assert.match(game, /bronxquestbirds:[^{]+\{ questId: "aviary-voices", position: \[-26, -40\]/);
+  assert.match(game, /bronxquestredpanda:[^{]+\{ questId: "red-panda-scent-wind", position: \[-24, -135\]/);
+  assert.match(game, /bronxquesttortoise:[^{]+\{ questId: "tortoise-sun-trail", position: \[24, -135\]/);
+  assert.match(game, /bronxquestflamingo:[^{]+\{ questId: "flamingo-wetland-balance", position: \[-71, -67\]/);
+  assert.match(game, /bronxquestbison:[^{]+\{ questId: "bison-prairie-seeding", position: \[59, -107\]/);
 
   const world = new BronxZooWorld(new THREE.Scene(), textureSet(THREE), .22, 73021);
   const anywhereAlongAviaryEdge = new THREE.Vector3(-56, 1.48, -51);
@@ -133,4 +148,12 @@ test("habitat research stays in the live zoo and starts across each enclosure ed
   assert.equal(world.activeSideQuestProgress?.total, 3);
   assert.ok(world.objectiveTarget.distanceTo(anywhereAlongAviaryEdge) > 2, "the first task should point at physical habitat equipment, not an overlay");
   world.dispose();
+
+  const reviewWorld = new BronxZooWorld(new THREE.Scene(), textureSet(THREE), .22, 73021);
+  const reviewStart = reviewWorld.beginAnimalQuest("flamingo-wetland-balance");
+  assert.equal(reviewStart?.kind, "ANIMAL_QUEST_STARTED");
+  assert.equal(reviewStart?.questId, "flamingo-wetland-balance");
+  assert.equal(reviewWorld.activeSideQuestProgress?.total, 3);
+  assert.equal(reviewWorld.beginAnimalQuest("flamingo-wetland-balance"), null, "one world cannot start a second copy of an active route");
+  reviewWorld.dispose();
 });

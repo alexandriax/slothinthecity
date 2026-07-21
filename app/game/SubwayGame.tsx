@@ -101,14 +101,14 @@ type SubwayGameProps = {
 };
 
 const QA_ZOO_SIDE_QUESTS: Partial<Record<string, { questId: ZooSideQuestId; position: [number, number]; yaw: number }>> = {
-  bronxquestbirds: { questId: "aviary-voices", position: [-29.5, -39], yaw: .84 },
+  bronxquestbirds: { questId: "aviary-voices", position: [-26, -40], yaw: 1 },
   bronxquestsealion: { questId: "sea-lion-current", position: [0, -63], yaw: 0 },
   bronxquestmonkey: { questId: "monkey-canopy-rig", position: [-24, -98], yaw: 1.4 },
   bronxquestzebra: { questId: "zebra-stripe-scan", position: [26, -98], yaw: -1.2 },
-  bronxquestredpanda: { questId: "red-panda-scent-wind", position: [-25.5, -123], yaw: .9 },
-  bronxquesttortoise: { questId: "tortoise-sun-trail", position: [25.5, -123], yaw: -.9 },
-  bronxquestflamingo: { questId: "flamingo-wetland-balance", position: [-62, -47], yaw: 1.1 },
-  bronxquestbison: { questId: "bison-prairie-seeding", position: [62, -97], yaw: -1.1 },
+  bronxquestredpanda: { questId: "red-panda-scent-wind", position: [-24, -135], yaw: 1.816 },
+  bronxquesttortoise: { questId: "tortoise-sun-trail", position: [24, -135], yaw: -1.816 },
+  bronxquestflamingo: { questId: "flamingo-wetland-balance", position: [-71, -67], yaw: Math.PI },
+  bronxquestbison: { questId: "bison-prairie-seeding", position: [59, -107], yaw: -1.723 },
 };
 
 const IN_WORLD_QUEST_CUES = {
@@ -409,8 +409,10 @@ export function SubwayGame({
         distance = Math.hypot(dx, dz),
         hint = world.interactionHint(player),
         quest = world.questState,
-        released = world.friendsReleased;
-      setZooPhase(quest);
+        released = world.friendsReleased,
+        activeHabitatQuest = world.activeSideQuestId,
+        habitatProgress = world.activeSideQuestProgress;
+      setZooPhase(activeHabitatQuest ? `IN_WORLD_QUEST_${activeHabitatQuest.toUpperCase()}` : quest);
       setTicketHeld(world.hasTicket);
       publishFollowerCount();
       const count = totalFollowerCount();
@@ -428,7 +430,9 @@ export function SubwayGame({
         motion: released ? "MENAGERIE ESCORT" : "ZOO EXPLORATION",
         objective,
         objectiveShort:
-          quest === "ENTER_ZOO"
+          activeHabitatQuest
+            ? "HABITAT ROUTE"
+            : quest === "ENTER_ZOO"
             ? "ENTER ZOO"
             : quest === "FIND_SLOTHS"
               ? "PICK LOCK"
@@ -439,14 +443,18 @@ export function SubwayGame({
           ? "BRONX ZOO · MUSEUM SHUTTLE STOP"
           : "BRONX ZOO · WILDLIFE CONSERVATION CAMPUS",
         status:
-          quest === "ENTER_ZOO"
+          activeHabitatQuest && habitatProgress
+            ? `IN-WORLD HABITAT WORK · ${habitatProgress.current} / ${habitatProgress.total} · STREAK ${world.researchStreak}`
+            : quest === "ENTER_ZOO"
             ? companionStatus(count)
             : quest === "FIND_SLOTHS"
               ? "KEEPER LOCK SECURED"
               : `${friendCountLabel(count).toUpperCase()} · BOARD TOGETHER`,
         value: `${Math.round(distance)}M`,
         waypoint:
-          quest === "ENTER_ZOO"
+          activeHabitatQuest
+            ? "Active habitat research station"
+            : quest === "ENTER_ZOO"
             ? "Asia Gate"
             : quest === "FIND_SLOTHS"
               ? "Sloth conservation habitat"
@@ -1582,8 +1590,8 @@ export function SubwayGame({
           reflectGaryFed();
           sloth.root.visible = false;
         } else if (qaInput === "bronxbirds") {
-          player.set(-29.5, reviewWorld.floorHeight(-29.5, -39) + 1.48, -39);
-          yaw = 0.84;
+          player.set(-26, reviewWorld.floorHeight(-26, -40) + 1.48, -40);
+          yaw = 1;
         } else if (qaInput === "bronxmonkeys") {
           player.set(-24, reviewWorld.floorHeight(-24, -98) + 1.48, -98);
           yaw = 1.4;
@@ -1608,16 +1616,25 @@ export function SubwayGame({
           reflectRescueState("ESCORT_TO_BUS");
         }
         reviewWorld.update(0, 0, player);
-        reflectZooReviewState(reviewWorld);
         if (qaZooSideQuest) {
-          const event = reviewWorld.interact(player, yaw);
+          const event = reviewWorld.beginAnimalQuest(qaZooSideQuest.questId);
           if (event?.kind === "ANIMAL_QUEST_STARTED") {
-            player.copy(reviewWorld.objectiveTarget);
-            player.y = reviewWorld.floorHeight(player.x, player.z) + 1.48;
+            // The review checkpoint is already staged at a clear visitor
+            // overlook inside the enclosure-wide trigger. Teleporting onto
+            // objectiveTarget placed the camera at the exact centre of the
+            // first physical research station, so its post and equipment
+            // filled the frame before the player could read the habitat.
+            // Keep the authored overlook and let the waypoint lead naturally
+            // to the first station, matching the real campaign flow.
+            pitch = -.035;
             setZooPhase(`IN_WORLD_QUEST_${qaZooSideQuest.questId.toUpperCase()}`);
             showToast(event.message, 5200);
           }
         }
+        // Publish after deterministic review setup so the very first rendered
+        // frame already names the live station route instead of briefly
+        // showing the unrelated sloth-lock objective.
+        reflectZooReviewState(reviewWorld);
         if (qaInput !== "bronxentry") clearReviewToast();
       }
     }

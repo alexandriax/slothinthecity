@@ -275,6 +275,96 @@ function addTerrain(root: THREE.Group, textures: GameTextures) {
   root.add(ground);
 }
 
+function addZooPerimeterWorldContext(root: THREE.Group, textures: GameTextures, quality: number) {
+  // The detailed terrain is intentionally bounded to the walkable campus, but
+  // the camera can see far beyond it from several enclosure overlooks. A low
+  // underlay and layered woodland keep those views grounded all the way into
+  // fog without adding collision or expensive individual tree objects.
+  const underlay = new THREE.Mesh(
+    new THREE.BoxGeometry(900, .22, 780),
+    new THREE.MeshStandardMaterial({ map: textures.ground, bumpMap: textures.ground, bumpScale: .035, color: "#2f4630", roughness: .99 }),
+  );
+  underlay.name = "bronx-zoo-continuous-world-ground-beyond-visitor-boundary";
+  underlay.position.set(0, -.7, -250);
+  underlay.receiveShadow = true;
+  root.add(underlay);
+
+  const random = seeded(8126071);
+  const treePositions: Array<{ x: number; z: number; scale: number }> = [];
+  const southRows = quality < .58 ? 3 : 4;
+  const southColumns = quality < .58 ? 13 : 19;
+  for (let row = 0; row < southRows; row++) for (let column = 0; column < southColumns; column++) {
+    const amount = column / Math.max(1, southColumns - 1);
+    treePositions.push({
+      x: -340 + amount * 680 + (row % 2 ? 13 : 0) + (random() - .5) * 15,
+      z: -182 - row * 94 + (random() - .5) * 18,
+      scale: .9 + random() * .62,
+    });
+  }
+  const sideRows = quality < .58 ? 2 : 3;
+  const sideColumns = quality < .58 ? 10 : 15;
+  for (const side of [-1, 1]) for (let row = 0; row < sideRows; row++) for (let column = 0; column < sideColumns; column++) {
+    const amount = column / Math.max(1, sideColumns - 1);
+    treePositions.push({
+      x: side * (106 + row * 72 + (random() - .5) * 9),
+      z: -166 + amount * 205 + (column % 2 ? 4 : -4) + (random() - .5) * 10,
+      scale: .82 + random() * .56,
+    });
+  }
+
+  const trunkMaterial = new THREE.MeshStandardMaterial({ map: textures.bark, color: "#554636", roughness: .99 });
+  const canopyMaterial = new THREE.MeshStandardMaterial({ map: textures.foliageBranch, alphaTest: .23, color: "#3b653c", roughness: .96, side: THREE.DoubleSide });
+  const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(.22, .38, 6.2, quality > .72 ? 9 : 7), trunkMaterial, treePositions.length);
+  trunks.name = "bronx-zoo-perimeter-woodland-trunks-to-fog";
+  const crownsPerTree = quality < .58 ? 3 : 4;
+  const crowns = new THREE.InstancedMesh(new THREE.PlaneGeometry(7.4, 7.9), canopyMaterial, treePositions.length * crownsPerTree);
+  crowns.name = "bronx-zoo-perimeter-woodland-canopy-to-fog";
+  const dummy = new THREE.Object3D();
+  treePositions.forEach((tree, index) => {
+    const groundY = -.56 + Math.sin(tree.x * .019 + tree.z * .013) * .12;
+    dummy.position.set(tree.x, groundY + 3.1 * tree.scale, tree.z);
+    dummy.rotation.set(0, random() * Math.PI, 0);
+    dummy.scale.set(tree.scale, tree.scale, tree.scale);
+    dummy.updateMatrix();
+    trunks.setMatrixAt(index, dummy.matrix);
+    for (let crownIndex = 0; crownIndex < crownsPerTree; crownIndex++) {
+      const angle = crownIndex / crownsPerTree * Math.PI + (random() - .5) * .16;
+      dummy.position.set(
+        tree.x + Math.cos(angle * 2) * .9 * tree.scale,
+        groundY + (6.15 + crownIndex % 2 * .82) * tree.scale,
+        tree.z + Math.sin(angle * 2) * .9 * tree.scale,
+      );
+      dummy.rotation.set(0, angle, (random() - .5) * .07);
+      dummy.scale.set(tree.scale * (.78 + crownIndex % 2 * .1), tree.scale * (.72 + crownIndex % 3 * .05), tree.scale);
+      dummy.updateMatrix();
+      crowns.setMatrixAt(index * crownsPerTree + crownIndex, dummy.matrix);
+    }
+  });
+  trunks.instanceMatrix.needsUpdate = true;
+  crowns.instanceMatrix.needsUpdate = true;
+  trunks.castShadow = quality > .84;
+  root.add(trunks, crowns);
+
+  const understoryCount = quality < .58 ? treePositions.length : treePositions.length * 2;
+  const understory = new THREE.InstancedMesh(
+    new THREE.IcosahedronGeometry(1, quality > .72 ? 2 : 1),
+    new THREE.MeshStandardMaterial({ map: textures.foliage, color: "#426644", roughness: .99 }),
+    understoryCount,
+  );
+  understory.name = "bronx-zoo-perimeter-understory-to-fog";
+  for (let index = 0; index < understoryCount; index++) {
+    const tree = treePositions[index % treePositions.length];
+    const scale = 1.1 + random() * 1.25;
+    dummy.position.set(tree.x + (random() - .5) * 8.5, -.18, tree.z + (random() - .5) * 8.5);
+    dummy.rotation.set(0, random() * Math.PI, 0);
+    dummy.scale.set(scale * 1.55, scale * .74, scale * 1.2);
+    dummy.updateMatrix();
+    understory.setMatrixAt(index, dummy.matrix);
+  }
+  understory.instanceMatrix.needsUpdate = true;
+  root.add(understory);
+}
+
 function addZooSky(root: THREE.Group) {
   const sky = new Sky();
   sky.name = "bronx-zoo-atmospheric-daylight-sky";
@@ -547,17 +637,25 @@ function addCircularFence(root: THREE.Group, materials: ZooMaterials, x: number,
     const px = x + Math.cos(angle) * radius, pz = z + Math.sin(angle) * radius;
     const nx = x + Math.cos(nextAngle) * radius, nz = z + Math.sin(nextAngle) * radius;
     const baseY = terrainHeight(px, pz);
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(.065, .085, glass ? 3.1 : 2.2, 9), materials.iron);
-    post.position.set(px, baseY + (glass ? 1.55 : 1.1), pz);
+    const postHeight = glass ? 3.1 : 1.62;
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(glass ? .065 : .052, glass ? .085 : .07, postHeight, 9), materials.iron);
+    post.name = glass ? "bronx-zoo-glass-barrier-mullion" : "bronx-zoo-sightline-safe-conservation-post";
+    post.position.set(px, baseY + postHeight * .5, pz);
     fence.add(post);
     if (glass) {
       const panel = new THREE.Mesh(new THREE.PlaneGeometry(Math.hypot(nx - px, nz - pz), 2.75), materials.glass);
       panel.position.set((px + nx) * .5, baseY + 1.42, (pz + nz) * .5);
       panel.rotation.y = -Math.atan2(nz - pz, nx - px);
       fence.add(panel);
-    } else for (const y of [.55, 1.65]) {
-      const rail = cylinderBetween(new THREE.Vector3(px, baseY + y, pz), new THREE.Vector3(nx, terrainHeight(nx, nz) + y, nz), .045, materials.iron, 8);
+    } else for (const y of [.5, 1.08]) {
+      const rail = cylinderBetween(new THREE.Vector3(px, baseY + y, pz), new THREE.Vector3(nx, terrainHeight(nx, nz) + y, nz), .035, materials.iron, 8);
+      rail.name = "bronx-zoo-sightline-safe-conservation-rail";
       fence.add(rail);
+    }
+    if (!glass) {
+      const cable = cylinderBetween(new THREE.Vector3(px, baseY + 1.48, pz), new THREE.Vector3(nx, terrainHeight(nx, nz) + 1.48, nz), .012, materials.iron, 6);
+      cable.name = "bronx-zoo-fine-upper-safety-cable";
+      fence.add(cable);
     }
   }
   root.add(fence);
@@ -1577,6 +1675,7 @@ export class BronxZooWorld {
 
     addZooSky(this.root);
     addTerrain(this.root, textures);
+    addZooPerimeterWorldContext(this.root, textures, quality);
     ZOO_VISITOR_PATHS.forEach(path => {
       addPathRibbon(this.root, path.points, path.width, materials.path, path.name);
       addPathDrainageEdges(this.root, path.points, path.width, materials.stone, path.name);
@@ -1765,6 +1864,20 @@ export class BronxZooWorld {
     return null;
   }
 
+  beginAnimalQuest(id: ZooSideQuestId): BronxZooEvent | null {
+    if (this.activeAnimalQuest || this.completedAnimalQuests.has(id)) return null;
+    const quest = ZOO_SIDE_QUESTS[id];
+    this.activeAnimalQuest = { id, order: createInWorldZooQuestOrder(id, this.sessionSeed), step: 0 };
+    const route = activeQuestObjective(this.activeAnimalQuest);
+    return {
+      kind: "ANIMAL_QUEST_STARTED",
+      questId: id,
+      step: 1,
+      stepCount: this.activeAnimalQuest.order.length,
+      message: `${quest.title} is now live in the habitat. ${route.objective} Follow the glowing research beacon.`,
+    };
+  }
+
   interact(player: THREE.Vector3, yaw = 0): BronxZooEvent | null {
     const hint = this.interactionHint(player);
     if (!hint) return null;
@@ -1788,18 +1901,7 @@ export class BronxZooWorld {
       this.garySnackState = "AIRBORNE";
       return null;
     }
-    if (hint.kind === "ANIMAL_QUEST" && hint.questId) {
-      const quest = ZOO_SIDE_QUESTS[hint.questId];
-      this.activeAnimalQuest = { id: hint.questId, order: createInWorldZooQuestOrder(hint.questId, this.sessionSeed), step: 0 };
-      const route = activeQuestObjective(this.activeAnimalQuest);
-      return {
-        kind: "ANIMAL_QUEST_STARTED",
-        questId: hint.questId,
-        step: 1,
-        stepCount: this.activeAnimalQuest.order.length,
-        message: `${quest.title} is now live in the habitat. ${route.objective} Follow the glowing research beacon.`,
-      };
-    }
+    if (hint.kind === "ANIMAL_QUEST" && hint.questId) return this.beginAnimalQuest(hint.questId);
     if (hint.kind === "ANIMAL_QUEST_STEP" && hint.questId && this.activeAnimalQuest?.id === hint.questId) {
       const station = activeQuestStation(this.activeAnimalQuest);
       const completedStep = this.activeAnimalQuest.step + 1;
