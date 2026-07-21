@@ -7,6 +7,7 @@ export type AuthoredZooAnimalSpecies =
   | "sun-conure"
   | "california-sea-lion"
   | "mallard-duck"
+  | "eastern-gray-squirrel"
   | "whiskers-cat";
 export type AuthoredZooAnimalLod = "lod0" | "lod1" | "lod2";
 export type AuthoredZooAnimalMotion =
@@ -144,6 +145,7 @@ const APPROVED_AUTHORED_ZOO_ANIMAL_SPECIES = new Set<AuthoredZooAnimalSpecies>([
   "california-sea-lion",
   "sun-conure",
   "mallard-duck",
+  "eastern-gray-squirrel",
   "whiskers-cat",
 ]);
 

@@ -826,6 +826,9 @@ export function SubwayGame({
           ...(animalMenagerie.has("central-park-mallard")
             ? [{ species: "mallard-duck" as const, quality: animalQuality }]
             : []),
+          ...(animalMenagerie.has("central-park-squirrel")
+            ? [{ species: "eastern-gray-squirrel" as const, quality: animalQuality }]
+            : []),
         ]).catch(() => undefined);
       }
       const base = TRAIN_INTERIOR_JOURNEYS[option.journeyKey];

@@ -17,6 +17,7 @@ import { BOW_BRIDGE_TARGET, createCampaignLandmarks, SUBWAY_TARGET } from "./wor
 import { createParkRowboat, ROWBOAT_ROOT_WATERLINE_OFFSET, type ParkRowboat } from "./world/ParkRowboat";
 import { createParkUtilityCart, type ParkUtilityCart } from "./world/ParkUtilityCart";
 import { CENTRAL_PARK_MALLARD_COMPANION_ID, LakeDuckQuest } from "./world/LakeDuckQuest";
+import { CENTRAL_PARK_SQUIRREL_COMPANION_ID, ParkSquirrelQuest } from "./world/ParkSquirrelQuest";
 import { addCentralParkLighting, buildRealisticWorld, LAKE_SOUTHEAST_CART_TARGET, START, terrainY, type BranchRoute, type ClimbableTree } from "./world/RealisticWorld";
 
 type Phase = "intro" | "playing" | "paused" | "complete";
@@ -78,6 +79,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
     const textures = loadGameTextures(renderer, () => { if (!disposed) setReady(true); });
     const world = buildRealisticWorld(scene, textures, tier);
     const duckQuest = new LakeDuckQuest(scene, textures, tier);
+    const squirrelQuest = new ParkSquirrelQuest(scene, textures, world, tier);
     const campaign = createCampaignLandmarks(scene, textures, terrainY, tier); world.obstacles.push(...campaign.obstacles);
     world.setTicketCollected(false);
     // Park beside the opening trail rather than across its first sightline, so
@@ -115,7 +117,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
     let branchRoute: BranchRoute | null = null, branchProgress = 0, branchForwardSign: 1 | -1 = 1, actionRequested = false, dropRequested = false, gripHintUntil = 0, dropVelocity = 0, controlledDescent = false, descentIgnoreRouteId = -1, qaPrepared = false, qaStage = 0, caughtUntil = 0;
     let transfer: { from: THREE.Vector3; to: THREE.Vector3; route: BranchRoute; progress: number; forwardSign: 1 | -1; started: number; duration: number; kind: "REACH" | "DROP" } | null = null;
     let swimming = false, wasSwimming = false, hawkPhase: HawkPhase = "PATROL", hawkEvent: HawkEvent | null = null, hawkPasses = 0, nextHawkPassAt = 8, recoveryUntil = 0;
-    let parkStage: ParkStage = "FORAGE", ticketCollected = false, duckRecruited = false, drivingCart = false, activeBoat: ParkRowboat | null = null, vehicleLookYaw = 0, cartWasBlocked = false, boatWasBlocked = false, subwayTransitionStarted = false, duckInteractionGraceUntil = 0, duckActionLockedUntil = 0;
+    let parkStage: ParkStage = "FORAGE", ticketCollected = false, duckRecruited = false, squirrelRecruited = false, drivingCart = false, activeBoat: ParkRowboat | null = null, vehicleLookYaw = 0, cartWasBlocked = false, boatWasBlocked = false, subwayTransitionStarted = false, duckInteractionGraceUntil = 0, duckActionLockedUntil = 0;
     const cartEntry = new THREE.Vector3(), cartCamera = new THREE.Vector3(), cartQuaternion = new THREE.Quaternion(), cartPrevious = new THREE.Vector3();
     const boatEntry = new THREE.Vector3(), boatCamera = new THREE.Vector3(), boatQuaternion = new THREE.Quaternion(), boatPrevious = new THREE.Vector3();
     const duckPassengerPosition = new THREE.Vector3(), duckPassengerQuaternion = new THREE.Quaternion();
@@ -411,7 +413,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
       if (phaseRef.current === "playing") {
         gameTime += delta;
         campaign.update(gameTime, delta);
-        if (!qaPrepared && (["autoclimb", "autobranch", "autotransfer", "autodrop", "autoflow", "cart", "treecollision", "watercollision", "swim", "shoreclimb", "energy", "rest", "hawk", "bridgewalk", "bowbridge", "rowboat", "ticketisland", "ticket", "lakeduck", "duckpassenger", "duckfollowing", "subwayentrance"].includes(qaInput ?? ""))) {
+        if (!qaPrepared && (["autoclimb", "autobranch", "autotransfer", "autodrop", "autoflow", "cart", "treecollision", "watercollision", "swim", "shoreclimb", "energy", "rest", "hawk", "bridgewalk", "bowbridge", "rowboat", "ticketisland", "ticket", "lakeduck", "duckpassenger", "duckfollowing", "squirrelquest", "squirrelacorn", "squirrelfollowing", "subwayentrance"].includes(qaInput ?? ""))) {
           const testTree = nearestTree(player);
           if (qaInput === "autoflow") {
             const flowRoute = world.canopyCorridors[0]?.routeIds[0] !== undefined ? world.branches[world.canopyCorridors[0].routeIds[0]] : undefined;
@@ -441,6 +443,26 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
             energy = 72; keys.add("KeyW"); qaPrepared = true;
           } else if (qaInput === "rest") {
             energy = 38; qaPrepared = true;
+          } else if (["squirrelquest", "squirrelacorn", "squirrelfollowing"].includes(qaInput ?? "")) {
+            alert = 5; nextHawkPassAt = Number.POSITIVE_INFINITY;
+            if (qaInput === "squirrelquest") {
+              player.copy(squirrelQuest.squirrel.root.position).add(new THREE.Vector3(0, 1.48, 3.1));
+              player.y = groundHeight(player.x, player.z);
+              yaw = Math.atan2(-(squirrelQuest.squirrel.root.position.x - player.x), -(squirrelQuest.squirrel.root.position.z - player.z));
+            } else if (qaInput === "squirrelacorn") {
+              squirrelQuest.interact(squirrelQuest.squirrel.root.position);
+              branchRoute = squirrelQuest.branch;
+              branchProgress = .72;
+              branchPose(squirrelQuest.branch, branchProgress, player);
+              yaw = Math.atan2(-(squirrelQuest.acornPosition.x - player.x), -(squirrelQuest.acornPosition.z - player.z));
+            } else {
+              squirrelRecruited = true;
+              player.copy(squirrelQuest.treePosition).add(new THREE.Vector3(5.2, 1.48, 3.4));
+              player.y = groundHeight(player.x, player.z);
+              squirrelQuest.setRecruited(player, player.y - 1.48);
+              yaw = 0;
+            }
+            qaPrepared = true;
           } else if (["bowbridge", "rowboat", "ticketisland", "ticket", "lakeduck", "duckpassenger", "duckfollowing", "subwayentrance"].includes(qaInput ?? "")) {
             world.buds.slice(0, 5).forEach((bud, index) => { collected.current.add(index); bud.visible = false; });
             alert = 5; nextHawkPassAt = Number.POSITIVE_INFINITY;
@@ -526,9 +548,14 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
           : activeBoat && gameTime <= duckInteractionGraceUntil
             ? activeBoat.root.position
             : null;
+        const squirrelInteraction = !drivingCart && !activeBoat ? squirrelQuest.interactionHint(player) : null;
         const subwayStepsReached = parkStage === "SUBWAY_ENTRANCE" && !drivingCart && !activeBoat && Math.hypot(player.x - campaign.subwayEntryTrigger.x, player.z - campaign.subwayEntryTrigger.z) < 2.15;
         if (subwayStepsReached && !subwayTransitionStarted) {
-          subwayTransitionStarted = true; velocity.set(0, 0, 0); keys.clear(); exitPointerLockSafely(); showToast("Descending beneath Fifth Avenue…", 1200); onEnterSubway(duckRecruited ? [CENTRAL_PARK_MALLARD_COMPANION_ID] : []);
+          const companions = [
+            ...(duckRecruited ? [CENTRAL_PARK_MALLARD_COMPANION_ID] : []),
+            ...(squirrelRecruited ? [CENTRAL_PARK_SQUIRREL_COMPANION_ID] : []),
+          ];
+          subwayTransitionStarted = true; velocity.set(0, 0, 0); keys.clear(); exitPointerLockSafely(); showToast("Descending beneath Fifth Avenue…", 1200); onEnterSubway(companions);
         }
         // Keep the interaction shown by the HUD and the interaction that fires
         // on E identical when a forage pickup sits beside the parked cart.
@@ -537,12 +564,18 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
           const duckEvent = duckQuest.interact(duckInteractionTarget, gameTime);
           if (duckEvent) {
             showToast(duckEvent.message, 4800);
-            if (duckEvent.kind === "DUCK_CALLED") audio.playMallardCue("call");
-            else if (duckEvent.kind === "REEDLINE_SNAG_RELEASED") audio.playMallardCue("line-release");
-            else audio.playMallardCue("call");
+            audio.playMallardCue(duckEvent.kind === "DUCKS_PASSED" ? "landing" : "call");
           }
           while (duckQuest.consumeEvent()) { /* The returned event was already announced. */ }
           duckActionLockedUntil = gameTime + .45;
+          actionRequested = false;
+        } else if (actionRequested && hawkEvent?.kind !== "SNATCH" && squirrelInteraction) {
+          const squirrelEvent = squirrelQuest.interact(player);
+          if (squirrelEvent) {
+            showToast(squirrelEvent.message, 4800);
+            audio.playUiConfirm();
+          }
+          while (squirrelQuest.consumeEvent()) { /* The returned event was already announced. */ }
           actionRequested = false;
         } else if (actionRequested && hawkEvent?.kind !== "SNATCH" && activeBoat) {
           activeBoat.stop();
@@ -746,11 +779,11 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
         actionRequested = false; dropRequested = false; camera.position.copy(player); camera.rotation.set(pitch, yaw, 0);
         actionMarker.visible = false; dropMarker.visible = false; actionMarkerMaterial.color.set("#d9ef8b");
         const pulse = 1 + Math.sin(gameTime * 4.2) * .09;
-        if (duckInteraction || duckQuest.isRescueActive) {
+        if (duckInteraction || squirrelInteraction) {
           actionMarker.visible = true;
-          actionMarker.position.copy(duckInteraction?.target ?? duckQuest.currentTarget);
+          actionMarker.position.copy(duckInteraction?.target ?? squirrelInteraction!.target);
           actionMarker.position.y += .42;
-          actionMarkerMaterial.color.set(duckInteraction ? "#f7d778" : "#f0bd57");
+          actionMarkerMaterial.color.set(duckInteraction ? "#f7d778" : "#c58c52");
         }
         else if (ticketNearby) { actionMarker.visible = true; actionMarker.position.copy(world.ticketTarget); actionMarker.position.y += .28; actionMarkerMaterial.color.set("#d9ef8b"); }
         else if (nearbyBoat) { nearbyBoat.getWorldEntryPosition(boatEntry); actionMarker.visible = true; actionMarker.position.copy(boatEntry); actionMarker.position.y += .7; }
@@ -766,7 +799,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
           // World-space rings otherwise balloon when a grip point is close.
           // Scaling with distance keeps them a restrained, constant screen size.
           const distance = marker.position.distanceTo(camera.position);
-          const angularScale = marker === actionMarker && (duckInteraction || duckQuest.isRescueActive || ticketNearby || nearbyBoat || cartNearby || groundTreeTarget && !branchTarget) ? .075 : .06;
+          const angularScale = marker === actionMarker && (duckInteraction || squirrelInteraction || ticketNearby || nearbyBoat || cartNearby || groundTreeTarget && !branchTarget) ? .075 : .06;
           marker.scale.setScalar(THREE.MathUtils.clamp(distance * angularScale * pulse, .018, .92));
         }
         const shadeTree = nearestTree(player), shadeDistance = shadeTree ? Math.max(0, Math.hypot(player.x - shadeTree.x, player.z - shadeTree.z) - shadeTree.radius) : 18;
@@ -806,13 +839,31 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
           locomotion: activeBoat ? "rowboat" : swimming ? "water" : "land",
           floorYAt: (x, z) => groundHeight(x, z) - 1.48,
           resolveBody: resolveDuckCompanion,
+          rowboatPosition: activeBoat?.root.position ?? null,
+          rowboatSpeedMetersPerSecond: activeBoat?.speedMetersPerSecond ?? 0,
           rowboatPassenger,
+        });
+        squirrelQuest.update(gameTime, delta, {
+          player,
+          playerYaw: yaw,
+          playerArboreal: Boolean(climbingTree || branchRoute || transfer || controlledDescent),
+          floorYAt: (x, z) => groundHeight(x, z) - 1.48,
+          resolveBody: resolveDuckCompanion,
         });
         let duckEvent = duckQuest.consumeEvent();
         while (duckEvent) {
           if (duckEvent.kind === "DUCK_RECRUITED") { duckRecruited = true; audio.playMallardCue("landing"); audio.playQuestComplete(); }
+          else if (duckEvent.kind === "DUCKS_CROSSING") audio.playMallardCue("crossing");
+          else audio.playMallardCue("call");
           showToast(duckEvent.message, duckEvent.kind === "DUCK_RECRUITED" ? 5600 : 4200);
           duckEvent = duckQuest.consumeEvent();
+        }
+        let squirrelEvent = squirrelQuest.consumeEvent();
+        while (squirrelEvent) {
+          if (squirrelEvent.kind === "ZAP_RECRUITED") { squirrelRecruited = true; audio.playQuestComplete(); }
+          else audio.playUiConfirm();
+          showToast(squirrelEvent.message, squirrelEvent.kind === "ZAP_RECRUITED" ? 5600 : 4200);
+          squirrelEvent = squirrelQuest.consumeEvent();
         }
 
         if (hawkEvent?.kind === "DIVE" && (drivingCart || activeBoat || swimming || (exposed < .3 && qaInput !== "hawk"))) {
@@ -885,6 +936,8 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
           else if (!prompt && parkStage === "SUBWAY_ENTRANCE" && Math.hypot(player.x - SUBWAY_TARGET.x, player.z - SUBWAY_TARGET.z) < 11) { prompt = "WALK DOWN THE LIT SUBWAY STAIRS"; }
           else if (!prompt && cartNearby) { prompt = "DRIVE FIELD-SERVICES CART"; promptKey = "E"; }
           if (duckInteraction) { prompt = duckInteraction.label; promptKey = "E"; }
+          else if (squirrelInteraction) { prompt = squirrelInteraction.label; promptKey = "E"; }
+          else if (activeBoat && duckQuest.isMannersActive) { prompt = duckQuest.instruction; promptKey = duckQuest.state === "WAITING_FOR_YIELD" || duckQuest.state === "CROSSING" ? "SPACE" : ""; }
           const nearbyTree = drivingCart || activeBoat || climbingTree || branchRoute || controlledDescent || swimming || hawkEvent?.kind === "SNATCH" ? null : (groundTreeTarget ?? nearestTree(player, 1.35));
           if (!prompt && nearbyTree) { prompt = "CLIMB TRUNK"; promptKey = "E"; }
           if (climbingTree && !prompt) { prompt = branchTarget ? "STEP ONTO BRANCH" : "W / S CLIMB · SHIFT GRIP · CTRL DESCEND"; promptKey = branchTarget ? "E" : ""; }
@@ -897,30 +950,28 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
           if (controlledDescent && !prompt) { prompt = gripping ? "LOWERING WITH SECURE GRIP" : "HOLD SHIFT FOR A SLOWER DESCENT"; promptKey = gripping ? "" : "SHIFT"; }
           if (swimming && !prompt) prompt = "W / A / S / D  SWIM";
           const head = ((yaw % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2), directions = ["N", "NW", "W", "SW", "S", "SE", "E", "NE"];
-          const duckRescueWaypoint = duckQuest.isRescueActive;
-          const target = duckRescueWaypoint ? duckQuest.currentTarget : parkStage === "BOW_BRIDGE" ? BOW_BRIDGE_TARGET : parkStage === "LAKE_TICKET" ? world.ticketTarget : parkStage === "SUBWAY_ENTRANCE" ? SUBWAY_TARGET : BOW_BRIDGE_TARGET;
+          const target = parkStage === "BOW_BRIDGE" ? BOW_BRIDGE_TARGET : parkStage === "LAKE_TICKET" ? world.ticketTarget : parkStage === "SUBWAY_ENTRANCE" ? SUBWAY_TARGET : BOW_BRIDGE_TARGET;
           const goalX = target.x - player.x, goalZ = target.z - player.z, goalDistance = Math.hypot(goalX, goalZ);
           const goalAhead = goalX * -Math.sin(yaw) + goalZ * -Math.cos(yaw), goalSide = goalX * Math.cos(yaw) - goalZ * Math.sin(yaw);
           const goalBearing = THREE.MathUtils.radToDeg(Math.atan2(goalSide, goalAhead));
           const motion: MotionState = activeBoat ? "ROWING" : drivingCart ? "DRIVING" : hawkEvent?.kind === "SNATCH" ? "SNATCHED" : hawkEvent?.kind === "DIVE" ? "HAWK DIVE" : gameTime < caughtUntil ? "CAUGHT" : transfer ? (transfer.kind === "DROP" ? "LOWERING" : "REACHING") : branchRoute ? "ON BRANCH" : climbingTree ? "CLIMBING" : controlledDescent ? "DESCENDING" : swimming ? "SWIMMING" : blockedBy ? "PATH BLOCKED" : "ON GROUND";
           const vehicleSpeed = activeBoat?.speedMetersPerSecond ?? (drivingCart ? cart.speedMetersPerSecond : 0);
-          const hint = activeBoat ? `${Math.round(Math.abs(vehicleSpeed) * 3.6)} km/h · W / S row · A / D steer · Space brake · ${duckInteraction ? "E rescue" : "E exit"}` : drivingCart ? `${Math.round(Math.abs(vehicleSpeed) * 3.6)} km/h · W / S drive · A / D steer · Space brake · E exit` : hawkEvent?.kind === "SNATCH" ? "Recoverable snatch · the hawk will drop you beneath nearby cover" : hawkEvent?.kind === "DIVE" ? "Break its line of sight: reach canopy or enter the water" : gameTime < caughtUntil ? "Lower branch caught · grip secure" : transfer ? (transfer.kind === "DROP" ? "Lowering to the highlighted branch" : "Reaching hand-over-hand") : branchRoute ? (branchRoute.corridorId ? "Hold W for continuous tree-to-tree travel · look or steer at junctions" : "W / S crawl · endpoint branches auto-grab · Ctrl or Space descends") : climbingTree ? (energy < 18 ? "Rest in place to recover energy · Ctrl descends" : "W / S climb · E enters a branch · Ctrl descends") : controlledDescent ? "A safe descent is active · Shift slows the lowering motion" : swimming ? (energy < 20 ? "Rest on the surface to recover · swimming never stops completely" : "Slower strokes · water cools hawk awareness · rest to recover energy") : blockedBy === "TREE" ? "Solid trunk · face its marker and press E to climb" : blockedBy === "LANDMARK" ? "Solid park structure · use or steer around it" : gameTime < gripHintUntil ? "Move within arm’s reach of a marked trunk, then press E" : energy < 20 ? (moving ? "Low energy slows you, but never freezes movement" : "Resting — energy recovering quickly") : moving ? "Walking drains energy · stop to recover or forage a bud" : "Resting restores energy · tender buds restore 30";
+          const hint = activeBoat ? `${Math.round(Math.abs(vehicleSpeed) * 3.6)} km/h · W / S row · A / D steer · Space brake · ${duckInteraction ? "E greet Tanner" : "E exit"}` : drivingCart ? `${Math.round(Math.abs(vehicleSpeed) * 3.6)} km/h · W / S drive · A / D steer · Space brake · E exit` : hawkEvent?.kind === "SNATCH" ? "Recoverable snatch · the hawk will drop you beneath nearby cover" : hawkEvent?.kind === "DIVE" ? "Break its line of sight: reach canopy or enter the water" : gameTime < caughtUntil ? "Lower branch caught · grip secure" : transfer ? (transfer.kind === "DROP" ? "Lowering to the highlighted branch" : "Reaching hand-over-hand") : branchRoute ? (branchRoute.corridorId ? "Hold W for continuous tree-to-tree travel · look or steer at junctions" : "W / S crawl · endpoint branches auto-grab · Ctrl or Space descends") : climbingTree ? (energy < 18 ? "Rest in place to recover energy · Ctrl descends" : "W / S climb · E enters a branch · Ctrl descends") : controlledDescent ? "A safe descent is active · Shift slows the lowering motion" : swimming ? (energy < 20 ? "Rest on the surface to recover · swimming never stops completely" : "Slower strokes · water cools hawk awareness · rest to recover energy") : blockedBy === "TREE" ? "Solid trunk · face its marker and press E to climb" : blockedBy === "LANDMARK" ? "Solid park structure · use or steer around it" : gameTime < gripHintUntil ? "Move within arm’s reach of a marked trunk, then press E" : energy < 20 ? (moving ? "Low energy slows you, but never freezes movement" : "Resting — energy recovering quickly") : moving ? "Walking drains energy · stop to recover or forage a bud" : "Resting restores energy · tender buds restore 30";
           const threat = hawkPhase === "SNATCHED" ? "SNATCHED · RECOVERING" : hawkPhase === "DIVING" ? "DIVE PASS INBOUND" : hawkPhase === "RECOVERING" ? "DISORIENTED · SAFE" : drivingCart ? "CART ROOF COVER" : activeBoat || swimming ? "WATER SHELTER" : alert >= 85 ? "DANGER · FIND COVER" : hawkPhase === "WATCHING" ? "HAWK WATCHING" : "PATROL DISTANT";
-          const campaignCopy = duckRescueWaypoint
-            ? { objective: "Free the mallard from discarded reedline", short: "DUCK RESCUE", value: `${duckQuest.progress} / 3 SNAGS`, label: `Reedline snag ${Math.min(duckQuest.progress + 1, 3)} of 3` }
-            : parkStage === "FORAGE"
+          const campaignCopy = parkStage === "FORAGE"
             ? { objective: "Forage five buds across trail and canopy", short: "FORAGE", value: `${Math.min(collected.current.size, 5)} / 5 BUDS`, label: "Bow Bridge" }
             : parkStage === "BOW_BRIDGE"
               ? { objective: "Head south to Bow Bridge on The Lake", short: "BRIDGE", value: `${Math.round(goalDistance)} M`, label: "Bow Bridge" }
               : parkStage === "LAKE_TICKET"
                 ? { objective: "Recover your Bronx Zoo ticket from the island in The Lake", short: "ISLAND", value: `${Math.round(goalDistance)} M`, label: "Bronx Zoo ticket" }
                 : { objective: "Descend into the 5 Av / 59 St subway for the Bronx Zoo", short: "SUBWAY", value: `${Math.round(goalDistance)} M`, label: "5 Av / 59 St stairs" };
-          setHud({ energy, alert, buds: Math.min(collected.current.size, 5), ticketCollected, objective: campaignCopy.objective, objectiveShort: campaignCopy.short, prompt, promptKey, heading: directions[Math.round(head / (Math.PI / 4)) % 8], motion, hint, threat, hawkPhase, swimming, driving: Boolean(drivingCart || activeBoat), speed: vehicleSpeed, x: player.x, y: player.y, z: player.z, branchId: branchRoute?.id ?? -1, branchProgress, arboreal: Boolean(climbingTree || branchRoute || transfer || controlledDescent || dropVelocity < 0), goalDistance, goalBearing, parkStage, targetActive: duckRescueWaypoint || parkStage !== "FORAGE", vehicle: activeBoat ? "rowboat" : drivingCart ? "cart" : null, waypointLabel: campaignCopy.label });
+          setHud({ energy, alert, buds: Math.min(collected.current.size, 5), ticketCollected, objective: campaignCopy.objective, objectiveShort: campaignCopy.short, prompt, promptKey, heading: directions[Math.round(head / (Math.PI / 4)) % 8], motion, hint, threat, hawkPhase, swimming, driving: Boolean(drivingCart || activeBoat), speed: vehicleSpeed, x: player.x, y: player.y, z: player.z, branchId: branchRoute?.id ?? -1, branchProgress, arboreal: Boolean(climbingTree || branchRoute || transfer || controlledDescent || dropVelocity < 0), goalDistance, goalBearing, parkStage, targetActive: parkStage !== "FORAGE", vehicle: activeBoat ? "rowboat" : drivingCart ? "cart" : null, waypointLabel: campaignCopy.label });
         }
       } else {
         carts.forEach(candidate => candidate.animate(gameTime)); rowboats.forEach(boat => boat.animate(gameTime)); world.animate(gameTime, player, scentRef.current, collected.current);
         const rowboatPassenger = activeBoat ? activeBoat.getWorldPassengerTransform(duckPassengerPosition, duckPassengerQuaternion) : null;
-        duckQuest.update(gameTime, 0, { player, playerYaw: activeBoat?.root.rotation.y ?? yaw, locomotion: activeBoat ? "rowboat" : swimming ? "water" : "land", floorYAt: (x, z) => groundHeight(x, z) - 1.48, resolveBody: resolveDuckCompanion, rowboatPassenger });
+        duckQuest.update(gameTime, 0, { player, playerYaw: activeBoat?.root.rotation.y ?? yaw, locomotion: activeBoat ? "rowboat" : swimming ? "water" : "land", floorYAt: (x, z) => groundHeight(x, z) - 1.48, resolveBody: resolveDuckCompanion, rowboatPosition: activeBoat?.root.position ?? null, rowboatSpeedMetersPerSecond: activeBoat?.speedMetersPerSecond ?? 0, rowboatPassenger });
+        squirrelQuest.update(gameTime, 0, { player, playerYaw: yaw, playerArboreal: Boolean(climbingTree || branchRoute || transfer || controlledDescent), floorYAt: (x, z) => groundHeight(x, z) - 1.48, resolveBody: resolveDuckCompanion });
       }
       renderPipeline.render();
     }
@@ -928,7 +979,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
     return () => {
       disposed = true; cartMotorState.driving = false; cartMotorState.speed = 0; audio.setCartMotor(false); cancelAnimationFrame(raf); renderer.domElement.removeEventListener("pointerdown", pointer); renderer.domElement.removeEventListener("pointermove", pointerMove); renderer.domElement.removeEventListener("pointerup", pointerUp);
       document.removeEventListener("mousemove", mouse); document.removeEventListener("keydown", keyDown); document.removeEventListener("keyup", keyUp); document.removeEventListener("sloth-look", touchLook); document.removeEventListener(DEBUG_LOOK_REQUEST_EVENT, requestLock); document.removeEventListener("pointerlockchange", pointerLockChanged); window.removeEventListener("blur", releaseInput); removeEventListener("resize", resize);
-      unsubscribeQuality(); duckQuest.dispose(); carts.forEach(candidate => candidate.dispose()); rowboats.forEach(boat => boat.dispose()); campaign.dispose(); markerGeometry.dispose(); actionMarkerMaterial.dispose(); dropMarkerMaterial.dispose(); timer.dispose(); renderPipeline.dispose(); renderer.dispose(); if (host.contains(renderer.domElement)) host.removeChild(renderer.domElement);
+      unsubscribeQuality(); duckQuest.dispose(); squirrelQuest.dispose(); carts.forEach(candidate => candidate.dispose()); rowboats.forEach(boat => boat.dispose()); campaign.dispose(); markerGeometry.dispose(); actionMarkerMaterial.dispose(); dropMarkerMaterial.dispose(); timer.dispose(); renderPipeline.dispose(); renderer.dispose(); if (host.contains(renderer.domElement)) host.removeChild(renderer.domElement);
     };
   }, [audio, onEnterSubway, quality, setPhase, showToast]);
 
@@ -975,7 +1026,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
       <div className="status"><div className="eyebrow">Hawk status · {Math.round(hud.alert)}%</div><strong>{hud.threat}</strong></div>
       <div className="meters"><div className={`motion-state ${hud.motion === "PATH BLOCKED" || hud.motion === "HAWK DIVE" || hud.motion === "SNATCHED" ? "warning" : ""}`}><span>{hud.motion}</span><small>{hud.hint}</small></div><div className="meter-row"><span>Energy</span><div className="meter-track"><div className="meter-fill" style={{ width: `${hud.energy}%` }}/></div><span>{Math.round(hud.energy)}</span></div><div className="meter-row"><span>Threat</span><div className="meter-track"><div className="meter-fill alert" style={{ width: `${hud.alert}%` }}/></div><span>{Math.round(hud.alert)}</span></div></div>
       {hud.prompt && <div className="interaction">{hud.promptKey && <span className="key">{hud.promptKey}</span>}{hud.prompt}</div>}
-      <div className="controls-strip">{hud.vehicle === "rowboat" ? <><span>W / S Row</span><span>A / D Steer</span><span>Space Brake</span><span>{hud.promptKey === "E" && !hud.prompt.includes("EXIT") ? "E Rescue" : "E Exit"}</span></> : hud.vehicle === "cart" ? <><span>W / S Drive</span><span>A / D Steer</span><span>Space Brake</span><span>E Exit</span></> : <><span>W / S Move / Auto-flow</span><span>Shift Hold Grip</span><span>E Interact</span><span>Ctrl / Space Descend</span></>}<span>P Pause</span><span>C Scent</span><span>M {audioState.muted ? "Unmute" : "Mute"}</span></div>
+      <div className="controls-strip">{hud.vehicle === "rowboat" ? <><span>W / S Row</span><span>A / D Steer</span><span>Space Brake</span><span>{hud.promptKey === "E" && !hud.prompt.includes("EXIT") ? "E Interact" : "E Exit"}</span></> : hud.vehicle === "cart" ? <><span>W / S Drive</span><span>A / D Steer</span><span>Space Brake</span><span>E Exit</span></> : <><span>W / S Move / Auto-flow</span><span>Shift Hold Grip</span><span>E Interact</span><span>Ctrl / Space Descend</span></>}<span>P Pause</span><span>C Scent</span><span>M {audioState.muted ? "Unmute" : "Mute"}</span></div>
     </div>}
     {phase !== "intro" && <MobileHud alert={hud.alert} buds={hud.buds} driving={hud.driving} energy={hud.energy} hawkPhase={hud.hawkPhase} motion={hud.motion} objectiveShort={hud.objectiveShort} objectiveValue={hud.parkStage === "FORAGE" ? `${hud.buds} / 5` : `${Math.round(hud.goalDistance)} M`} showMotion={!toast && hud.parkStage === "FORAGE"} speed={hud.speed} swimming={hud.swimming}/>}
     {phase === "playing" && <GoalWayfinder active={hud.targetActive} bearing={hud.goalBearing} distance={hud.goalDistance} label={hud.waypointLabel}/>}

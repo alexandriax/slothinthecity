@@ -113,7 +113,7 @@ test("foraging opens the Bow Bridge, Bronx Zoo island ticket, and direct subway 
   assert.match(game, /RECOVER BRONX ZOO TICKET/);
   assert.match(game, /data-ticket-collected/);
   assert.match(game, /parkStage = "SUBWAY_ENTRANCE"/);
-  assert.match(game, /subwayStepsReached[\s\S]{0,420}onEnterSubway\(duckRecruited \? \[CENTRAL_PARK_MALLARD_COMPANION_ID\] : \[\]\)/);
+  assert.match(game, /subwayStepsReached[\s\S]{0,420}duckRecruited \? \[CENTRAL_PARK_MALLARD_COMPANION_ID\] : \[\][\s\S]{0,180}squirrelRecruited \? \[CENTRAL_PARK_SQUIRREL_COMPANION_ID\] : \[\][\s\S]{0,260}onEnterSubway\(companions\)/);
   assert.match(game, /<GoalWayfinder/);
   assert.match(game, /data-goal-distance/);
   assert.match(game, /active=\{hud\.targetActive\}/);

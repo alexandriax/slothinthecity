@@ -6,27 +6,19 @@ import { markAuthoredZooAnimalDisposed } from "./animals/AuthoredZooAnimalAssets
 
 export const CENTRAL_PARK_MALLARD_COMPANION_ID = "central-park-mallard" as const;
 
-export type LakeDuckQuestState =
-  | "ROAMING"
-  | "SNAG_1"
-  | "SNAG_2"
-  | "SNAG_3"
-  | "FREED"
-  | "FOLLOWING";
-
+export type LakeDuckQuestState = "ROAMING" | "WAITING_FOR_YIELD" | "CROSSING" | "HONORED" | "FOLLOWING";
 export type LakeDuckLocomotion = "water" | "land" | "flight" | "rowboat";
 
 export type LakeDuckQuestEvent = {
-  kind: "DUCK_CALLED" | "REEDLINE_SNAG_RELEASED" | "DUCK_FREED" | "DUCK_RECRUITED";
+  kind: "DUCK_CALLED" | "DUCKS_CROSSING" | "MANNERS_RESET" | "DUCKS_PASSED" | "DUCK_RECRUITED";
   message: string;
   progress: number;
-  flowBonus?: number;
 };
 
 export type LakeDuckInteractionHint = {
   label: string;
   target: THREE.Vector3;
-  /** Duck interactions intentionally override the normal rowboat-exit prompt. */
+  /** Tanner's greeting intentionally overrides the normal rowboat-exit prompt. */
   overridesVehicleExit: boolean;
 };
 
@@ -34,83 +26,30 @@ export type LakeDuckUpdateContext = {
   player: THREE.Vector3;
   playerYaw?: number;
   locomotion?: LakeDuckLocomotion;
-  /** Ground or deck support under a land-following mallard. */
   floorYAt?: (x: number, z: number) => number;
-  /** Project a land follower out of authored trees, signs, walls, and props. */
   resolveBody?: (position: THREE.Vector3, velocity: THREE.Vector3, radius: number) => void;
-  /** Authored forward-bench pose while the player is rowing. */
-  rowboatPassenger?: {
-    position: THREE.Vector3;
-    quaternion: THREE.Quaternion;
-  } | null;
+  rowboatPosition?: THREE.Vector3 | null;
+  rowboatSpeedMetersPerSecond?: number;
+  rowboatPassenger?: { position: THREE.Vector3; quaternion: THREE.Quaternion } | null;
 };
 
 export type LakeDuckQuestOptions = {
-  /** Stable session seed; randomizes snag order once without mutating it later. */
-  sessionSeed?: number;
   encounterRadius?: number;
+  requiredYieldSeconds?: number;
 };
 
-type Snag = {
-  root: THREE.Group;
-  position: THREE.Vector3;
-  ring: THREE.Mesh<THREE.TorusGeometry, THREE.MeshBasicMaterial>;
-  discardedFloat: THREE.Mesh;
-  restoration: THREE.Group;
-  released: boolean;
-};
-
-const TETHER_ANCHOR = new THREE.Vector3(68, THE_LAKE_SURFACE_Y + .065, -221);
-const ROAM_CENTER_X = 69;
-const ROAM_CENTER_Z = -222;
-const ROAM_X_RADIUS = 7.2;
-const ROAM_Z_RADIUS = 8.5;
-const SNAG_POSITION_POOL = [
-  new THREE.Vector3(52, THE_LAKE_SURFACE_Y + .045, -202),
-  new THREE.Vector3(47, THE_LAKE_SURFACE_Y + .045, -231),
-  new THREE.Vector3(66, THE_LAKE_SURFACE_Y + .045, -252),
-  new THREE.Vector3(76, THE_LAKE_SURFACE_Y + .045, -242),
-  new THREE.Vector3(43, THE_LAKE_SURFACE_Y + .045, -216),
-  new THREE.Vector3(73, THE_LAKE_SURFACE_Y + .045, -208),
+const WATER_Y = THE_LAKE_SURFACE_Y + .065;
+const ROAM_CENTER = new THREE.Vector3(55, WATER_Y, -203);
+const CROSSING_START = new THREE.Vector3(51, WATER_Y, -202);
+const CROSSING_END = new THREE.Vector3(72, WATER_Y, -230);
+const CROSSING_MIDPOINT = CROSSING_START.clone().lerp(CROSSING_END, .5);
+const CROSSING_DURATION = 5.2;
+const FAMILY_OFFSETS = [
+  new THREE.Vector3(0, 0, 0),
+  new THREE.Vector3(-1.05, 0, .78),
+  new THREE.Vector3(-2.15, 0, -.18),
+  new THREE.Vector3(-3.08, 0, .66),
 ] as const;
-
-function seededRandom(seed: number) {
-  let value = seed >>> 0;
-  return () => {
-    value = Math.imul(value ^ value >>> 15, 1 | value);
-    value ^= value + Math.imul(value ^ value >>> 7, 61 | value);
-    return ((value ^ value >>> 14) >>> 0) / 4294967296;
-  };
-}
-
-function shuffledIndices(length: number, random: () => number) {
-  const order = Array.from({ length }, (_, index) => index);
-  for (let index = order.length - 1; index > 0; index--) {
-    const swap = Math.floor(random() * (index + 1));
-    [order[index], order[swap]] = [order[swap], order[index]];
-  }
-  return order;
-}
-
-function seededLayout(seed: number) {
-  const positions = shuffledIndices(SNAG_POSITION_POOL.length, seededRandom(seed ^ 0x9e3779b9))
-    .slice(0, 3)
-    .map(index => SNAG_POSITION_POOL[index].clone());
-  const order = shuffledIndices(3, seededRandom(seed ^ 0x85ebca6b));
-  return { positions, order };
-}
-
-function lilyPadGeometry() {
-  const shape = new THREE.Shape();
-  const segments = 34, notch = .26;
-  shape.moveTo(0, 0);
-  for (let index = 0; index <= segments; index++) {
-    const angle = notch + (Math.PI * 2 - notch * 2) * index / segments;
-    shape.lineTo(Math.cos(angle) * 1.05, Math.sin(angle) * .88);
-  }
-  shape.lineTo(0, 0);
-  return new THREE.ShapeGeometry(shape, 1);
-}
 
 function disposeTree(root: THREE.Object3D) {
   const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
@@ -125,227 +64,119 @@ function disposeTree(root: THREE.Object3D) {
 }
 
 /**
- * Lake-local optional quest and presentation layer for Reedline Rescue.
- *
- * The class owns the swimming encounter, physical line/lily visuals, stable
- * three-snag sequence, and the mallard's park follow handoff. Campaign state
- * remains outside this class; consumers recruit `central-park-mallard` after
- * consuming `DUCK_RECRUITED`, then the shared menagerie owns later worlds.
+ * Optional lake encounter built around observable boat manners rather than
+ * collectible markers. Tanner only introduces himself at close range. The
+ * player earns his trust by stopping outside the flock's path, letting every
+ * duck pass, and continuing without throwing a wake through the family.
  */
 export class LakeDuckQuest {
   readonly root = new THREE.Group();
   readonly companionId = CENTRAL_PARK_MALLARD_COMPANION_ID;
   readonly duck: ZooAnimalRig;
-  readonly snagOrder: readonly number[];
-  readonly snagPositions: readonly THREE.Vector3[];
-  private readonly snags: Snag[] = [];
+  readonly family: readonly ZooAnimalRig[];
   private readonly events: LakeDuckQuestEvent[] = [];
-  private readonly line: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>;
-  private readonly looseCoil: THREE.Group;
   private readonly encounterRadius: number;
+  private readonly requiredYieldSeconds: number;
   private readonly previous = new THREE.Vector3();
-  private readonly tetherAnchor = TETHER_ANCHOR.clone();
-  private readonly tetherDestination = TETHER_ANCHOR.clone();
-  private readonly freedFrom = new THREE.Vector3();
-  private readonly freedFromQuaternion = new THREE.Quaternion();
   private readonly followTarget = new THREE.Vector3();
   private readonly followVelocity = new THREE.Vector3();
-  private readonly targetQuaternion = new THREE.Quaternion();
   private readonly passengerFrom = new THREE.Vector3();
   private readonly passengerFromQuaternion = new THREE.Quaternion();
+  private readonly honoredFrom = new THREE.Vector3();
+  private readonly honoredFromQuaternion = new THREE.Quaternion();
+  private readonly targetQuaternion = new THREE.Quaternion();
+  private stateValue: LakeDuckQuestState = "ROAMING";
+  private stateStartedAt = 0;
+  private yieldedSeconds = 0;
+  private lastWakeWarningAt = -Infinity;
   private passengerSeated = false;
   private passengerBoardingStartedAt = 0;
-  private stateValue: LakeDuckQuestState = "ROAMING";
-  private releasedCount = 0;
-  private stateStartedAt = 0;
-  private lastReleaseAt = 0;
-  private flowBonusValue = 0;
   private disposed = false;
 
   constructor(scene: THREE.Scene, textures: GameTextures, quality = 1, options: LakeDuckQuestOptions = {}) {
-    this.root.name = "central-park-reedline-rescue-quest";
-    this.root.userData.sideQuest = "reedline-rescue";
+    this.root.name = "central-park-tanner-right-of-way-quest";
+    this.root.userData.sideQuest = "tanner-right-of-way";
     this.root.userData.companionId = CENTRAL_PARK_MALLARD_COMPANION_ID;
+    this.root.userData.discovery = "local-only-no-global-waypoint";
     scene.add(this.root);
-    this.encounterRadius = options.encounterRadius ?? 11.5;
-    const layout = seededLayout(options.sessionSeed ?? Math.floor(Math.random() * 0xffffffff));
-    this.snagOrder = Object.freeze(layout.order);
-    this.snagPositions = Object.freeze(layout.positions);
-    this.root.userData.stableSnagOrder = [...this.snagOrder];
-    this.root.userData.routeSignature = this.snagPositions.map(position => `${position.x}:${position.z}`).join("|");
+    this.encounterRadius = options.encounterRadius ?? 12.5;
+    this.requiredYieldSeconds = options.requiredYieldSeconds ?? 1.35;
 
-    this.duck = createMallard(textures, quality);
-    this.duck.root.name = "central-park-mallard-reedline-hero";
-    this.duck.root.userData.logicalId = CENTRAL_PARK_MALLARD_COMPANION_ID;
-    // Match the first procedural swim pose so the mallard never flashes at a
-    // distant construction position before its first update.
-    this.duck.root.position.set(ROAM_CENTER_X + ROAM_X_RADIUS, THE_LAKE_SURFACE_Y + .065, ROAM_CENTER_Z);
-    this.previous.copy(this.duck.root.position);
-    this.root.add(this.duck.root);
-
-    const padGeometry = lilyPadGeometry();
-    this.snagPositions.forEach((position, index) => {
-      const snagRoot = new THREE.Group();
-      snagRoot.name = `reedline-lily-snag-${index + 1}`;
-      snagRoot.position.copy(position);
-      const pad = new THREE.Mesh(padGeometry.clone(), new THREE.MeshStandardMaterial({ color: index % 2 ? "#6f8848" : "#799652", roughness: .82, side: THREE.DoubleSide }));
-      pad.name = "physical-notched-lily-pad";
-      pad.rotation.x = -Math.PI / 2;
-      pad.scale.setScalar(.82 + index * .08);
-      const float = new THREE.Mesh(new THREE.CapsuleGeometry(.07, .2, 5, 10), new THREE.MeshStandardMaterial({ color: "#b58b5c", roughness: .94 }));
-      float.name = "discarded-line-cork-float";
-      float.position.set(.22, .06, -.12);
-      float.rotation.z = .42;
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(1.35, .035, 10, 56), new THREE.MeshBasicMaterial({ color: "#f2c76a", transparent: true, opacity: 0, depthWrite: false }));
-      ring.name = "active-reedline-water-ripple";
-      ring.rotation.x = Math.PI / 2;
-      ring.position.y = .025;
-      ring.renderOrder = 16;
-      const restoration = new THREE.Group();
-      restoration.name = "restored-lily-blossoms-and-clear-water";
-      restoration.visible = false;
-      for (let blossomIndex = 0; blossomIndex < 3; blossomIndex++) {
-        const blossom = new THREE.Mesh(
-          new THREE.SphereGeometry(.13 - blossomIndex * .012, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2),
-          new THREE.MeshStandardMaterial({ color: blossomIndex === 1 ? "#f7bfd7" : "#f4e8cf", roughness: .76, emissive: "#a65879", emissiveIntensity: .08 }),
-        );
-        blossom.name = "habitat-restoration-water-lily";
-        blossom.position.set(-.38 + blossomIndex * .36, .07, .22 - Math.abs(blossomIndex - 1) * .16);
-        blossom.rotation.x = Math.PI;
-        restoration.add(blossom);
-      }
-      const recoveryHalo = new THREE.Mesh(
-        new THREE.RingGeometry(.72, .78, 48),
-        new THREE.MeshBasicMaterial({ color: "#82d8b4", transparent: true, opacity: .32, side: THREE.DoubleSide, depthWrite: false }),
-      );
-      recoveryHalo.name = "restored-water-clarity-halo";
-      recoveryHalo.rotation.x = -Math.PI / 2;
-      recoveryHalo.position.y = .018;
-      restoration.add(recoveryHalo);
-      snagRoot.add(pad, float, ring, restoration);
-      this.root.add(snagRoot);
-      this.snags.push({ root: snagRoot, position: position.clone(), ring, discardedFloat: float, restoration, released: false });
+    const family = FAMILY_OFFSETS.map(() => createMallard(textures, quality));
+    this.family = Object.freeze(family);
+    this.duck = family[0];
+    family.forEach((member, index) => {
+      const name = index === 0 ? "Tanner" : `Tanner family duck ${index}`;
+      member.root.name = index === 0 ? "central-park-tanner-mallard" : `central-park-tanner-family-${index}`;
+      member.root.userData.animalName = name;
+      member.root.userData.questRole = index === 0 ? "manners-mentor-and-companion" : "family-crossing-duck";
+      member.root.userData.speciesLabel = "Mallard";
+      if (index === 0) member.root.userData.logicalId = CENTRAL_PARK_MALLARD_COMPANION_ID;
+      else member.root.scale.setScalar(.82 + index * .045);
+      this.root.add(member.root);
     });
-    padGeometry.dispose();
+    this.placeFamily(new THREE.Vector3(ROAM_CENTER.x + 3.6, WATER_Y, ROAM_CENTER.z), 0, -Math.PI / 2);
+    this.previous.copy(this.duck.root.position);
 
-    this.line = new THREE.Line(
-      new THREE.BufferGeometry(),
-      new THREE.LineBasicMaterial({ color: "#d5d0bd", transparent: true, opacity: .72, depthWrite: false }),
-    );
-    this.line.name = "physical-discarded-monofilament-reedline";
-    this.line.renderOrder = 15;
-    this.root.add(this.line);
-
-    this.looseCoil = new THREE.Group();
-    this.looseCoil.name = "freed-reedline-loose-coil";
-    this.looseCoil.visible = false;
-    for (let loop = 0; loop < 3; loop++) {
-      const strand = new THREE.Mesh(
-        new THREE.TorusGeometry(.32 + loop * .1, .009, 6, 42),
-        new THREE.MeshBasicMaterial({ color: "#d8d2be", transparent: true, opacity: .62 }),
-      );
-      strand.rotation.x = Math.PI / 2;
-      strand.position.y = loop * .007;
-      this.looseCoil.add(strand);
+    // Natural, non-glowing environmental storytelling: Tanner's family waits
+    // beside a small reed shelf where their route intersects the boat lane.
+    const reedMaterial = new THREE.MeshStandardMaterial({ color: "#66784d", roughness: .96 });
+    const reedGeometry = new THREE.CylinderGeometry(.018, .032, 1, 6);
+    for (let index = 0; index < 18; index++) {
+      const reed = new THREE.Mesh(reedGeometry, reedMaterial);
+      reed.name = "tanner-crossing-bank-reed";
+      reed.position.set(CROSSING_START.x - 2.6 + (index % 6) * .42, WATER_Y + .38, CROSSING_START.z + 2.2 + Math.floor(index / 6) * .38);
+      reed.rotation.z = Math.sin(index * 2.1) * .07;
+      reed.scale.y = .72 + (index % 4) * .16;
+      this.root.add(reed);
     }
-    this.looseCoil.position.copy(TETHER_ANCHOR).add(new THREE.Vector3(.7, .02, .55));
-    this.root.add(this.looseCoil);
-    this.updateLineGeometry();
   }
 
   get state() { return this.stateValue; }
-  get progress() { return this.releasedCount; }
+  get progress() { return Math.round(THREE.MathUtils.clamp(this.yieldedSeconds / this.requiredYieldSeconds, 0, 1) * 100); }
   get isComplete() { return this.stateValue === "FOLLOWING"; }
-  get isFreed() { return this.stateValue === "FREED" || this.stateValue === "FOLLOWING"; }
-  get isRescueActive() { return this.stateValue.startsWith("SNAG_") || this.stateValue === "FREED"; }
-  get flowBonus() { return this.flowBonusValue; }
-  get activeSnagIndex() { return this.releasedCount < this.snagOrder.length ? this.snagOrder[this.releasedCount] : null; }
+  get isMannersActive() { return this.stateValue === "WAITING_FOR_YIELD" || this.stateValue === "CROSSING" || this.stateValue === "HONORED"; }
   get duckPosition() { return this.duck.root.position; }
-  get currentTarget() {
-    const active = this.activeSnagIndex;
-    return active === null ? this.duck.root.position : this.snags[active].position;
+  get currentTarget() { return this.stateValue === "ROAMING" ? this.duck.root.position : CROSSING_MIDPOINT; }
+  get instruction() {
+    if (this.stateValue === "WAITING_FOR_YIELD") return "HOLD SPACE · LET TANNER'S FAMILY PASS";
+    if (this.stateValue === "CROSSING") return "HOLD POSITION · DUCKS HAVE RIGHT OF WAY";
+    if (this.stateValue === "HONORED") return "THANK YOU · TANNER NOTICED YOUR MANNERS";
+    return "";
   }
 
   consumeEvent() { return this.events.shift() ?? null; }
 
-  interactionHint(player: THREE.Vector3): LakeDuckInteractionHint | null {
-    if (this.disposed || this.stateValue === "FREED" || this.stateValue === "FOLLOWING") return null;
-    if (this.stateValue === "ROAMING") {
-      if (Math.hypot(player.x - this.duck.root.position.x, player.z - this.duck.root.position.z) > this.encounterRadius) return null;
-      return { label: "HELP THE TANGLED DUCK", target: this.duck.root.position.clone(), overridesVehicleExit: true };
-    }
-    const active = this.activeSnagIndex;
-    if (active === null) return null;
-    const target = this.snags[active].position;
-    if (Math.hypot(player.x - target.x, player.z - target.z) > 4.4) return null;
-    return { label: `LIFT REEDLINE SNAG ${this.releasedCount + 1} / 3`, target: target.clone(), overridesVehicleExit: true };
+  interactionHint(actor: THREE.Vector3): LakeDuckInteractionHint | null {
+    if (this.disposed || this.stateValue !== "ROAMING") return null;
+    if (Math.hypot(actor.x - this.duck.root.position.x, actor.z - this.duck.root.position.z) > this.encounterRadius) return null;
+    return { label: "GREET TANNER · ASK TO CROSS", target: this.duck.root.position.clone(), overridesVehicleExit: true };
   }
 
-  /** Returns an event only when this quest consumed the interaction. */
-  interact(player: THREE.Vector3, elapsed = this.stateStartedAt): LakeDuckQuestEvent | null {
-    if (this.disposed || this.stateValue === "FREED" || this.stateValue === "FOLLOWING") return null;
-    if (this.stateValue === "ROAMING") {
-      if (Math.hypot(player.x - this.duck.root.position.x, player.z - this.duck.root.position.z) > this.encounterRadius) return null;
-      this.beginRescue(elapsed);
-      return this.events.at(-1) ?? null;
-    }
-    const active = this.activeSnagIndex;
-    if (active === null) return null;
-    const snag = this.snags[active];
-    if (Math.hypot(player.x - snag.position.x, player.z - snag.position.z) > 4.4) return null;
-    snag.released = true;
-    snag.ring.visible = true;
-    snag.ring.material.color.set("#7fe49a");
-    snag.ring.material.opacity = .9;
-    snag.discardedFloat.visible = false;
-    snag.restoration.visible = true;
-    this.releasedCount++;
-    const releaseWindow = this.lastReleaseAt ? elapsed - this.lastReleaseAt : elapsed - this.stateStartedAt;
-    if (releaseWindow <= 24) this.flowBonusValue += Math.max(1, 5 - Math.floor(releaseWindow / 6));
-    this.lastReleaseAt = elapsed;
+  /** Returns an event only when Tanner consumed the interaction. */
+  interact(actor: THREE.Vector3, elapsed = this.stateStartedAt): LakeDuckQuestEvent | null {
+    if (!this.interactionHint(actor)) return null;
+    this.stateValue = "WAITING_FOR_YIELD";
     this.stateStartedAt = elapsed;
-    if (this.releasedCount >= this.snagOrder.length) {
-      this.stateValue = "FREED";
-      this.line.visible = false;
-      this.looseCoil.visible = true;
-      this.duck.root.userData.animationState = "short-flight";
-      this.freedFrom.copy(this.duck.root.position);
-      this.freedFromQuaternion.copy(this.duck.root.quaternion);
-      const event: LakeDuckQuestEvent = { kind: "DUCK_FREED", progress: 3, flowBonus: this.flowBonusValue, message: `The last loop slips free. Three lilies bloom in the cleared water${this.flowBonusValue ? ` · restoration flow +${this.flowBonusValue}` : ""}.` };
-      this.events.push(event);
-      return event;
-    }
-    this.stateValue = `SNAG_${this.releasedCount + 1}` as LakeDuckQuestState;
-    this.setTetherDestination(this.activeSnagIndex);
-    this.updateLineGeometry();
-    const event: LakeDuckQuestEvent = { kind: "REEDLINE_SNAG_RELEASED", progress: this.releasedCount, flowBonus: this.flowBonusValue, message: `Water lilies return at snag ${this.releasedCount} of 3. Keep pace with the mallard to the next strand${this.flowBonusValue ? ` · flow +${this.flowBonusValue}` : ""}.` };
+    this.yieldedSeconds = 0;
+    this.placeFamily(CROSSING_START, elapsed);
+    const event: LakeDuckQuestEvent = {
+      kind: "DUCK_CALLED",
+      progress: 0,
+      message: "Tanner waits with his family at the boat lane. Stop outside their path and let every duck pass before you row through.",
+    };
     this.events.push(event);
     return event;
   }
 
-  private beginRescue(elapsed: number) {
-    if (this.stateValue !== "ROAMING") return;
-    this.stateValue = "SNAG_1";
-    this.stateStartedAt = elapsed;
-    this.lastReleaseAt = 0;
-    this.flowBonusValue = 0;
-    this.tetherAnchor.copy(this.duck.root.position);
-    this.setTetherDestination(this.activeSnagIndex);
-    this.looseCoil.position.copy(this.tetherAnchor).add(new THREE.Vector3(.7, .02, .55));
-    this.duck.root.userData.animationState = "swim";
-    this.updateLineGeometry();
-    this.events.push({ kind: "DUCK_CALLED", progress: 0, message: "A mallard paddles close, trailing discarded line. Keep pace as he leads you across the lake; each freed strand restores the lily bed." });
-  }
-
-  setRecruited(player: THREE.Vector3, floorY = THE_LAKE_SURFACE_Y + .065) {
-    this.releasedCount = 3;
-    this.snags.forEach(snag => { snag.released = true; snag.root.visible = false; });
+  setRecruited(player: THREE.Vector3, floorY = WATER_Y) {
     this.stateValue = "FOLLOWING";
     this.stateStartedAt = 0;
-    this.line.visible = false;
-    this.looseCoil.visible = false;
+    this.yieldedSeconds = this.requiredYieldSeconds;
     this.passengerSeated = false;
     this.passengerBoardingStartedAt = 0;
+    this.family.slice(1).forEach(member => { member.root.visible = false; });
+    this.duck.root.visible = true;
     this.duck.root.position.set(player.x + 1.7, floorY, player.z + 2.6);
     this.duck.root.rotation.set(0, 0, 0);
     this.previous.copy(this.duck.root.position);
@@ -354,72 +185,116 @@ export class LakeDuckQuest {
 
   update(elapsed: number, delta: number, context: LakeDuckUpdateContext) {
     if (this.disposed) return;
-    if (this.stateValue === "ROAMING") {
-      const phase = elapsed * .22;
-      this.previous.copy(this.duck.root.position);
-      this.duck.root.position.set(
-        ROAM_CENTER_X + Math.cos(phase) * (ROAM_X_RADIUS + Math.sin(phase * 2) * 1.1),
-        THE_LAKE_SURFACE_Y + .065 + Math.sin(elapsed * 2.1) * .008,
-        ROAM_CENTER_Z + Math.sin(phase) * ROAM_Z_RADIUS,
-      );
-      const moved = this.duck.root.position.clone().sub(this.previous);
-      if (moved.lengthSq() > .000001) this.duck.root.rotation.y = Math.atan2(-moved.x, -moved.z);
-      this.duck.root.userData.animationState = "swim";
-    } else if (this.stateValue.startsWith("SNAG_")) {
-      this.previous.copy(this.duck.root.position);
-      this.tetherAnchor.lerp(this.tetherDestination, 1 - Math.exp(-delta * .34));
-      this.duck.root.position.set(this.tetherAnchor.x + Math.sin(elapsed * .42) * 1.8, this.tetherAnchor.y + Math.sin(elapsed * 2.4) * .007, this.tetherAnchor.z + Math.cos(elapsed * .42) * 1.1);
-      const movement = this.duck.root.position.clone().sub(this.previous);
-      if (movement.lengthSq() > .00001) {
-        const yaw = Math.atan2(-movement.x, -movement.z);
-        const error = Math.atan2(Math.sin(yaw - this.duck.root.rotation.y), Math.cos(yaw - this.duck.root.rotation.y));
-        this.duck.root.rotation.y += error * (1 - Math.exp(-delta * 6));
-      }
-      this.duck.root.userData.animationState = "swim";
-      this.updateLineGeometry();
-    } else if (this.stateValue === "FREED") {
-      const sinceFreed = elapsed - this.stateStartedAt;
-      const amount = THREE.MathUtils.clamp(sinceFreed / 1.65, 0, 1);
-      this.previous.copy(this.duck.root.position);
-      this.resolveFollowTarget(context, this.followTarget);
-      const eased = amount * amount * (3 - 2 * amount);
-      this.duck.root.position.lerpVectors(this.freedFrom, this.followTarget, eased);
-      this.duck.root.position.y += Math.sin(amount * Math.PI) * (context.rowboatPassenger ? 1.15 : .72);
-      if (context.rowboatPassenger) {
-        this.targetQuaternion.copy(context.rowboatPassenger.quaternion);
-        this.duck.root.quaternion.copy(this.freedFromQuaternion).slerp(this.targetQuaternion, eased);
-      } else {
-        const moved = this.duck.root.position.clone().sub(this.previous);
-        if (moved.lengthSq() > .00001) this.duck.root.rotation.y = Math.atan2(-moved.x, -moved.z);
-      }
-      this.duck.root.userData.animationState = "short-flight";
-      if (amount >= 1) {
-        this.stateValue = "FOLLOWING";
+    if (this.stateValue === "ROAMING") this.updateRoaming(elapsed);
+    else if (this.stateValue === "WAITING_FOR_YIELD") this.updateWaiting(elapsed, delta, context);
+    else if (this.stateValue === "CROSSING") this.updateCrossing(elapsed, context);
+    else if (this.stateValue === "HONORED") this.updateHonored(elapsed, context);
+    else this.updateFollowing(elapsed, delta, context);
+    this.family.forEach(member => { if (member.root.visible) member.update(elapsed, delta); });
+  }
+
+  private updateRoaming(elapsed: number) {
+    const phase = elapsed * .19;
+    const center = new THREE.Vector3(
+      ROAM_CENTER.x + Math.cos(phase) * 3.6,
+      WATER_Y,
+      ROAM_CENTER.z + Math.sin(phase) * 2.9,
+    );
+    this.placeFamily(center, elapsed, Math.atan2(-Math.sin(phase), Math.cos(phase)) - Math.PI / 2);
+  }
+
+  private updateWaiting(elapsed: number, delta: number, context: LakeDuckUpdateContext) {
+    this.placeFamily(CROSSING_START, elapsed, Math.atan2(-(CROSSING_END.x - CROSSING_START.x), -(CROSSING_END.z - CROSSING_START.z)));
+    const boat = context.rowboatPosition;
+    if (!boat) { this.yieldedSeconds = Math.max(0, this.yieldedSeconds - delta * .5); return; }
+    const distance = Math.hypot(boat.x - CROSSING_MIDPOINT.x, boat.z - CROSSING_MIDPOINT.z);
+    const speed = Math.abs(context.rowboatSpeedMetersPerSecond ?? 0);
+    const respectfulApproach = distance >= 4.5 && distance <= 16;
+    if (respectfulApproach && speed <= .2) this.yieldedSeconds = Math.min(this.requiredYieldSeconds, this.yieldedSeconds + delta);
+    else this.yieldedSeconds = Math.max(0, this.yieldedSeconds - delta * (speed > .75 ? 1.2 : .35));
+
+    if (distance < 4.5 && speed > .62 && elapsed - this.lastWakeWarningAt > 2.8) {
+      this.lastWakeWarningAt = elapsed;
+      this.events.push({ kind: "MANNERS_RESET", progress: this.progress, message: "Tanner turns the family from your wake. Back off, brake, and give the ducks the right of way." });
+    }
+    if (this.yieldedSeconds >= this.requiredYieldSeconds) {
+      this.stateValue = "CROSSING";
+      this.stateStartedAt = elapsed;
+      this.events.push({ kind: "DUCKS_CROSSING", progress: 100, message: "Your oars settle. Tanner leads the family safely across your bow." });
+    }
+  }
+
+  private updateCrossing(elapsed: number, context: LakeDuckUpdateContext) {
+    const raw = THREE.MathUtils.clamp((elapsed - this.stateStartedAt) / CROSSING_DURATION, 0, 1);
+    const eased = raw * raw * (3 - 2 * raw);
+    this.family.forEach((member, index) => {
+      const stagger = index * .055;
+      const amount = THREE.MathUtils.clamp((eased - stagger) / (1 - stagger), 0, 1);
+      member.root.position.lerpVectors(CROSSING_START, CROSSING_END, amount).add(FAMILY_OFFSETS[index]);
+      member.root.position.y = WATER_Y + Math.sin(elapsed * 2.2 + index) * .007;
+      member.root.rotation.y = Math.atan2(-(CROSSING_END.x - CROSSING_START.x), -(CROSSING_END.z - CROSSING_START.z));
+      member.root.userData.animationState = amount > 0 && amount < 1 ? "swim" : "idle";
+    });
+    const boat = context.rowboatPosition;
+    if (boat) {
+      const speed = Math.abs(context.rowboatSpeedMetersPerSecond ?? 0);
+      const closestDuck = Math.min(...this.family.map(member => Math.hypot(boat.x - member.root.position.x, boat.z - member.root.position.z)));
+      if (closestDuck < 3.5 && speed > .72) {
+        this.stateValue = "WAITING_FOR_YIELD";
         this.stateStartedAt = elapsed;
-        this.passengerSeated = Boolean(context.rowboatPassenger);
-        this.passengerBoardingStartedAt = elapsed - .72;
-        this.events.push({ kind: "DUCK_RECRUITED", progress: 3, message: "Reedline Rescue complete — the freed mallard joins your menagerie." });
+        this.yieldedSeconds = 0;
+        this.placeFamily(CROSSING_START, elapsed);
+        this.events.push({ kind: "MANNERS_RESET", progress: 0, message: "A wake breaks the crossing. Tanner circles back—good manners mean waiting until the last tail feather is clear." });
+        return;
       }
     }
+    if (raw >= 1) {
+      this.stateValue = "HONORED";
+      this.stateStartedAt = elapsed;
+      this.honoredFrom.copy(this.duck.root.position);
+      this.honoredFromQuaternion.copy(this.duck.root.quaternion);
+      this.events.push({ kind: "DUCKS_PASSED", progress: 100, message: "The whole family clears your bow. Tanner gives one approving quack and turns back toward you." });
+    }
+  }
 
-    if (this.stateValue === "FOLLOWING") this.updateFollowing(elapsed, delta, context);
-    const active = this.activeSnagIndex;
-    this.snags.forEach((snag, index) => {
-      const isActive = index === active && this.stateValue.startsWith("SNAG_");
-      snag.ring.visible = isActive || snag.released;
-      if (isActive) {
-        snag.ring.material.color.set("#f2c76a");
-        snag.ring.material.opacity = .42 + Math.sin(elapsed * 3.2) * .16;
-        snag.ring.scale.setScalar(.82 + (elapsed * .44 % 1) * .56);
-      } else if (snag.released) {
-        snag.ring.material.color.set("#7fe49a");
-        snag.ring.material.opacity = Math.max(0, snag.ring.material.opacity - delta * .34);
-        snag.ring.scale.lerp(new THREE.Vector3(1, 1, 1), 1 - Math.exp(-delta * 5));
-        snag.restoration.rotation.y += delta * .08;
-      }
-      snag.root.position.y = snag.position.y + Math.sin(elapsed * 1.35 + index * 1.7) * .012;
+  private updateHonored(elapsed: number, context: LakeDuckUpdateContext) {
+    const amount = THREE.MathUtils.clamp((elapsed - this.stateStartedAt) / 1.65, 0, 1);
+    const eased = amount * amount * (3 - 2 * amount);
+    this.resolveFollowTarget(context, this.followTarget);
+    this.duck.root.position.lerpVectors(this.honoredFrom, this.followTarget, eased);
+    this.duck.root.position.y += Math.sin(amount * Math.PI) * (context.rowboatPassenger ? 1.08 : .64);
+    if (context.rowboatPassenger) {
+      this.targetQuaternion.copy(context.rowboatPassenger.quaternion);
+      this.duck.root.quaternion.copy(this.honoredFromQuaternion).slerp(this.targetQuaternion, eased);
+    }
+    this.duck.root.userData.animationState = amount < .82 ? "short-flight" : "landing-settle";
+    this.family.slice(1).forEach((member, index) => {
+      member.root.position.x += (CROSSING_END.x + 4 + index * 1.2 - member.root.position.x) * .018;
+      member.root.position.z += (CROSSING_END.z - 5 - index * .8 - member.root.position.z) * .018;
+      member.root.userData.animationState = "swim";
     });
-    this.duck.update(elapsed, delta);
+    if (amount >= 1) {
+      this.stateValue = "FOLLOWING";
+      this.stateStartedAt = elapsed;
+      this.family.slice(1).forEach(member => { member.root.visible = false; });
+      this.passengerSeated = Boolean(context.rowboatPassenger);
+      this.passengerBoardingStartedAt = elapsed - .72;
+      this.events.push({ kind: "DUCK_RECRUITED", progress: 100, message: "Tanner joins you. He'll follow the rest of the journey—and expects the same good manners everywhere." });
+    }
+  }
+
+  private placeFamily(center: THREE.Vector3, elapsed: number, yaw = 0) {
+    const cosine = Math.cos(yaw), sine = Math.sin(yaw);
+    this.family.forEach((member, index) => {
+      const offset = FAMILY_OFFSETS[index];
+      member.root.position.set(
+        center.x + offset.x * cosine - offset.z * sine,
+        WATER_Y + Math.sin(elapsed * 2.1 + index * .9) * .007,
+        center.z + offset.x * sine + offset.z * cosine,
+      );
+      member.root.rotation.y = yaw;
+      member.root.userData.animationState = index === 0 || this.stateValue === "ROAMING" ? "swim" : "idle";
+    });
   }
 
   private updateFollowing(elapsed: number, delta: number, context: LakeDuckUpdateContext) {
@@ -460,7 +335,7 @@ export class LakeDuckQuest {
     }
     if (mode === "land") context.resolveBody?.(this.duck.root.position, this.followVelocity, .38);
     const support = mode === "water"
-      ? THE_LAKE_SURFACE_Y + .065
+      ? WATER_Y
       : (context.floorYAt?.(this.duck.root.position.x, this.duck.root.position.z) ?? context.player.y - 1.48) + (mode === "flight" ? 1.2 : 0);
     this.duck.root.position.y += (support - this.duck.root.position.y) * (1 - Math.exp(-delta * (mode === "flight" ? 3.2 : 10)));
     const movedX = this.duck.root.position.x - this.previous.x, movedZ = this.duck.root.position.z - this.previous.z;
@@ -485,40 +360,18 @@ export class LakeDuckQuest {
     const right = new THREE.Vector3(-forward.z, 0, forward.x);
     target.copy(context.player).addScaledVector(forward, -2.8).addScaledVector(right, 1.65);
     const locomotion = context.locomotion ?? "water";
-    target.y = locomotion === "water"
-      ? THE_LAKE_SURFACE_Y + .065
-      : context.floorYAt?.(target.x, target.z) ?? context.player.y - 1.48;
+    target.y = locomotion === "water" ? WATER_Y : context.floorYAt?.(target.x, target.z) ?? context.player.y - 1.48;
     return target;
-  }
-
-  private setTetherDestination(activeIndex: number | null) {
-    if (activeIndex === null) return;
-    const target = this.snags[activeIndex].position;
-    const approach = new THREE.Vector3(this.tetherAnchor.x - target.x, 0, this.tetherAnchor.z - target.z);
-    if (approach.lengthSq() < .01) approach.set(1, 0, 1);
-    approach.normalize().multiplyScalar(3.4);
-    this.tetherDestination.copy(target).add(approach);
-    this.tetherDestination.y = THE_LAKE_SURFACE_Y + .065;
-  }
-
-  private updateLineGeometry() {
-    if (!this.line) return;
-    const positions: number[] = [this.duck.root.position.x, this.duck.root.position.y + .28, this.duck.root.position.z];
-    for (let progress = this.releasedCount; progress < this.snagOrder.length; progress++) {
-      const point = this.snags[this.snagOrder[progress]].position;
-      positions.push(point.x, point.y + .035, point.z);
-    }
-    this.line.geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-    this.line.geometry.computeBoundingSphere();
-    this.line.visible = this.stateValue.startsWith("SNAG_");
   }
 
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
-    markAuthoredZooAnimalDisposed(this.duck.root);
+    this.family.forEach(member => {
+      markAuthoredZooAnimalDisposed(member.root);
+      member.ownedTextures?.forEach(texture => texture.dispose());
+    });
     this.root.removeFromParent();
     disposeTree(this.root);
-    this.duck.ownedTextures?.forEach(texture => texture.dispose());
   }
 }

@@ -565,6 +565,23 @@ export function createMallard(_textures: GameTextures, quality: number): ZooAnim
 
 export const createMallardDuck = createMallard;
 
+/** Project-authored Eastern gray squirrel used by Zap's park story. */
+export function createEasternGraySquirrel(_textures: GameTextures, quality: number): ZooAnimalRig {
+  const root = new THREE.Group();
+  root.name = "central-park-zap-eastern-gray-squirrel";
+  root.userData.species = "eastern-gray-squirrel";
+  root.userData.commonName = "Zap · Eastern gray squirrel";
+  root.userData.displayName = "Zap";
+  root.userData.logicalId = "central-park-squirrel";
+  root.userData.animationStates = ["idle", "walk", "forage", "climb"];
+  return authorZooAnimalRig({ root, update() {} }, {
+    species: "eastern-gray-squirrel",
+    quality,
+    defaultMotion: "idle",
+    phaseOffset: .71,
+  }) as ZooAnimalRig;
+}
+
 /** Project-authored tan-and-white museum cat used by the Whiskers trail. */
 export function createWhiskersCat(_textures: GameTextures, quality: number): ZooAnimalRig {
   const root = new THREE.Group();

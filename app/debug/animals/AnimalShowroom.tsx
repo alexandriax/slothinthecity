@@ -10,6 +10,7 @@ import {
   createAmericanBison,
   createAmericanFlamingo,
   createBlueAndGoldMacaw,
+  createEasternGraySquirrel,
   createGaryPolarBear,
   createGreenAracari,
   createMallard,
@@ -40,7 +41,8 @@ type AnimalDefinition = {
 
 const ANIMALS: AnimalDefinition[] = [
   { label: "Whiskers", family: "Tan & white domestic cat", factory: createWhiskersCat },
-  { label: "Central Park mallard", family: "Waterfowl", factory: createMallard },
+  { label: "Tanner", family: "Central Park mallard", factory: createMallard },
+  { label: "Zap", family: "Eastern gray squirrel", factory: createEasternGraySquirrel },
   { label: "Gary", family: "Polar bear", factory: createGaryPolarBear },
   { label: "Mango", family: "Sun conure", factory: createSunConure },
   { label: "Blue & gold", family: "Macaw", factory: createBlueAndGoldMacaw },

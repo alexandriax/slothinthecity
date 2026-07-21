@@ -8,6 +8,7 @@ test("the optional menagerie has one persistent authored companion for every sid
   const source = await readSource("../app/game/world/AnimalMenagerie.ts");
   for (const id of [
     "central-park-mallard",
+    "central-park-squirrel",
     "sun-conure",
     "blue-and-gold-macaw",
     "scarlet-ibis",
@@ -23,6 +24,7 @@ test("the optional menagerie has one persistent authored companion for every sid
 
   for (const factory of [
     "createMallard",
+    "createEasternGraySquirrel",
     "createSunConure",
     "createBlueAndGoldMacaw",
     "createScarletIbis",

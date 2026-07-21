@@ -64,6 +64,17 @@ const reviewedSpecies = [
     clips: { idle: ["DuckIdle"], walk: ["DuckWaddle"], swim: ["DuckSwim"], "short-flight": ["DuckShortFlight"], "landing-settle": ["DuckLandingSettle"] },
   },
   {
+    id: "eastern-gray-squirrel",
+    approved: true,
+    asset: "tools/animal-pipeline/source/eastern-gray-squirrel.asset.json",
+    blend: "tools/animal-pipeline/source/eastern-gray-squirrel-source.blend",
+    commonName: "Eastern gray squirrel",
+    sourceFacing: "+z",
+    targetHeightMeters: .61,
+    method: "Original connected sciurid anatomical skin graph deterministically remeshed to a watertight manifold integrating trunk, limbs, compact ears and counterbalance tail, consolidated face details, project-authored skinning, four clips, and deterministic guard-hair PBR maps.",
+    clips: { idle: ["SquirrelIdle"], walk: ["SquirrelScamper"], forage: ["SquirrelForage"], climb: ["SquirrelClimb"] },
+  },
+  {
     id: "whiskers-cat",
     approved: true,
     asset: "tools/animal-pipeline/source/whiskers-cat.asset.json",

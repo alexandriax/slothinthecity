@@ -22,7 +22,7 @@ export type ZooQuestAudioCue =
   | "success"
   | "failure";
 
-export type MallardAudioCue = "call" | "line-release" | "landing";
+export type MallardAudioCue = "call" | "crossing" | "landing";
 
 export type AudioMix = {
   master: number;
@@ -513,7 +513,7 @@ export class PremiumAudioDirector {
     return this.playFailure();
   }
 
-  /** Lake-local duck, reedline, and passenger-landing cues. */
+  /** Lake-local Tanner call, family-crossing water, and passenger cues. */
   playMallardCue(cue: MallardAudioCue) {
     if (!this.context || !this.sfxBus) return false;
     const now = this.context.currentTime;
@@ -522,9 +522,9 @@ export class PremiumAudioDirector {
       this.chirp(this.sfxBus, 265, 188, now + .21, { duration: .14, gain: .062, type: "sawtooth", pan: .08 });
       return true;
     }
-    if (cue === "line-release") {
-      this.noise(this.sfxBus, now, { duration: .18, gain: .055, frequency: 1480, q: 1.8, type: "bandpass" });
-      this.chirp(this.sfxBus, 610, 920, now + .035, { duration: .11, gain: .038, type: "triangle" });
+    if (cue === "crossing") {
+      this.noise(this.sfxBus, now, { duration: .42, gain: .043, frequency: 1180, q: 1.1, type: "bandpass" });
+      this.chirp(this.sfxBus, 330, 238, now + .06, { duration: .14, gain: .045, type: "triangle" });
       return true;
     }
     this.noise(this.sfxBus, now, { duration: .24, gain: .047, frequency: 980, q: .8, type: "bandpass" });

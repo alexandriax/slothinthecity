@@ -45,7 +45,7 @@ test("the premium pass implements at least 25 additional improvements", async ()
       "upper-west-side-amnh-surrounding-corner-building",
     ].map(marker => [arrival, marker]),
     ...["new THREE.CatmullRomCurve3", "pauseSeconds", "lookAround"].map(marker => [crowd, marker]),
-    ...["SNAG_POSITION_POOL", "restored-lily-blossoms-and-clear-water", "flowBonusValue", "tetherDestination"].map(marker => [pond, marker]),
+    ...["Tanner", "WAITING_FOR_YIELD", "DUCKS HAVE RIGHT OF WAY", "family-crossing-duck"].map(marker => [pond, marker]),
     ...["bird-perch", "buoy-dock", "rope-anchor", "stripe-scanner", "scent-vane", "solar-mirror", "wetland-valve", "seed-plot"].map(marker => [quests, marker]),
   ];
   assert.ok(implementedAdditions.length >= 25);

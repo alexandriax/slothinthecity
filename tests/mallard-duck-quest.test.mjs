@@ -24,46 +24,42 @@ async function loadQuestHarness() {
   return loadedModule.exports;
 }
 
-test("Reedline Rescue keeps one stable snag order and recruits the Central Park mallard", async () => {
+test("Tanner rewards yielding to his family and becomes a persistent companion", async () => {
   const { LakeDuckQuest, THREE } = await loadQuestHarness();
   const scene = new THREE.Scene();
-  const quest = new LakeDuckQuest(scene, {}, 1, { sessionSeed: 90125 });
-  const secondQuest = new LakeDuckQuest(new THREE.Scene(), {}, 1, { sessionSeed: 90125 });
-  assert.deepEqual(quest.snagOrder, secondQuest.snagOrder);
-  assert.deepEqual(
-    quest.snagPositions.map(position => position.toArray()),
-    secondQuest.snagPositions.map(position => position.toArray()),
-    "a session seed should pin a repeatable three-stop lake route",
-  );
-  assert.equal(quest.snagPositions.length, 3);
-  assert.equal(new Set(quest.snagPositions.map(position => `${position.x}:${position.z}`)).size, 3);
-  assert.deepEqual([...quest.snagOrder].toSorted(), [0, 1, 2]);
+  const quest = new LakeDuckQuest(scene, {}, 1, { requiredYieldSeconds: .2 });
   assert.equal(quest.companionId, "central-park-mallard");
+  assert.equal(quest.duck.root.userData.animalName, "Tanner");
+  assert.equal(quest.family.length, 4);
 
   const encounter = quest.duckPosition.clone();
   quest.update(0, 1 / 60, { player: encounter, locomotion: "water" });
   assert.ok(quest.duckPosition.distanceTo(encounter) < .001, "mallard should begin on its authored swim path without a first-frame teleport");
-  assert.equal(quest.state, "ROAMING", "approaching must reveal the E prompt without silently starting the rescue");
-  assert.equal(quest.interactionHint(encounter)?.label, "HELP THE TANGLED DUCK");
+  assert.equal(quest.state, "ROAMING", "approaching must reveal the local greeting without silently starting the story");
+  assert.equal(quest.interactionHint(encounter)?.label, "GREET TANNER · ASK TO CROSS");
   assert.equal(quest.interact(encounter, 0)?.kind, "DUCK_CALLED");
-  assert.equal(quest.state, "SNAG_1");
+  assert.equal(quest.state, "WAITING_FOR_YIELD");
   assert.equal(quest.consumeEvent()?.kind, "DUCK_CALLED");
-  for (let progress = 0; progress < 3; progress++) {
-    const target = quest.currentTarget.clone();
-    const event = quest.interact(target, progress + 1);
-    assert.equal(event?.progress, progress + 1);
-    assert.ok(event?.flowBonus >= progress + 1, "maintaining rescue flow should reward continuous lake traversal");
-  }
-  assert.equal(quest.state, "FREED");
+  assert.match(quest.instruction, /LET TANNER'S FAMILY PASS/);
+
+  const respectfulBoatPosition = quest.currentTarget.clone().add(new THREE.Vector3(0, 0, 10));
+  quest.update(.1, .1, { player: respectfulBoatPosition, locomotion: "rowboat", rowboatPosition: respectfulBoatPosition, rowboatSpeedMetersPerSecond: 0 });
+  quest.update(.2, .1, { player: respectfulBoatPosition, locomotion: "rowboat", rowboatPosition: respectfulBoatPosition, rowboatSpeedMetersPerSecond: 0 });
+  assert.equal(quest.state, "CROSSING", "holding outside the path should let the family begin crossing");
+  assert.equal(quest.consumeEvent()?.kind, "DUCKS_CROSSING");
+
+  quest.update(6, 1 / 60, { player: respectfulBoatPosition, locomotion: "rowboat", rowboatPosition: respectfulBoatPosition, rowboatSpeedMetersPerSecond: 0 });
+  assert.equal(quest.state, "HONORED");
+  assert.equal(quest.consumeEvent()?.kind, "DUCKS_PASSED");
   const passenger = {
     position: new THREE.Vector3(12, 3.25, -8),
     quaternion: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), .7),
   };
-  quest.update(5, 1 / 60, { player: encounter, locomotion: "rowboat", rowboatPassenger: passenger });
+  quest.update(8, 1 / 60, { player: encounter, locomotion: "rowboat", rowboatPassenger: passenger });
   assert.equal(quest.state, "FOLLOWING");
   assert.equal(quest.isComplete, true);
-  assert.ok(quest.flowBonus >= 3);
-  quest.update(5.1, 1 / 60, { player: encounter, locomotion: "rowboat", rowboatPassenger: passenger });
+  assert.equal(quest.consumeEvent()?.kind, "DUCK_RECRUITED");
+  quest.update(8.1, 1 / 60, { player: encounter, locomotion: "rowboat", rowboatPassenger: passenger });
   assert.ok(quest.duckPosition.distanceTo(passenger.position) < .001, "recruited duck should ride at the authored passenger anchor");
   assert.equal(quest.duck.root.userData.followMode, "rowboat");
 
@@ -71,7 +67,7 @@ test("Reedline Rescue keeps one stable snag order and recruits the Central Park 
   quest.duck.root.rotation.set(.18, .7, -.12);
   const beforePitch = Math.abs(quest.duck.root.rotation.x), beforeRoll = Math.abs(quest.duck.root.rotation.z);
   const landPlayer = new THREE.Vector3(16, 1.48, -4);
-  quest.update(5.2, 1 / 60, {
+  quest.update(8.2, 1 / 60, {
     player: landPlayer,
     locomotion: "land",
     floorYAt: () => 0,
@@ -84,12 +80,11 @@ test("Reedline Rescue keeps one stable snag order and recruits the Central Park 
     position: new THREE.Vector3(-18, 2.9, 14),
     quaternion: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -1.1),
   };
-  quest.update(5.3, 1 / 60, { player: landPlayer, locomotion: "rowboat", rowboatPassenger: laterPassenger });
+  quest.update(8.3, 1 / 60, { player: landPlayer, locomotion: "rowboat", rowboatPassenger: laterPassenger });
   assert.ok(quest.duckPosition.distanceTo(laterPassenger.position) > 1, "boarding a later boat should animate instead of teleporting to the bench");
-  quest.update(6.1, 1 / 60, { player: landPlayer, locomotion: "rowboat", rowboatPassenger: laterPassenger });
+  quest.update(9.1, 1 / 60, { player: landPlayer, locomotion: "rowboat", rowboatPassenger: laterPassenger });
   assert.ok(quest.duckPosition.distanceTo(laterPassenger.position) < .001, "boarding transition should finish at the authored passenger anchor");
   quest.dispose();
-  secondQuest.dispose();
 });
 
 test("mallard production source and runtime contract retain original authored provenance", async () => {

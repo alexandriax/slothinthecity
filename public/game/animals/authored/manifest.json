@@ -452,6 +452,86 @@
       ]
     },
     {
+      "id": "eastern-gray-squirrel",
+      "commonName": "Eastern gray squirrel",
+      "sourceFacing": "+z",
+      "targetHeightMeters": 0.61,
+      "groundOffsetMeters": 0,
+      "license": "Project-original",
+      "source": {
+        "blendBytes": 20360652,
+        "blendFile": "tools/animal-pipeline/source/eastern-gray-squirrel-source.blend",
+        "blendSha256": "cc2b6683643e775fb49746de487ac17263421c7d1fa313cd35d508a1d942ede9",
+        "generator": "tools/animal-pipeline/build_eastern_gray_squirrel.py",
+        "method": "Original connected sciurid anatomical skin graph deterministically remeshed to a watertight manifold integrating trunk, limbs, compact ears and counterbalance tail, consolidated face details, project-authored skinning, four clips, and deterministic guard-hair PBR maps.",
+        "referenceUse": "visual-reference-only"
+      },
+      "lod0": {
+        "bytes": 4786472,
+        "file": "eastern-gray-squirrel-lod0.glb",
+        "materials": 5,
+        "meshes": 5,
+        "sha256": "41f8d948b72842167e5a48300e9da7b1906b6f3972e2b89eff7a36cf85ac9253",
+        "triangles": 123408,
+        "vertices": 68917
+      },
+      "lod2": {
+        "bytes": 4339200,
+        "file": "eastern-gray-squirrel-lod2.glb",
+        "materials": 5,
+        "meshes": 5,
+        "sha256": "0e9d22107b6edfb76b717c39e0f31503d479dbcba88c0c1d9f1770fcbf561b30",
+        "triangles": 27148,
+        "vertices": 17697
+      },
+      "clips": {
+        "idle": [
+          "SquirrelIdle"
+        ],
+        "walk": [
+          "SquirrelScamper"
+        ],
+        "forage": [
+          "SquirrelForage"
+        ],
+        "climb": [
+          "SquirrelClimb"
+        ]
+      },
+      "textures": [
+        {
+          "bytes": 5949169,
+          "embedded": true,
+          "embeddedImage": "eastern-gray-squirrel-albedo",
+          "height": 2048,
+          "kind": "albedo",
+          "sha256": "e5bf91ebd01fae9744d9772496d2e33ce8fc18a6b4a4dd9c27b7b4ea4bd6de84",
+          "sourceFile": "tools/animal-pipeline/source/eastern-gray-squirrel-albedo.png",
+          "width": 2048
+        },
+        {
+          "bytes": 10276439,
+          "embedded": true,
+          "embeddedImage": "eastern-gray-squirrel-normal",
+          "height": 2048,
+          "kind": "normal",
+          "sha256": "6a9f2b31580943d978e64d8a9989f234fcc5bf6adf1211478b7f852fcbece680",
+          "sourceFile": "tools/animal-pipeline/source/eastern-gray-squirrel-normal.png",
+          "width": 2048
+        },
+        {
+          "bytes": 3106595,
+          "embedded": true,
+          "embeddedImage": "eastern-gray-squirrel-roughness",
+          "height": 2048,
+          "kind": "roughness",
+          "sha256": "7512bd720a08c24448767e11af7c5ae9504feb65673df4651ee44ba43489d7cf",
+          "sourceFile": "tools/animal-pipeline/source/eastern-gray-squirrel-roughness.png",
+          "width": 2048
+        }
+      ]
+    },
+    {
       "id": "whiskers-cat",
       "commonName": "Tan and white domestic cat",
       "sourceFacing": "-z",

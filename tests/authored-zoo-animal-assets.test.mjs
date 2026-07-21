@@ -11,6 +11,7 @@ const BIN_CHUNK = 0x004e4942;
 const EXPECTED_SPECIES = {
   "california-sea-lion": ["SeaLionIdle", "SeaLionSwim", "SeaLionSurface", "SeaLionDive"],
   "gary-polar-bear": ["BearIdle", "BearWalk", "BearForage", "BearTurn"],
+  "eastern-gray-squirrel": ["SquirrelIdle", "SquirrelScamper", "SquirrelForage", "SquirrelClimb"],
   "mallard-duck": ["DuckIdle", "DuckWaddle", "DuckSwim", "DuckShortFlight", "DuckLandingSettle"],
   "spider-monkey": ["MonkeyIdle", "MonkeyWalk", "MonkeyPerch", "MonkeyClimb", "MonkeySwing"],
   "sun-conure": ["LandingSettle", "Perch", "Preen", "ShortFlight"],
@@ -59,7 +60,7 @@ test("authored zoo animal runtime is manifest-driven, skeleton-safe, and never f
   ]);
   assert.match(source, /AUTHORED_ZOO_ANIMAL_ROOT = "\/game\/animals\/authored"/);
   assert.match(source, /APPROVED_AUTHORED_ZOO_ANIMAL_SPECIES/);
-  assert.match(source, /"gary-polar-bear",\s+"spider-monkey",\s+"california-sea-lion",\s+"sun-conure",\s+"mallard-duck",\s+"whiskers-cat"/);
+  assert.match(source, /"gary-polar-bear",\s+"spider-monkey",\s+"california-sea-lion",\s+"sun-conure",\s+"mallard-duck",\s+"eastern-gray-squirrel",\s+"whiskers-cat"/);
   assert.match(source, /if \(!APPROVED_AUTHORED_ZOO_ANIMAL_SPECIES\.has\(speciesId\)\)/);
   assert.match(source, /fetch\(`\$\{AUTHORED_ZOO_ANIMAL_ROOT\}\/manifest\.json`, \{ cache: "no-cache" \}\)/);
   assert.match(source, /new DRACOLoader\(\)/);
@@ -88,6 +89,7 @@ test("authored zoo animal runtime is manifest-driven, skeleton-safe, and never f
   assert.match(subway, /species: "spider-monkey"/);
   assert.match(subway, /species: "sun-conure"/);
   assert.match(subway, /species: "mallard-duck"/);
+  assert.match(subway, /species: "eastern-gray-squirrel"/);
   assert.match(subway, /species: "whiskers-cat"/);
 });
 

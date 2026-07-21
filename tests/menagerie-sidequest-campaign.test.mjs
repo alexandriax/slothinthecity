@@ -53,7 +53,7 @@ test("every Bronx Zoo habitat quest plays in-world and hands its animal to the p
   assert.match(audio, /gain: variant === 1 \? \.18 : \.155/);
 });
 
-test("the lake duck, dynamic counts, scalable scooters, and collision-safe convoy persist across worlds", async () => {
+test("Tanner, Zap, dynamic counts, scalable scooters, and collision-safe convoy persist across worlds", async () => {
   const [park, game, museum, navigation, subway, train, zoo, returnPark] = await Promise.all([
     readSource("../app/game/GameClient.tsx"),
     readSource("../app/game/SubwayGame.tsx"),
@@ -66,13 +66,17 @@ test("the lake duck, dynamic counts, scalable scooters, and collision-safe convo
   ]);
 
   assert.match(park, /new LakeDuckQuest/);
+  assert.match(park, /new ParkSquirrelQuest/);
   assert.match(park, /CENTRAL_PARK_MALLARD_COMPANION_ID/);
-  assert.match(park, /onEnterSubway\(duckRecruited \? \[CENTRAL_PARK_MALLARD_COMPANION_ID\] : \[\]\)/);
+  assert.match(park, /CENTRAL_PARK_SQUIRREL_COMPANION_ID/);
+  assert.match(park, /\.\.\.\(duckRecruited \? \[CENTRAL_PARK_MALLARD_COMPANION_ID\] : \[\]\)/);
+  assert.match(park, /\.\.\.\(squirrelRecruited \? \[CENTRAL_PARK_SQUIRREL_COMPANION_ID\] : \[\]\)/);
   assert.match(park, /getWorldPassengerTransform/);
   assert.match(park, /const duckInteractionActor = activeBoat\?\.root\.position \?\? player/);
   assert.match(park, /duckActionLockedUntil/);
   assert.match(park, /floorYAt: \(x, z\) => groundHeight\(x, z\) - 1\.48/);
   assert.match(park, /resolveBody: resolveDuckCompanion/);
+  assert.match(park, /squirrelQuest\.update/);
   assert.match(game, /totalFollowerCount/);
   assert.match(game, /friendCountLabel\(totalFollowerCount\(\)\)/);
   assert.match(game, /riderCountLabel\(totalFollowerCount\(\)\)/);
