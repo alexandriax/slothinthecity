@@ -16,7 +16,7 @@ test("settings stays icon-only and dismissible across desktop and touch layouts"
   assert.match(settings, /aria-label="Close settings"/);
 
   assert.match(styles, /\.experience-settings-trigger \{[\s\S]{0,240}width:44px;[\s\S]{0,160}height:44px;/);
-  assert.match(styles, /right:max\(64px,calc\(env\(safe-area-inset-right\) \+ 54px\)\)/);
-  assert.match(styles, /max-height:500px[\s\S]{0,320}\.experience-settings-trigger \{ width:40px;/);
+  assert.match(styles, /top:max\(64px,calc\(env\(safe-area-inset-top\) \+ 56px\)\); right:max\(10px,env\(safe-area-inset-right\)\)/);
+  assert.match(styles, /max-height:500px[\s\S]{0,280}top:max\(48px,calc\(env\(safe-area-inset-top\) \+ 43px\)\)[\s\S]{0,160}\.experience-settings-trigger \{ width:40px;/);
   assert.doesNotMatch(styles, /data-side-quest[^\n]+\.experience-settings/);
 });

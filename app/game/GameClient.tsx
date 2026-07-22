@@ -1140,6 +1140,7 @@ function ParkLevel({ audio, onEnterSubway, quality }: { audio: PremiumAudioDirec
         <button className="cinematic-cta" onClick={begin} disabled={!ready}>{ready ? "ENTER THE RAMBLE" : "PREPARING THE PARK"}<b>→</b><span/></button>
         <small>Headphones recommended · Mouse, keyboard &amp; touch</small>
       </div>
+      <a className="intro-source" href="https://github.com/alexandriax/slothinthecity" target="_blank" rel="noreferrer">View source on GitHub <span aria-hidden="true">↗</span></a>
     </section>}
     {phase === "paused" && <section className="screen"><div className="pause-card"><div className="eyebrow">Field session paused · P</div><h2>Listen to the park.</h2><p>Your progress is safe. The hawk will keep circling, but the canopy is patient.</p><div className="actions"><button className="primary" onClick={resume}>Return to trail <b>→</b></button><button className="secondary" onClick={() => audio.toggleMuted()}>{audioState.muted ? "Enable sound" : "Mute sound"}</button></div></div></section>}
     {phase === "playing" && <TouchControls arboreal={hud.arboreal} prompt={hud.prompt} promptKey={hud.promptKey} showPause vehicle={hud.vehicle} />}

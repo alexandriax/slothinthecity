@@ -29,6 +29,9 @@ test("server-renders the branded game shell", async () => {
   assert.match(html, /3D game viewport/);
   assert.match(html, /game\/splash-city\.webp/);
   assert.match(html, /Sloth in the City/i);
+  assert.match(html, /href="https:\/\/github\.com\/alexandriax\/slothinthecity"/i);
+  assert.match(html, /View source on GitHub/i);
+  assert.match(html, /target="_blank" rel="noreferrer"/i);
   assert.doesNotMatch(html, /SLOTH \/ PARK/i);
   assert.match(html, /viewport-fit=cover/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
