@@ -745,8 +745,8 @@ button { font: inherit; }
 }
 
 @media(max-width:900px), (pointer:coarse) {
-  .experience-settings { top:max(10px,calc(env(safe-area-inset-top) + 2px)); right:max(64px,calc(env(safe-area-inset-right) + 54px)); }
-  .experience-settings-panel { max-height:calc(100dvh - max(74px,calc(env(safe-area-inset-top) + 66px))) !important; }
+  .experience-settings { top:max(64px,calc(env(safe-area-inset-top) + 56px)); right:max(10px,env(safe-area-inset-right)); }
+  .experience-settings-panel { max-height:calc(100dvh - max(128px,calc(env(safe-area-inset-top) + 120px))) !important; }
   .debug-jump-menu { right:max(10px,env(safe-area-inset-right)); bottom:max(10px,env(safe-area-inset-bottom)); width:min(366px,calc(100vw - 20px)); }
   .debug-jump-grid { max-height:55vh; }
   .world-transition strong { max-width:85vw; font-size:26px; }
@@ -936,9 +936,9 @@ button { font: inherit; }
 
 @media(max-height:500px) and (orientation:landscape) and (max-width:900px),
        (max-height:500px) and (orientation:landscape) and (pointer:coarse) {
-  .experience-settings { top:max(3px,env(safe-area-inset-top)); right:max(57px,calc(env(safe-area-inset-right) + 48px)); }
+  .experience-settings { top:max(48px,calc(env(safe-area-inset-top) + 43px)); right:max(8px,env(safe-area-inset-right)); }
   .experience-settings-trigger { width:40px; min-width:40px !important; height:40px; min-height:40px !important; }
-  .experience-settings-panel { max-height:calc(100dvh - max(55px,calc(env(safe-area-inset-top) + 49px))) !important; }
+  .experience-settings-panel { max-height:calc(100dvh - max(106px,calc(env(safe-area-inset-top) + 101px))) !important; }
 }
 
 @media(prefers-reduced-motion:reduce) {
