@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "engines": {
-    "node": ">=22.13.0"
+    "node": "24.x"
   },
   "scripts": {
     "dev": "next dev",
@@ -18,12 +18,12 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
-    "@next/third-parties": "^16.2.11",
+    "@next/third-parties": "16.4.2",
     "@types/three": "^0.185.1",
     "drizzle-orm": "0.45.2",
-    "next": "16.2.6",
-    "react": "19.2.6",
-    "react-dom": "19.2.6",
+    "next": "16.4.2",
+    "react": "19.2.9",
+    "react-dom": "19.2.9",
     "three": "^0.185.1"
   },
   "devDependencies": {
@@ -37,13 +37,17 @@
     "@vitejs/plugin-rsc": "0.5.26",
     "drizzle-kit": "0.31.10",
     "eslint": "9.39.4",
-    "eslint-config-next": "16.2.6",
-    "react-server-dom-webpack": "19.2.6",
+    "eslint-config-next": "16.4.2",
+    "react-server-dom-webpack": "19.2.9",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
     "vinext": "0.0.50",
     "vite": "8.0.13",
     "wrangler": "4.92.0"
   },
-  "type": "module"
+  "type": "module",
+  "overrides": {
+    "sharp": "0.35.5",
+    "postcss": "8.5.31"
+  }
 }
